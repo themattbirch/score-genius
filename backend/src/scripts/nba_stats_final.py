@@ -86,7 +86,7 @@ def post_process_stats(stats_data):
 def run_all_games():
     league = '12'            # NBA
     season = '2024-2025'      # Current season parameter
-    date = '2025-02-11'       # Date for which to fetch game data
+    date = '2025-02-12'       # Date for which to fetch game data
     games_data = get_games_by_date(league, season, date)
     if not games_data.get('response'):
         print("No game data found for the specified date.")
