@@ -1,4 +1,5 @@
 # nba_stats_live.py
+import json
 import requests
 from pprint import pprint
 from datetime import datetime
@@ -49,20 +50,34 @@ def filter_live_games(games_data):
 
 def get_player_box_stats(game_id):
     """
-    Fetches detailed player statistics for a specific game using the 'ids' parameter.
+    Fetches detailed player statistics for a specific game,
+    and globally replaces &apos; with a real apostrophe in the raw JSON text
+    before parsing into a Python dictionary.
     """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
+
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        print(f"Fetched player statistics for game ID {game_id}")
-        print("Status Code:", response.status_code)
-        print("Request URL:", response.url)
-        return response.json()
+        
+        # Get the raw JSON as text
+        raw_text = response.text
+        
+        # Handle possible double-encoding like &amp;apos;, then handle &apos;
+        raw_text = raw_text.replace("&amp;apos;", "'")
+        raw_text = raw_text.replace("&apos;", "'")
+        
+        # Parse the cleaned text into a Python dict
+        data = json.loads(raw_text)
+        
+        return data
+
     except requests.exceptions.RequestException as e:
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
+
+
 
 def print_game_info(game):
     """

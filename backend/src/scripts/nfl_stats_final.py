@@ -1,5 +1,6 @@
 # nfl_stats_final.py
 import requests
+import json
 from pprint import pprint
 
 # API Configuration using your API-Sports key for NFL

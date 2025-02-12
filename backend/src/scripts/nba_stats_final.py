@@ -1,5 +1,6 @@
 # nba_stats_final.py
 import requests
+import json
 from pprint import pprint
 
 # API Configuration using your API-Sports key for NBA
@@ -46,17 +47,29 @@ def get_team_stats(game_id):
 
 def get_player_box_stats(game_id):
     """
-    Fetches detailed player statistics for a specific game using the 'ids' parameter.
+    Fetches detailed player statistics for a specific game,
+    and globally replaces &apos; with a real apostrophe in the raw JSON text
+    before parsing into a Python dictionary.
     """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
+
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        print(f"Fetched player statistics for game ID {game_id}")
-        print("Status Code:", response.status_code)
-        print("Request URL:", response.url)
-        return response.json()
+        
+        # Get the raw JSON as text
+        raw_text = response.text
+        
+        # Handle possible double-encoding like &amp;apos;, then handle &apos;
+        raw_text = raw_text.replace("&amp;apos;", "'")
+        raw_text = raw_text.replace("&apos;", "'")
+        
+        # Parse the cleaned text into a Python dict
+        data = json.loads(raw_text)
+        
+        return data
+
     except requests.exceptions.RequestException as e:
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
@@ -73,7 +86,7 @@ def post_process_stats(stats_data):
 def run_all_games():
     league = '12'            # NBA
     season = '2024-2025'      # Current season parameter
-    date = '2025-02-08'       # Date for which to fetch game data
+    date = '2025-02-11'       # Date for which to fetch game data
     games_data = get_games_by_date(league, season, date)
     if not games_data.get('response'):
         print("No game data found for the specified date.")
