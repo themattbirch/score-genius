@@ -1,6 +1,8 @@
+# nba_stats_live.py
 import requests
 from pprint import pprint
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # API Configuration using your API-Sports key
 API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
@@ -10,7 +12,7 @@ HEADERS = {
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games_by_date(league, season, date, timezone='America/New_York'):
+def get_games_by_date(league, season, date, timezone='America/Los_Angeles'):
     """
     Fetches all game data from API-Basketball for the given date, league, season, and timezone.
     """
@@ -79,15 +81,15 @@ def print_game_info(game):
 
 def run_live_games():
     """
-    Fetches all games for today and prints only those that are live, along with player statistics.
+    Fetches all games for today (based on Pacific Time) and prints only those that are live, along with player statistics.
     """
-    # Use today's date in YYYY-MM-DD format.
-    today = datetime.now().strftime('02-10-2025')
+    # Compute today's date in America/Los_Angeles timezone (to match game scheduling)
+    today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
     league = '12'            # NBA
     season = '2024-2025'      # Adjust if needed
-    timezone = 'America/New_York'
+    timezone = 'America/Los_Angeles'
     
-    games_data = get_games_by_date(league, season, today, timezone)
+    games_data = get_games_by_date(league, season, today_pst, timezone)
     live_games = filter_live_games(games_data)
     
     if not live_games:
@@ -104,7 +106,7 @@ def run_live_games():
         print("=" * 80)
 
 def main():
-    print("Fetching live NBA game data for today...")
+    print("Fetching live NBA game data for today (using Pacific Time)...")
     run_live_games()
 
 if __name__ == "__main__":

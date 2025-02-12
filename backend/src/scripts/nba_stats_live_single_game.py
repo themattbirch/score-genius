@@ -1,7 +1,9 @@
+# nba_stats_live_single.py
 import requests
 from pprint import pprint
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-# API Configuration using your API-Sports key
 API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
@@ -10,10 +12,6 @@ HEADERS = {
 }
 
 def get_team_id(team_name):
-    """
-    Fetches team information using the /teams endpoint with a search query.
-    Returns the first matching team ID as a string, or None.
-    """
     url = f"{BASE_URL}/teams"
     params = {'search': team_name}
     try:
@@ -31,18 +29,9 @@ def get_team_id(team_name):
         print(f"Error fetching team data for {team_name}: {e}")
         return None
 
-def get_games_by_date(league, season, date, timezone='America/New_York'):
-    """
-    Fetches all game data from API-Basketball for the given date, league, and season.
-    A timezone parameter is added to match the local time of interest.
-    """
+def get_games_by_date(league, season, date, timezone="America/Los_Angeles"):
     url = f"{BASE_URL}/games"
-    params = {
-        'league': league,
-        'season': season,
-        'date': date,
-        'timezone': timezone
-    }
+    params = {'league': league, 'season': season, 'date': date, 'timezone': timezone}
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
@@ -55,10 +44,6 @@ def get_games_by_date(league, season, date, timezone='America/New_York'):
         return {}
 
 def filter_game_by_teams(games_data, team1_id, team2_id):
-    """
-    Filters the games_data for a game that includes both team IDs.
-    Returns the game ID if found, otherwise None.
-    """
     for game in games_data.get('response', []):
         teams = game.get('teams', {})
         away_id = str(teams.get('away', {}).get('id'))
@@ -68,9 +53,6 @@ def filter_game_by_teams(games_data, team1_id, team2_id):
     return None
 
 def get_player_box_stats(game_id):
-    """
-    Fetches detailed player statistics for a specific game using the 'ids' parameter.
-    """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
     try:
@@ -84,56 +66,50 @@ def get_player_box_stats(game_id):
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
 
-def post_process_stats(stats_data):
-    """
-    Post-processes each player's shooting stats to print out the field_goals dictionary for review.
-    """
-    for stat in stats_data.get('response', []):
-        fg = stat.get('field_goals', {})
-        print(f"Player {stat.get('player', {}).get('name')}: Field Goals -> Attempts: {fg.get('attempts')}, Total Made: {fg.get('total')}")
-    return stats_data
+def print_game_info(game):
+    game_id = game.get('id')
+    teams = game.get('teams', {})
+    score = game.get('scores', {})
+    status = game.get('status', {})
+    print(f"Game ID: {game_id}")
+    print(f"  Away: {teams.get('away', {}).get('name')}  |  Home: {teams.get('home', {}).get('name')}")
+    print(f"  Scores: Away {score.get('away', {}).get('total')} - Home {score.get('home', {}).get('total')}")
+    print(f"  Status: {status.get('long')} (Short: {status.get('short')}, Timer: {status.get('timer')})")
+    print(f"  Venue: {game.get('venue')}")
+    print("-" * 60)
 
-def run_test():
-    """
-    Tests the complete flow for in-game data fetching for the Minnesota Timberwolves vs. Cleveland Cavaliers matchup on Feb 10, 2025.
-    """
-    league = '12'             # NBA
-    season = '2024-2025'       # Current season parameter
-    date = '2025-02-10'        # Date for the game (if the game is live, live data will be returned)
+def run_live_game_single():
+    league = '12'
+    season = '2024-2025'
+    today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
+    timezone = 'America/Los_Angeles'
     
-    team1_name = "Utah Jazz"
-    team2_name = "Los Angeles Lakers"
+    team1_name = "San Antonio Spurs"
+    team2_name = "Washington Wizards"
     
     team1_id = get_team_id(team1_name)
     team2_id = get_team_id(team2_name)
-    
     if not team1_id or not team2_id:
         print("Could not retrieve both team IDs; please verify team names and try again.")
         return
-
     print(f"Team IDs: {team1_name} -> {team1_id}, {team2_name} -> {team2_id}")
     
-    # Fetch all games on the given date with the specified timezone
-    games_data = get_games_by_date(league, season, date)
-    pprint(games_data)
-    print("-" * 80)
-    
-    # Filter for the game that includes both teams
+    games_data = get_games_by_date(league, season, today_pst, timezone)
     game_id = filter_game_by_teams(games_data, team1_id, team2_id)
     if game_id:
-        print(f"Found game between {team1_name} and {team2_name}: Game ID {game_id}")
-        # Fetch player statistics for this game.
-        player_stats_data = get_player_box_stats(game_id)
-        # Post-process and print field-goal attempts and totals
-        processed_stats = post_process_stats(player_stats_data)
-        print("\nFull Player Statistics Data:")
-        pprint(processed_stats)
+        print(f"Found live game between {team1_name} and {team2_name}: Game ID {game_id}")
+        game = next((g for g in games_data.get('response', []) if str(g.get('id')) == game_id), None)
+        if game:
+            print_game_info(game)
+        player_stats = get_player_box_stats(game_id)
+        print("Player Statistics:")
+        pprint(player_stats)
     else:
-        print("No game data found for the specified matchup on that date. Please verify the date and season.")
+        print("No live game found for the specified matchup today.")
 
 def main():
-    print("Testing in-game player statistics retrieval for Minnesota Timberwolves vs. Cleveland Cavaliers (Feb 10, 2025):")
-    run_test()
+    print("Fetching live statistics for a single NBA game (nba_stats_live_single.py)...")
+    run_live_game_single()
 
 if __name__ == "__main__":
     main()

@@ -1,9 +1,8 @@
-
+# nba_stats_historical.py
 import requests
 from pprint import pprint
 import time
 
-# API Configuration using your API-Sports key (ensure this key is valid)
 API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
@@ -11,20 +10,13 @@ HEADERS = {
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games(league, season, date):
-    """
-    Fetches game data from API-Basketball for the given parameters.
-    """
+def get_games(league, season, date, timezone="America/Los_Angeles"):
     url = f"{BASE_URL}/games"
-    params = {
-        'league': league,
-        'season': season,
-        'date': date
-    }
+    params = {'league': league, 'season': season, 'date': date, 'timezone': timezone}
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        print(f"Fetched game data for {date} (Season {season})")
+        print(f"Fetched game data for {date} (Season {season}, Timezone: {timezone})")
         print("Status Code:", response.status_code)
         print("Request URL:", response.url)
         return response.json()
@@ -33,14 +25,8 @@ def get_games(league, season, date):
         return {}
 
 def get_player_box_stats(game_ids):
-    """
-    Fetches detailed player statistics (box score data) using the /games/statistics/players endpoint.
-    Use the 'ids' parameter to supply one or more game IDs (as a string, e.g., "1912" or "1912-1913").
-    """
     url = f"{BASE_URL}/games/statistics/players"
-    params = {
-        'ids': game_ids  # Supply the game ID(s) as a string.
-    }
+    params = {'ids': game_ids}
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
@@ -52,35 +38,38 @@ def get_player_box_stats(game_ids):
         print(f"Error fetching player statistics for game IDs {game_ids}: {e}")
         return {}
 
-def run_tests():
-    """
-    Runs test calls to fetch both game data and detailed player statistics.
-    """
-    # Test fetching game data using historical parameters
+def post_process_stats(stats_data):
+    for stat in stats_data.get('response', []):
+        fg = stat.get('field_goals', {})
+        print(f"Player {stat.get('player', {}).get('name')}: Field Goals -> Attempts: {fg.get('attempts')}, Total Made: {fg.get('total')}")
+    return stats_data
+
+def run_historical_games():
     test_cases = [
-        {'league': '12', 'season': '2019-2020', 'date': '2019-11-23'}
+        {'league': '12', 'season': '2019-2020', 'date': '2019-11-23'},
+        # Additional historical dates can be added here.
     ]
     
     for test in test_cases:
-        data = get_games(
-            league=test.get('league'),
-            season=test.get('season'),
-            date=test.get('date')
-        )
+        data = get_games(test.get('league'), test.get('season'), test.get('date'))
         print("\nGame Data:")
         pprint(data)
         print("-" * 80)
         time.sleep(2)
-    
-    # Test fetching player box score statistics using the "ids" parameter
-    print("\nTesting player box score statistics:")
-    game_ids = '1912'  # Using a single game id as a string; you can separate multiple IDs with hyphens.
-    player_stats = get_player_box_stats(game_ids)
-    pprint(player_stats)
-    print("-" * 80)
+        if data.get('response'):
+            game_id = str(data['response'][0].get('id'))
+            print(f"Fetching player statistics for game ID {game_id}")
+            stats_data = get_player_box_stats(game_id)
+            processed_stats = post_process_stats(stats_data)
+            print("\nFull Player Statistics Data:")
+            pprint(processed_stats)
+            print("=" * 80)
+        else:
+            print("No game data found for date:", test.get('date'))
 
 def main():
-    run_tests()
+    print("Testing historical game data retrieval (nba_stats_historical.py):")
+    run_historical_games()
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1",
+    "@types/react-router-dom": "^5.3.3",
+    "react-router-dom": "^7.1.5",
+    "recharts": "^2.15.1"
+  }
+}
