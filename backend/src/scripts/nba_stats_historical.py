@@ -1,8 +1,14 @@
-# nba_stats_historical.py
-import requests
 import json
+import requests
 from pprint import pprint
-import time
+from datetime import datetime
+import sys, os
+
+# Add the backend root to the Python path so we can import from caching
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+
+# Import your upsert function for historical data.
+from caching.supabase_stats import upsert_historical_game_stats
 
 API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
 BASE_URL = 'https://v1.basketball.api-sports.io'
@@ -11,13 +17,23 @@ HEADERS = {
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games(league, season, date, timezone="America/Los_Angeles"):
+def get_games_by_date(league, season, date, timezone=None):
+    """
+    Fetch historical game data by date.
+    Omits timezone by default for historical data.
+    """
     url = f"{BASE_URL}/games"
-    params = {'league': league, 'season': season, 'date': date, 'timezone': timezone}
+    params = {
+        'league': league,
+        'season': season,
+        'date': date
+    }
+    if timezone:
+        params['timezone'] = timezone
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        print(f"Fetched game data for {date} (Season {season}, Timezone: {timezone})")
+        print(f"Fetched game data for {date} (Season {season})")
         print("Status Code:", response.status_code)
         print("Request URL:", response.url)
         return response.json()
@@ -27,64 +43,45 @@ def get_games(league, season, date, timezone="America/Los_Angeles"):
 
 def get_player_box_stats(game_id):
     """
-    Fetches detailed player statistics for a specific game,
-    and globally replaces &apos; with a real apostrophe in the raw JSON text
-    before parsing into a Python dictionary.
+    Fetches player statistics for a given game.
     """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
-
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        
-        # Get the raw JSON as text
-        raw_text = response.text
-        
-        # Handle possible double-encoding like &amp;apos;, then handle &apos;
-        raw_text = raw_text.replace("&amp;apos;", "'")
-        raw_text = raw_text.replace("&apos;", "'")
-        
-        # Parse the cleaned text into a Python dict
+        raw_text = response.text.replace("&amp;apos;", "'").replace("&apos;", "'")
         data = json.loads(raw_text)
-        
         return data
-
     except requests.exceptions.RequestException as e:
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
 
-def post_process_stats(stats_data):
-    for stat in stats_data.get('response', []):
-        fg = stat.get('field_goals', {})
-        print(f"Player {stat.get('player', {}).get('name')}: Field Goals -> Attempts: {fg.get('attempts')}, Total Made: {fg.get('total')}")
-    return stats_data
-
 def run_historical_games():
-    test_cases = [
-        {'league': '12', 'season': '2019-2020', 'date': '2019-11-23'},
-        # Additional historical dates can be added here.
-    ]
-    
-    for test in test_cases:
-        data = get_games(test.get('league'), test.get('season'), test.get('date'))
-        print("\nGame Data:")
-        pprint(data)
-        print("-" * 80)
-        time.sleep(2)
-        if data.get('response'):
-            game_id = str(data['response'][0].get('id'))
-            print(f"Fetching player statistics for game ID {game_id}")
-            stats_data = get_player_box_stats(game_id)
-            processed_stats = post_process_stats(stats_data)
-            print("\nFull Player Statistics Data:")
-            pprint(processed_stats)
-            print("=" * 80)
+    league = '12'
+    season = '2019-2020'
+    date = '2019-11-23'  # Example historical date
+
+    # Do not pass a timezone here.
+    games_data = get_games_by_date(league, season, date)
+    if not games_data.get('response'):
+        print("No game data found for the specified date.")
+        return
+
+    for game in games_data['response']:
+        game_id = game.get('id')
+        print(f"Processing game ID: {game_id}")
+
+        player_stats_data = get_player_box_stats(game_id)
+        if 'response' in player_stats_data:
+            for stat in player_stats_data['response']:
+                result = upsert_historical_game_stats(game_id, stat)
+                print(f"Upsert result for {stat['player']['name']}: {result}")
         else:
-            print("No game data found for date:", test.get('date'))
+            print(f"No player stats found for game ID: {game_id}")
 
 def main():
-    print("Testing historical game data retrieval (nba_stats_historical.py):")
+    print("Fetching historical NBA game data and upserting stats to Supabase...")
     run_historical_games()
 
 if __name__ == "__main__":

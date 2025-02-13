@@ -1,4 +1,4 @@
-# nba_games_preview.py
+import json
 import requests
 from pprint import pprint
 from datetime import datetime
@@ -12,7 +12,7 @@ HEADERS = {
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games_by_date(league, season, date, timezone='America/Los_Angeles'):
+def get_games_by_date(league, season, date, timezone='America/New_York'):
     """
     Fetches all game data from API-Basketball for the given date, league, season, and timezone.
     """
@@ -33,6 +33,24 @@ def get_games_by_date(league, season, date, timezone='America/Los_Angeles'):
     except requests.exceptions.RequestException as e:
         print(f"Error fetching game data for {date}: {e}")
         return {}
+    
+def get_player_box_stats(game_id):
+    """
+    Fetches detailed player statistics for a specific game,
+    and globally replaces &apos; with a real apostrophe in the raw JSON text
+    before parsing into a Python dictionary.
+    """
+    url = f"{BASE_URL}/games/statistics/players"
+    params = {'ids': game_id}
+    try:
+        response = requests.get(url, headers=HEADERS, params=params)
+        response.raise_for_status()
+        raw_text = response.text.replace("&amp;apos;", "'").replace("&apos;", "'")
+        data = json.loads(raw_text)
+        return data
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching player statistics for game ID {game_id}: {e}")
+        return {}
 
 def filter_pregame_games(games_data):
     """
@@ -51,28 +69,6 @@ def filter_pregame_games(games_data):
             pregame_games.append(game)
     return pregame_games
 
-def get_odds(game_id, league, season, bookmaker=6, bet=1):
-    """
-    Fetches betting odds for a specific game using the /odds endpoint.
-    """
-    url = f"{BASE_URL}/odds"
-    params = {
-        'season': season,
-        'bet': bet,
-        'bookmaker': bookmaker,
-        'game': game_id,
-        'league': league
-    }
-    try:
-        response = requests.get(url, headers=HEADERS, params=params)
-        response.raise_for_status()
-        print(f"Fetched odds for game {game_id}")
-        print("Request URL:", response.url)
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching odds for game {game_id}: {e}")
-        return {}
-
 def get_standings(league, season):
     """
     Optional: Fetch league standings to extract team records.
@@ -88,7 +84,7 @@ def get_standings(league, season):
         print(f"Error fetching standings: {e}")
         return {}
 
-def print_game_preview(game, odds_data, standings_data=None):
+def print_game_preview(game, odds_data=None, standings_data=None):
     """
     Prints key pregame information including game time, venue, teams, and betting odds.
     Optionally prints team records from standings data.
@@ -111,18 +107,16 @@ def print_game_preview(game, odds_data, standings_data=None):
             team = entry.get('team', {})
             if team.get('id') in [teams.get('away', {}).get('id'), teams.get('home', {}).get('id')]:
                 print(f"  {team.get('name')}: {entry.get('record', 'Record not available')}")
-    
-    print("Betting Odds Preview:")
-    pprint(odds_data)
-    print("=" * 60)
 
 def run_pregame_preview():
     league = '12'           # NBA
     season = '2024-2025'     # Season parameter
-    # Use a date where games are scheduled but not started (adjust this date as needed)
-    date = '2025-02-12'
-    # IMPORTANT: Pass the timezone to ensure the correct schedule; we use Los Angeles time
-    games_data = get_games_by_date(league, season, date, timezone='America/Los_Angeles')
+    # Compute today's date using Eastern Time
+    eastern_now = datetime.now(ZoneInfo("America/New_York"))
+    todays_date_str = eastern_now.strftime('%Y-%m-%d')
+    
+    # Pass Eastern timezone to the API call
+    games_data = get_games_by_date(league, season, todays_date_str, timezone='America/New_York')
     pregame_games = filter_pregame_games(games_data)
     
     if not pregame_games:
@@ -135,9 +129,7 @@ def run_pregame_preview():
     
     print(f"\nFound {len(pregame_games)} pregame game(s):\n")
     for game in pregame_games:
-        game_id = game.get('id')
-        odds_data = get_odds(game_id, league, season)
-        print_game_preview(game, odds_data, standings_data)
+        print_game_preview(game, standings_data=standings_data)
 
 def main():
     print("Fetching NBA pregame preview data...")

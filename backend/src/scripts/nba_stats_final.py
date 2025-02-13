@@ -1,9 +1,15 @@
-# nba_stats_final.py
 import requests
 import json
 from pprint import pprint
+import sys, os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-# API Configuration using your API-Sports key for NBA
+# Add the backend root to the Python path so we can import from caching
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+
+from caching.supabase_stats import upsert_2024_25_game_stats
+
 API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
@@ -11,12 +17,20 @@ HEADERS = {
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games_by_date(league, season, date):
+def get_games_by_date(league, season, date, timezone=None):
     """
-    Fetches all game data from API-Basketball for the given date, league, and season.
+    Fetch final game data by date.
+    For final games, we typically omit the timezone parameter.
     """
     url = f"{BASE_URL}/games"
-    params = {'league': league, 'season': season, 'date': date}
+    params = {
+        'league': league,
+        'season': season,
+        'date': date
+    }
+    if timezone:
+        params['timezone'] = timezone
+
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
@@ -30,7 +44,7 @@ def get_games_by_date(league, season, date):
 
 def get_team_stats(game_id):
     """
-    Fetches team statistics for a specific game.
+    (Optional) Fetch team-level statistics.
     """
     url = f"{BASE_URL}/games/statistics/teams"
     params = {'id': game_id}
@@ -47,71 +61,80 @@ def get_team_stats(game_id):
 
 def get_player_box_stats(game_id):
     """
-    Fetches detailed player statistics for a specific game,
-    and globally replaces &apos; with a real apostrophe in the raw JSON text
-    before parsing into a Python dictionary.
+    Fetch detailed player statistics for a specific game.
+    Replaces encoded apostrophes before parsing JSON.
     """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
-
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        
-        # Get the raw JSON as text
-        raw_text = response.text
-        
-        # Handle possible double-encoding like &amp;apos;, then handle &apos;
-        raw_text = raw_text.replace("&amp;apos;", "'")
-        raw_text = raw_text.replace("&apos;", "'")
-        
-        # Parse the cleaned text into a Python dict
+        raw_text = response.text.replace("&amp;apos;", "'").replace("&apos;", "'")
         data = json.loads(raw_text)
-        
         return data
-
     except requests.exceptions.RequestException as e:
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
 
 def post_process_stats(stats_data):
     """
-    Post-processes each player's shooting stats to print field-goal attempts and totals.
+    Optional: Print out a stat for debugging.
     """
     for stat in stats_data.get('response', []):
         fg = stat.get('field_goals', {})
-        print(f"Player {stat.get('player', {}).get('name')}: Field Goals -> Attempts: {fg.get('attempts')}, Total Made: {fg.get('total')}")
+        player_name = stat.get('player', {}).get('name')
+        print(f"Player {player_name}: FG Attempts: {fg.get('attempts')}, Made: {fg.get('total')}")
     return stats_data
 
 def run_all_games():
-    league = '12'            # NBA
-    season = '2024-2025'      # Current season parameter
-    date = '2025-02-12'       # Date for which to fetch game data
-    games_data = get_games_by_date(league, season, date)
+    league = '12'
+    season = '2024-2025'  # Adjust if your final data is from a different season
+
+    # Get today's date in Pacific Time (America/Los_Angeles)
+    pacific_now = datetime.now(ZoneInfo("America/Los_Angeles"))
+    todays_date_str = pacific_now.strftime('%Y-%m-%d')
+    
+    # If you find you're one day off, you can do:
+    #   todays_date_str = (pacific_now - timedelta(days=1)).strftime('%Y-%m-%d')
+    # Or adjust by hours if needed.
+
+    # For final games, we omit the timezone parameter.
+    games_data = get_games_by_date(league, season, todays_date_str)
     if not games_data.get('response'):
         print("No game data found for the specified date.")
         return
+
     for game in games_data['response']:
         game_id = game.get('id')
         teams = game.get('teams', {})
+        scores = game.get('scores', {})
+        status = game.get('status', {})
+
         print("=" * 60)
         print(f"Game ID: {game_id}")
         print(f"Away: {teams.get('away', {}).get('name')} | Home: {teams.get('home', {}).get('name')}")
-        scores = game.get('scores', {})
         print(f"Scores: Away {scores.get('away', {}).get('total')} - Home {scores.get('home', {}).get('total')}")
-        status = game.get('status', {})
         print(f"Status: {status.get('long')}")
+        
+        # (Optional) Print team stats.
         team_stats = get_team_stats(game_id)
         print("Team Statistics:")
         pprint(team_stats)
+
+        # Fetch player statistics.
         player_stats = get_player_box_stats(game_id)
         print("Player Statistics:")
         post_process_stats(player_stats)
-        pprint(player_stats)
+
+        # Upsert each player's stats into the final table.
+        for stat in player_stats.get('response', []):
+            result = upsert_2024_25_game_stats(game_id, stat)
+            player_name = stat.get('player', {}).get('name')
+            print(f"Upsert result for {player_name}: {result}")
         print("=" * 60)
 
 def main():
-    print("Fetching ALL NBA game data for the specified day and printing statistics...")
+    print("Fetching final NBA game data and upserting stats to Supabase...")
     run_all_games()
 
 if __name__ == "__main__":

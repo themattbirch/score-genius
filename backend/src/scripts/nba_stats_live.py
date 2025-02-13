@@ -1,9 +1,13 @@
-# nba_stats_live.py
 import json
 import requests
 from pprint import pprint
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import sys, os
+
+# Add the backend root to the Python path so we can import from caching
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+from caching.supabase_stats import upsert_live_game_stats 
 
 # API Configuration using your API-Sports key
 API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
@@ -15,7 +19,7 @@ HEADERS = {
 
 def get_games_by_date(league, season, date, timezone='America/Los_Angeles'):
     """
-    Fetches all game data from API-Basketball for the given date, league, season, and timezone.
+    Fetch live game data from API-Basketball for the given date, league, season, and timezone.
     """
     url = f"{BASE_URL}/games"
     params = {
@@ -38,7 +42,7 @@ def get_games_by_date(league, season, date, timezone='America/Los_Angeles'):
 def filter_live_games(games_data):
     """
     Filters the games_data to only include live games.
-    We assume that a live game will have a status with 'short' not equal to "NS" (Not Started) or "FT" (Finished).
+    A live game is determined by a status 'short' value not equal to "NS" (Not Started) or "FT" (Finished).
     """
     live_games = []
     for game in games_data.get('response', []):
@@ -50,34 +54,20 @@ def filter_live_games(games_data):
 
 def get_player_box_stats(game_id):
     """
-    Fetches detailed player statistics for a specific game,
-    and globally replaces &apos; with a real apostrophe in the raw JSON text
-    before parsing into a Python dictionary.
+    Fetches detailed player statistics for a specific game.
+    It replaces encoded apostrophes in the raw JSON text before parsing.
     """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
-
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        
-        # Get the raw JSON as text
-        raw_text = response.text
-        
-        # Handle possible double-encoding like &amp;apos;, then handle &apos;
-        raw_text = raw_text.replace("&amp;apos;", "'")
-        raw_text = raw_text.replace("&apos;", "'")
-        
-        # Parse the cleaned text into a Python dict
+        raw_text = response.text.replace("&amp;apos;", "'").replace("&apos;", "'")
         data = json.loads(raw_text)
-        
         return data
-
     except requests.exceptions.RequestException as e:
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
-
-
 
 def print_game_info(game):
     """
@@ -96,9 +86,8 @@ def print_game_info(game):
 
 def run_live_games():
     """
-    Fetches all games for today (based on Pacific Time) and prints only those that are live, along with player statistics.
+    Fetches live games for today (based on Pacific Time) and upserts their player statistics.
     """
-    # Compute today's date in America/Los_Angeles timezone (to match game scheduling)
     today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
     league = '12'            # NBA
     season = '2024-2025'      # Adjust if needed
@@ -118,6 +107,14 @@ def run_live_games():
         player_stats = get_player_box_stats(game_id)
         print("Player Statistics:")
         pprint(player_stats)
+        
+        if 'response' in player_stats:
+            for stat in player_stats['response']:
+                result = upsert_live_game_stats(game_id, stat)
+                print(f"Upsert result for {stat['player']['name']}: {result}")
+        else:
+            print(f"No player stats found for game ID: {game_id}")
+            
         print("=" * 80)
 
 def main():
