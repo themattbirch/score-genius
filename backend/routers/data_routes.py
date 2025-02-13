@@ -15,7 +15,3 @@ async def get_historical_data(date: str):
     data = fetch_historical_data(date)
     return JSONResponse(content=data)
 
-@router.get("/odds")
-async def get_betting_odds():
-    odds = {"message": "Betting odds data placeholder"}
-    return JSONResponse(content=odds)

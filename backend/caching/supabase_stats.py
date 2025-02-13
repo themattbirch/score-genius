@@ -1,77 +1,224 @@
-# /backend/caching/supabase_stats.py
+# supabase_stats.py
 
-from supabase_client import supabase
+import requests
+import json
 from datetime import datetime
+from .supabase_client import supabase
 
-def upsert_game_stats(game_id: int, player_stats: dict):
+################################################################################
+#                          CONFIG & TEAM NAME CACHE                             #
+################################################################################
+
+API_KEY = 'd0c358b61e883d071bbc183c8fd72228' 
+BASE_URL = 'https://v1.basketball.api-sports.io'
+HEADERS = {
+    'x-rapidapi-key': API_KEY,
+    'x-rapidapi-host': 'v1.basketball.api-sports.io'
+}
+
+TEAM_NAME_CACHE = {}
+TEAM_DEBUG_MODE = True
+
+################################################################################
+#                          HELPER: FIX PLAYER NAME                              #
+################################################################################
+
+def fix_player_name(name: str) -> str:
     """
-    Inserts or updates player statistics for a given game.
+    If the name has two parts, and the first part is NOT just an initial,
+    flip them. Example: 'Noah Vonleh' -> 'Vonleh Noah'
+    If the first part ends with '.', we keep it as is. Example: 'J. Teague' stays 'J. Teague'
+    Otherwise, leave the name unchanged.
+    """
+    parts = name.split()
+    if len(parts) == 2:
+        first, last = parts
+        # If the first part ends with '.', it's likely an initial, so do nothing.
+        if first.endswith('.'):
+            return name
+        # Otherwise, flip them
+        return f"{last} {first}"
+    return name
+
+################################################################################
+#                          HELPER: GET TEAM NAME                                #
+################################################################################
+
+def get_team_name_from_api(team_id: int, league='12', season='2019-2020') -> str:
+    if team_id in TEAM_NAME_CACHE:
+        return TEAM_NAME_CACHE[team_id]
     
-    Args:
-        game_id: The ID of the game.
-        player_stats: Dictionary containing player statistics from the API.
-    """
+    url = f"{BASE_URL}/teams"
+    params = {'id': team_id, 'league': league, 'season': season}
+    if TEAM_DEBUG_MODE:
+        print(f"\n** DEBUG: Requesting team name for team_id={team_id}, league={league}, season={season}")
+        print(f"** DEBUG: GET {url} with params={params} and headers={HEADERS}")
+    
     try:
-        # Transform API data into our database structure.
-        # Adjust the key names as needed depending on your API response structure.
-        stats_data = {
-            'game_id': game_id,
-            'player_id': player_stats['player']['id'],
-            'player_name': player_stats['player']['name'],
-            'team_id': player_stats.get('team', {}).get('id'),
-            'team_name': player_stats.get('team', {}).get('name'),
-            # Here we assume that 'statistics' is a nested dict; adjust as needed.
-            'minutes': player_stats.get('statistics', {}).get('minutes', 0),
-            'points': player_stats.get('statistics', {}).get('points', 0),
-            'rebounds': player_stats.get('statistics', {}).get('rebounds', 0),
-            'assists': player_stats.get('statistics', {}).get('assists', 0),
-            'steals': player_stats.get('statistics', {}).get('steals', 0),
-            'blocks': player_stats.get('statistics', {}).get('blocks', 0),
-            'turnovers': player_stats.get('statistics', {}).get('turnovers', 0),
-            'fouls': player_stats.get('statistics', {}).get('fouls', 0),
-            'fg_made': player_stats.get('statistics', {}).get('fgm', 0),
-            'fg_attempted': player_stats.get('statistics', {}).get('fga', 0),
-            'three_made': player_stats.get('statistics', {}).get('tpm', 0),
-            'three_attempted': player_stats.get('statistics', {}).get('tpa', 0),
-            'ft_made': player_stats.get('statistics', {}).get('ftm', 0),
-            'ft_attempted': player_stats.get('statistics', {}).get('fta', 0),
-            'game_date': datetime.now().date(),  # or use a value from the API if available
-            'updated_at': datetime.utcnow()
-        }
+        resp = requests.get(url, headers=HEADERS, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        if TEAM_DEBUG_MODE:
+            print(f"** DEBUG: /teams response: {data}\n")
         
-        result = supabase.table('nba_game_stats') \
-            .upsert(stats_data, on_conflict='game_id,player_id') \
-            .execute()
-        return result
-    except Exception as e:
-        print(f"Error upserting game stats for player {player_stats['player']['name']}: {e}")
-        return None
+        teams_list = data.get('response', [])
+        if not teams_list:
+            TEAM_NAME_CACHE[team_id] = "Unknown"
+            return "Unknown"
+        
+        team_info = teams_list[0]
+        name = team_info.get('name', "Unknown")
+        TEAM_NAME_CACHE[team_id] = name
+        return name
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching team name for team_id {team_id}: {e}")
+        TEAM_NAME_CACHE[team_id] = "Unknown"
+        return "Unknown"
 
-def get_game_stats(game_id: int):
-    """
-    Retrieves all player statistics for a given game.
-    """
-    try:
-        result = supabase.table('nba_game_stats') \
-            .select('*') \
-            .eq('game_id', game_id) \
-            .execute()
-        return result.data
-    except Exception as e:
-        print(f"Error retrieving game stats for game {game_id}: {e}")
-        return None
+################################################################################
+#                           STAT EXTRACTION HELPER                              #
+################################################################################
 
-def get_player_stats(player_id: int):
-    """
-    Retrieves all statistics for a given player across games.
-    """
-    try:
-        result = supabase.table('nba_game_stats') \
-            .select('*') \
-            .eq('player_id', player_id) \
-            .order('game_date', desc=True) \
-            .execute()
-        return result.data
-    except Exception as e:
-        print(f"Error retrieving player stats for player {player_id}: {e}")
-        return None
+def get_stat_value(player_stats: dict, key: str, subkey: str = None, default=0):
+    if subkey:
+        val_top = player_stats.get(key, {}).get(subkey)
+        if val_top is not None:
+            return val_top
+        return player_stats.get('statistics', {}).get(key, {}).get(subkey, default)
+    else:
+        val_top = player_stats.get(key)
+        if val_top is not None:
+            return val_top
+        return player_stats.get('statistics', {}).get(key, default)
+
+################################################################################
+#                     UPSERT: HISTORICAL GAME STATS                             #
+################################################################################
+
+def upsert_historical_game_stats(game_id: int, player_stats: dict):
+    team_data = player_stats.get('team', {})
+    raw_team_id = team_data.get('id', 0)
+    team_id = raw_team_id if raw_team_id is not None else 0
+    team_name = get_team_name_from_api(team_id, league='12', season='2019-2020') if team_id else 'Unknown'
+    
+    # Fix the player's name
+    raw_name = player_stats['player']['name']
+    player_name_fixed = fix_player_name(raw_name)
+    
+    stats_data = {
+        'game_id': game_id,
+        'player_id': player_stats['player']['id'],
+        'player_name': player_name_fixed,
+        'team_id': team_id,
+        'team_name': team_name,
+        'minutes': get_stat_value(player_stats, 'minutes', default=None),
+        'points': get_stat_value(player_stats, 'points'),
+        'rebounds': get_stat_value(player_stats, 'rebounds', 'total'),
+        'assists': get_stat_value(player_stats, 'assists'),
+        'steals': get_stat_value(player_stats, 'steals'),
+        'blocks': get_stat_value(player_stats, 'blocks'),
+        'turnovers': get_stat_value(player_stats, 'turnovers'),
+        'fouls': get_stat_value(player_stats, 'fouls'),
+        'fg_made': get_stat_value(player_stats, 'field_goals', 'total'),
+        'fg_attempted': get_stat_value(player_stats, 'field_goals', 'attempts'),
+        'three_made': get_stat_value(player_stats, 'threepoint_goals', 'total'),
+        'three_attempted': get_stat_value(player_stats, 'threepoint_goals', 'attempts'),
+        'ft_made': get_stat_value(player_stats, 'freethrows_goals', 'total'),
+        'ft_attempted': get_stat_value(player_stats, 'freethrows_goals', 'attempts'),
+        'game_date': str(datetime.now().date()),
+        'updated_at': datetime.utcnow().isoformat()
+    }
+    
+    result = supabase.table('nba_historical_game_stats')\
+        .upsert(stats_data, on_conflict='game_id, player_id')\
+        .execute()
+    return result
+
+################################################################################
+#                     UPSERT: LIVE GAME STATS                                   #
+################################################################################
+
+def upsert_live_game_stats(game_id: int, player_stats: dict):
+    team_data = player_stats.get('team', {})
+    raw_team_id = team_data.get('id', 0)
+    team_id = raw_team_id if raw_team_id is not None else 0
+    team_name = get_team_name_from_api(team_id, league='12', season='2024-2025') if team_id else 'Unknown'
+    
+    # Fix the player's name
+    raw_name = player_stats['player']['name']
+    player_name_fixed = fix_player_name(raw_name)
+    
+    stats_data = {
+        'game_id': game_id,
+        'player_id': player_stats['player']['id'],
+        'player_name': player_name_fixed,
+        'team_id': team_id,
+        'team_name': team_name,
+        'minutes': get_stat_value(player_stats, 'minutes', default=None),
+        'points': get_stat_value(player_stats, 'points'),
+        'rebounds': get_stat_value(player_stats, 'rebounds', 'total'),
+        'assists': get_stat_value(player_stats, 'assists'),
+        'steals': get_stat_value(player_stats, 'steals'),
+        'blocks': get_stat_value(player_stats, 'blocks'),
+        'turnovers': get_stat_value(player_stats, 'turnovers'),
+        'fouls': get_stat_value(player_stats, 'fouls'),
+        'fg_made': get_stat_value(player_stats, 'field_goals', 'total'),
+        'fg_attempted': get_stat_value(player_stats, 'field_goals', 'attempts'),
+        'three_made': get_stat_value(player_stats, 'threepoint_goals', 'total'),
+        'three_attempted': get_stat_value(player_stats, 'threepoint_goals', 'attempts'),
+        'ft_made': get_stat_value(player_stats, 'freethrows_goals', 'total'),
+        'ft_attempted': get_stat_value(player_stats, 'freethrows_goals', 'attempts'),
+        'game_date': str(datetime.now().date()),
+        'updated_at': datetime.utcnow().isoformat()
+    }
+    
+    result = supabase.table('nba_live_game_stats')\
+        .upsert(stats_data, on_conflict='game_id, player_id')\
+        .execute()
+    return result
+
+################################################################################
+#                     UPSERT: 2024-25 FINAL GAME STATS                          #
+################################################################################
+
+def upsert_2024_25_game_stats(game_id: int, player_stats: dict):
+    team_data = player_stats.get('team', {})
+    raw_team_id = team_data.get('id', 0)
+    team_id = raw_team_id if raw_team_id is not None else 0
+    
+    # If your final data is truly for the 2024-2025 season, keep it that way.
+    # If it's 2025-02-12 data that you see in the logs, then this is correct.
+    team_name = get_team_name_from_api(team_id, league='12', season='2024-2025') if team_id else 'Unknown'
+    
+    # Fix the player's name
+    raw_name = player_stats['player']['name']
+    player_name_fixed = fix_player_name(raw_name)
+    
+    stats_data = {
+        'game_id': game_id,
+        'player_id': player_stats['player']['id'],
+        'player_name': player_name_fixed,
+        'team_id': team_id,
+        'team_name': team_name,
+        'minutes': get_stat_value(player_stats, 'minutes', default=None),
+        'points': get_stat_value(player_stats, 'points'),
+        'rebounds': get_stat_value(player_stats, 'rebounds', 'total'),
+        'assists': get_stat_value(player_stats, 'assists'),
+        'steals': get_stat_value(player_stats, 'steals'),
+        'blocks': get_stat_value(player_stats, 'blocks'),
+        'turnovers': get_stat_value(player_stats, 'turnovers'),
+        'fouls': get_stat_value(player_stats, 'fouls'),
+        'fg_made': get_stat_value(player_stats, 'field_goals', 'total'),
+        'fg_attempted': get_stat_value(player_stats, 'field_goals', 'attempts'),
+        'three_made': get_stat_value(player_stats, 'threepoint_goals', 'total'),
+        'three_attempted': get_stat_value(player_stats, 'threepoint_goals', 'attempts'),
+        'ft_made': get_stat_value(player_stats, 'freethrows_goals', 'total'),
+        'ft_attempted': get_stat_value(player_stats, 'freethrows_goals', 'attempts'),
+        'game_date': str(datetime.now().date()),
+        'updated_at': datetime.utcnow().isoformat()
+    }
+    
+    result = supabase.table('nba_2024_25_game_stats')\
+        .upsert(stats_data, on_conflict='game_id, player_id')\
+        .execute()
+    return result
