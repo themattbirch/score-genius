@@ -1,22 +1,44 @@
+# backend/src/scripts/nba_games_preview.py
+
 import json
 import requests
-from pprint import pprint
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from config import API_SPORTS_KEY, ODDS_API_KEY
 
-# API Configuration using your API-Sports key for NBA
-API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
-BASE_URL = 'https://v1.basketball.api-sports.io'
-HEADERS = {
-    'x-rapidapi-key': API_KEY,
+# API-Sports configuration (for game previews)
+API_KEY_SPORTS = API_SPORTS_KEY
+BASE_URL_SPORTS = 'https://v1.basketball.api-sports.io'
+HEADERS_SPORTS = {
+    'x-rapidapi-key': API_KEY_SPORTS,
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games_by_date(league, season, date, timezone='America/New_York'):
+# The Odds API configuration
+BASE_URL_ODDS = 'https://api.the-odds-api.com/v4/sports/basketball_nba/odds'
+ODDS_PARAMS = {
+    'apiKey': ODDS_API_KEY,
+    'regions': 'us',
+    'markets': 'h2h,spreads,totals',
+    'oddsFormat': 'american',
+    'bookmakers': 'draftkings'
+}
+
+def normalize_team_name(name: str) -> str:
+    """Normalizes a team name by stripping extra whitespace and converting to lower-case."""
+    return ' '.join(name.split()).lower()
+
+def title_case_team_name(name: str) -> str:
+    """Converts a normalized team name back to title case.
+    Example: "dallas mavericks" -> "Dallas Mavericks"
+    """
+    return ' '.join(word.capitalize() for word in name.split())
+
+def get_games_by_date(league: str, season: str, date: str, timezone: str = 'America/New_York') -> dict:
     """
     Fetches all game data from API-Basketball for the given date, league, season, and timezone.
     """
-    url = f"{BASE_URL}/games"
+    url = f"{BASE_URL_SPORTS}/games"
     params = {
         'league': league,
         'season': season,
@@ -24,116 +46,113 @@ def get_games_by_date(league, season, date, timezone='America/New_York'):
         'timezone': timezone
     }
     try:
-        response = requests.get(url, headers=HEADERS, params=params)
+        response = requests.get(url, headers=HEADERS_SPORTS, params=params)
         response.raise_for_status()
-        print(f"Fetched game data for {date} (Season {season}, Timezone: {timezone})")
-        print("Status Code:", response.status_code)
-        print("Request URL:", response.url)
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error fetching game data for {date}: {e}")
         return {}
-    
-def get_player_box_stats(game_id):
-    """
-    Fetches detailed player statistics for a specific game,
-    and globally replaces &apos; with a real apostrophe in the raw JSON text
-    before parsing into a Python dictionary.
-    """
-    url = f"{BASE_URL}/games/statistics/players"
-    params = {'ids': game_id}
-    try:
-        response = requests.get(url, headers=HEADERS, params=params)
-        response.raise_for_status()
-        raw_text = response.text.replace("&amp;apos;", "'").replace("&apos;", "'")
-        data = json.loads(raw_text)
-        return data
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching player statistics for game ID {game_id}: {e}")
-        return {}
 
-def filter_pregame_games(games_data):
+def get_betting_odds() -> list:
     """
-    Filters the games_data to include games that have not yet started.
-    We check if the status 'short' equals "NS" or if the 'long' status contains "Not Started".
-    Debug prints are added to see what status each game has.
+    Fetches betting odds for NBA events from The Odds API.
+    Returns a list of odds event objects.
     """
-    pregame_games = []
-    for game in games_data.get('response', []):
-        status = game.get('status', {})
-        status_short = status.get('short')
-        status_long = status.get('long')
-        # Debug: print the status for each game
-        print(f"Game ID {game.get('id')} status: short='{status_short}', long='{status_long}'")
-        if status_short == "NS" or (status_long and "Not Started" in status_long):
-            pregame_games.append(game)
-    return pregame_games
-
-def get_standings(league, season):
-    """
-    Optional: Fetch league standings to extract team records.
-    """
-    url = f"{BASE_URL}/standings"
-    params = {'league': league, 'season': season}
     try:
-        response = requests.get(url, headers=HEADERS, params=params)
+        response = requests.get(BASE_URL_ODDS, params=ODDS_PARAMS)
         response.raise_for_status()
-        print("Fetched standings data.")
         return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching standings: {e}")
-        return {}
+        print(f"Error fetching betting odds: {e}")
+        return []
 
-def print_game_preview(game, odds_data=None, standings_data=None):
+def match_odds_for_game(game: dict, odds_events: list) -> dict:
     """
-    Prints key pregame information including game time, venue, teams, and betting odds.
-    Optionally prints team records from standings data.
+    Attempts to match an odds event from The Odds API to a game from API-Basketball.
+    Matching is done by normalizing the team names and verifying the event date matches.
+    Returns the matching odds event, or None if not found.
     """
-    game_id = game.get('id')
     teams = game.get('teams', {})
-    game_datetime = game.get('date')
-    venue = game.get('venue')
+    game_home = normalize_team_name(teams.get('home', {}).get('name', ''))
+    game_away = normalize_team_name(teams.get('away', {}).get('name', ''))
     
-    print("=" * 60)
-    print(f"Game ID: {game_id}")
-    print(f"  Scheduled Date/Time: {game_datetime}")
-    print(f"  Venue: {venue}")
-    print(f"  Away: {teams.get('away', {}).get('name')}")
-    print(f"  Home: {teams.get('home', {}).get('name')}")
-    
-    if standings_data:
-        print("Team Records:")
-        for entry in standings_data.get('response', []):
-            team = entry.get('team', {})
-            if team.get('id') in [teams.get('away', {}).get('id'), teams.get('home', {}).get('id')]:
-                print(f"  {team.get('name')}: {entry.get('record', 'Record not available')}")
+    game_date_str = game.get('date', '')
+    try:
+        game_datetime = datetime.fromisoformat(game_date_str)
+        game_local_date = game_datetime.astimezone(ZoneInfo("America/New_York")).date()
+    except Exception:
+        game_local_date = None
 
-def run_pregame_preview():
-    league = '12'           # NBA
-    season = '2024-2025'     # Season parameter
-    # Compute today's date using Eastern Time
+    for event in odds_events:
+        odds_home = normalize_team_name(event.get('home_team', ''))
+        odds_away = normalize_team_name(event.get('away_team', ''))
+        if game_home == odds_home and game_away == odds_away:
+            commence_time_str = event.get('commence_time', '')
+            try:
+                event_datetime = datetime.fromisoformat(commence_time_str.replace("Z", "+00:00"))
+                event_local_date = event_datetime.astimezone(ZoneInfo("America/New_York")).date()
+                if game_local_date == event_local_date:
+                    return event
+            except Exception:
+                continue
+    return None
+
+def extract_simple_odds(odds_event: dict) -> list:
+    """
+    Extracts a simplified list of odds from an odds event.
+    For each outcome, returns only "name", "price", and "point" (if available).
+    """
+    simple_odds = []
+    bookmakers = odds_event.get('bookmakers', [])
+    for bookmaker in bookmakers:
+        markets = bookmaker.get('markets', [])
+        for market in markets:
+            outcomes = market.get('outcomes', [])
+            for outcome in outcomes:
+                simple_odds.append({
+                    'name': outcome.get('name'),
+                    'price': outcome.get('price'),
+                    'point': outcome.get('point')
+                })
+    return simple_odds
+
+def build_game_preview() -> list:
+    """
+    Builds and returns a list of game preview dictionaries for today's date (Eastern Time).
+    Each preview includes game details from API-Basketball and, if available, simplified betting odds from The Odds API.
+    """
+    league = '12'
+    season = '2024-2025'
     eastern_now = datetime.now(ZoneInfo("America/New_York"))
     todays_date_str = eastern_now.strftime('%Y-%m-%d')
     
-    # Pass Eastern timezone to the API call
     games_data = get_games_by_date(league, season, todays_date_str, timezone='America/New_York')
-    pregame_games = filter_pregame_games(games_data)
-    
+    pregame_games = [
+        game for game in games_data.get('response', [])
+        if game.get('status', {}).get('short') == "NS" or 
+           ("Not Started" in (game.get('status', {}).get('long') or ""))
+    ]
     if not pregame_games:
         print("No pregame games found for the specified date.")
-        return
+        return []
     
-    # Optionally, fetch standings data if needed.
-    standings_data = None
-    # standings_data = get_standings(league, season)
-    
-    print(f"\nFound {len(pregame_games)} pregame game(s):\n")
+    odds_events = get_betting_odds()
+    previews = []
     for game in pregame_games:
-        print_game_preview(game, standings_data=standings_data)
-
-def main():
-    print("Fetching NBA pregame preview data...")
-    run_pregame_preview()
+        matched_event = match_odds_for_game(game, odds_events)
+        odds = extract_simple_odds(matched_event) if matched_event else []
+        preview = {
+            "game_id": game.get("id"),
+            "scheduled_time": game.get("date"),
+            "venue": game.get("venue"),
+            "away_team": game.get("teams", {}).get("away", {}).get("name"),
+            "home_team": game.get("teams", {}).get("home", {}).get("name"),
+            "betting_odds": odds
+        }
+        previews.append(preview)
+    return previews
 
 if __name__ == "__main__":
-    main()
+    preview_data = build_game_preview()
+    from pprint import pprint
+    pprint(preview_data)

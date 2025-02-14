@@ -1,3 +1,5 @@
+# backend/src/scripts/nba_stats_live.py
+
 import json
 import requests
 from pprint import pprint
@@ -7,17 +9,18 @@ import sys, os
 
 # Add the backend root to the Python path so we can import from caching
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
-from caching.supabase_stats import upsert_live_game_stats 
 
-# API Configuration using your API-Sports key
-API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
+from caching.supabase_stats import upsert_live_game_stats
+from config import API_SPORTS_KEY
+
+API_KEY = API_SPORTS_KEY
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
     'x-rapidapi-key': API_KEY,
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games_by_date(league, season, date, timezone='America/Los_Angeles'):
+def get_games_by_date(league: str, season: str, date: str, timezone: str = 'America/Los_Angeles') -> dict:
     """
     Fetch live game data from API-Basketball for the given date, league, season, and timezone.
     """
@@ -39,7 +42,7 @@ def get_games_by_date(league, season, date, timezone='America/Los_Angeles'):
         print(f"Error fetching game data for {date}: {e}")
         return {}
 
-def filter_live_games(games_data):
+def filter_live_games(games_data: dict) -> list:
     """
     Filters the games_data to only include live games.
     A live game is determined by a status 'short' value not equal to "NS" (Not Started) or "FT" (Finished).
@@ -52,7 +55,7 @@ def filter_live_games(games_data):
             live_games.append(game)
     return live_games
 
-def get_player_box_stats(game_id):
+def get_player_box_stats(game_id: int) -> dict:
     """
     Fetches detailed player statistics for a specific game.
     It replaces encoded apostrophes in the raw JSON text before parsing.
@@ -69,7 +72,7 @@ def get_player_box_stats(game_id):
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
 
-def print_game_info(game):
+def print_game_info(game: dict) -> None:
     """
     Prints key game information.
     """
@@ -89,8 +92,8 @@ def run_live_games():
     Fetches live games for today (based on Pacific Time) and upserts their player statistics.
     """
     today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
-    league = '12'            # NBA
-    season = '2024-2025'      # Adjust if needed
+    league = '12'
+    season = '2024-2025'
     timezone = 'America/Los_Angeles'
     
     games_data = get_games_by_date(league, season, today_pst, timezone)
@@ -105,7 +108,6 @@ def run_live_games():
         print_game_info(game)
         game_id = game.get('id')
         player_stats = get_player_box_stats(game_id)
-        print("Player Statistics:")
         pprint(player_stats)
         
         if 'response' in player_stats:

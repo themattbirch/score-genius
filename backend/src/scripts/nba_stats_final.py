@@ -1,23 +1,26 @@
+# backend/src/scripts/nba_stats_final.py
+
 import requests
 import json
 from pprint import pprint
 import sys, os
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from config import API_SPORTS_KEY
 
 # Add the backend root to the Python path so we can import from caching
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
 from caching.supabase_stats import upsert_2024_25_game_stats
 
-API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
+API_KEY = API_SPORTS_KEY
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
     'x-rapidapi-key': API_KEY,
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games_by_date(league, season, date, timezone=None):
+def get_games_by_date(league: str, season: str, date: str, timezone: str = None) -> dict:
     """
     Fetch final game data by date.
     For final games, we typically omit the timezone parameter.
@@ -42,7 +45,7 @@ def get_games_by_date(league, season, date, timezone=None):
         print(f"Error fetching game data for {date}: {e}")
         return {}
 
-def get_team_stats(game_id):
+def get_team_stats(game_id: int) -> dict:
     """
     (Optional) Fetch team-level statistics.
     """
@@ -59,7 +62,7 @@ def get_team_stats(game_id):
         print(f"Error fetching team statistics for game ID {game_id}: {e}")
         return {}
 
-def get_player_box_stats(game_id):
+def get_player_box_stats(game_id: int) -> dict:
     """
     Fetch detailed player statistics for a specific game.
     Replaces encoded apostrophes before parsing JSON.
@@ -76,9 +79,9 @@ def get_player_box_stats(game_id):
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
 
-def post_process_stats(stats_data):
+def post_process_stats(stats_data: dict) -> dict:
     """
-    Optional: Print out a stat for debugging.
+    Optional: Print out player field-goal stats for debugging.
     """
     for stat in stats_data.get('response', []):
         fg = stat.get('field_goals', {})
@@ -94,11 +97,7 @@ def run_all_games():
     pacific_now = datetime.now(ZoneInfo("America/Los_Angeles"))
     todays_date_str = pacific_now.strftime('%Y-%m-%d')
     
-    # If you find you're one day off, you can do:
-    #   todays_date_str = (pacific_now - timedelta(days=1)).strftime('%Y-%m-%d')
-    # Or adjust by hours if needed.
-
-    # For final games, we omit the timezone parameter.
+    # For final games, we typically omit the timezone parameter.
     games_data = get_games_by_date(league, season, todays_date_str)
     if not games_data.get('response'):
         print("No game data found for the specified date.")
@@ -118,12 +117,10 @@ def run_all_games():
         
         # (Optional) Print team stats.
         team_stats = get_team_stats(game_id)
-        print("Team Statistics:")
         pprint(team_stats)
 
         # Fetch player statistics.
         player_stats = get_player_box_stats(game_id)
-        print("Player Statistics:")
         post_process_stats(player_stats)
 
         # Upsert each player's stats into the final table.

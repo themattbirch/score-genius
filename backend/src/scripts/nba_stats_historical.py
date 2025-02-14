@@ -1,23 +1,26 @@
+# backend/src/scripts/nba_stats_historical.py
+
 import json
 import requests
 from pprint import pprint
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import sys, os
 
 # Add the backend root to the Python path so we can import from caching
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
-# Import your upsert function for historical data.
 from caching.supabase_stats import upsert_historical_game_stats
+from config import API_SPORTS_KEY
 
-API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
+API_KEY = API_SPORTS_KEY
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
     'x-rapidapi-key': API_KEY,
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
-def get_games_by_date(league, season, date, timezone=None):
+def get_games_by_date(league: str, season: str, date: str, timezone: str = None) -> dict:
     """
     Fetch historical game data by date.
     Omits timezone by default for historical data.
@@ -41,7 +44,7 @@ def get_games_by_date(league, season, date, timezone=None):
         print(f"Error fetching game data for {date}: {e}")
         return {}
 
-def get_player_box_stats(game_id):
+def get_player_box_stats(game_id: int) -> dict:
     """
     Fetches player statistics for a given game.
     """
@@ -62,7 +65,6 @@ def run_historical_games():
     season = '2019-2020'
     date = '2019-11-23'  # Example historical date
 
-    # Do not pass a timezone here.
     games_data = get_games_by_date(league, season, date)
     if not games_data.get('response'):
         print("No game data found for the specified date.")
@@ -71,7 +73,6 @@ def run_historical_games():
     for game in games_data['response']:
         game_id = game.get('id')
         print(f"Processing game ID: {game_id}")
-
         player_stats_data = get_player_box_stats(game_id)
         if 'response' in player_stats_data:
             for stat in player_stats_data['response']:
