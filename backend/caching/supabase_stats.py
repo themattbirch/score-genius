@@ -144,7 +144,7 @@ def upsert_live_game_stats(game_id: int, player_stats: dict):
     team_id = raw_team_id if raw_team_id is not None else 0
     team_name = get_team_name_from_api(team_id, league='12', season='2024-2025') if team_id else 'Unknown'
     
-    # Fix the player's name
+    # Fix the player's name using our helper
     raw_name = player_stats['player']['name']
     player_name_fixed = fix_player_name(raw_name)
     
@@ -172,10 +172,12 @@ def upsert_live_game_stats(game_id: int, player_stats: dict):
         'updated_at': datetime.utcnow().isoformat()
     }
     
+    # Removed .select() since it's not supported in your current Supabase Python library version.
     result = supabase.table('nba_live_game_stats')\
         .upsert(stats_data, on_conflict='game_id, player_id')\
         .execute()
     return result
+
 
 ################################################################################
 #                     UPSERT: 2024-25 FINAL GAME STATS                          #
