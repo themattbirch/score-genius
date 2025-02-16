@@ -2,14 +2,14 @@
 
 import json
 import requests
-from pprint import pprint
+import sys, os
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import sys, os
+from pprint import pprint
+import time
 
 # Add the backend root to the Python path so we can import from caching
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
-
 from caching.supabase_stats import upsert_live_game_stats
 from config import API_SPORTS_KEY
 
@@ -50,8 +50,7 @@ def filter_live_games(games_data: dict) -> list:
     live_games = []
     for game in games_data.get('response', []):
         status = game.get('status', {})
-        status_short = status.get('short')
-        if status_short not in ["NS", "FT"]:
+        if status.get('short') not in ["NS", "FT"]:
             live_games.append(game)
     return live_games
 
@@ -72,7 +71,7 @@ def get_player_box_stats(game_id: int) -> dict:
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
 
-def print_game_info(game: dict) -> None:
+def print_game_info(game: dict):
     """
     Prints key game information.
     """
@@ -92,8 +91,8 @@ def run_live_games():
     Fetches live games for today (based on Pacific Time) and upserts their player statistics.
     """
     today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
-    league = '12'
-    season = '2024-2025'
+    league = '12'            # NBA
+    season = '2024-2025'      # Adjust if needed
     timezone = 'America/Los_Angeles'
     
     games_data = get_games_by_date(league, season, today_pst, timezone)
@@ -108,6 +107,7 @@ def run_live_games():
         print_game_info(game)
         game_id = game.get('id')
         player_stats = get_player_box_stats(game_id)
+        print("Player Statistics:")
         pprint(player_stats)
         
         if 'response' in player_stats:

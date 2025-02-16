@@ -24,9 +24,9 @@ TEAM_DEBUG_MODE = True
 
 def fix_player_name(name: str) -> str:
     """
-    If the name has two parts, and the first part is NOT just an initial,
-    flip them. Example: 'Noah Vonleh' -> 'Vonleh Noah'
-    If the first part ends with '.', it's likely an initial, so do nothing.
+    If the name has two parts and the first part is not just an initial,
+    flip them. E.g. 'Noah Vonleh' -> 'Vonleh Noah'.
+    If the first part ends with '.', leave it unchanged.
     """
     parts = name.split()
     if len(parts) == 2:
@@ -42,7 +42,7 @@ def fix_player_name(name: str) -> str:
 
 def get_team_name_from_api(team_id: int, league='12', season='2019-2020') -> str:
     """
-    Retrieves the team name from the API. Caches the result in TEAM_NAME_CACHE.
+    Retrieves the team name from the API and caches the result.
     """
     if team_id in TEAM_NAME_CACHE:
         return TEAM_NAME_CACHE[team_id]
@@ -80,10 +80,9 @@ def get_team_name_from_api(team_id: int, league='12', season='2019-2020') -> str
 
 def get_stat_value(player_stats: dict, key: str, subkey: str = None, default=0):
     """
-    Helper to safely retrieve nested data from the 'player_stats' dictionary.
-    If 'subkey' is provided, it tries to look in a nested dict, e.g. player_stats[key][subkey].
-    Otherwise, it tries player_stats[key].
-    Returns 'default' if the requested field is missing.
+    Safely retrieves nested data from the 'player_stats' dictionary.
+    If subkey is provided, attempts to access player_stats[key][subkey],
+    otherwise, returns player_stats[key]. Returns default if not found.
     """
     if subkey:
         val_top = player_stats.get(key, {}).get(subkey)
@@ -100,7 +99,17 @@ def get_stat_value(player_stats: dict, key: str, subkey: str = None, default=0):
 #                     UPSERT: HISTORICAL GAME STATS                             #
 ################################################################################
 
-def upsert_historical_game_stats(game_id: int, player_stats: dict):
+def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: str) -> dict:
+    """
+    Upserts historical game statistics into the Supabase table.
+    
+    Parameters:
+      - game_id: The ID of the game.
+      - player_stats: The statistics dictionary for a player.
+      - game_date: The actual game date (as an ISO‑formatted string) from the API.
+    
+    Returns the result of the upsert operation.
+    """
     team_data = player_stats.get('team', {})
     raw_team_id = team_data.get('id', 0)
     team_id = raw_team_id if raw_team_id is not None else 0
@@ -110,9 +119,9 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict):
     raw_name = player_stats['player']['name']
     player_name_fixed = fix_player_name(raw_name)
 
-    # Convert the 'minutes' value from 'MM:SS' -> float
+    # Convert the 'minutes' value from "MM:SS" to a float (e.g., "27:21" -> 27.35)
     raw_minutes = get_stat_value(player_stats, 'minutes', default=None)
-    numeric_minutes = parse_minutes(raw_minutes)  # e.g. "27:21" -> 27.35
+    numeric_minutes = parse_minutes(raw_minutes)  # parse_minutes is defined below
 
     stats_data = {
         'game_id': game_id,
@@ -120,7 +129,7 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict):
         'player_name': player_name_fixed,
         'team_id': team_id,
         'team_name': team_name,
-        'minutes': numeric_minutes,  # now a float
+        'minutes': numeric_minutes,
         'points': get_stat_value(player_stats, 'points'),
         'rebounds': get_stat_value(player_stats, 'rebounds', 'total'),
         'assists': get_stat_value(player_stats, 'assists'),
@@ -134,7 +143,7 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict):
         'three_attempted': get_stat_value(player_stats, 'threepoint_goals', 'attempts'),
         'ft_made': get_stat_value(player_stats, 'freethrows_goals', 'total'),
         'ft_attempted': get_stat_value(player_stats, 'freethrows_goals', 'attempts'),
-        'game_date': str(datetime.now().date()),
+        'game_date': game_date,  # Use the actual game date passed in
         'updated_at': datetime.utcnow().isoformat()
     }
     
@@ -149,7 +158,7 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict):
 #                     UPSERT: LIVE GAME STATS                                   #
 ################################################################################
 
-def upsert_live_game_stats(game_id: int, player_stats: dict):
+def upsert_live_game_stats(game_id: int, player_stats: dict) -> dict:
     team_data = player_stats.get('team', {})
     raw_team_id = team_data.get('id', 0)
     team_id = raw_team_id if raw_team_id is not None else 0
@@ -159,7 +168,6 @@ def upsert_live_game_stats(game_id: int, player_stats: dict):
     raw_name = player_stats['player']['name']
     player_name_fixed = fix_player_name(raw_name)
 
-    # Convert the 'minutes' value from 'MM:SS' -> float
     raw_minutes = get_stat_value(player_stats, 'minutes', default=None)
     numeric_minutes = parse_minutes(raw_minutes)
 
@@ -198,7 +206,7 @@ def upsert_live_game_stats(game_id: int, player_stats: dict):
 #                     UPSERT: 2024-25 FINAL GAME STATS                          #
 ################################################################################
 
-def upsert_2024_25_game_stats(game_id: int, player_stats: dict):
+def upsert_2024_25_game_stats(game_id: int, player_stats: dict) -> dict:
     team_data = player_stats.get('team', {})
     raw_team_id = team_data.get('id', 0)
     team_id = raw_team_id if raw_team_id is not None else 0
@@ -208,7 +216,6 @@ def upsert_2024_25_game_stats(game_id: int, player_stats: dict):
     raw_name = player_stats['player']['name']
     player_name_fixed = fix_player_name(raw_name)
 
-    # Convert the 'minutes' value from 'MM:SS' -> float
     raw_minutes = get_stat_value(player_stats, 'minutes', default=None)
     numeric_minutes = parse_minutes(raw_minutes)
 
@@ -250,14 +257,13 @@ def upsert_2024_25_game_stats(game_id: int, player_stats: dict):
 def parse_minutes(time_str: str) -> float:
     """
     Convert a 'MM:SS' string to a float representing total minutes.
-    E.g. '27:21' -> 27.35. If invalid or empty, returns 0.0
+    E.g. "27:21" -> 27.35. If invalid or empty, returns 0.0.
     """
     if not time_str or ':' not in time_str:
         return 0.0
     try:
         minutes_part, seconds_part = time_str.split(':')
         total_minutes = float(minutes_part) + float(seconds_part) / 60.0
-        # Round to 2 decimal places, e.g. 27.35
         return round(total_minutes, 2)
     except ValueError:
         return 0.0

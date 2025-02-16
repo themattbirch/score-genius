@@ -2,10 +2,11 @@
 
 import json
 import requests
-from pprint import pprint
-from datetime import datetime
-from zoneinfo import ZoneInfo
 import sys, os
+import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from pprint import pprint
 
 # Add the backend root to the Python path so we can import from caching
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
@@ -60,26 +61,54 @@ def get_player_box_stats(game_id: int) -> dict:
         print(f"Error fetching player statistics for game ID {game_id}: {e}")
         return {}
 
-def run_historical_games():
-    league = '12'
-    season = '2019-2020'
-    date = '2019-11-23'  # Example historical date
+def get_season_for_date(date_obj: datetime) -> str:
+    """
+    Given a date, returns the NBA season string.
+    For dates in October–December, season = "{year}-{year+1}".
+    For dates in January–September, season = "{year-1}-{year}".
+    """
+    if date_obj.month >= 10:
+        return f"{date_obj.year}-{date_obj.year+1}"
+    else:
+        return f"{date_obj.year-1}-{date_obj.year}"
 
-    games_data = get_games_by_date(league, season, date)
+def process_games_for_date(current_date: datetime):
+    league = '12'
+    season = get_season_for_date(current_date)
+    date_str = current_date.strftime('%Y-%m-%d')
+    print(f"\n=== Processing data for {date_str} (Season {season}) ===")
+    games_data = get_games_by_date(league, season, date_str)
     if not games_data.get('response'):
         print("No game data found for the specified date.")
         return
 
     for game in games_data['response']:
         game_id = game.get('id')
-        print(f"Processing game ID: {game_id}")
+        # Use the game object's "date" field if available; otherwise use our current date
+        game_date = game.get('date', date_str)
+        print(f"Processing game ID: {game_id} for {date_str} (Season {season})")
         player_stats_data = get_player_box_stats(game_id)
         if 'response' in player_stats_data:
             for stat in player_stats_data['response']:
-                result = upsert_historical_game_stats(game_id, stat)
+                result = upsert_historical_game_stats(game_id, stat, game_date=game_date)
                 print(f"Upsert result for {stat['player']['name']}: {result}")
         else:
             print(f"No player stats found for game ID: {game_id}")
+
+def run_historical_games():
+    # Define your start and end dates (modify these as needed)
+    start_date_str = "2017-11-22"  # Start date (YYYY-MM-DD)
+    end_date_str = "2025-02-13"    # End date (YYYY-MM-DD)
+
+    current_date = datetime.fromisoformat(start_date_str)
+    end_date = datetime.fromisoformat(end_date_str)
+
+    while current_date <= end_date:
+        process_games_for_date(current_date)
+        # Wait 5 minutes (300 seconds) before processing the next day
+        print("Waiting 5 minutes before the next call...\n")
+        time.sleep(300)
+        current_date += timedelta(days=1)
 
 def main():
     print("Fetching historical NBA game data and upserting stats to Supabase...")
