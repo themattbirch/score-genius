@@ -97,7 +97,7 @@ def process_games_for_date(current_date: datetime):
 
 def run_historical_games():
     # Define your start and end dates (modify these as needed)
-    start_date_str = "2019-02-07"  # Start date (YYYY-MM-DD)
+    start_date_str = "2019-05-09"  # Start date (YYYY-MM-DD)
     end_date_str = "2025-02-13"    # End date (YYYY-MM-DD)
 
     current_date = datetime.fromisoformat(start_date_str)

@@ -4,6 +4,14 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Virtual Environments
 .env
 .venv
 env/
@@ -11,13 +19,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-*.log
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.hypothesis/
+venv_pytorch/
 
 # Node/React
 node_modules/
@@ -46,25 +48,56 @@ yarn-error.log*
 /build
 /frontend/build
 /frontend/dist
-/backend/build
 
 # Cache
 .cache/
 .parcel-cache/
 .npm
 .eslintcache
+cached_*
+.transformers/
 
 # TypeScript
 *.tsbuildinfo
 
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# ML and Data Files
+*.pth
+*.pt
+*.pkl
+.pytorch/
+torch/
+*.bin
+*.h5
+*.hdf5
+*.npy
+*.npz
+
+# Backend specific data directories (not source code)
+backend/ml/models/*  # Only ignore model files, not Python files
+backend/caching/data/*  # Only ignore data files, not Python files
+backend/analytics/outputs/*  # Only ignore output files, not Python files
+
+# Keep source code files
+!backend/ml/*.py
+!backend/caching/*.py
+!backend/analytics/*.py
+!backend/routers/*.py
+!backend/src/scripts/*.py
+!backend/utils/*.py
+!backend/models/*.py
+!backend/*.py
+
+# Project specific
+/notebook/
+.ipynb_checkpoints/
+
 # Misc
-.DS_Store
 Thumbs.db
 *.pem
 *.cert
 *.key
-
-# Project specific
-backend/ml/models/  # Large ML model files
-backend/caching/data/  # Cache data
-backend/analytics/outputs/  # Analysis outputs
