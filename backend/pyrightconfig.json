@@ -1,5 +1,0 @@
-// backend/pyrightconfig.json
-{
-  "reportMissingImports": false,
-  "reportMissingModuleSource": false
-}
