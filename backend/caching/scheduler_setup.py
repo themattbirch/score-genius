@@ -1,6 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from src.scripts.data_fetcher import fetch_live_game_data
-from supabase_cache import cache_game_data
+from caching.supabase_cache import cache_game_data  # Fixed import path
 
 def update_cache():
     # Example: fetch live game data for a specific game or all games for a day

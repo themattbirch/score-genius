@@ -1,5 +1,3 @@
-# backend/src/scripts/nba_stats_historical.py
-
 import json
 import requests
 import sys, os
@@ -8,7 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pprint import pprint
 
-# Add the backend root to the Python path so we can import from caching
+# Add the backend root to the Python path so we can import from caching and config
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
 from caching.supabase_stats import upsert_historical_game_stats
@@ -23,15 +21,10 @@ HEADERS = {
 
 def get_games_by_date(league: str, season: str, date: str, timezone: str = None) -> dict:
     """
-    Fetch historical game data by date.
-    Omits timezone by default for historical data.
+    Fetch historical game data for a given date.
     """
     url = f"{BASE_URL}/games"
-    params = {
-        'league': league,
-        'season': season,
-        'date': date
-    }
+    params = {'league': league, 'season': season, 'date': date}
     if timezone:
         params['timezone'] = timezone
     try:
@@ -47,7 +40,7 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = None)
 
 def get_player_box_stats(game_id: int) -> dict:
     """
-    Fetches player statistics for a given game.
+    Fetch player box statistics for a specific game.
     """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
@@ -63,9 +56,9 @@ def get_player_box_stats(game_id: int) -> dict:
 
 def get_season_for_date(date_obj: datetime) -> str:
     """
-    Given a date, returns the NBA season string.
-    For dates in October–December, season = "{year}-{year+1}".
-    For dates in January–September, season = "{year-1}-{year}".
+    Returns the NBA season string based on the date.
+    For months October–December, returns "YEAR-YEAR+1";
+    otherwise, returns "YEAR-1-YEAR".
     """
     if date_obj.month >= 10:
         return f"{date_obj.year}-{date_obj.year+1}"
@@ -77,6 +70,7 @@ def process_games_for_date(current_date: datetime):
     season = get_season_for_date(current_date)
     date_str = current_date.strftime('%Y-%m-%d')
     print(f"\n=== Processing data for {date_str} (Season {season}) ===")
+    
     games_data = get_games_by_date(league, season, date_str)
     if not games_data.get('response'):
         print("No game data found for the specified date.")
@@ -90,24 +84,26 @@ def process_games_for_date(current_date: datetime):
         player_stats_data = get_player_box_stats(game_id)
         if 'response' in player_stats_data:
             for stat in player_stats_data['response']:
-                result = upsert_historical_game_stats(game_id, stat, game_date=game_date)
-                print(f"Upsert result for {stat['player']['name']}: {result}")
+                try:
+                    result = upsert_historical_game_stats(game_id, stat, game_date=game_date)
+                    print(f"Upsert result for {stat['player']['name']}: {result}")
+                except Exception as e:
+                    print(f"Error during upsert for game {game_id}, player {stat['player']['name']}: {e}")
         else:
             print(f"No player stats found for game ID: {game_id}")
 
 def run_historical_games():
     # Define your start and end dates (modify these as needed)
-    start_date_str = "2019-05-09"  # Start date (YYYY-MM-DD)
-    end_date_str = "2025-02-13"    # End date (YYYY-MM-DD)
-
+    start_date_str = "2020-01-19"  # e.g., start date (YYYY-MM-DD)
+    end_date_str = "2025-02-13"    # e.g., end date (YYYY-MM-DD)
     current_date = datetime.fromisoformat(start_date_str)
     end_date = datetime.fromisoformat(end_date_str)
 
     while current_date <= end_date:
         process_games_for_date(current_date)
-        # Wait 5 minutes (300 seconds) before processing the next day
-        print("Waiting 5 minutes before the next call...\n")
-        time.sleep(300)
+        # Wait 60 seconds before processing the next day to help avoid rate limiting
+        print("Waiting 60 seconds before the next call...\n")
+        time.sleep(60)
         current_date += timedelta(days=1)
 
 def main():

@@ -1,4 +1,4 @@
-from supabase_client import supabase
+from caching.supabase_client import supabase
 from datetime import datetime
 
 def cache_game_data(game_id: int, data: dict):

@@ -1,7 +1,9 @@
+# backend/caching/supabase_stats.py
+
 import requests
 import json
 from datetime import datetime
-from .supabase_client import supabase
+from caching.supabase_client import supabase  # Changed to an absolute import
 from config import API_SPORTS_KEY
 
 ################################################################################
@@ -25,8 +27,8 @@ TEAM_DEBUG_MODE = True
 def fix_player_name(name: str) -> str:
     """
     If the name has two parts and the first part is not just an initial,
-    flip them. E.g. 'Noah Vonleh' -> 'Vonleh Noah'.
-    If the first part ends with '.', leave it unchanged.
+    flip them. E.g., 'Noah Vonleh' -> 'Vonleh Noah'. If the first part ends with '.',
+    leave it unchanged.
     """
     parts = name.split()
     if len(parts) == 2:
@@ -96,12 +98,12 @@ def get_stat_value(player_stats: dict, key: str, subkey: str = None, default=0):
         return player_stats.get('statistics', {}).get(key, default)
 
 ################################################################################
-#                     UPSERT: HISTORICAL GAME STATS                             #
+#                     UPSERT: HISTORICAL PLAYER STATS                          #
 ################################################################################
 
 def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: str) -> dict:
     """
-    Upserts historical game statistics into the Supabase table.
+    Upserts historical player statistics into the Supabase table.
     
     Parameters:
       - game_id: The ID of the game.
@@ -109,6 +111,8 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
       - game_date: The actual game date (as an ISO‑formatted string) from the API.
     
     Returns the result of the upsert operation.
+    
+    **Note:** This now writes to the renamed table: nba_historical_player_stats.
     """
     team_data = player_stats.get('team', {})
     raw_team_id = team_data.get('id', 0)
@@ -148,7 +152,7 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
     }
     
     result = (
-        supabase.table('nba_historical_game_stats')
+        supabase.table('nba_historical_player_stats')  # Changed table name here
         .upsert(stats_data, on_conflict='game_id, player_id')
         .execute()
     )
@@ -257,7 +261,7 @@ def upsert_2024_25_game_stats(game_id: int, player_stats: dict) -> dict:
 def parse_minutes(time_str: str) -> float:
     """
     Convert a 'MM:SS' string to a float representing total minutes.
-    E.g. "27:21" -> 27.35. If invalid or empty, returns 0.0.
+    E.g., "27:21" -> 27.35. If invalid or empty, returns 0.0.
     """
     if not time_str or ':' not in time_str:
         return 0.0
