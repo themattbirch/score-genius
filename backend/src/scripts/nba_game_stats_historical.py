@@ -161,13 +161,12 @@ def process_day(date_obj):
                     pass
 
 def main():
-    # For testing, process from Jan 29, 2022 to Jan 30, 2022
-    start_date = datetime(2021, 5, 3)
-    end_date = datetime(2021, 7, 22)
+    start_date = datetime(2021, 10, 19)
+    end_date = datetime(2025, 2, 13)
     current = start_date
     while current <= end_date:
         process_day(current)
-        time.sleep(60)  # Wait 60 seconds between days
+        time.sleep(60)  
         current += timedelta(days=1)
 
 if __name__ == "__main__":
