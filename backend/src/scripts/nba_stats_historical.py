@@ -93,7 +93,7 @@ def process_games_for_date(current_date: datetime):
             print(f"No player stats found for game ID: {game_id}")
 
 def run_historical_games():
-    start_date_str = "2022-02-23"  # start date (YYYY-MM-DD)
+    start_date_str = "2022-02-25"  # start date (YYYY-MM-DD)
     end_date_str = "2025-02-13"    # end date (YYYY-MM-DD)
     current_date = datetime.fromisoformat(start_date_str)
     end_date = datetime.fromisoformat(end_date_str)
