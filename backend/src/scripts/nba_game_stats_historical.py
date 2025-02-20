@@ -60,7 +60,7 @@ def process_day(date_obj):
 
         # Quarter scores
         scores = g.get("scores", {})
-        print("DEBUG quarter scores =>", scores)
+        print("Quarter scores =>", scores)
         home_q1 = scores.get("home", {}).get("quarter_1", 0) or 0
         home_q2 = scores.get("home", {}).get("quarter_2", 0) or 0
         home_q3 = scores.get("home", {}).get("quarter_3", 0) or 0
@@ -75,7 +75,7 @@ def process_day(date_obj):
 
         # Team box stats
         stats_teams = get_team_box_stats(game_id)
-        print("DEBUG /games/statistics/teams =>", stats_teams)
+        print("Home/Away Scores: /games/statistics/teams =>", stats_teams)
         home_box = {}
         away_box = {}
 
@@ -143,7 +143,7 @@ def process_day(date_obj):
             "away_3pa": away_box.get("3pa", 0)
         }
 
-        print("DEBUG record =>", record)
+        print("Record =>", record)
         try:
             res = (
                 supabase
@@ -162,8 +162,8 @@ def process_day(date_obj):
 
 def main():
     # For testing, process from Jan 29, 2022 to Jan 30, 2022
-    start_date = datetime(2022, 1, 29)
-    end_date = datetime(2025, 2, 13)
+    start_date = datetime(2021, 5, 3)
+    end_date = datetime(2021, 7, 22)
     current = start_date
     while current <= end_date:
         process_day(current)
