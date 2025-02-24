@@ -1,3 +1,6 @@
+# backend/src/scripts/nba_game_stats_historical.py
+
+
 import requests
 import time
 from datetime import datetime, timedelta
@@ -161,8 +164,8 @@ def process_day(date_obj):
                     pass
 
 def main():
-    start_date = datetime(2020, 7, 30)
-    end_date = datetime(2020, 12, 31)
+    start_date = datetime(2025, 2, 19 )
+    end_date = datetime(2025, 2, 24)
     current = start_date
     while current <= end_date:
         process_day(current)

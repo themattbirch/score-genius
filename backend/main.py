@@ -1,3 +1,6 @@
+# backend/main.py
+
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from caching.redis_config import get_redis_client

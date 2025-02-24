@@ -1,3 +1,6 @@
+# backend/src/scripts/nba_stats_historical.py
+
+
 import json
 import requests
 import sys, os
@@ -93,8 +96,8 @@ def process_games_for_date(current_date: datetime):
             print(f"No player stats found for game ID: {game_id}")
 
 def run_historical_games():
-    start_date_str = "2025-02-21"  # start date (YYYY-MM-DD)
-    end_date_str = "2025-02-21"    # end date (YYYY-MM-DD)
+    start_date_str = "2025-02-19"  # start date (YYYY-MM-DD)
+    end_date_str = "2025-02-24"    # end date (YYYY-MM-DD)
     current_date = datetime.fromisoformat(start_date_str)
     end_date = datetime.fromisoformat(end_date_str)
 

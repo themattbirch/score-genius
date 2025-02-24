@@ -1,3 +1,6 @@
+# backend/models/user_model.py
+
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from datetime import datetime
 from .database_config import Base

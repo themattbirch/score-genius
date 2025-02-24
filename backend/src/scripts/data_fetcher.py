@@ -1,3 +1,6 @@
+# backend/src/scripts/data_fetcher.py
+
+
 import requests
 
 API_KEY = 'd0c358b61e883d071bbc183c8fd72228'
