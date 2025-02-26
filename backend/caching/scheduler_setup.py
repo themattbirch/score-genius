@@ -1,13 +1,17 @@
-
 # /backend/caching/scheduler_setup.py
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import pytz
+import config 
 
 from src.scripts.data_fetcher import fetch_live_game_data
 from caching.supabase_cache import cache_game_data  # Fixed import path
 from src.scripts.archive_live_data import archive_live_data  # Import the archival function
+
+
+# Import the precompute_features function
+from src.scripts.precompute_features import precompute_features
 
 last_archive_date = None  # Track the date of the last successful archival
 
@@ -62,6 +66,15 @@ if __name__ == "__main__":
         minute=0,
         timezone='America/Los_Angeles',
         id='archive_job_noon'
+    )
+
+    # Preprocessing Script
+    scheduler.add_job(
+        precompute_features, 
+        'cron', 
+        hour=1,  # Run at 1 AM daily
+        minute=30,
+        args=[config.SUPABASE_URL]  # Or use a dedicated DB connection string from config
     )
 
     scheduler.start()

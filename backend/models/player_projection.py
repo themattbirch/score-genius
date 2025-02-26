@@ -129,6 +129,56 @@ def train_model(time_series, player_id, method="xgboost"):
         raise ValueError("Unsupported method. Choose 'arima' or 'xgboost'.")
     return models
 
+def is_back_to_back(player_df, game_date):
+    """Determine if a game is the second of a back-to-back set."""
+    if player_df.empty or 'game_date' not in player_df:
+        return False
+        
+    # Convert to datetime if needed
+    dates = pd.to_datetime(player_df['game_date'])
+    game_date = pd.to_datetime(game_date)
+    
+    # Find previous game date
+    prev_games = dates[dates < game_date]
+    if prev_games.empty:
+        return False
+        
+    latest_prev = prev_games.max()
+    days_between = (game_date - latest_prev).days
+    
+    return days_between == 1
+
+def detect_streak(player_df, metric='points', games=5, threshold=1.2):
+    """
+    Detect if player is on a hot or cold streak compared to season average.
+    
+    Returns a tuple (streak_label, multiplier) where:
+      - streak_label: 'hot', 'cold', or 'neutral'
+      - multiplier: an adjustment factor (capped at 1.5 for hot, floored at 0.7 for cold)
+    """
+    if player_df.empty or metric not in player_df:
+        return 'neutral', 1.0
+    
+    # Get season average for the metric
+    season_avg = player_df[metric].mean()
+    
+    # Get recent average (last n games)
+    recent = player_df.tail(games)
+    if len(recent) < 3:  # Need at least 3 games to detect a streak
+        return 'neutral', 1.0
+        
+    recent_avg = recent[metric].mean()
+    
+    # Calculate ratio compared to season average
+    ratio = recent_avg / season_avg if season_avg > 0 else 1.0
+    
+    if ratio > threshold:
+        return 'hot', min(ratio, 1.5)  # Cap at 1.5x multiplier for hot streaks
+    elif ratio < (1/threshold):
+        return 'cold', max(ratio, 0.7)  # Floor at 0.7x multiplier for cold streaks
+    else:
+        return 'neutral', 1.0
+
 def save_models(models, player_id):
     """
     Saves the trained models dictionary to disk using a player-specific filename.

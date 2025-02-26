@@ -1,60 +1,80 @@
 # backend/models/ensemble_model.py
 
 import numpy as np
+import joblib
 
-def ensemble_predictions(predictions: dict, weights: dict = None) -> float:
+# Existing ensemble functions (ensemble_predictions, calculate_dynamic_weights, ensemble_with_confidence,
+# get_context_weights, detect_outliers) would be defined here.
+
+# --- Performance Tracking System ---
+def update_historical_errors(historical_errors, model_predictions, actual_outcome):
     """
-    Combines predictions from multiple models using a weighted average.
-
+    Updates the historical error records after a game completes.
+    
     Parameters:
-        predictions (dict): A dictionary where keys are model names and values are their predictions.
-                            For example:
-                              {
-                                  "score_model": 110.0,
-                                  "player_projection": 112.5,
-                                  "quarter_analysis": 109.0
-                              }
-        weights (dict, optional): A dictionary with weights for each model.
-                                  If not provided, equal weights are used.
-
+        historical_errors (dict): Current error records.
+        model_predictions (dict): Predictions made by each model.
+        actual_outcome (float): The actual final value.
+        
     Returns:
-        float: The final ensemble prediction as a weighted average.
+        dict: Updated historical errors.
     """
-    if not predictions:
-        raise ValueError("No predictions provided for ensemble modeling.")
-
-    # Use equal weights if none are provided
-    if weights is None:
-        num_models = len(predictions)
-        weights = {model: 1/num_models for model in predictions}
-
-    # Normalize weights to ensure they sum to 1
-    total_weight = sum(weights.values())
-    normalized_weights = {model: weight / total_weight for model, weight in weights.items()}
-
-    final_prediction = sum(normalized_weights[model] * pred for model, pred in predictions.items())
-    return final_prediction
-
-if __name__ == '__main__':
-    # Example usage:
-    # Assume we have three model predictions for the final home score.
-    model_preds = {
-        "score_model": 110.0,
-        "player_projection": 112.5,
-        "quarter_analysis": 109.0
-    }
+    # Learning rate (how quickly to update historical errors)
+    alpha = 0.1
     
-    # Optionally, define custom weights (if you want to favor a particular model)
-    custom_weights = {
-        "score_model": 0.5,
-        "player_projection": 0.3,
-        "quarter_analysis": 0.2
-    }
+    for model, prediction in model_predictions.items():
+        error = (prediction - actual_outcome) ** 2
+        if model in historical_errors:
+            # Exponential moving average of errors
+            historical_errors[model] = (1 - alpha) * historical_errors[model] + alpha * error
+        else:
+            historical_errors[model] = error
+            
+    return historical_errors
+
+# --- Expanded Game Contexts ---
+def determine_game_context(current_score, quarter, time_remaining):
+    """
+    Determines the current game context based on game state.
     
-    # Ensemble with equal weights
-    ensemble_eq = ensemble_predictions(model_preds)
-    print(f"Ensemble prediction with equal weights: {ensemble_eq:.2f}")
+    Parameters:
+        current_score (tuple): (home_score, away_score).
+        quarter (int): Current quarter (1-4, 5+ for OT).
+        time_remaining (float): Minutes remaining in the quarter.
+        
+    Returns:
+        str: Game context identifier.
+    """
+    home, away = current_score
+    point_diff = abs(home - away)
     
-    # Ensemble with custom weights
-    ensemble_custom = ensemble_predictions(model_preds, weights=custom_weights)
-    print(f"Ensemble prediction with custom weights: {ensemble_custom:.2f}")
+    if quarter == 0:  # Pre-game
+        return 'pre_game'
+    elif quarter <= 2:
+        return 'first_half'
+    elif quarter == 4 and time_remaining < 5 and point_diff <= 10:
+        return 'clutch_time'
+    elif point_diff >= 20:
+        return 'blowout'
+    elif quarter >= 5:
+        return 'overtime'
+    elif point_diff <= 5:
+        return 'close_game'
+    else:
+        return 'standard'
+
+# --- Persistence Functionality ---
+def save_ensemble_state(historical_errors, filepath='ensemble_state.pkl'):
+    """Save the ensemble's learning state to disk."""
+    joblib.dump(historical_errors, filepath)
+    print(f"Ensemble state saved to {filepath}")
+
+def load_ensemble_state(filepath='ensemble_state.pkl'):
+    """Load the ensemble's learning state from disk."""
+    try:
+        state = joblib.load(filepath)
+        print(f"Loaded ensemble state from {filepath}")
+        return state
+    except FileNotFoundError:
+        print("No ensemble state file found. Returning empty state.")
+        return {}

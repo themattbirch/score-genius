@@ -6,6 +6,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from sklearn.ensemble import GradientBoostingRegressor
+from sqlalchemy import create_engine
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'score_prediction_model.pkl')
 
@@ -130,25 +131,53 @@ def adjust_live_features(features):
         features[3] = default_q4
     return features
 
-def predict_final_score(model, current_features):
+def predict_final_score(model, game_id, home_team, away_team, db_connection):
     """
-    Uses the trained model to predict the final score.
-    Validates that the input features match the expected count.
+    Uses precomputed features to predict the final home score.
     
     Parameters:
-        model: Trained model with an attribute `feature_names_in_` (set during fit).
-        current_features (list or array): Input features for prediction.
+        model: Trained prediction model.
+        game_id: ID of the game to predict.
+        home_team: Home team identifier.
+        away_team: Away team identifier.
+        db_connection: Database connection string.
         
     Returns:
-        float: Predicted final home score.
+        Predicted final score.
     """
-    # Adjust live features if necessary
-    current_features = adjust_live_features(current_features)
+    # Connect to the database
+    conn = create_engine(db_connection)
     
-    expected_features = len(model.feature_names_in_) if hasattr(model, "feature_names_in_") else None
-    if expected_features is not None and len(current_features) != expected_features:
-        raise ValueError(f"Expected {expected_features} features, got {len(current_features)}")
-    prediction = model.predict([current_features])
+    # Retrieve precomputed features for the given game and home team
+    query = f"""
+    SELECT * FROM nba_precomputed_features 
+    WHERE game_id = '{game_id}' AND team = '{home_team}'
+    """
+    features_df = pd.read_sql(query, conn)
+    if features_df.empty:
+        raise ValueError(f"No precomputed features found for game_id {game_id} and team {home_team}")
+    
+    # Retrieve game-level data (for quarter scores, etc.)
+    query_game = f"SELECT * FROM nba_historical_game_stats WHERE game_id = '{game_id}'"
+    game_df = pd.read_sql(query_game, conn)
+    if game_df.empty:
+        raise ValueError(f"Game data not found for game_id {game_id}")
+    
+    # Construct the feature vector
+    # (Ensure the order here matches the order used during model training)
+    feature_vector = [
+        game_df.iloc[0]['home_q1'],
+        game_df.iloc[0]['home_q2'],
+        game_df.iloc[0]['home_q3'],
+        game_df.iloc[0]['home_q4'],
+        features_df.iloc[0]['rolling_pts_5'],
+        # Add additional features as needed (e.g., efficiency, prev_matchup_diff)
+        features_df.iloc[0]['efficiency'],
+        features_df.iloc[0]['prev_matchup_diff']
+    ]
+    
+    # Make and return the prediction
+    prediction = model.predict([feature_vector])
     return prediction[0]
 
 if __name__ == '__main__':
