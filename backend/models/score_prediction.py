@@ -8,16 +8,20 @@ from sklearn.metrics import mean_squared_error
 from sklearn.ensemble import GradientBoostingRegressor
 from sqlalchemy import create_engine
 
+from caching.supabase_client import supabase
+
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'score_prediction_model.pkl')
 
 def load_training_data():
     """
-    Loads historical game data.
-    In production, this could be replaced with a Supabase query.
-    For now, we'll assume a CSV export from our notebook.
+    Loads historical game data from Supabase.
+    Returns a Pandas DataFrame containing the data from the 'nba_historical_game_stats' table.
     """
-    data_path = os.path.join(os.path.dirname(__file__), '../../data/historical_games.csv')
-    df = pd.read_csv(data_path)
+    response = supabase.table("nba_historical_game_stats").select("*").execute()
+    data = response.data  # 'data' is expected to be a list of dictionaries
+    if not data:
+        raise ValueError("No data returned from Supabase. Check your table and connection.")
+    df = pd.DataFrame(data)
     return df
 
 def preprocess_data(df):
@@ -40,8 +44,8 @@ def preprocess_data(df):
         lambda x: x.shift(1).rolling(window=5, min_periods=1).mean())
     
     # Fill NaN values with overall averages if needed
-    df['rolling_home_score'].fillna(df['home_score'].mean(), inplace=True)
-    df['rolling_away_score'].fillna(df['away_score'].mean(), inplace=True)
+    df['rolling_home_score'] = df['rolling_home_score'].fillna(df['home_score'].mean())
+    df['rolling_away_score'] = df['rolling_home_score'].fillna(df['home_score'].mean())
     
     # Compute relative stat: score_ratio
     df['score_ratio'] = df['home_score'] / (df['home_score'] + df['away_score'])

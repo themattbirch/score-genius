@@ -1,6 +1,5 @@
 # backend/models/dynamic_recommendation.py
 
-
 import numpy as np
 
 def generate_recommendations(model_outputs: dict, player_projection: dict = None) -> dict:
@@ -33,25 +32,25 @@ def generate_recommendations(model_outputs: dict, player_projection: dict = None
     
     # Adjust betting tip based on game state
     if quarter >= 3 and win_prob > 0.9:
-        recommendations["betting_tip"] = "Late game, high confidence in home team win - consider live betting."
+        recommendations["betting_tip"] = "Late game, high confidence in home team win."
     else:
         if win_prob > 0.75:
-            recommendations["betting_tip"] = "Strong home advantage - consider betting on the home team."
+            recommendations["betting_tip"] = "Strong home advantage indicates high probability of winning."
         elif win_prob < 0.5:
-            recommendations["betting_tip"] = "Home team seems unlikely to win; consider alternative bets."
+            recommendations["betting_tip"] = "Home team seems unlikely to win."
         else:
-            recommendations["betting_tip"] = "Game appears competitive; consider hedging bets."
+            recommendations["betting_tip"] = "Game appears competitive; consider hedging."
     
     # Additional recommendations based on game state:
     if quarter == 4 and time_remaining < 5 and abs(projected_margin) < 6:
-        recommendations["clutch_tip"] = "Close game in final minutes - consider live betting on final possession outcomes."
+        recommendations["clutch_tip"] = "Close game in final minutes - consider wagering on final possession outcomes."
     
     if quarter < 2:
-        recommendations["game_flow_tip"] = "Early game - monitor pace and shooting percentages before making major bets."
+        recommendations["game_flow_tip"] = "Early game - monitor pace and shooting percentages before wagering."
     
     # Momentum advice
     if momentum > 0.3:
-        recommendations["momentum_advice"] = "Momentum is shifting strongly - monitor game pace for betting opportunities."
+        recommendations["momentum_advice"] = "Momentum is shifting strongly - monitor game pace for opportunities."
     elif momentum < -0.3:
         recommendations["momentum_advice"] = "Opposing momentum detected - consider conservative play."
     else:
@@ -59,16 +58,16 @@ def generate_recommendations(model_outputs: dict, player_projection: dict = None
     
     # Spread tip based on projected margin
     if projected_margin >= 10:
-        recommendations["spread_tip"] = "High projected margin - consider betting on the spread."
+        recommendations["spread_tip"] = "High projected margin - consider the spread."
     elif projected_margin <= -10:
-        recommendations["spread_tip"] = "Low projected margin - consider reverse spread bets."
+        recommendations["spread_tip"] = "Low projected margin - consider reverse spread."
     else:
-        recommendations["spread_tip"] = "Projected margin is narrow - use caution with spread bets."
+        recommendations["spread_tip"] = "Projected margin is narrow - use caution with spread action."
     
     # Over/Under Recommendation
     if total_projected > 0:
         over_under = "over" if total_projected > 220 else "under"
-        recommendations["over_under_tip"] = f"Projected total score of {total_projected} suggests {over_under} betting."
+        recommendations["over_under_tip"] = f"Projected total score of {total_projected} suggests {over_under} wager."
     
     # Enhanced Fantasy Recommendations
     if player_projection and quarter >= 3:
