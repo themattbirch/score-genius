@@ -164,8 +164,8 @@ def process_day(date_obj):
                     pass
 
 def main():
-    start_date = datetime(2025, 2, 19 )
-    end_date = datetime(2025, 2, 24)
+    start_date = datetime(2025, 2, 20 )
+    end_date = datetime(2025, 3, 1)
     current = start_date
     while current <= end_date:
         process_day(current)

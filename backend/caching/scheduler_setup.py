@@ -1,19 +1,17 @@
-# /backend/caching/scheduler_setup.py
-
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import pytz
-import config 
+import config
 
+# Import your functions
 from src.scripts.data_fetcher import fetch_live_game_data
-from caching.supabase_cache import cache_game_data  # Fixed import path
-from src.scripts.archive_live_data import archive_live_data  # Import the archival function
-
-
-# Import the precompute_features function
+from src.scripts.archive_live_data import archive_live_data
 from src.scripts.precompute_features import precompute_features
+from src.scripts.model_inference import run_model_inference
+from caching.supabase_cache import cache_game_data
 
-last_archive_date = None  # Track the date of the last successful archival
+# Global variable to track archive execution per day
+last_archive_date = None
 
 def update_cache():
     data = fetch_live_game_data()  # Should return a dict with at least {'game_id': ...}
@@ -25,40 +23,27 @@ def update_cache():
 
 def attempt_archive_live_data():
     """
-    Checks if archive_live_data has been run today.
-    If not, run it now and update last_archive_date.
+    Archives live game data from the nba_live_game_stats table to historical tables,
+    then clears the nba_live_game_stats table.
     """
     global last_archive_date
     tz = pytz.timezone('America/Los_Angeles')
     today = datetime.now(tz).date()
-
-    # Only run archive if we haven't run it yet today
     if last_archive_date != today:
         try:
             archive_live_data()
             last_archive_date = today
             print(f"Archive job executed for {today}")
         except Exception as e:
-            # If something fails, you can log it or decide how you want to handle the error
             print(f"Error during archive job: {e}")
 
 if __name__ == "__main__":
     scheduler = BackgroundScheduler()
 
-    # Run update_cache every minute
+    # Regular cache updates (if still needed)
     scheduler.add_job(update_cache, 'interval', minutes=1)
-
-    # Primary archival job at 11:00 p.m. Pacific Time
-    scheduler.add_job(
-        attempt_archive_live_data,
-        'cron',
-        hour=23,
-        minute=0,
-        timezone='America/Los_Angeles',
-        id='archive_job_11pm'
-    )
-
-    # Fallback archival job at 12:00 p.m. Pacific Time (next day)
+    
+    # Archive jobs: Run at 12:00 p.m. PT daily, and fallback at 6:00 p.m. PT
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
@@ -67,19 +52,54 @@ if __name__ == "__main__":
         timezone='America/Los_Angeles',
         id='archive_job_noon'
     )
-
-    # Preprocessing Script
+    scheduler.add_job(
+        attempt_archive_live_data,
+        'cron',
+        hour=18,  # 6:00 p.m. PT
+        minute=0,
+        timezone='America/Los_Angeles',
+        id='archive_job_6pm'
+    )
+    
+    # Data Pipeline: Precompute features daily at 1:00 p.m. PT, with a fallback at 7:00 p.m.
     scheduler.add_job(
         precompute_features, 
         'cron', 
-        hour=1,  # Run at 1 AM daily
-        minute=30,
-        args=[config.SUPABASE_URL]  # Or use a dedicated DB connection string from config
+        hour=13,  # 1:00 p.m.
+        minute=0,
+        timezone='America/Los_Angeles',
+        id='data_pipeline_job'
     )
-
+    scheduler.add_job(
+        precompute_features,
+        'cron',
+        hour=19,  # 7:00 p.m.
+        minute=0,
+        timezone='America/Los_Angeles',
+        id='data_pipeline_fallback_job'
+    )
+    
+    # Model Inference (and optionally retraining): Run daily at 1:05 p.m. PT, fallback at 7:05 p.m.
+    scheduler.add_job(
+        run_model_inference,
+        'cron',
+        hour=13,  # 1:05 p.m.
+        minute=5,
+        timezone='America/Los_Angeles',
+        id='model_inference_job'
+    )
+    scheduler.add_job(
+        run_model_inference,
+        'cron',
+        hour=19,  # 7:05 p.m.
+        minute=5,
+        timezone='America/Los_Angeles',
+        id='model_inference_fallback_job'
+    )
+    
     scheduler.start()
-
-    # Keep the script running (for example, in development)
+    print("Scheduler started. Jobs are scheduled.")
+    
     try:
         while True:
             pass

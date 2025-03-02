@@ -31,35 +31,50 @@ def preprocess_data(df):
       - Using 'home_score' as the target.
       - Computing a score ratio (home_score / (home_score + away_score)).
       - Computing rolling averages of home and away scores (previous 5 games per team).
+      - **New:** Computing historical matchup difference between home and away teams.
     """
-    # Ensure game_date is a datetime and sort for rolling calculations
+    # Convert game_date to datetime
     df['game_date'] = pd.to_datetime(df['game_date'])
-    
-    # Compute rolling averages for home and away teams (shifted to exclude current game)
+
+    # Compute rolling averages for home and away teams
     df.sort_values(by=['home_team', 'game_date'], inplace=True)
     df['rolling_home_score'] = df.groupby('home_team')['home_score'].transform(
         lambda x: x.shift(1).rolling(window=5, min_periods=1).mean())
     df.sort_values(by=['away_team', 'game_date'], inplace=True)
     df['rolling_away_score'] = df.groupby('away_team')['away_score'].transform(
         lambda x: x.shift(1).rolling(window=5, min_periods=1).mean())
-    
-    # Fill NaN values with overall averages if needed
+
+    # Fill missing rolling averages with overall means
     df['rolling_home_score'] = df['rolling_home_score'].fillna(df['home_score'].mean())
-    df['rolling_away_score'] = df['rolling_home_score'].fillna(df['home_score'].mean())
-    
-    # Compute relative stat: score_ratio
+    df['rolling_away_score'] = df['rolling_away_score'].fillna(df['away_score'].mean())
+
+    # Compute score ratio
     df['score_ratio'] = df['home_score'] / (df['home_score'] + df['away_score'])
-    
-    # Define feature columns. We use quarter scores and the new engineered features.
+
+    # **Compute Historical Matchup Difference:**
+    # For each game, we calculate the average difference (home_score - away_score)
+    # from previous encounters between the same teams.
+    def compute_matchup_diff(row):
+        home = row['home_team']
+        away = row['away_team']
+        current_date = row['game_date']
+        # Filter past games where these teams have played
+        past_games = df[(df['home_team'] == home) & (df['away_team'] == away) & (df['game_date'] < current_date)]
+        if not past_games.empty:
+            return (past_games['home_score'] - past_games['away_score']).mean()
+        else:
+            return 0  # or a default value
+
+    df['prev_matchup_diff'] = df.apply(compute_matchup_diff, axis=1)
+
+    # Define feature columns
     feature_cols = [
         'home_q1', 'home_q2', 'home_q3', 'home_q4',
-        'score_ratio', 'rolling_home_score', 'rolling_away_score'
+        'score_ratio', 'rolling_home_score', 'rolling_away_score',
+        'prev_matchup_diff'  # New feature
     ]
-    
-    # Target is now the final home_score
+
     target_col = 'home_score'
-    
-    # Drop rows with missing values in features or target
     df = df.dropna(subset=feature_cols + [target_col])
     X = df[feature_cols]
     y = df[target_col]
