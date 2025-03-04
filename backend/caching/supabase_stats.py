@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from caching.supabase_client import supabase  # Changed to an absolute import
 from config import API_SPORTS_KEY
+from caching.supabase_stats import upsert_live_game_stats_team
 
 ################################################################################
 #                          CONFIG & TEAM NAME CACHE                             #
@@ -206,6 +207,24 @@ def upsert_live_game_stats(game_id: int, player_stats: dict) -> dict:
     )
     return result
 
+def upsert_live_game_stats_team(record: dict) -> dict:
+    """
+    Upserts a single record of TEAM stats into the 'nba_live_game_stats' table.
+    The `record` should contain columns like:
+      - game_id, home_team, away_team, home_score, away_score,
+      - home_q1, home_q2, home_q3, home_q4, home_ot,
+      - away_q1, away_q2, away_q3, away_q4, away_ot,
+      - home_assists, home_steals, etc.
+    """
+    response = (
+        supabase.table('nba_live_game_stats')
+        .upsert(record, on_conflict='game_id')  
+        # or on_conflict='game_id,home_team' if you like
+        .execute()
+    )
+    return response
+
+
 ################################################################################
 #                     UPSERT: 2024-25 FINAL GAME STATS                          #
 ################################################################################
@@ -271,3 +290,15 @@ def parse_minutes(time_str: str) -> float:
         return round(total_minutes, 2)
     except ValueError:
         return 0.0
+    
+def upsert_live_player_stats(game_id, stat):
+    """
+    Upserts a live player stat record into the 'nba_live_player_stats' table.
+    """
+    # Optionally add the game_id to the record if not already present.
+    record = stat.copy()
+    record['game_id'] = game_id
+
+    # Upsert into the table 'nba_live_player_stats'
+    response = supabase.table("nba_live_player_stats").upsert(record).execute()
+    return response.data

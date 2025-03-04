@@ -8,9 +8,7 @@ from statsmodels.tsa.arima.model import ARIMA
 
 # For XGBoost quantile regression
 from xgboost import XGBRegressor
-
-# Template path to save/load a player's projection models (dictionary mapping each metric to its models)
-MODEL_PATH_TEMPLATE = os.path.join(os.path.dirname(__file__), 'player_projection_models_{}.pkl')
+from config import MODEL_PATH
 
 def load_player_data(player_id):
     """
@@ -183,7 +181,7 @@ def save_models(models, player_id):
     """
     Saves the trained models dictionary to disk using a player-specific filename.
     """
-    filepath = MODEL_PATH_TEMPLATE.format(player_id)
+    filepath = MODEL_PATH.format(player_id)
     joblib.dump(models, filepath)
     print(f"Models for player {player_id} saved to {filepath}")
 
@@ -194,7 +192,7 @@ def load_models(player_id):
     Returns:
         dict: Mapping from metric to model(s), or None if not found.
     """
-    filepath = MODEL_PATH_TEMPLATE.format(player_id)
+    filepath = MODEL_PATH.format(player_id)
     if os.path.exists(filepath):
         models = joblib.load(filepath)
         print(f"Models for player {player_id} loaded successfully.")

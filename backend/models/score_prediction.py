@@ -9,8 +9,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sqlalchemy import create_engine
 
 from caching.supabase_client import supabase
-
-MODEL_PATH = os.path.join(os.path.dirname(__file__), 'score_prediction_model.pkl')
+from config import MODEL_PATH
 
 def load_training_data():
     """

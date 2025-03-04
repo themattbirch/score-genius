@@ -8,7 +8,7 @@ from caching.supabase_client import supabase
 import datetime
 
 # Define the model file path. In a notebook or script, __file__ may not be available so we use os.getcwd()
-MODEL_PATH = os.path.join(os.getcwd(), 'score_prediction_model.pkl')
+from config import MODEL_PATH
 
 def fetch_new_features():
     """
