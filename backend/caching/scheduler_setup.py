@@ -13,13 +13,16 @@ from caching.supabase_cache import cache_game_data
 # Global variable to track archive execution per day
 last_archive_date = None
 
-def update_cache():
-    data = fetch_live_game_data()  # Should return a dict with at least {'game_id': ...}
-    if data:
-        game_id = data.get('game_id')
-        if game_id:
-            response = cache_game_data(game_id, data)
-            print("Cache updated:", response)
+def update_cache(league, season, date):
+    try:
+        data = fetch_live_game_data(league, season, date)
+        if data:
+            game_id = data.get('game_id')
+            if game_id:
+                response = cache_game_data(game_id, data)
+                print("Cache updated:", response)
+    except Exception as e:
+        print("Error in update_cache:", e)
 
 def attempt_archive_live_data():
     """
@@ -39,67 +42,59 @@ def attempt_archive_live_data():
 
 if __name__ == "__main__":
     scheduler = BackgroundScheduler()
-
-    # Regular cache updates (if still needed)
-    scheduler.add_job(update_cache, 'interval', minutes=1)
     
-    # Archive jobs: Run at 12:00 p.m. PT daily, and fallback at 6:00 p.m. PT
+    # Regular cache updates: Supply the required arguments via 'args'
+    scheduler.add_job(
+        update_cache,
+        'interval',
+        minutes=1,
+        args=["12", "2024-2025", datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y-%m-%d")],
+        id='update_cache_job'
+    )
+    
+    # Data Pipeline: Precompute features daily at 13:34 (1:34 p.m. PT)
+    scheduler.add_job(
+        precompute_features, 
+        'cron', 
+        hour=17,
+        minute=7,
+        timezone='America/Los_Angeles',
+        args=[config.DATABASE_URL],
+        id='data_pipeline_job'
+    )
+    
+    # Model Inference (and retraining): Run daily at 13:36 (1:36 p.m. PT)
+    scheduler.add_job(
+        run_model_inference,
+        'cron',
+        hour=17,
+        minute=8,
+        timezone='America/Los_Angeles',
+        id='model_inference_job'
+    )
+    
+    # Archive jobs: Run at 13:39 (1:39 p.m. PT) and fallback at 18:00 (6:00 p.m. PT)
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=12,
-        minute=0,
+        hour=17,
+        minute=9,
         timezone='America/Los_Angeles',
         id='archive_job_noon'
     )
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=18,  # 6:00 p.m. PT
-        minute=0,
+        hour=17,  # 6:00 p.m. PT
+        minute=10,
         timezone='America/Los_Angeles',
         id='archive_job_6pm'
-    )
-    
-    # Data Pipeline: Precompute features daily at 1:00 p.m. PT, with a fallback at 7:00 p.m.
-    scheduler.add_job(
-        precompute_features, 
-        'cron', 
-        hour=13,  # 1:00 p.m.
-        minute=0,
-        timezone='America/Los_Angeles',
-        id='data_pipeline_job'
-    )
-    scheduler.add_job(
-        precompute_features,
-        'cron',
-        hour=19,  # 7:00 p.m.
-        minute=0,
-        timezone='America/Los_Angeles',
-        id='data_pipeline_fallback_job'
-    )
-    
-    # Model Inference (and optionally retraining): Run daily at 1:05 p.m. PT, fallback at 7:05 p.m.
-    scheduler.add_job(
-        run_model_inference,
-        'cron',
-        hour=13,  # 1:05 p.m.
-        minute=5,
-        timezone='America/Los_Angeles',
-        id='model_inference_job'
-    )
-    scheduler.add_job(
-        run_model_inference,
-        'cron',
-        hour=19,  # 7:05 p.m.
-        minute=5,
-        timezone='America/Los_Angeles',
-        id='model_inference_fallback_job'
     )
     
     scheduler.start()
     print("Scheduler started. Jobs are scheduled.")
     
+    # Keep the script running so the scheduler remains active.
     try:
         while True:
             pass

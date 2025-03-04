@@ -1,4 +1,4 @@
-# backend/src/scripts/nba_stats_live.py
+# File: backend/src/scripts/nba_stats_live.py
 
 import json
 import requests
@@ -20,10 +20,18 @@ HEADERS = {
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
+def convert_minutes(time_str):
+    """Convert a time string in "MM:SS" format to a float representing minutes."""
+    try:
+        if not time_str or ":" not in time_str:
+            return float(time_str) if time_str and time_str.strip() != "" else 0.0
+        minutes, seconds = time_str.split(":")
+        return float(minutes) + float(seconds) / 60.0
+    except Exception as e:
+        print(f"Error converting minutes '{time_str}': {e}")
+        return 0.0
+
 def get_games_by_date(league: str, season: str, date: str, timezone: str = 'America/Los_Angeles') -> dict:
-    """
-    Fetch live game data from API-Basketball for the given date, league, season, and timezone.
-    """
     url = f"{BASE_URL}/games"
     params = {
         'league': league,
@@ -43,10 +51,6 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
         return {}
 
 def filter_live_games(games_data: dict) -> list:
-    """
-    Filters the games_data to only include live games.
-    A live game is determined by a status 'short' value not equal to "NS" (Not Started) or "FT" (Finished).
-    """
     live_games = []
     for game in games_data.get('response', []):
         status = game.get('status', {})
@@ -55,10 +59,6 @@ def filter_live_games(games_data: dict) -> list:
     return live_games
 
 def get_player_box_stats(game_id: int) -> dict:
-    """
-    Fetches detailed player statistics for a specific game.
-    It replaces encoded apostrophes in the raw JSON text before parsing.
-    """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
     try:
@@ -72,9 +72,6 @@ def get_player_box_stats(game_id: int) -> dict:
         return {}
 
 def print_game_info(game: dict):
-    """
-    Prints key game information.
-    """
     game_id = game.get('id')
     teams = game.get('teams', {})
     score = game.get('scores', {})
@@ -87,9 +84,6 @@ def print_game_info(game: dict):
     print("-" * 60)
 
 def run_live_games():
-    """
-    Fetches live games for today (based on Pacific Time) and upserts their player statistics.
-    """
     today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
     league = '12'            # NBA
     season = '2024-2025'      # Adjust if needed
@@ -112,6 +106,9 @@ def run_live_games():
         
         if 'response' in player_stats:
             for stat in player_stats['response']:
+                # Convert 'minutes' if present and in "MM:SS" format
+                if 'minutes' in stat:
+                    stat['minutes'] = convert_minutes(stat['minutes'])
                 result = upsert_live_game_stats(game_id, stat)
                 print(f"Upsert result for {stat['player']['name']}: {result}")
         else:
