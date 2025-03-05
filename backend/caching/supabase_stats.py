@@ -234,12 +234,25 @@ def upsert_live_player_stats(game_id, player_stats):
     print(f"Upserting record for {player_name_fixed}:", stats_data)
     
     try:
-        # Use on_conflict to specify which columns should determine a conflict
-        response = supabase.table("nba_live_player_stats").upsert(
-            stats_data, 
-            on_conflict=['game_id', 'player_id']
-        ).execute()
-        return response
+        # SIMPLIFIED APPROACH - First try to insert, if it fails due to duplicate, then update
+        try:
+            # Try to insert first
+            response = supabase.table("nba_live_player_stats")\
+                .insert(stats_data)\
+                .execute()
+            return response
+        except Exception as insert_error:
+            if "duplicate" in str(insert_error).lower():
+                # If it fails due to duplicate, update instead
+                response = supabase.table("nba_live_player_stats")\
+                    .update(stats_data)\
+                    .eq("game_id", game_id)\
+                    .eq("player_id", stats_data['player_id'])\
+                    .execute()
+                return response
+            else:
+                # If it fails for another reason, raise the original error
+                raise insert_error
     except Exception as e:
         print(f"Error upserting data: {e}")
         return {"error": str(e)}
