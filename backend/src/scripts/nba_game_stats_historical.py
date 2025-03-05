@@ -249,7 +249,7 @@ def main():
     """
     # Date range to process
     start_date = datetime(2018, 10, 19)
-    end_date = datetime(2025, 3, 5)
+    end_date = datetime(2025, 3, 1)
     
     print(f"Starting historical data import from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     
