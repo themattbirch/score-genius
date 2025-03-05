@@ -52,23 +52,23 @@ if __name__ == "__main__":
         id='update_cache_job'
     )
     
-    # Data Pipeline: Precompute features daily at 13:34 (1:34 p.m. PT)
+    # Data Pipeline: Precompute features daily at 5:26 p.m. PT
     scheduler.add_job(
         precompute_features, 
         'cron', 
         hour=17,
-        minute=26,
+        minute=48,
         timezone='America/Los_Angeles',
         args=[config.DATABASE_URL],
         id='data_pipeline_job'
     )
-    
-    # Model Inference (and retraining): Run daily at 13:36 (1:36 p.m. PT)
+
+    # Model Inference: Run daily at 5:30 p.m. PT (giving precompute more time)
     scheduler.add_job(
         run_model_inference,
         'cron',
         hour=17,
-        minute=27,
+        minute=52,  # Changed from 27 to 30 to give precompute_features more time
         timezone='America/Los_Angeles',
         id='model_inference_job'
     )
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         attempt_archive_live_data,
         'cron',
         hour=17,
-        minute=28,
+        minute=55,
         timezone='America/Los_Angeles',
         id='archive_job_noon'
     )
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         attempt_archive_live_data,
         'cron',
         hour=17,  # 6:00 p.m. PT
-        minute=29,
+        minute=57,
         timezone='America/Los_Angeles',
         id='archive_job_6pm'
     )

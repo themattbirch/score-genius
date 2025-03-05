@@ -32,9 +32,9 @@ def generate_predictions(model, features_df):
         'home_q2', 
         'home_q3', 
         'home_q4', 
+        'score_ratio',  # This should be in position 5, not after rolling scores
         'rolling_home_score', 
         'rolling_away_score', 
-        'score_ratio',
         'prev_matchup_diff'
     ]
     
@@ -42,9 +42,14 @@ def generate_predictions(model, features_df):
     if 'game_id' in features_df.columns:
         features_df = features_df.drop(columns=['game_id'])
     
-    # Ensure the features are in the same order as during training.
+    # Check if all required features exist
+    missing_features = [f for f in expected_features if f not in features_df.columns]
+    if missing_features:
+        raise ValueError(f"Missing features: {missing_features}")
+    
+    # Ensure the features are in the same order as during training
     X_features = features_df[expected_features].copy()
-    X_features = X_features.astype(float)  # Ensure numeric type if needed
+    X_features = X_features.astype(float)
     
     predictions = model.predict(X_features)
     return predictions
