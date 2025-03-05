@@ -25,19 +25,30 @@ def fetch_new_features():
         print("No new features found.")
         return None
 
-def generate_predictions(model, X):
-    """
-    Generates predictions using the provided model and feature DataFrame X.
-    If X contains an identifier column like 'unique_game_id', it is dropped.
-    Returns the predictions as a NumPy array.
-    """
-    # Drop identifier columns if present
-    if 'unique_game_id' in X.columns:
-        X_features = X.drop(columns=['unique_game_id'])
-    else:
-        X_features = X.copy()
+def generate_predictions(model, features_df):
+    # Define the exact list of features used during training.
+    expected_features = [
+        'home_q1', 
+        'home_q2', 
+        'home_q3', 
+        'home_q4', 
+        'rolling_home_score', 
+        'rolling_away_score', 
+        'score_ratio',
+        'prev_matchup_diff'
+    ]
+    
+    # Remove any extra columns that might interfere (e.g., 'game_id')
+    if 'game_id' in features_df.columns:
+        features_df = features_df.drop(columns=['game_id'])
+    
+    # Ensure the features are in the same order as during training.
+    X_features = features_df[expected_features].copy()
+    X_features = X_features.astype(float)  # Ensure numeric type if needed
+    
     predictions = model.predict(X_features)
     return predictions
+
 
 def retrain_model():
     """

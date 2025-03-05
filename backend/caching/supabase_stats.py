@@ -1,11 +1,8 @@
-# backend/caching/supabase_stats.py
-
 import requests
 import json
 from datetime import datetime
 from caching.supabase_client import supabase  # Changed to an absolute import
 from config import API_SPORTS_KEY
-from caching.supabase_stats import upsert_live_game_stats_team
 
 ################################################################################
 #                          CONFIG & TEAM NAME CACHE                             #
@@ -99,6 +96,24 @@ def get_stat_value(player_stats: dict, key: str, subkey: str = None, default=0):
         return player_stats.get('statistics', {}).get(key, default)
 
 ################################################################################
+#                           MINUTES PARSER                                      #
+################################################################################
+
+def parse_minutes(time_str: str) -> float:
+    """
+    Convert a 'MM:SS' string to a float representing total minutes.
+    E.g., "27:21" -> 27.35. If invalid or empty, returns 0.0.
+    """
+    if not time_str or ':' not in str(time_str):
+        return 0.0
+    try:
+        minutes_part, seconds_part = str(time_str).split(':')
+        total_minutes = float(minutes_part) + float(seconds_part) / 60.0
+        return round(total_minutes, 2)
+    except ValueError:
+        return 0.0
+
+################################################################################
 #                     UPSERT: HISTORICAL PLAYER STATS                          #
 ################################################################################
 
@@ -126,7 +141,7 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
 
     # Convert the 'minutes' value from "MM:SS" to a float (e.g., "27:21" -> 27.35)
     raw_minutes = get_stat_value(player_stats, 'minutes', default=None)
-    numeric_minutes = parse_minutes(raw_minutes)  # parse_minutes is defined below
+    numeric_minutes = parse_minutes(raw_minutes)
 
     stats_data = {
         'game_id': game_id,
@@ -153,7 +168,7 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
     }
     
     result = (
-        supabase.table('nba_historical_player_stats')  # Changed table name here
+        supabase.table('nba_historical_player_stats')
         .upsert(stats_data, on_conflict='game_id, player_id')
         .execute()
     )
@@ -163,49 +178,74 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
 #                     UPSERT: LIVE GAME STATS                                   #
 ################################################################################
 
-def upsert_live_game_stats(game_id: int, player_stats: dict) -> dict:
+def upsert_live_player_stats(game_id, player_stats):
+    """
+    Extracts player statistics from the API response and upserts them to nba_live_player_stats table.
+    
+    Args:
+        game_id: ID of the game
+        player_stats: Player statistics dictionary from the API
+    
+    Returns:
+        Supabase response
+    """
     team_data = player_stats.get('team', {})
     raw_team_id = team_data.get('id', 0)
     team_id = raw_team_id if raw_team_id is not None else 0
     team_name = get_team_name_from_api(team_id, league='12', season='2024-2025') if team_id else 'Unknown'
     
     # Fix the player's name
-    raw_name = player_stats['player']['name']
+    raw_name = player_stats.get('player', {}).get('name', 'Unknown')
     player_name_fixed = fix_player_name(raw_name)
-
-    raw_minutes = get_stat_value(player_stats, 'minutes', default=None)
-    numeric_minutes = parse_minutes(raw_minutes)
-
+    
+    # Get the minutes value (could be already converted or still in MM:SS format)
+    if 'minutes_numeric' in player_stats:
+        numeric_minutes = player_stats['minutes_numeric']
+    else:
+        raw_minutes = player_stats.get('minutes', '0')
+        numeric_minutes = parse_minutes(raw_minutes)
+    
+    # Extract nested statistics using the get_stat_value helper
     stats_data = {
         'game_id': game_id,
-        'player_id': player_stats['player']['id'],
+        'player_id': player_stats.get('player', {}).get('id', 0),
         'player_name': player_name_fixed,
         'team_id': team_id,
         'team_name': team_name,
         'minutes': numeric_minutes,
-        'points': get_stat_value(player_stats, 'points'),
-        'rebounds': get_stat_value(player_stats, 'rebounds', 'total'),
-        'assists': get_stat_value(player_stats, 'assists'),
-        'steals': get_stat_value(player_stats, 'steals'),
-        'blocks': get_stat_value(player_stats, 'blocks'),
-        'turnovers': get_stat_value(player_stats, 'turnovers'),
-        'fouls': get_stat_value(player_stats, 'fouls'),
-        'fg_made': get_stat_value(player_stats, 'field_goals', 'total'),
-        'fg_attempted': get_stat_value(player_stats, 'field_goals', 'attempts'),
-        'three_made': get_stat_value(player_stats, 'threepoint_goals', 'total'),
-        'three_attempted': get_stat_value(player_stats, 'threepoint_goals', 'attempts'),
-        'ft_made': get_stat_value(player_stats, 'freethrows_goals', 'total'),
-        'ft_attempted': get_stat_value(player_stats, 'freethrows_goals', 'attempts'),
+        'points': get_stat_value(player_stats, 'points', default=0),
+        'rebounds': get_stat_value(player_stats, 'rebounds', 'total', default=0),
+        'assists': get_stat_value(player_stats, 'assists', default=0),
+        'steals': get_stat_value(player_stats, 'steals', default=0),
+        'blocks': get_stat_value(player_stats, 'blocks', default=0),
+        'turnovers': get_stat_value(player_stats, 'turnovers', default=0),
+        'fouls': get_stat_value(player_stats, 'fouls', default=0),
+        'fg_made': get_stat_value(player_stats, 'field_goals', 'total', default=0),
+        'fg_attempted': get_stat_value(player_stats, 'field_goals', 'attempts', default=0),
+        'three_made': get_stat_value(player_stats, 'threepoint_goals', 'total', default=0),
+        'three_attempted': get_stat_value(player_stats, 'threepoint_goals', 'attempts', default=0),
+        'ft_made': get_stat_value(player_stats, 'freethrows_goals', 'total', default=0),
+        'ft_attempted': get_stat_value(player_stats, 'freethrows_goals', 'attempts', default=0),
         'game_date': str(datetime.now().date()),
         'updated_at': datetime.utcnow().isoformat()
     }
+    
+    # Print the record we're about to upsert for debugging
+    print(f"Upserting record for {player_name_fixed}:", stats_data)
+    
+    try:
+        # Use on_conflict to specify which columns should determine a conflict
+        response = supabase.table("nba_live_player_stats").upsert(
+            stats_data, 
+            on_conflict=['game_id', 'player_id']
+        ).execute()
+        return response
+    except Exception as e:
+        print(f"Error upserting data: {e}")
+        return {"error": str(e)}
 
-    result = (
-        supabase.table('nba_live_game_stats')
-        .upsert(stats_data, on_conflict='game_id, player_id')
-        .execute()
-    )
-    return result
+# Alias for backward compatibility
+upsert_live_game_stats_player = upsert_live_player_stats
 
 def upsert_live_game_stats_team(record: dict) -> dict:
     """
@@ -229,7 +269,7 @@ def upsert_live_game_stats_team(record: dict) -> dict:
 #                     UPSERT: 2024-25 FINAL GAME STATS                          #
 ################################################################################
 
-def upsert_2024_25_game_stats(game_id: int, player_stats: dict) -> dict:
+def upsert_nba_recent_player_stats(game_id: int, player_stats: dict) -> dict:
     team_data = player_stats.get('team', {})
     raw_team_id = team_data.get('id', 0)
     team_id = raw_team_id if raw_team_id is not None else 0
@@ -267,38 +307,8 @@ def upsert_2024_25_game_stats(game_id: int, player_stats: dict) -> dict:
     }
 
     result = (
-        supabase.table('nba_2024_25_game_stats')
+        supabase.table('nba_historical_player_stats')
         .upsert(stats_data, on_conflict='game_id, player_id')
         .execute()
     )
     return result
-
-################################################################################
-#                           MINUTES PARSER                                      #
-################################################################################
-
-def parse_minutes(time_str: str) -> float:
-    """
-    Convert a 'MM:SS' string to a float representing total minutes.
-    E.g., "27:21" -> 27.35. If invalid or empty, returns 0.0.
-    """
-    if not time_str or ':' not in time_str:
-        return 0.0
-    try:
-        minutes_part, seconds_part = time_str.split(':')
-        total_minutes = float(minutes_part) + float(seconds_part) / 60.0
-        return round(total_minutes, 2)
-    except ValueError:
-        return 0.0
-    
-def upsert_live_player_stats(game_id, stat):
-    """
-    Upserts a live player stat record into the 'nba_live_player_stats' table.
-    """
-    # Optionally add the game_id to the record if not already present.
-    record = stat.copy()
-    record['game_id'] = game_id
-
-    # Upsert into the table 'nba_live_player_stats'
-    response = supabase.table("nba_live_player_stats").upsert(record).execute()
-    return response.data

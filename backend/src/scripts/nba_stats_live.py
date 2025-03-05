@@ -8,6 +8,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from pprint import pprint
 import time
+from caching.supabase_stats import upsert_live_game_stats_team
 
 # Add the backend root to the Python path so we can import from caching
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
@@ -24,22 +25,7 @@ HEADERS = {
 }
 
 ###############################################################################
-# 1) Upsert Function for TEAM-Level Stats
-###############################################################################
-def upsert_live_game_stats_team(record: dict) -> dict:
-    """
-    Upserts a single TEAM-stats record into the Supabase table 'nba_live_game_stats'.
-    Make sure your Supabase table has a unique constraint on 'game_id' (or adjust on_conflict accordingly).
-    """
-    response = (
-        supabase.table('nba_live_game_stats')
-        .upsert(record, on_conflict='game_id')
-        .execute()
-    )
-    return response
-
-###############################################################################
-# 2) API Data Retrieval Functions
+# 1) API Data Retrieval Functions
 ###############################################################################
 def get_games_by_date(league: str, season: str, date: str, timezone: str = 'America/Los_Angeles') -> dict:
     """
@@ -94,7 +80,7 @@ def print_game_info(game: dict):
     print("-" * 60)
 
 ###############################################################################
-# 3) Transformation Function
+# 2) Transformation Function
 ###############################################################################
 def transform_team_stats(game: dict, team_stats: dict) -> dict:
     """
@@ -155,7 +141,7 @@ def transform_team_stats(game: dict, team_stats: dict) -> dict:
     return transformed
 
 ###############################################################################
-# 4) Main Driver: Fetch Live Games, Transform, and Upsert
+# 3) Main Driver: Fetch Live Games, Transform, and Upsert
 ###############################################################################
 def run_live_games():
     # Use the current date in Pacific Time (live)

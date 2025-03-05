@@ -56,8 +56,8 @@ if __name__ == "__main__":
     scheduler.add_job(
         precompute_features, 
         'cron', 
-        hour=20,
-        minute=33,
+        hour=17,
+        minute=26,
         timezone='America/Los_Angeles',
         args=[config.DATABASE_URL],
         id='data_pipeline_job'
@@ -67,8 +67,8 @@ if __name__ == "__main__":
     scheduler.add_job(
         run_model_inference,
         'cron',
-        hour=20,
-        minute=34,
+        hour=17,
+        minute=27,
         timezone='America/Los_Angeles',
         id='model_inference_job'
     )
@@ -77,16 +77,16 @@ if __name__ == "__main__":
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=20,
-        minute=35,
+        hour=17,
+        minute=28,
         timezone='America/Los_Angeles',
         id='archive_job_noon'
     )
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=20,  # 6:00 p.m. PT
-        minute=36,
+        hour=17,  # 6:00 p.m. PT
+        minute=29,
         timezone='America/Los_Angeles',
         id='archive_job_6pm'
     )

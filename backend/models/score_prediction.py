@@ -16,11 +16,24 @@ def load_training_data():
     Loads historical game data from Supabase.
     Returns a Pandas DataFrame containing the data from the 'nba_historical_game_stats' table.
     """
-    response = supabase.table("nba_historical_game_stats").select("*").execute()
-    data = response.data  # 'data' is expected to be a list of dictionaries
-    if not data:
-        raise ValueError("No data returned from Supabase. Check your table and connection.")
-    df = pd.DataFrame(data)
+    # Option 1: Use SQLAlchemy like precompute_features does
+    from sqlalchemy import create_engine
+    from config import DATABASE_URL
+    
+    engine = create_engine(DATABASE_URL)
+    query = "SELECT * FROM nba_historical_game_stats ORDER BY game_date"
+    df = pd.read_sql(query, engine)
+    df['game_date'] = pd.to_datetime(df['game_date'])
+    
+    # Option 2: If you must use Supabase client, implement pagination
+    # response = supabase.table("nba_historical_game_stats").select("*").order('game_date').execute()
+    # page_size = 1000
+    # data = response.data
+    # while len(response.data) == page_size:
+    #     last_date = data[-1]['game_date']
+    #     response = supabase.table("nba_historical_game_stats").select("*").order('game_date').gt('game_date', last_date).execute()
+    #     data.extend(response.data)
+    
     return df
 
 def preprocess_data(df):
