@@ -174,91 +174,71 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
     )
     return result
 
+
+###############################################################################
+#                       LIVE PLAYER STATS UPSERT                               #
+###############################################################################
+
+def upsert_live_player_stats(game_id: int, player_stats: dict) -> dict:
+    if not isinstance(player_stats, dict):
+        return {"error": f"player_stats is not a dictionary. Got {type(player_stats)}."}
+
+    # If your 'modified_stats' only has 'team_id', do this:
+    team_id = player_stats.get('team_id', 0)
+    team_name = "Unknown"
+    if team_id > 0:
+        team_name = get_team_name_from_api(team_id, league='12', season='2024-2025')
+
+    raw_name = player_stats.get('player_name', 'Unknown')
+    # Or if it's still `player_stats.get('player', {}).get('name')` – but keep consistent
+    player_name_fixed = fix_player_name(raw_name)
+
+    minutes_numeric = player_stats.get('minutes_numeric')
+    if minutes_numeric is None:
+        raw_minutes = player_stats.get('minutes', '0')
+        minutes_numeric = parse_minutes(raw_minutes)
+
+    stats_data = {
+        'game_id': game_id,
+        'player_id': player_stats.get('player_id', 0),
+        'player_name': player_name_fixed,
+        'team_id': team_id,
+        'team_name': team_name,
+        'minutes': minutes_numeric,
+        'points': player_stats.get('points', 0),
+        'rebounds': player_stats.get('rebounds', 0),
+        'assists': player_stats.get('assists', 0),
+        'steals': player_stats.get('steals', 0),
+        'blocks': player_stats.get('blocks', 0),
+        'turnovers': player_stats.get('turnovers', 0),
+        'fouls': player_stats.get('fouls', 0),
+        'fg_made': player_stats.get('fg_made', 0),
+        'fg_attempted': player_stats.get('fg_attempted', 0),
+        'three_made': player_stats.get('three_made', 0),
+        'three_attempted': player_stats.get('three_attempted', 0),
+        'ft_made': player_stats.get('ft_made', 0),
+        'ft_attempted': player_stats.get('ft_attempted', 0),
+        'game_date': str(datetime.now().date()),
+        'updated_at': datetime.utcnow().isoformat()
+    }
+
+    print(f"\n[DEBUG] upsert_live_player_stats - about to upsert record:")
+    print(stats_data)
+
+    try:
+        response = supabase.table('nba_live_player_stats')\
+            .upsert(stats_data, on_conflict='game_id,player_id')\
+            .execute()
+        return response
+    except Exception as e:
+        print(f"[ERROR] upsert_live_player_stats: {e}")
+        return {"error": str(e)}
+
+
 ################################################################################
 #                     UPSERT: LIVE GAME STATS                                   #
 ################################################################################
 
-def upsert_live_player_stats(game_id, player_stats):
-    """
-    Extracts player statistics from the API response and upserts them to nba_live_player_stats table.
-    
-    Args:
-        game_id: ID of the game
-        player_stats: Player statistics dictionary from the API
-    
-    Returns:
-        Supabase response
-    """
-    team_data = player_stats.get('team', {})
-    raw_team_id = team_data.get('id', 0)
-    team_id = raw_team_id if raw_team_id is not None else 0
-    team_name = get_team_name_from_api(team_id, league='12', season='2024-2025') if team_id else 'Unknown'
-    
-    # Fix the player's name
-    raw_name = player_stats.get('player', {}).get('name', 'Unknown')
-    player_name_fixed = fix_player_name(raw_name)
-    
-    # Get the minutes value (could be already converted or still in MM:SS format)
-    if 'minutes_numeric' in player_stats:
-        numeric_minutes = player_stats['minutes_numeric']
-    else:
-        raw_minutes = player_stats.get('minutes', '0')
-        numeric_minutes = parse_minutes(raw_minutes)
-    
-    # Extract nested statistics using the get_stat_value helper
-    stats_data = {
-        'game_id': game_id,
-        'player_id': player_stats.get('player', {}).get('id', 0),
-        'player_name': player_name_fixed,
-        'team_id': team_id,
-        'team_name': team_name,
-        'minutes': numeric_minutes,
-        'points': get_stat_value(player_stats, 'points', default=0),
-        'rebounds': get_stat_value(player_stats, 'rebounds', 'total', default=0),
-        'assists': get_stat_value(player_stats, 'assists', default=0),
-        'steals': get_stat_value(player_stats, 'steals', default=0),
-        'blocks': get_stat_value(player_stats, 'blocks', default=0),
-        'turnovers': get_stat_value(player_stats, 'turnovers', default=0),
-        'fouls': get_stat_value(player_stats, 'fouls', default=0),
-        'fg_made': get_stat_value(player_stats, 'field_goals', 'total', default=0),
-        'fg_attempted': get_stat_value(player_stats, 'field_goals', 'attempts', default=0),
-        'three_made': get_stat_value(player_stats, 'threepoint_goals', 'total', default=0),
-        'three_attempted': get_stat_value(player_stats, 'threepoint_goals', 'attempts', default=0),
-        'ft_made': get_stat_value(player_stats, 'freethrows_goals', 'total', default=0),
-        'ft_attempted': get_stat_value(player_stats, 'freethrows_goals', 'attempts', default=0),
-        'game_date': str(datetime.now().date()),
-        'updated_at': datetime.utcnow().isoformat()
-    }
-    
-    # Print the record we're about to upsert for debugging
-    print(f"Upserting record for {player_name_fixed}:", stats_data)
-    
-    try:
-        # SIMPLIFIED APPROACH - First try to insert, if it fails due to duplicate, then update
-        try:
-            # Try to insert first
-            response = supabase.table("nba_live_player_stats")\
-                .insert(stats_data)\
-                .execute()
-            return response
-        except Exception as insert_error:
-            if "duplicate" in str(insert_error).lower():
-                # If it fails due to duplicate, update instead
-                response = supabase.table("nba_live_player_stats")\
-                    .update(stats_data)\
-                    .eq("game_id", game_id)\
-                    .eq("player_id", stats_data['player_id'])\
-                    .execute()
-                return response
-            else:
-                # If it fails for another reason, raise the original error
-                raise insert_error
-    except Exception as e:
-        print(f"Error upserting data: {e}")
-        return {"error": str(e)}
-
-# Alias for backward compatibility
-upsert_live_game_stats_player = upsert_live_player_stats
 
 def upsert_live_game_stats_team(record: dict) -> dict:
     """

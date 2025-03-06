@@ -173,7 +173,7 @@ def process_day(date_obj):
 
 def main():
     """Main function to process a range of dates."""
-    start_date = datetime(2018, 10, 19)
+    start_date = datetime(2019, 11, 29)
     end_date = datetime(2025, 3, 5)
 
     print(f"Starting historical player data import from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
