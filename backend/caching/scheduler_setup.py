@@ -1,3 +1,5 @@
+# backend/caching/scheduler_setup.py
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import pytz
@@ -8,6 +10,7 @@ from src.scripts.data_fetcher import fetch_live_game_data
 from src.scripts.archive_live_data import archive_live_data
 from src.scripts.precompute_features import precompute_features
 from src.scripts.model_inference import run_model_inference
+from src.scripts.nba_stats_live import scheduled_update_nba_schedule
 from caching.supabase_cache import cache_game_data
 
 # Global variable to track archive execution per day
@@ -52,6 +55,25 @@ if __name__ == "__main__":
         id='update_cache_job'
     )
     
+    # Schedule Update: Run twice daily at 5 AM and 3 PM PT
+    scheduler.add_job(
+        scheduled_update_nba_schedule,
+        'cron', 
+        hour=5,
+        minute=0,
+        timezone='America/Los_Angeles',
+        id='schedule_update_morning'
+    )
+    
+    scheduler.add_job(
+        scheduled_update_nba_schedule,
+        'cron', 
+        hour=15,
+        minute=0,
+        timezone='America/Los_Angeles',
+        id='schedule_update_afternoon'
+    )
+    
     # Data Pipeline: Precompute features daily at 5:26 p.m. PT
     scheduler.add_job(
         precompute_features, 
@@ -63,17 +85,17 @@ if __name__ == "__main__":
         id='data_pipeline_job'
     )
 
-    # Model Inference: Run daily at 5:30 p.m. PT (giving precompute more time)
+    # Model Inference: Run daily at 6:10 p.m. PT
     scheduler.add_job(
         run_model_inference,
         'cron',
         hour=6,
-        minute=10,  # Changed from 27 to 30 to give precompute_features more time
+        minute=10,
         timezone='America/Los_Angeles',
         id='model_inference_job'
     )
     
-    # Archive jobs: Run at 13:39 (1:39 p.m. PT) and fallback at 18:00 (6:00 p.m. PT)
+    # Archive jobs: Run at 6:15 PM PT and fallback at 6:25 PM PT
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
@@ -85,7 +107,7 @@ if __name__ == "__main__":
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=6,  # 6:00 p.m. PT
+        hour=6,
         minute=25,
         timezone='America/Los_Angeles',
         id='archive_job_6pm'

@@ -255,6 +255,22 @@ def update_nba_schedule():
     
     return True
 
+def scheduled_update_nba_schedule():
+    """
+    Standalone function to update the NBA schedule.
+    This will be called by the scheduler.
+    """
+    try:
+        print(f"[{datetime.now()}] Running scheduled NBA schedule update...")
+        # Update schedule for yesterday, today, and tomorrow
+        result = update_nba_schedule()
+        print(f"[{datetime.now()}] Schedule update completed. Result: {result}")
+        return result
+    except Exception as e:
+        print(f"[{datetime.now()}] Error in scheduled NBA schedule update: {e}")
+        traceback.print_exc()
+        return False
+
 ###############################################################################
 # 1) API Data Retrieval Functions
 ###############################################################################
