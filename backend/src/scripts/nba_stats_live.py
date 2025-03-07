@@ -116,11 +116,11 @@ def normalize_team_name(name):
 
 def get_official_schedule():
     """
-    Get the official schedule from the nba_game_schedule table or create it if it doesn't exist.
+    Get the official schedule from the nba_game_schedule table.
     Returns a dictionary mapping game keys (home_team-away_team) to game IDs.
     """
     try:
-        # Check if the table exists
+        # Get games from recent dates
         today = datetime.now().date().isoformat()
         yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
         tomorrow = (datetime.now() + timedelta(days=1)).date().isoformat()
@@ -129,15 +129,10 @@ def get_official_schedule():
         response = supabase.table("nba_game_schedule").select("*").in_("game_date", [yesterday, today, tomorrow]).execute()
         
         if not response.data:
-            # Table exists but no data, try to create schedule
-            try:
-                create_schedule_table()
-                update_nba_schedule()
-                # Try querying again
-                response = supabase.table("nba_game_schedule").select("*").in_("game_date", [yesterday, today, tomorrow]).execute()
-            except Exception as e:
-                print(f"Error creating/updating schedule: {e}")
-                return {}
+            # No data found, try updating the schedule
+            update_nba_schedule()
+            # Try querying again
+            response = supabase.table("nba_game_schedule").select("*").in_("game_date", [yesterday, today, tomorrow]).execute()
         
         # Build game map for easy lookup
         game_map = {}
@@ -157,43 +152,6 @@ def get_official_schedule():
         print(f"Error getting official schedule: {e}")
         traceback.print_exc()
         return {}
-
-def create_schedule_table():
-    """
-    Creates the nba_game_schedule table in Supabase if it doesn't exist.
-    """
-    sql = """
-    CREATE TABLE IF NOT EXISTS public.nba_game_schedule (
-      id SERIAL PRIMARY KEY,
-      game_id INTEGER NOT NULL UNIQUE,
-      game_date DATE NOT NULL,
-      home_team TEXT NOT NULL,
-      away_team TEXT NOT NULL,
-      scheduled_time TIMESTAMP WITH TIME ZONE,
-      venue TEXT,
-      status TEXT DEFAULT 'scheduled',
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    );
-    
-    CREATE INDEX IF NOT EXISTS idx_nba_game_schedule_date ON public.nba_game_schedule(game_date);
-    """
-    
-    try:
-        # Execute the SQL using Supabase's pg extension (if available)
-        result = supabase.postgrest.rpc('exec_sql', {'query': sql}).execute()
-        print("Schedule table created or verified.")
-        return True
-    except Exception as e:
-        print(f"Error creating schedule table: {e}")
-        # If the RPC approach doesn't work, we'll use the Supabase API instead
-        try:
-            # Try direct SQL via REST API
-            result = supabase.rpc('exec_sql', {'query': sql}).execute()
-            print("Schedule table created using RPC.")
-            return True
-        except Exception as e2:
-            print(f"Error creating schedule via RPC: {e2}")
-            return False
 
 def get_current_season():
     """
@@ -245,7 +203,15 @@ def update_nba_schedule():
                 # Extract game details
                 home_team = get_nested_value(game, 'teams', 'home', 'name')
                 away_team = get_nested_value(game, 'teams', 'away', 'name')
-                venue = get_nested_value(game, 'venue', 'name')
+                venue_value = game.get('venue', None)
+                if isinstance(venue_value, dict):
+                    venue = venue_value.get('name', '')
+                elif isinstance(venue_value, str):
+                    venue = venue_value
+                else:
+                    venue = ''
+
+                print(f"DEBUG - Extracted venue: {venue}")
                 status = get_nested_value(game, 'status', 'short')
                 
                 # Convert date string to proper format
@@ -307,10 +273,14 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        print(f"Fetched game data for {date} (Season {season}, Timezone: {timezone})")
-        print("Status Code:", response.status_code)
-        print("Request URL:", response.url)
-        return response.json()
+        data = response.json()
+        
+        # Debug venue data
+        if 'response' in data and data['response']:
+            for game in data['response']:
+                print(f"DEBUG - Game ID {game.get('id')} Venue Data:", json.dumps(game.get('venue', {}), indent=2))
+        
+        return data
     except requests.exceptions.RequestException as e:
         print(f"Error fetching game data for {date}: {e}")
         return {}
@@ -496,6 +466,10 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
     print("DEBUG - Extracted team stats:")
     pprint(transformed)
     
+    if 'current_quarter' in transformed:
+        print(f"Removing current_quarter field (value: {transformed['current_quarter']}) from data")
+        del transformed['current_quarter']
+    
     return transformed
 
 def determine_current_quarter(game):
@@ -603,8 +577,7 @@ def run_live_games():
 def main():
     print("Fetching live NBA game data for today (using Pacific Time) and upserting team stats...")
     try:
-        # First check if the schedule table exists and is up to date
-        create_schedule_table()
+        # Update the NBA schedule first
         update_nba_schedule()
         
         # Then run live games data collection
