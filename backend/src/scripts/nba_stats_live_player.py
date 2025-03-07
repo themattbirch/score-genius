@@ -141,11 +141,6 @@ def modify_player_stats_for_upsert(game_id: int, player_stats: dict) -> dict:
     player_id = player_stats.get('player', {}).get('id', 0)
     player_name = player_stats.get('player', {}).get('name', 'Unknown')
     
-    # Fix player name if necessary (last name first -> first last)
-    name_parts = player_name.split()
-    if len(name_parts) == 2 and not name_parts[0].endswith('.'):
-        player_name = f"{name_parts[1]} {name_parts[0]}"
-    
     # Convert minutes to numeric
     minutes_raw = player_stats.get('minutes', "0:00")
     minutes_numeric = convert_minutes(minutes_raw)

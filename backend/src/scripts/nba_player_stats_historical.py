@@ -98,7 +98,7 @@ def process_day(date_obj):
     print(f"\nProcessed {processed_count} games for {date_str}")
 
 def main():
-    start_date = datetime(2018, 10, 24)
+    start_date = datetime(2021, 11, 17)
     end_date   = datetime(2025, 3, 5)
 
     print(f"Starting historical data import from {start_date} to {end_date}")

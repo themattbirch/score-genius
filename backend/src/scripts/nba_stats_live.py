@@ -4,10 +4,11 @@ import json
 import requests
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pprint import pprint
 import time
+import traceback
 from caching.supabase_stats import upsert_live_game_stats_team
 
 # Add the backend root to the Python path so we can import from caching
@@ -46,6 +47,247 @@ def get_nested_value(data, *keys, default=None):
             return default
         current = current[key]
     return current if current is not None else default
+
+def normalize_team_name(name):
+    """
+    Normalize team name for consistent matching.
+    
+    Args:
+        name: Team name to normalize
+        
+    Returns:
+        Normalized team name
+    """
+    if not name:
+        return ""
+    
+    # Common name variations and abbreviations
+    name_map = {
+        "sixers": "philadelphia 76ers",
+        "76ers": "philadelphia 76ers",
+        "blazers": "portland trail blazers",
+        "trailblazers": "portland trail blazers",
+        "trail blazers": "portland trail blazers",
+        "cavs": "cleveland cavaliers",
+        "mavs": "dallas mavericks",
+        "knicks": "new york knicks", 
+        "nets": "brooklyn nets",
+        "lakers": "los angeles lakers",
+        "clippers": "los angeles clippers",
+        "la clippers": "los angeles clippers",
+        "la lakers": "los angeles lakers",
+        "warriors": "golden state warriors",
+        "t-wolves": "minnesota timberwolves",
+        "timberwolves": "minnesota timberwolves",
+        "nuggets": "denver nuggets",
+        "heat": "miami heat",
+        "bulls": "chicago bulls",
+        "celtics": "boston celtics",
+        "bucks": "milwaukee bucks",
+        "suns": "phoenix suns",
+        "spurs": "san antonio spurs",
+        "raptors": "toronto raptors",
+        "wizards": "washington wizards",
+        "magic": "orlando magic",
+        "hawks": "atlanta hawks",
+        "hornets": "charlotte hornets",
+        "pistons": "detroit pistons",
+        "pacers": "indiana pacers",
+        "grizzlies": "memphis grizzlies",
+        "pelicans": "new orleans pelicans",
+        "thunder": "oklahoma city thunder",
+        "jazz": "utah jazz",
+        "kings": "sacramento kings",
+        "rockets": "houston rockets"
+    }
+    
+    # Convert to lowercase for case-insensitive matching
+    name_lower = name.lower()
+    
+    # Direct mapping for known variations
+    for key, value in name_map.items():
+        if key == name_lower:
+            return value
+    
+    # If no exact match on alias, return cleaned original
+    # Remove extra spaces and standardize to title case
+    cleaned = ' '.join(name.split()).title()
+    return cleaned
+
+def get_official_schedule():
+    """
+    Get the official schedule from the nba_game_schedule table or create it if it doesn't exist.
+    Returns a dictionary mapping game keys (home_team-away_team) to game IDs.
+    """
+    try:
+        # Check if the table exists
+        today = datetime.now().date().isoformat()
+        yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
+        tomorrow = (datetime.now() + timedelta(days=1)).date().isoformat()
+        
+        # Try to query the table
+        response = supabase.table("nba_game_schedule").select("*").in_("game_date", [yesterday, today, tomorrow]).execute()
+        
+        if not response.data:
+            # Table exists but no data, try to create schedule
+            try:
+                create_schedule_table()
+                update_nba_schedule()
+                # Try querying again
+                response = supabase.table("nba_game_schedule").select("*").in_("game_date", [yesterday, today, tomorrow]).execute()
+            except Exception as e:
+                print(f"Error creating/updating schedule: {e}")
+                return {}
+        
+        # Build game map for easy lookup
+        game_map = {}
+        for game in response.data:
+            home_team = normalize_team_name(game.get('home_team', '')).lower()
+            away_team = normalize_team_name(game.get('away_team', '')).lower()
+            game_id = game.get('game_id')
+            
+            if home_team and away_team and game_id:
+                # Create keys for both directions
+                game_map[f"{home_team}-{away_team}"] = game_id
+                game_map[f"{away_team}-{home_team}"] = game_id  # For reverse lookup
+        
+        return game_map
+    
+    except Exception as e:
+        print(f"Error getting official schedule: {e}")
+        traceback.print_exc()
+        return {}
+
+def create_schedule_table():
+    """
+    Creates the nba_game_schedule table in Supabase if it doesn't exist.
+    """
+    sql = """
+    CREATE TABLE IF NOT EXISTS public.nba_game_schedule (
+      id SERIAL PRIMARY KEY,
+      game_id INTEGER NOT NULL UNIQUE,
+      game_date DATE NOT NULL,
+      home_team TEXT NOT NULL,
+      away_team TEXT NOT NULL,
+      scheduled_time TIMESTAMP WITH TIME ZONE,
+      venue TEXT,
+      status TEXT DEFAULT 'scheduled',
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_nba_game_schedule_date ON public.nba_game_schedule(game_date);
+    """
+    
+    try:
+        # Execute the SQL using Supabase's pg extension (if available)
+        result = supabase.postgrest.rpc('exec_sql', {'query': sql}).execute()
+        print("Schedule table created or verified.")
+        return True
+    except Exception as e:
+        print(f"Error creating schedule table: {e}")
+        # If the RPC approach doesn't work, we'll use the Supabase API instead
+        try:
+            # Try direct SQL via REST API
+            result = supabase.rpc('exec_sql', {'query': sql}).execute()
+            print("Schedule table created using RPC.")
+            return True
+        except Exception as e2:
+            print(f"Error creating schedule via RPC: {e2}")
+            return False
+
+def get_current_season():
+    """
+    Determine the current NBA season based on today's date.
+    NBA season generally runs from October to June.
+    """
+    today = datetime.now()
+    if today.month >= 7 and today.month <= 9:
+        # July-September is off-season, return the upcoming season
+        return f"{today.year}-{today.year + 1}"
+    elif today.month >= 10:
+        # October to December is the start of a new season
+        return f"{today.year}-{today.year + 1}"
+    else:
+        # January to June is the latter part of the current season
+        return f"{today.year - 1}-{today.year}"
+
+def update_nba_schedule():
+    """
+    Update the NBA schedule for the current date range.
+    """
+    season = get_current_season()
+    league = '12'  # NBA league ID
+    
+    # Get dates for yesterday, today, and tomorrow
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    tomorrow = today + timedelta(days=1)
+    
+    # Fetch and process each date
+    for date_obj in [yesterday, today, tomorrow]:
+        date_str = date_obj.isoformat()
+        print(f"Updating schedule for {date_str}...")
+        
+        games_data = get_games_by_date(league, season, date_str)
+        if not games_data.get('response'):
+            print(f"No games found for {date_str}")
+            continue
+        
+        print(f"Found {len(games_data.get('response', []))} games for {date_str}")
+        
+        # Process each game
+        for game in games_data.get('response', []):
+            try:
+                game_id = game.get('id')
+                if not game_id:
+                    continue
+                
+                # Extract game details
+                home_team = get_nested_value(game, 'teams', 'home', 'name')
+                away_team = get_nested_value(game, 'teams', 'away', 'name')
+                venue = get_nested_value(game, 'venue', 'name')
+                status = get_nested_value(game, 'status', 'short')
+                
+                # Convert date string to proper format
+                game_date_str = game.get('date')
+                try:
+                    game_datetime = datetime.fromisoformat(game_date_str.replace('Z', '+00:00'))
+                    game_date = game_datetime.date().isoformat()
+                    scheduled_time = game_datetime.isoformat()
+                except:
+                    # If parse fails, use the date we're querying
+                    game_date = date_str
+                    scheduled_time = f"{date_str}T19:00:00.000Z"  # Default to 7pm
+                
+                # Normalize team names
+                home_team = normalize_team_name(home_team)
+                away_team = normalize_team_name(away_team)
+                
+                # Prepare record for insertion
+                schedule_record = {
+                    'game_id': game_id,
+                    'game_date': game_date,
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'scheduled_time': scheduled_time,
+                    'venue': venue,
+                    'status': status or 'scheduled',
+                    'updated_at': datetime.utcnow().isoformat()
+                }
+                
+                # Upsert to schedule table
+                result = supabase.table("nba_game_schedule").upsert(
+                    schedule_record, 
+                    on_conflict='game_id'
+                ).execute()
+                
+                print(f"Updated schedule: {home_team} vs {away_team}")
+                
+            except Exception as e:
+                print(f"Error processing game {game.get('id')}: {e}")
+                continue
+    
+    return True
 
 ###############################################################################
 # 1) API Data Retrieval Functions
@@ -110,13 +352,14 @@ def print_game_info(game: dict):
 # 2) Transformation Function
 ###############################################################################
 
-def transform_team_stats(game: dict, team_stats_data: dict) -> dict:
+def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: dict = None) -> dict:
     """
     Transform raw game and team stats data into the expected record format.
     
     Args:
         game: The game object from the /games endpoint
         team_stats_data: The full team stats response from the /games/statistics/teams endpoint
+        official_schedule: Dictionary mapping normalized team pairs to game IDs
         
     Returns:
         A dictionary containing all relevant stats for database insertion
@@ -148,11 +391,39 @@ def transform_team_stats(game: dict, team_stats_data: dict) -> dict:
     print("DEBUG - Home team ID:", home_team_id)
     print("DEBUG - Away team ID:", away_team_id)
     
+    # Get team names and normalize them
+    raw_home_team = game.get('teams', {}).get('home', {}).get('name')
+    raw_away_team = game.get('teams', {}).get('away', {}).get('name')
+    
+    normalized_home = normalize_team_name(raw_home_team)
+    normalized_away = normalize_team_name(raw_away_team)
+    
+    print(f"Normalized team names: {normalized_home} vs {normalized_away}")
+    
+    # Get game_id from API first
+    game_id = game.get('id')
+    
+    # If official schedule is provided, try to match to get consistent game_id
+    if official_schedule:
+        # Create key for lookup (both directions)
+        key1 = f"{normalized_home.lower()}-{normalized_away.lower()}"
+        key2 = f"{normalized_away.lower()}-{normalized_home.lower()}"
+        
+        # Check if this game exists in official schedule
+        if key1 in official_schedule:
+            official_game_id = official_schedule[key1]
+            print(f"Found game in official schedule: {key1} -> {official_game_id}")
+            game_id = official_game_id
+        elif key2 in official_schedule:
+            official_game_id = official_schedule[key2]
+            print(f"Found game in official schedule (reversed): {key2} -> {official_game_id}")
+            game_id = official_game_id
+    
     # Base record with game and quarter information
     transformed = {
-        'game_id': game.get('id'),
-        'home_team': game.get('teams', {}).get('home', {}).get('name'),
-        'away_team': game.get('teams', {}).get('away', {}).get('name'),
+        'game_id': game_id,
+        'home_team': normalized_home,
+        'away_team': normalized_away,
         'home_score': home_scores.get('total'),
         'away_score': away_scores.get('total'),
         'home_q1': get_quarter_score(home_scores, 'q1', 'quarter1', 'quarter_1'),
@@ -166,6 +437,7 @@ def transform_team_stats(game: dict, team_stats_data: dict) -> dict:
         'away_q4': get_quarter_score(away_scores, 'q4', 'quarter4', 'quarter_4'),
         'away_ot': away_scores.get('ot', 0) or away_scores.get('over_time', 0) or 0,
         'game_date': game.get('date'),
+        'current_quarter': determine_current_quarter(game),
     }
     
     # Process home team stats if available
@@ -226,6 +498,61 @@ def transform_team_stats(game: dict, team_stats_data: dict) -> dict:
     
     return transformed
 
+def determine_current_quarter(game):
+    """
+    Determine the current quarter based on game status and scores.
+    
+    Args:
+        game: Game data dictionary
+        
+    Returns:
+        Integer representing the current quarter (0-4, 0 = not started)
+    """
+    status = game.get('status', {}).get('short', '')
+    
+    # Check status first
+    if status == 'NS':  # Not Started
+        return 0
+    elif status == 'FT':  # Finished
+        return 4  # Assuming a standard game
+    
+    # For in-progress games, check the status directly
+    status_map = {
+        'Q1': 1,
+        'Q2': 2,
+        'Q3': 3,
+        'Q4': 4,
+        'OT': 4,  # Overtime counts as 4th quarter for our purposes
+        'BT': 0,  # Break Time
+        'HT': 2   # Halftime (after Q2)
+    }
+    
+    if status in status_map:
+        return status_map[status]
+    
+    # If status doesn't clearly indicate, check scores
+    home_scores = game.get('scores', {}).get('home', {})
+    
+    # Check quarters in reverse order
+    for q in ['q4', 'quarter4', 'quarter_4']:
+        if home_scores.get(q):
+            return 4
+    
+    for q in ['q3', 'quarter3', 'quarter_3']:
+        if home_scores.get(q):
+            return 3
+    
+    for q in ['q2', 'quarter2', 'quarter_2']:
+        if home_scores.get(q):
+            return 2
+    
+    for q in ['q1', 'quarter1', 'quarter_1']:
+        if home_scores.get(q):
+            return 1
+    
+    # Default if we can't determine
+    return 0
+
 ###############################################################################
 # 3) Main Driver: Fetch Live Games, Transform, and Upsert
 ###############################################################################
@@ -234,8 +561,13 @@ def run_live_games():
     # Use the current date in Pacific Time (live)
     today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
     league = '12'          # NBA league ID
-    season = '2024-2025'
+    season = get_current_season()
     timezone = 'America/Los_Angeles'
+    
+    # Get official schedule for verification
+    official_schedule = get_official_schedule()
+    if not official_schedule:
+        print("Warning: Could not load official schedule. Using API game IDs only.")
     
     games_data = get_games_by_date(league, season, today_pst, timezone)
     if not games_data.get('response'):
@@ -251,12 +583,10 @@ def run_live_games():
         if not team_stats_data.get('response'):
             print(f"No team statistics found for game ID {game_id}.")
             continue
-
-        # Print the full response structure for debugging
-        print("FULL TEAM STATS RESPONSE:", json.dumps(team_stats_data, indent=2))
         
         # Transform the raw game and team stats into the expected record format
-        record = transform_team_stats(game, team_stats_data)
+        # Pass the official schedule for consistent game IDs
+        record = transform_team_stats(game, team_stats_data, official_schedule)
         print("Transformed Team Record:")
         pprint(record)
 
@@ -266,12 +596,22 @@ def run_live_games():
             print(f"Upsert result for game ID {game_id}: {result}")
         except Exception as e:
             print(f"Error upserting data for game ID {game_id}: {e}")
+            traceback.print_exc()
         
         print("=" * 60)
 
 def main():
     print("Fetching live NBA game data for today (using Pacific Time) and upserting team stats...")
-    run_live_games()
+    try:
+        # First check if the schedule table exists and is up to date
+        create_schedule_table()
+        update_nba_schedule()
+        
+        # Then run live games data collection
+        run_live_games()
+    except Exception as e:
+        print(f"Error in main execution: {e}")
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()

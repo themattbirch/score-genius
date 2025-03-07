@@ -231,3 +231,29 @@ def upsert_live_game_stats_team(record: dict) -> dict:
         return response
     except Exception as e:
         return {"error": str(e)}
+
+################################################################################
+#                  HISTORICAL GAME STATS (TEAM-LEVEL) - RESTORED               #
+################################################################################
+
+def upsert_historical_game_stats_team(record: dict) -> dict:
+    """
+    Upserts a single record of TEAM-level stats into 'nba_historical_game_stats' table.
+    The `record` should have fields such as:
+      - game_id, home_team, away_team,
+      - home_score, away_score,
+      - home_q1, home_q2, home_q3, home_q4, home_ot,
+      - away_q1, away_q2, away_q3, away_q4, away_ot,
+      - home_assists, home_steals, home_blocks, ...
+      - away_assists, away_steals, away_blocks, ...
+      - plus any other relevant fields you'd like to store
+    """
+    try:
+        response = (
+            supabase.table('nba_historical_game_stats')
+            .upsert(record, on_conflict='game_id')
+            .execute()
+        )
+        return response
+    except Exception as e:
+        return {"error": str(e)}
