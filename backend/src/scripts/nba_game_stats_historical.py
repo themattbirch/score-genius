@@ -276,8 +276,8 @@ def process_day(date_obj: datetime):
 ##############################################################################
 
 def main():
-    start_date = datetime(2025, 2, 21)
-    end_date = datetime(2025, 3, 7)
+    start_date = datetime(2023, 10, 24)
+    end_date = datetime(2023, 12, 25)
 
     print(f"Starting historical data import from {start_date} to {end_date}")
     current = start_date
