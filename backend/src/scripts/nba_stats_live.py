@@ -217,13 +217,33 @@ def update_nba_schedule():
                 # Convert date string to proper format
                 game_date_str = game.get('date')
                 try:
+                    # Parse the datetime (could be UTC or local)
                     game_datetime = datetime.fromisoformat(game_date_str.replace('Z', '+00:00'))
+                    
+                    # Convert to Pacific Time for storage
+                    pacific_tz = ZoneInfo("America/Los_Angeles")
+                    if game_datetime.tzinfo is not None:
+                        game_datetime = game_datetime.astimezone(pacific_tz)
+                    else:
+                        # If no timezone, assume UTC
+                        utc_tz = ZoneInfo("UTC")
+                        game_datetime = game_datetime.replace(tzinfo=utc_tz).astimezone(pacific_tz)
+                    
+                    # Store just the date portion 
                     game_date = game_datetime.date().isoformat()
-                    scheduled_time = game_datetime.isoformat()
-                except:
+                    
+                    # Take Pacific time, remove timezone, and add fake UTC indicator
+                    # This is the trick to keep Pacific times in the database
+                    naive_pt_time = game_datetime.replace(tzinfo=None)
+                    scheduled_time = naive_pt_time.isoformat() + "+00:00"
+                    
+                    print(f"Converted game time to Pacific: {game_datetime}")
+                    print(f"Storing as PT with fake UTC indicator: {scheduled_time}")
+                except Exception as e:
+                    print(f"Error parsing date '{game_date_str}': {e}")
                     # If parse fails, use the date we're querying
                     game_date = date_str
-                    scheduled_time = f"{date_str}T19:00:00.000Z"  # Default to 7pm
+                    scheduled_time = f"{date_str}T19:00:00+00:00"  # Default to 7pm PT
                 
                 # Normalize team names
                 home_team = normalize_team_name(home_team)
@@ -295,6 +315,10 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
         if 'response' in data and data['response']:
             for game in data['response']:
                 print(f"DEBUG - Game ID {game.get('id')} Venue Data:", json.dumps(game.get('venue', {}), indent=2))
+                
+                # Debug date/time information
+                game_date = game.get('date')
+                print(f"DEBUG - Game ID {game.get('id')} Date: {game_date} (Requested timezone: {timezone})")
         
         return data
     except requests.exceptions.RequestException as e:
@@ -332,6 +356,7 @@ def print_game_info(game: dict):
     print(f"  Scores: Away {scores.get('away', {}).get('total')} - Home {scores.get('home', {}).get('total')}")
     print(f"  Status: {status.get('long')}")
     print(f"  Venue: {game.get('venue')}")
+    print(f"  Date: {game.get('date')}")
     print("-" * 60)
 
 ###############################################################################
@@ -405,6 +430,45 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
             print(f"Found game in official schedule (reversed): {key2} -> {official_game_id}")
             game_id = official_game_id
     
+    # Get the raw game date
+    game_date_str = game.get('date')
+    
+    # Properly handle timezone for game_date
+    try:
+        # Parse the datetime from the API (which should be in the requested timezone)
+        game_datetime = datetime.fromisoformat(game_date_str.replace('Z', '+00:00'))
+        
+        # The API should already return the date in Pacific Time since we requested
+        # timezone='America/Los_Angeles' in the API call, but let's ensure it
+        pacific_tz = ZoneInfo("America/Los_Angeles")
+        
+        # If the datetime has timezone info but it's not Pacific
+        if game_datetime.tzinfo is not None and str(game_datetime.tzinfo) != str(pacific_tz):
+            # Convert to Pacific time
+            game_datetime = game_datetime.astimezone(pacific_tz)
+            print(f"Converted game time to Pacific: {game_datetime}")
+        elif game_datetime.tzinfo is None:
+            # If no timezone info, assume it's UTC and convert to Pacific
+            utc_tz = ZoneInfo("UTC")
+            game_datetime = game_datetime.replace(tzinfo=utc_tz).astimezone(pacific_tz)
+            print(f"Added PT timezone to naive datetime: {game_datetime}")
+        
+        # CRITICAL FIX: Store Pacific Time in the database by pretending it's UTC
+        # Take the Pacific time but pretend it's UTC (remove real timezone info)
+        naive_pt_time = game_datetime.replace(tzinfo=None)
+        
+        # Format it as UTC ISO format with +00:00 suffix
+        formatted_game_date = naive_pt_time.isoformat() + "+00:00"
+        
+        print(f"Pacific time formatted as fake UTC for storage: {formatted_game_date}")
+    except Exception as e:
+        print(f"Error processing game date '{game_date_str}': {e}")
+        # Fallback with same approach - current Pacific time pretending to be UTC
+        now_pt = datetime.now(ZoneInfo("America/Los_Angeles"))
+        naive_pt_time = now_pt.replace(tzinfo=None)
+        formatted_game_date = naive_pt_time.isoformat() + "+00:00"
+        print(f"Using fallback fake UTC date (actually PT): {formatted_game_date}")
+    
     # Base record with game and quarter information
     transformed = {
         'game_id': game_id,
@@ -422,7 +486,7 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
         'away_q3': get_quarter_score(away_scores, 'q3', 'quarter3', 'quarter_3'),
         'away_q4': get_quarter_score(away_scores, 'q4', 'quarter4', 'quarter_4'),
         'away_ot': away_scores.get('ot', 0) or away_scores.get('over_time', 0) or 0,
-        'game_date': game.get('date'),
+        'game_date': formatted_game_date,  # Pacific time with fake UTC indicator
         'current_quarter': determine_current_quarter(game),
     }
     
@@ -481,10 +545,6 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
     # Print the extracted stats for debugging
     print("DEBUG - Extracted team stats:")
     pprint(transformed)
-    
-    if 'current_quarter' in transformed:
-        print(f"Removing current_quarter field (value: {transformed['current_quarter']}) from data")
-        del transformed['current_quarter']
     
     return transformed
 
@@ -549,22 +609,31 @@ def determine_current_quarter(game):
 
 def run_live_games():
     # Use the current date in Pacific Time (live)
-    today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
+    pacific_tz = ZoneInfo("America/Los_Angeles")
+    today_pt = datetime.now(pacific_tz)
+    today_pt_str = today_pt.strftime('%Y-%m-%d')
+    
+    print(f"Fetching games for {today_pt_str} in Pacific Time...")
+    
     league = '12'          # NBA league ID
     season = get_current_season()
-    timezone = 'America/Los_Angeles'
+    timezone = 'America/Los_Angeles'  # Explicitly request Pacific Time
     
     # Get official schedule for verification
     official_schedule = get_official_schedule()
     if not official_schedule:
         print("Warning: Could not load official schedule. Using API game IDs only.")
     
-    games_data = get_games_by_date(league, season, today_pst, timezone)
+    games_data = get_games_by_date(league, season, today_pt_str, timezone)
     if not games_data.get('response'):
-        print(f"No game data found for {today_pst}.")
+        print(f"No game data found for {today_pt_str}.")
         return
 
     for game in games_data['response']:
+        # Log the raw date from the API
+        raw_date = game.get('date')
+        print(f"API returned game date: {raw_date}")
+        
         print_game_info(game)
         game_id = game.get('id')
         
