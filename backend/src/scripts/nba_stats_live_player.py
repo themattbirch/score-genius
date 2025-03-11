@@ -7,11 +7,11 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import time
+import traceback
 
 # Add the backend root to the Python path so we can import from caching
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
-# Import your upsert function
 from caching.supabase_stats import upsert_live_player_stats
 from caching.supabase_client import supabase
 from config import API_SPORTS_KEY
@@ -23,11 +23,23 @@ HEADERS = {
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
+###############################################################################
+# Helper Functions
+###############################################################################
+
+def log_with_timestamp(message: str, level: str = "INFO"):
+    """Log messages with a timestamp for easier debugging."""
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts}] {level}: {message}")
+
 def convert_minutes(time_str):
-    """Convert a time string in 'MM:SS' format to a float representing minutes."""
+    """
+    Convert a time string in 'MM:SS' format to a float representing total minutes.
+    Falls back to float() if the string is numeric, or 0.0 if empty/invalid.
+    """
     try:
         if not time_str or not isinstance(time_str, str) or ":" not in time_str:
-            # if time_str is numeric or empty, return a float (or 0.0)
+            # If time_str is numeric or empty, return a float or 0.0
             return float(time_str) if time_str and str(time_str).strip() != "" else 0.0
         minutes, seconds = time_str.split(":")
         return float(minutes) + float(seconds) / 60.0
@@ -37,7 +49,8 @@ def convert_minutes(time_str):
 
 def get_games_by_date(league: str, season: str, date: str, timezone: str = 'America/Los_Angeles') -> dict:
     """
-    Fetch games for a given date from the API.
+    Fetch games for a given date from the API, requesting data in the specified timezone.
+    Example: timezone='America/Los_Angeles' to ensure Pacific Time.
     """
     url = f"{BASE_URL}/games"
     params = {
@@ -49,29 +62,32 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
     try:
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
-        print(f"Fetched game data for {date} (Season {season}, Timezone: {timezone})")
-        print("Status Code:", response.status_code)
-        print("Request URL:", response.url)
+        log_with_timestamp(f"Fetched game data for {date} (Season {season}, Timezone: {timezone})")
+        log_with_timestamp(f"Status Code: {response.status_code}")
+        log_with_timestamp(f"Request URL: {response.url}")
         return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching game data for {date}: {e}")
+        log_with_timestamp(f"Error fetching game data for {date}: {e}", "ERROR")
+        traceback.print_exc()
         return {}
 
 def filter_live_games(games_data: dict) -> list:
     """
-    Filter games to only include those currently in progress.
+    Filter games to include only those currently in progress.
+    The API returns 'NS' (not started) or 'FT' (finished).
+    We want games that are not NS or FT.
     """
     live_games = []
     for game in games_data.get('response', []):
         status = game.get('status', {})
-        # NS=Not Started, FT=Finished. We want only in-progress
+        # If status short code is not 'NS' or 'FT', consider it in-progress
         if status.get('short') not in ["NS", "FT"]:
             live_games.append(game)
     return live_games
 
 def get_player_box_stats(game_id: int) -> dict:
     """
-    Fetch player box statistics for a specific game.
+    Fetch player box statistics for a specific game from the API.
     """
     url = f"{BASE_URL}/games/statistics/players"
     params = {'ids': game_id}
@@ -81,19 +97,20 @@ def get_player_box_stats(game_id: int) -> dict:
         # Clean up any HTML encoding issues in the response
         raw_text = response.text.replace("&amp;apos;", "'").replace("&apos;", "'")
         data = json.loads(raw_text)
-        
-        # Debug the player stats structure
+
+        # Debug the player stats structure for the first entry
         if 'response' in data and len(data['response']) > 0:
-            print("DEBUG - Sample Player Stats API Structure:")
+            log_with_timestamp("Sample Player Stats API Structure (first record):")
             print(json.dumps(data['response'][0], indent=2))
         return data
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching player statistics for game ID {game_id}: {e}")
+        log_with_timestamp(f"Error fetching player statistics for game ID {game_id}: {e}", "ERROR")
+        traceback.print_exc()
         return {}
 
 def print_game_info(game: dict):
     """
-    Print key game information.
+    Print key info about a single game, for debugging/logging.
     """
     game_id = game.get('id')
     teams = game.get('teams', {})
@@ -106,46 +123,24 @@ def print_game_info(game: dict):
     print(f"  Venue: {game.get('venue')}")
     print("-" * 60)
 
-def get_additional_stats(game_id: int, player_id: int) -> dict:
-    """
-    Make an additional API call to potentially get missing statistics.
-    """
-    url = f"{BASE_URL}/games/statistics/players"
-    params = {
-        'game': game_id,
-        'player': player_id
-    }
-    try:
-        response = requests.get(url, headers=HEADERS, params=params)
-        response.raise_for_status()
-        data = response.json()
-        print(f"Fetched additional stats for player {player_id}, game {game_id}")
-        print("Response:", data)
-        return data.get('response', [{}])[0] if data.get('response') else {}
-    except Exception as e:
-        print(f"Error fetching additional stats: {e}")
-        return {}
-
 def modify_player_stats_for_upsert(game_id: int, player_stats: dict) -> dict:
     """
-    Prepare player statistics for upsert by:
-    1. Converting minutes to numeric
-    2. Extracting available statistics
-    3. Defaulting missing stats to 0 (rather than 1)
+    Prepare player statistics for upsert:
+      1) Convert 'minutes' to numeric
+      2) Extract & default missing stats to 0
     """
-    # Debug: Print the full raw JSON for each player so we see what fields are present
     print("\nDEBUG RAW PLAYER DATA:")
     print(json.dumps(player_stats, indent=2))
-    
+
     team_id = player_stats.get('team', {}).get('id', 0)
     player_id = player_stats.get('player', {}).get('id', 0)
     player_name = player_stats.get('player', {}).get('name', 'Unknown')
-    
+
     # Convert minutes to numeric
     minutes_raw = player_stats.get('minutes', "0:00")
     minutes_numeric = convert_minutes(minutes_raw)
 
-    # Safely parse the main stats. Default to 0 if missing
+    # Safely parse main stats, defaulting to 0 if missing
     points = int(player_stats.get("points", 0))
     rebounds = int(player_stats.get("rebounds", {}).get("total", 0))
     assists = int(player_stats.get("assists", 0))
@@ -159,27 +154,22 @@ def modify_player_stats_for_upsert(game_id: int, player_stats: dict) -> dict:
     fg_made = int(fg.get("total", 0))
     fg_attempted = int(fg.get("attempts", 0))
 
-    # Three pointers
+    # Three-pointers
     three = player_stats.get("threepoint_goals", {})
     three_made = int(three.get("total", 0))
     three_attempted = int(three.get("attempts", 0))
 
-    # Free throws
-    # The API might name them "freethrows_goals" or "free_throws"
-    ft_made = 0
-    ft_attempted = 0
-    # First check for "freethrows_goals"
+    # Free throws: might be in 'freethrows_goals' or 'free_throws'
+    ft_made, ft_attempted = 0, 0
     if 'freethrows_goals' in player_stats and isinstance(player_stats['freethrows_goals'], dict):
         ft = player_stats['freethrows_goals']
         ft_made = int(ft.get('total', 0))
         ft_attempted = int(ft.get('attempts', 0))
-    # Otherwise check for "free_throws"
     elif 'free_throws' in player_stats and isinstance(player_stats['free_throws'], dict):
         ft = player_stats['free_throws']
         ft_made = int(ft.get('total', 0))
         ft_attempted = int(ft.get('attempts', 0))
 
-    # Return the new stats dict
     modified_stats = {
         "game_id": game_id,
         "team_id": team_id,
@@ -206,8 +196,7 @@ def modify_player_stats_for_upsert(game_id: int, player_stats: dict) -> dict:
 
 def enhanced_upsert_player_stats(game_id: int, original_player_stats: dict):
     """
-    Enhanced upsert function that first modifies the player statistics, 
-    then calls the original upsert function.
+    Enhanced upsert that modifies the player stats before calling upsert_live_player_stats().
     """
     modified_stats = modify_player_stats_for_upsert(game_id, original_player_stats)
     try:
@@ -215,50 +204,76 @@ def enhanced_upsert_player_stats(game_id: int, original_player_stats: dict):
         return result
     except Exception as e:
         print(f"Error in enhanced upsert: {e}")
+        traceback.print_exc()
         return {"error": str(e)}
+
+###############################################################################
+# Main driver: run_live_games
+###############################################################################
 
 def run_live_games():
     """
-    Main function to fetch live game data and process player statistics.
+    Main function to fetch live game data in Pacific Time, then process player statistics.
+    Only 'in-progress' games are included.
     """
-    today_pst = datetime.now(ZoneInfo("America/Los_Angeles")).strftime('%Y-%m-%d')
+    # 1) Determine today's date in Pacific Time
+    pacific_tz = ZoneInfo("America/Los_Angeles")
+    today_pst = datetime.now(pacific_tz).strftime('%Y-%m-%d')
+    
+    # 2) Set league & season
     league = '12'            # NBA league ID
-    season = '2024-2025'     # Adjust as needed
-    timezone = 'America/Los_Angeles'
+    season = '2024-2025'     # Adjust if needed
+    timezone = 'America/Los_Angeles'  # Force the API to return data in Pacific Time
     
+    print(f"Fetching live NBA player data for {today_pst} (Pacific Time)...")
+    
+    # 3) Fetch all games for this date in Pacific Time
     games_data = get_games_by_date(league, season, today_pst, timezone)
-    live_games = filter_live_games(games_data)
-    
-    if not live_games:
-        print("No live games found for today.")
+    if not games_data.get('response'):
+        print(f"No games found for {today_pst} in Pacific Time.")
         return
     
-    print(f"\nFound {len(live_games)} live game(s):\n")
+    # 4) Filter to only in-progress games
+    live_games = filter_live_games(games_data)
+    if not live_games:
+        print("No live (in-progress) games found for today.")
+        return
+    
+    print(f"\nFound {len(live_games)} live game(s) for {today_pst}:\n")
+    # 5) For each live game, fetch and upsert player stats
     for game in live_games:
         print_game_info(game)
         game_id = game.get('id')
         
-        # Fetch player statistics
+        # Fetch player stats from the API
         player_stats_data = get_player_box_stats(game_id)
-        
-        if 'response' in player_stats_data:
-            print(f"Processing {len(player_stats_data['response'])} player records for game ID {game_id}\n")
-            
-            for player_stat in player_stats_data['response']:
-                player_name = player_stat.get('player', {}).get('name', 'Unknown')
-                print(f"Processing player: {player_name}")
-                
-                # Use enhanced upsert function
-                result = enhanced_upsert_player_stats(game_id, player_stat)
-                print(f"Enhanced upsert result for {player_name}: {result}\n")
-        else:
+        if not player_stats_data.get('response'):
             print(f"No player stats found for game ID: {game_id}")
+            print("=" * 80)
+            continue
+        
+        print(f"Processing {len(player_stats_data['response'])} player records for game ID {game_id}\n")
+        
+        for player_stat in player_stats_data['response']:
+            player_name = player_stat.get('player', {}).get('name', 'Unknown')
+            print(f"Processing player: {player_name}")
             
+            # Upsert
+            result = enhanced_upsert_player_stats(game_id, player_stat)
+            print(f"Enhanced upsert result for {player_name}: {result}\n")
+        
         print("=" * 80)
 
 def main():
-    print("Fetching live NBA player data for today (using Pacific Time)...")
-    run_live_games()
+    """
+    Entry point if run as a script.
+    """
+    print("Running nba_stats_live_player.py (Pacific Time logic)...")
+    try:
+        run_live_games()
+    except Exception as e:
+        print(f"Error in main execution: {e}")
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
