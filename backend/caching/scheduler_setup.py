@@ -107,7 +107,7 @@ if __name__ == "__main__":
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=6,
+        hour=14,
         minute=25,
         timezone='America/Los_Angeles',
         id='archive_job_6pm'

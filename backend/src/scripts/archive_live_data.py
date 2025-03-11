@@ -46,6 +46,9 @@ def archive_live_data():
                 # Remove the 'id' key so we don't try to insert into a GENERATED ALWAYS column.
                 record.pop("id", None)
                 
+                # Remove the 'current_quarter' field if it exists, as it's not in the historical table
+                record.pop("current_quarter", None)
+                
                 # Clean each field: convert any string "None" to actual Python None.
                 for key, value in record.items():
                     if isinstance(value, str) and value.strip().lower() == "none":
@@ -102,6 +105,9 @@ def archive_live_data():
                     
                 # Remove the 'id' key so we don't try to insert into a GENERATED ALWAYS column.
                 record.pop("id", None)
+                
+                # Remove the 'current_quarter' field if it exists, as it's not in the historical table
+                record.pop("current_quarter", None)
                 
                 # Clean each field: convert any string "None" to actual Python None.
                 for key, value in record.items():
