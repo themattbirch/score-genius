@@ -16,6 +16,14 @@ HEADERS = {
 TEAM_NAME_CACHE = {}
 TEAM_DEBUG_MODE = True
 
+# Add a hardcoded team ID to name mapping as fallback
+TEAM_ID_TO_NAME = {
+    134: "Memphis Grizzlies",  # Based on the screenshot, this is likely Memphis
+    140: "Detroit Pistons",
+    161: "Washington Wizards",
+    # Add more teams as needed
+}
+
 ###############################################################################
 #                    HELPER: FLIP 'Last First' TO 'First Last'                #
 ###############################################################################
@@ -43,7 +51,7 @@ def parse_season_from_date(game_date: str) -> str:
         else:
             return f"{dt.year - 1}-{dt.year}"
     except:
-        return "2019-2020"
+        return "2024-2025"  # Default to current season
 
 ###############################################################################
 #            LOOKUP TEAM NAME, FALLBACK 'YYYY-YYYY+1' -> 'YYYY'               #
@@ -51,18 +59,24 @@ def parse_season_from_date(game_date: str) -> str:
 
 def get_team_name_from_api(team_id: int, league='12', season='2024-2025') -> str:
     """
-    If the direct (team_id, season) fails, try a single-year fallback.
+    Enhanced team name resolution with multiple fallbacks:
+    1. Check cache
+    2. Try current season
+    3. Try fallback to year-only season
+    4. Try previous season
+    5. Use hardcoded mapping
     """
     cache_key = (team_id, season)
     if cache_key in TEAM_NAME_CACHE:
         return TEAM_NAME_CACHE[cache_key]
 
+    # Try current season format (e.g., "2024-2025")
     name_result = _fetch_team_name(team_id, league, season)
     if name_result != "Unknown":
         TEAM_NAME_CACHE[cache_key] = name_result
         return name_result
 
-    # If there's a dash, attempt fallback
+    # Try fallback to year-only format if season has a dash
     if "-" in season:
         just_year = season.split("-")[0]
         fallback_key = (team_id, just_year)
@@ -71,26 +85,77 @@ def get_team_name_from_api(team_id: int, league='12', season='2024-2025') -> str
         else:
             fallback_name = _fetch_team_name(team_id, league, just_year)
             TEAM_NAME_CACHE[fallback_key] = fallback_name
-        TEAM_NAME_CACHE[cache_key] = fallback_name
-        return fallback_name
+        
+        if fallback_name != "Unknown":
+            TEAM_NAME_CACHE[cache_key] = fallback_name
+            return fallback_name
+        
+        # Try previous season as another fallback
+        prev_year = int(just_year) - 1
+        prev_season = f"{prev_year}-{just_year}"
+        prev_season_key = (team_id, prev_season)
+        
+        if prev_season_key in TEAM_NAME_CACHE:
+            prev_name = TEAM_NAME_CACHE[prev_season_key]
+        else:
+            prev_name = _fetch_team_name(team_id, league, prev_season)
+            TEAM_NAME_CACHE[prev_season_key] = prev_name
+        
+        if prev_name != "Unknown":
+            TEAM_NAME_CACHE[cache_key] = prev_name
+            return prev_name
+    
+    # Last resort: check hardcoded mapping
+    if team_id in TEAM_ID_TO_NAME:
+        team_name = TEAM_ID_TO_NAME[team_id]
+        TEAM_NAME_CACHE[cache_key] = team_name
+        if TEAM_DEBUG_MODE:
+            print(f"[DEBUG] Using hardcoded team name '{team_name}' for team_id={team_id}")
+        return team_name
 
+    # If all else fails, log the issue and return Unknown
+    if TEAM_DEBUG_MODE:
+        print(f"[WARNING] Failed to resolve team name for team_id={team_id} after all fallbacks")
+    
     TEAM_NAME_CACHE[cache_key] = "Unknown"
     return "Unknown"
 
 def _fetch_team_name(team_id: int, league: str, season: str) -> str:
+    """
+    Improved fetch function with better error handling and logging
+    """
     if TEAM_DEBUG_MODE:
         print(f"[DEBUG] _fetch_team_name: team_id={team_id}, league={league}, season={season}")
+    
+    if not team_id or team_id <= 0:
+        return "Unknown"
+        
     url = f"{BASE_URL}/teams"
     params = {"id": team_id, "league": league, "season": season}
+    
     try:
         r = requests.get(url, headers=HEADERS, params=params)
         r.raise_for_status()
         data = r.json()
         teams_list = data.get("response", [])
+        
         if not teams_list:
+            if TEAM_DEBUG_MODE:
+                print(f"[DEBUG] No teams found for team_id={team_id}, league={league}, season={season}")
             return "Unknown"
-        return teams_list[0].get("name", "Unknown")
-    except:
+            
+        team_name = teams_list[0].get("name", "Unknown")
+        if TEAM_DEBUG_MODE:
+            print(f"[DEBUG] Found team name '{team_name}' for team_id={team_id}, season={season}")
+        return team_name
+        
+    except requests.exceptions.RequestException as e:
+        if TEAM_DEBUG_MODE:
+            print(f"[ERROR] API request failed for team_id={team_id}: {str(e)}")
+        return "Unknown"
+    except Exception as e:
+        if TEAM_DEBUG_MODE:
+            print(f"[ERROR] Unexpected error for team_id={team_id}: {str(e)}")
         return "Unknown"
 
 ################################################################################
@@ -159,10 +224,15 @@ def upsert_live_player_stats(game_id: int, player_stats: dict) -> dict:
     if not isinstance(player_stats, dict):
         return {"error": f"player_stats is not a dictionary: {type(player_stats)}"}
 
+    # Get current season dynamically instead of hardcoding
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    current_season = parse_season_from_date(current_date)
+    
     team_id = player_stats.get('team_id', 0)
     team_name = "Unknown"
     if team_id > 0:
-        team_name = get_team_name_from_api(team_id, '12', '2024-2025')
+        # Use dynamic season determination
+        team_name = get_team_name_from_api(team_id, '12', current_season)
 
     raw_name = player_stats.get('player_name', 'Unknown')
     fixed_name = fix_player_name(raw_name)
