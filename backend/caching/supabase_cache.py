@@ -16,27 +16,16 @@ def cache_game_data(game_id: int, game_data: dict):
     Inserts or updates cached game data for a given game_id.
     """
     try:
-        # Extract relevant fields from the game_data with error handling
-        try:
-            game_date = game_data.get('date')
-            if not game_date:
-                logger.warning(f"No date found for game {game_id}")
-        except (TypeError, AttributeError):
-            game_date = datetime.now().strftime("%Y-%m-%d")
-            logger.warning(f"Error extracting date for game {game_id}, using today's date")
-        
+        # Extract team names and date for logging purposes only
         try:
             home_team = game_data.get('teams', {}).get('home', {}).get('name', 'Unknown')
-        except (TypeError, AttributeError):
-            home_team = 'Unknown'
-            logger.warning(f"Error extracting home team for game {game_id}")
-        
-        try:
             away_team = game_data.get('teams', {}).get('away', {}).get('name', 'Unknown')
-        except (TypeError, AttributeError):
-            away_team = 'Unknown'
-            logger.warning(f"Error extracting away team for game {game_id}")
-        
+            game_date = game_data.get('date', 'Unknown date')
+        except Exception:
+            home_team = away_team = 'Unknown'
+            game_date = 'Unknown date'
+            
+        # Extract scores for the dedicated score columns
         try:
             home_score_raw = game_data.get('scores', {}).get('home', {}).get('total')
             home_score = int(home_score_raw or 0)
@@ -57,29 +46,23 @@ def cache_game_data(game_id: int, game_data: dict):
         # Check if a record already exists
         existing = supabase.table("game_cache").select("*").eq("game_id", game_id).execute()
         
+        # Create data object that exactly matches your table schema
+        data = {
+            "game_id": game_id,
+            "data": game_data,               # Store complete data as JSON
+            "updated_at": datetime.utcnow().isoformat(),
+            "home_score": home_score,
+            "away_score": away_score
+        }
+        
         if existing.data:
             # Update the existing record
             logger.info(f"Updating existing record for game_id: {game_id}")
-            response = supabase.table("game_cache").update({
-                "game_date": game_date,
-                "home_team": home_team,
-                "away_team": away_team,
-                "home_score": home_score,
-                "away_score": away_score,
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("game_id", game_id).execute()
+            response = supabase.table("game_cache").update(data).eq("game_id", game_id).execute()
         else:
             # Insert a new record
             logger.info(f"Inserting new record for game_id: {game_id}")
-            response = supabase.table("game_cache").insert({
-                "game_id": game_id,
-                "game_date": game_date,
-                "home_team": home_team,
-                "away_team": away_team,
-                "home_score": home_score,
-                "away_score": away_score,
-                "updated_at": datetime.utcnow().isoformat()
-            }).execute()
+            response = supabase.table("game_cache").insert(data).execute()
         
         return response
     
