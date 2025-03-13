@@ -18,14 +18,33 @@ last_archive_date = None
 
 def update_cache(league, season, date):
     try:
-        data = fetch_live_game_data(league, season, date)
-        if data:
-            game_id = data.get('game_id')
+        # Get the current date string in the required format
+        current_date = date if isinstance(date, str) else date.strftime("%Y-%m-%d")
+        
+        # Check if date is in the future (beyond API data)
+        today = datetime.now().strftime("%Y-%m-%d")
+        if current_date > today:
+            print(f"Skipping update for future date: {current_date}")
+            return
+            
+        print(f"Fetching data for: league={league}, season={season}, date={current_date}")
+        data = fetch_live_game_data(league, season, current_date)
+        
+        if not data or "response" not in data or not data["response"]:
+            print(f"No data available for {current_date}")
+            return
+            
+        # Process each game in the response
+        for game in data.get("response", []):
+            game_id = game.get("id")
             if game_id:
-                response = cache_game_data(game_id, data)
-                print("Cache updated:", response)
+                response = cache_game_data(game_id, game)
+                print(f"Cached data for game ID: {game_id}")
     except Exception as e:
-        print("Error in update_cache:", e)
+        print(f"Error in update_cache: {e}")
+        # Log the stack trace for debugging
+        import traceback
+        traceback.print_exc()
 
 def attempt_archive_live_data():
     """
@@ -50,7 +69,7 @@ if __name__ == "__main__":
     scheduler.add_job(
         update_cache,
         'interval',
-        minutes=1,
+        minutes=5,
         args=["12", "2024-2025", datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y-%m-%d")],
         id='update_cache_job'
     )
@@ -59,7 +78,7 @@ if __name__ == "__main__":
     scheduler.add_job(
         scheduled_update_nba_schedule,
         'cron', 
-        hour=5,
+        hour=6,
         minute=0,
         timezone='America/Los_Angeles',
         id='schedule_update_morning'
@@ -79,7 +98,7 @@ if __name__ == "__main__":
         precompute_features, 
         'cron', 
         hour=6,
-        minute=1,
+        minute=5,
         timezone='America/Los_Angeles',
         args=[config.DATABASE_URL],
         id='data_pipeline_job'
@@ -107,7 +126,7 @@ if __name__ == "__main__":
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=14,
+        hour=15,
         minute=25,
         timezone='America/Los_Angeles',
         id='archive_job_6pm'
