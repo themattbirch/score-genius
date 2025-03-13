@@ -257,8 +257,8 @@ def update_nba_schedule():
                     'away_team': away_team,
                     'scheduled_time': scheduled_time,
                     'venue': venue,
-                    'status': status or 'scheduled',
-                    'updated_at': datetime.utcnow().isoformat()
+                    'status': status or 'scheduled'
+                    # Removed 'updated_at' as it doesn't exist in the schema
                 }
                 
                 # Upsert to schedule table
@@ -325,19 +325,34 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
         print(f"Error fetching game data for {date}: {e}")
         return {}
 
-def get_team_stats(game_id: int) -> dict:
+def get_team_stats(game_id: int, league: str = '12', season: str = None) -> dict:
     """
     Fetch team-level statistics for a specific game.
+    
+    According to API-Basketball documentation, the endpoint is /games/statistics/teams
+    The game ID is required.
     """
+    if season is None:
+        season = get_current_season()
+    
     url = f"{BASE_URL}/games/statistics/teams"
-    params = {'id': game_id}
+    params = {
+        'id': game_id
+    }
+    
     try:
+        print(f"DEBUG - Requesting team stats with params: {params}")
         response = requests.get(url, headers=HEADERS, params=params)
         response.raise_for_status()
         data = response.json()
-        # Debug the full response structure
-        print(f"DEBUG - Team Stats API Response Structure:")
-        print(json.dumps(data.get('response', [])[:1], indent=2))  # Print just the first item to avoid huge output
+        
+        # Debug the response structure
+        print(f"DEBUG - Team Stats API Response Status: {response.status_code}")
+        if 'response' in data and data['response']:
+            print(f"DEBUG - Found {len(data['response'])} team stats entries")
+        else:
+            print("DEBUG - Empty or missing response array in team stats")
+        
         return data
     except requests.exceptions.RequestException as e:
         print(f"Error fetching team statistics for game ID {game_id}: {e}")
@@ -376,11 +391,44 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
         A dictionary containing all relevant stats for database insertion
     """
     def get_quarter_score(scores: dict, key1: str, key2: str, key3: str = None) -> int:
-        # Try key1; if missing or falsy, try key2; if missing or falsy, try key3; else default to 0
-        return scores.get(key1) or scores.get(key2) or scores.get(key3) or 0
+        """
+        Enhanced quarter score extraction that handles more API variations.
+        The API sometimes returns scores with different key formats:
+        - q1, q2, q3, q4
+        - quarter1, quarter2, etc.
+        - quarter_1, quarter_2, etc.
+        
+        This handles all potential variations and ensures we get the value.
+        """
+        # Try all possible keys for this quarter
+        for key in [key1, key2, key3, f"q_{key1[-1]}", f"quarter{key1[-1]}", 
+                    f"quarter_{key1[-1]}", f"Q{key1[-1]}"]:
+            if key and key in scores and scores[key] is not None:
+                try:
+                    return int(scores[key])
+                except (ValueError, TypeError):
+                    # If value can't be converted to int, continue to next key
+                    continue
+        
+        # If all direct key lookups fail, try a more robust approach        
+        for key, value in scores.items():
+            # Try to match any key that might contain this quarter number
+            if key and value is not None and key1[-1] in key:
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    continue
+                
+        # Default fallback
+        return 0
 
-    home_scores = game.get('scores', {}).get('home', {})
-    away_scores = game.get('scores', {}).get('away', {})
+    # Make sure we have non-null dictionaries for scores
+    home_scores = game.get('scores', {}).get('home', {}) or {}
+    away_scores = game.get('scores', {}).get('away', {}) or {}
+    
+    # Print more detailed debug info about the scores
+    print(f"DEBUG - Home scores keys available: {list(home_scores.keys())}")
+    print(f"DEBUG - Away scores keys available: {list(away_scores.keys())}")
     
     # Debug the scores structure
     print("DEBUG - Raw home_scores structure:", json.dumps(home_scores, indent=2))
@@ -498,22 +546,22 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
             'home_steals': home_stats.get('steals', 0),
             'home_blocks': home_stats.get('blocks', 0),
             'home_turnovers': home_stats.get('turnovers', 0),
-            'home_fouls': home_stats.get('personal_fouls', 0),
+            'home_fouls': home_stats.get('personal_fouls', 0) or home_stats.get('fouls', 0),
         })
         
         # Rebounds stats may be nested
         rebounds = home_stats.get('rebounds', {})
         transformed.update({
-            'home_off_reb': rebounds.get('offence', 0),  # Note British spelling
-            'home_def_reb': rebounds.get('defense', 0),
+            'home_off_reb': rebounds.get('offence', 0) or rebounds.get('offensive', 0),  # Check both spellings
+            'home_def_reb': rebounds.get('defense', 0) or rebounds.get('defensive', 0),
             'home_total_reb': rebounds.get('total', 0),
         })
         
         # 3-point stats come from threepoint_goals
-        threepoint = home_stats.get('threepoint_goals', {})
+        threepoint = home_stats.get('threepoint_goals', {}) or home_stats.get('threePoint', {}) or {}
         transformed.update({
-            'home_3pm': threepoint.get('total', 0),
-            'home_3pa': threepoint.get('attempts', 0),
+            'home_3pm': threepoint.get('total', 0) or threepoint.get('made', 0),
+            'home_3pa': threepoint.get('attempts', 0) or threepoint.get('attempted', 0),
         })
     
     # Process away team stats if available
@@ -524,22 +572,22 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
             'away_steals': away_stats.get('steals', 0),
             'away_blocks': away_stats.get('blocks', 0),
             'away_turnovers': away_stats.get('turnovers', 0),
-            'away_fouls': away_stats.get('personal_fouls', 0),
+            'away_fouls': away_stats.get('personal_fouls', 0) or away_stats.get('fouls', 0),
         })
         
         # Rebounds stats may be nested
         rebounds = away_stats.get('rebounds', {})
         transformed.update({
-            'away_off_reb': rebounds.get('offence', 0),  # Note British spelling
-            'away_def_reb': rebounds.get('defense', 0),
+            'away_off_reb': rebounds.get('offence', 0) or rebounds.get('offensive', 0),  # Check both spellings
+            'away_def_reb': rebounds.get('defense', 0) or rebounds.get('defensive', 0),
             'away_total_reb': rebounds.get('total', 0),
         })
         
         # 3-point stats come from threepoint_goals
-        threepoint = away_stats.get('threepoint_goals', {})
+        threepoint = away_stats.get('threepoint_goals', {}) or away_stats.get('threePoint', {}) or {}
         transformed.update({
-            'away_3pm': threepoint.get('total', 0),
-            'away_3pa': threepoint.get('attempts', 0),
+            'away_3pm': threepoint.get('total', 0) or threepoint.get('made', 0),
+            'away_3pa': threepoint.get('attempts', 0) or threepoint.get('attempted', 0),
         })
     
     # Print the extracted stats for debugging
@@ -573,7 +621,7 @@ def determine_current_quarter(game):
         'Q3': 3,
         'Q4': 4,
         'OT': 4,  # Overtime counts as 4th quarter for our purposes
-        'BT': 0,  # Break Time
+        'BT': 1,  # Break Time - using 1 if after first quarter
         'HT': 2   # Halftime (after Q2)
     }
     
@@ -602,6 +650,116 @@ def determine_current_quarter(game):
     
     # Default if we can't determine
     return 0
+
+def create_base_game_record(game: dict, official_schedule: dict = None) -> dict:
+    """
+    Create a basic game record from just the game object, without team stats.
+    This is used when team stats are not yet available.
+    
+    Args:
+        game: The game object from the /games endpoint
+        official_schedule: Dictionary mapping team pairs to game IDs
+        
+    Returns:
+        A basic game record with essential information
+    """
+    def get_quarter_score(scores: dict, key1: str, key2: str, key3: str = None) -> int:
+        """
+        Enhanced quarter score extraction that handles more API variations.
+        """
+        # Try all possible keys for this quarter
+        for key in [key1, key2, key3, f"q_{key1[-1]}", f"quarter{key1[-1]}", 
+                    f"quarter_{key1[-1]}", f"Q{key1[-1]}"]:
+            if key and key in scores and scores[key] is not None:
+                try:
+                    return int(scores[key])
+                except (ValueError, TypeError):
+                    continue
+        
+        # If all direct key lookups fail, try a more robust approach        
+        for key, value in scores.items():
+            # Try to match any key that might contain this quarter number
+            if key and value is not None and key1[-1] in key:
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    continue
+                
+        # Default fallback
+        return 0
+    
+    # Game scores
+    home_scores = game.get('scores', {}).get('home', {}) or {}
+    away_scores = game.get('scores', {}).get('away', {}) or {}
+    
+    # Team names
+    raw_home_team = get_nested_value(game, 'teams', 'home', 'name', default="Unknown")
+    raw_away_team = get_nested_value(game, 'teams', 'away', 'name', default="Unknown")
+    
+    normalized_home = normalize_team_name(raw_home_team)
+    normalized_away = normalize_team_name(raw_away_team)
+    
+    # Game ID handling
+    game_id = game.get('id')
+    
+    # Try to match with official schedule
+    if official_schedule:
+        key1 = f"{normalized_home.lower()}-{normalized_away.lower()}"
+        key2 = f"{normalized_away.lower()}-{normalized_home.lower()}"
+        
+        if key1 in official_schedule:
+            game_id = official_schedule[key1]
+        elif key2 in official_schedule:
+            game_id = official_schedule[key2]
+    
+    # Handle game date
+    game_date_str = game.get('date')
+    
+    try:
+        # Parse the datetime with timezone handling
+        game_datetime = datetime.fromisoformat(game_date_str.replace('Z', '+00:00'))
+        
+        # Ensure Pacific Time
+        pacific_tz = ZoneInfo("America/Los_Angeles")
+        if game_datetime.tzinfo is not None:
+            game_datetime = game_datetime.astimezone(pacific_tz)
+        else:
+            utc_tz = ZoneInfo("UTC")
+            game_datetime = game_datetime.replace(tzinfo=utc_tz).astimezone(pacific_tz)
+        
+        # Store as naive time with fake UTC indicator
+        naive_pt_time = game_datetime.replace(tzinfo=None)
+        formatted_game_date = naive_pt_time.isoformat() + "+00:00"
+    except Exception as e:
+        print(f"Error processing game date '{game_date_str}': {e}")
+        # Fallback to current time in PT
+        now_pt = datetime.now(ZoneInfo("America/Los_Angeles"))
+        naive_pt_time = now_pt.replace(tzinfo=None)
+        formatted_game_date = naive_pt_time.isoformat() + "+00:00"
+    
+    # Create basic record - IMPORTANT: 'updated_at' field removed as it doesn't exist in schema
+    record = {
+        'game_id': game_id,
+        'home_team': normalized_home,
+        'away_team': normalized_away,
+        'home_score': home_scores.get('total'),
+        'away_score': away_scores.get('total'),
+        'home_q1': get_quarter_score(home_scores, 'q1', 'quarter1', 'quarter_1'),
+        'home_q2': get_quarter_score(home_scores, 'q2', 'quarter2', 'quarter_2'),
+        'home_q3': get_quarter_score(home_scores, 'q3', 'quarter3', 'quarter_3'),
+        'home_q4': get_quarter_score(home_scores, 'q4', 'quarter4', 'quarter_4'),
+        'home_ot': home_scores.get('ot', 0) or home_scores.get('over_time', 0) or 0,
+        'away_q1': get_quarter_score(away_scores, 'q1', 'quarter1', 'quarter_1'),
+        'away_q2': get_quarter_score(away_scores, 'q2', 'quarter2', 'quarter_2'),
+        'away_q3': get_quarter_score(away_scores, 'q3', 'quarter3', 'quarter_3'),
+        'away_q4': get_quarter_score(away_scores, 'q4', 'quarter4', 'quarter_4'),
+        'away_ot': away_scores.get('ot', 0) or away_scores.get('over_time', 0) or 0,
+        'game_date': formatted_game_date,
+        'current_quarter': determine_current_quarter(game)
+        # Removed 'updated_at' field which was causing errors
+    }
+    
+    return record
 
 ###############################################################################
 # 3) Main Driver: Fetch Live Games, Transform, and Upsert
@@ -637,16 +795,36 @@ def run_live_games():
         print_game_info(game)
         game_id = game.get('id')
         
+        # Check if the game has started
+        game_status = game.get('status', {}).get('short', '')
+        
         # Fetch team-level statistics for this game
         team_stats_data = get_team_stats(game_id)
-        if not team_stats_data.get('response'):
-            print(f"No team statistics found for game ID {game_id}.")
-            continue
         
-        # Transform the raw game and team stats into the expected record format
-        # Pass the official schedule for consistent game IDs
-        record = transform_team_stats(game, team_stats_data, official_schedule)
-        print("Transformed Team Record:")
+        # Log raw scores structure from the game data for debugging
+        home_scores_raw = game.get('scores', {}).get('home', {})
+        away_scores_raw = game.get('scores', {}).get('away', {})
+        print(f"DEBUG - RAW HOME SCORES FROM GAME API: {json.dumps(home_scores_raw, indent=2)}")
+        print(f"DEBUG - RAW AWAY SCORES FROM GAME API: {json.dumps(away_scores_raw, indent=2)}")
+        
+        has_stats = team_stats_data.get('response') and len(team_stats_data.get('response', [])) > 0
+        
+        # If game hasn't started, only create a base record
+        if game_status == 'NS':  # Not Started
+            print(f"Game ID {game_id} has not started yet. Creating basic record.")
+            record = create_base_game_record(game, official_schedule)
+        # If game has started but no stats yet, create a base record with scores
+        elif not has_stats:
+            print(f"No team statistics found for game ID {game_id}. Creating basic record with scores.")
+            record = create_base_game_record(game, official_schedule)
+        # If we have stats, create full record
+        else:
+            print(f"Found team statistics for game ID {game_id}. Creating full record.")
+            # Transform the raw game and team stats into the expected record format
+            record = transform_team_stats(game, team_stats_data, official_schedule)
+        
+        # Upsert the record
+        print("Upserting record for game ID:", game_id)
         pprint(record)
 
         # Upsert the transformed record into the Supabase table 'nba_live_game_stats'
