@@ -1,0 +1,16 @@
+{
+  "timestamp": "20250314_041351",
+  "saved_variables": [
+    "historical_games",
+    "team_metrics",
+    "pregame_features",
+    "upcoming_predictions"
+  ],
+  "saved_models": [],
+  "variables_paths": {
+    "historical_games": "/Users/mattb/Desktop/Projects/score-genius/notebooks/models/state/historical_games_20250314_041351.csv",
+    "team_metrics": "/Users/mattb/Desktop/Projects/score-genius/notebooks/models/state/team_metrics_20250314_041351.csv",
+    "pregame_features": "/Users/mattb/Desktop/Projects/score-genius/notebooks/models/state/pregame_features_20250314_041351.csv",
+    "upcoming_predictions": "/Users/mattb/Desktop/Projects/score-genius/notebooks/models/state/upcoming_predictions_20250314_041351.csv"
+  }
+}
