@@ -1,0 +1,10 @@
+{
+  "label": "Standard_Size5_Run1",
+  "timestamp": "2025-03-14T02:39:27.374451",
+  "success": true,
+  "execution_time": 0.4269449710845947,
+  "memory_diff_mb": 0.0,
+  "component_metrics": {},
+  "bottlenecks": [],
+  "optimization_recommendations": []
+}
