@@ -1,0 +1,12 @@
+{
+  "timestamp": "2025-03-15T00:18:17.835179",
+  "num_games": 10,
+  "cross_validation": false,
+  "n_splits": null,
+  "overall_metrics": {},
+  "quarter_metrics": {},
+  "game_results": [],
+  "error_distribution": {},
+  "cross_val_results": null,
+  "error": "No model available"
+}
