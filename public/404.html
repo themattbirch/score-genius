@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>404 - Page Not Found | Sports Venue Weather</title>
+   <meta name="description" content="The page you're looking for cannot be found.">
+   <link rel="icon" href="/icons/favicon-16x16.png" sizes="16x16" type="image/png">
+   <link rel="icon" href="/icons/favicon-32x32.png" sizes="32x32" type="image/png">
+   <link rel="icon" href="/icons/favicon-192x192.png" sizes="192x192" type="image/png">
+   <script src="https://cdn.tailwindcss.com"></script>
+   <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-b from-sky-50 to-white dark:from-gray-900 dark:to-gray-800 flex flex-col items-center justify-center text-center px-4">
+   <div>
+       <i data-lucide="cloud-off" class="w-16 h-16 text-sky-600 dark:text-sky-400 mx-auto mb-6"></i>
+       <h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-4">Page Not Found</h1>
+       <p class="text-xl text-gray-600 dark:text-gray-300 mb-8">
+           The page you're looking for doesn't exist or has been moved.
+       </p>
+       <div class="flex flex-col sm:flex-row gap-4 justify-center">
+           <a href="/" class="bg-sky-600 text-white px-8 py-4 rounded-lg text-lg font-medium hover:bg-sky-700 transition-colors">
+               Go Home
+           </a>
+           <a href="/app" class="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white px-8 py-4 rounded-lg text-lg font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+               Launch App
+           </a>
+       </div>
+   </div>
+
+   <script>
+       lucide.createIcons();
+       if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+           document.documentElement.classList.add('dark');
+       }
+   </script>
+</body>
+</html>
