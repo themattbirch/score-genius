@@ -4,25 +4,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Support - Sports Venue Weather</title>
-    <meta name="description" content="Support for Sports Venue Weather Progressive Web App">
+    <title>Support - ScoreGenius</title>
+    <meta name="description" content="Support for ScoreGenius NBA Analytics Progressive Web App">
     <link rel="icon" href="/icons/favicon-16x16.png" sizes="16x16" type="image/png">
     <link rel="icon" href="/icons/favicon-32x32.png" sizes="32x32" type="image/png">
     <link rel="icon" href="/icons/favicon-192x192.png" sizes="192x192" type="image/png">    
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 
-<body class="min-h-screen bg-gradient-to-b from-sky-50 to-white dark:from-gray-900 dark:to-gray-800">
+<body class="min-h-screen bg-gradient-to-b from-gray-900 to-black">
     <!-- Navigation -->
-    <nav class="fixed w-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-50">
+    <nav class="fixed w-full bg-black/80 backdrop-blur-sm z-50">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16 items-center">
                 <a href="/" class="flex items-center">
-                    <i data-lucide="cloud-sun" class="w-8 h-8 text-sky-600 dark:text-sky-400"></i>
-                    <span class="ml-2 font-bold text-gray-900 dark:text-white">Sports Venue Weather</span>
+                    <i data-lucide="bar-chart" class="w-8 h-8 text-red-600"></i>
+                    <span class="ml-2 font-bold text-white">ScoreGenius</span>
                 </a>
-                <a href="/" class="bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-700 transition-colors">
+                <a href="/" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
                     Download app
                 </a>
             </div>
@@ -31,69 +31,64 @@
 
     <!-- Main Content -->
     <div class="pt-24 pb-16 px-4">
-        <div class="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
-            <header class="mb-8 border-b border-gray-200 dark:border-gray-700 pb-8">
-                <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Support</h1>
-                <p class="text-gray-600 dark:text-gray-400">Get help with Sports Venue Weather</p>
+        <div class="max-w-3xl mx-auto bg-gray-800 rounded-2xl shadow-xl p-8">
+            <header class="mb-8 border-b border-gray-700 pb-8">
+                <h1 class="text-3xl font-bold text-white mb-2">Support</h1>
+                <p class="text-gray-400">Get help with ScoreGenius</p>
             </header>
 
             <main class="space-y-8">
                 <section>
-                    <h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-4">Quick Start Guide</h2>
-                    <p class="text-gray-600 dark:text-gray-300 mb-4">
-                        Sports Venue Weather provides real-time weather information for football and soccer stadiums, as well as baseball ballparks. Here's how to get
+                    <h2 class="text-2xl font-semibold text-white mb-4">Quick Start Guide</h2>
+                    <p class="text-gray-300 mb-4">
+                        ScoreGenius provides real-time NBA analytics, predictive insights, and betting recommendations. Here's how to get
                         started:
                     </p>
-                    <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-2">
-                        <ul class="list-disc pl-5 text-gray-600 dark:text-gray-300 space-y-2">
-                            <li>Install the app from your device's app store</li>
-                            <li>Choose between NFL or NCAA football</li>
-                            <li>Select your team to view venue weather</li>
-                            <li>Toggle temperature units using the settings menu</li>
+                    <div class="bg-gray-700 rounded-lg p-4 space-y-2">
+                        <ul class="list-disc pl-5 text-gray-300 space-y-2">
+                            <li>Install the app from your browser or device's app store</li>
+                            <li>View today's NBA games and predictions</li>
+                            <li>Track live game progress with real-time score predictions</li>
+                            <li>Explore betting insights and recommendations</li>
                         </ul>
                     </div>
                 </section>
 
                 <section>
-                    <h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-4">Frequently Asked Questions
+                    <h2 class="text-2xl font-semibold text-white mb-4">Frequently Asked Questions
                     </h2>
                     <div class="space-y-4">
-                        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h3 class="font-semibold text-gray-900 dark:text-white mb-2">How often is weather data
-                                updated?</h3>
-                            <p class="text-gray-600 dark:text-gray-300">Weather data is refreshed every 30 minutes to
-                                ensure accuracy.</p>
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h3 class="font-semibold text-white mb-2">How often are predictions updated?</h3>
+                            <p class="text-gray-300">Predictions update in real-time during games. Quarter-by-quarter models improve accuracy as games progress.</p>
                         </div>
-                        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Does the app work offline?</h3>
-                            <p class="text-gray-600 dark:text-gray-300">Yes, previously loaded data is cached for
-                                offline viewing.</p>
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h3 class="font-semibold text-white mb-2">How accurate are the predictions?</h3>
+                            <p class="text-gray-300">Our models achieve increasing accuracy throughout games, with Q4 predictions reaching ~4.7 RMSE (significantly better than early-game predictions).</p>
                         </div>
-                        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h3 class="font-semibold text-gray-900 dark:text-white mb-2">How do I change temperature
-                                units?</h3>
-                            <p class="text-gray-600 dark:text-gray-300">Access settings through the gear icon to toggle
-                                between Fahrenheit and Celsius.</p>
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h3 class="font-semibold text-white mb-2">Does the app work offline?</h3>
+                            <p class="text-gray-300">Yes, previously loaded data and predictions are cached for offline viewing, though real-time updates require an internet connection.</p>
                         </div>
                     </div>
                 </section>
 
                 <section>
-                    <h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-4">Troubleshooting</h2>
-                    <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-4">
+                    <h2 class="text-2xl font-semibold text-white mb-4">Troubleshooting</h2>
+                    <div class="bg-gray-700 rounded-lg p-4 space-y-4">
                         <div>
-                            <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Weather Not Loading</h3>
-                            <ul class="list-disc pl-5 text-gray-600 dark:text-gray-300 space-y-1">
+                            <h3 class="font-semibold text-white mb-2">Predictions Not Loading</h3>
+                            <ul class="list-disc pl-5 text-gray-300 space-y-1">
                                 <li>Check your internet connection</li>
                                 <li>Refresh the app</li>
                                 <li>Clear app cache and try again</li>
                             </ul>
                         </div>
                         <div>
-                            <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Display Issues</h3>
-                            <ul class="list-disc pl-5 text-gray-600 dark:text-gray-300 space-y-1">
+                            <h3 class="font-semibold text-white mb-2">Chart Display Issues</h3>
+                            <ul class="list-disc pl-5 text-gray-300 space-y-1">
                                 <li>Ensure your app is updated to the latest version</li>
-                                <li>Try toggling dark mode</li>
+                                <li>Try switching between data visualization modes</li>
                                 <li>Restart the app</li>
                             </ul>
                         </div>
@@ -101,12 +96,12 @@
                 </section>
 
                 <section>
-                    <h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-4">Contact Support</h2>
-                    <p class="text-gray-600 dark:text-gray-300 mb-4">
+                    <h2 class="text-2xl font-semibold text-white mb-4">Contact Support</h2>
+                    <p class="text-gray-300 mb-4">
                         Still need help? Contact our support team:
                     </p>
-                    <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                        <p class="text-sky-600 dark:text-sky-400">sportsvenueweather@gmail.com</p>
+                    <div class="bg-gray-700 rounded-lg p-4">
+                        <p class="text-red-400">support@sportsgenius.io</p>
                     </div>
                 </section>
             </main>
@@ -114,24 +109,22 @@
     </div>
 
     <!-- Footer -->
-    <footer class="py-8 px-4 bg-gray-50 dark:bg-gray-900">
+    <footer class="py-8 px-4 bg-black">
         <div class="max-w-7xl mx-auto text-center">
-            <p class="text-gray-600 dark:text-gray-400">
+            <p class="text-gray-400">
                 © 2025 Optimize Web Solutions. All rights reserved.
             </p>
             <div class="mt-4 space-x-4">
-                <a href="/" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Home</a>
-                <a href="/privacy"
-                    class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Privacy</a>
+                <a href="/" class="text-gray-400 hover:text-white">Home</a>
+                <a href="/privacy" class="text-gray-400 hover:text-white">Privacy</a>
             </div>
         </div>
     </footer>
 
     <script>
         lucide.createIcons();
-        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            document.documentElement.classList.add('dark');
-        }
+        // Always use dark mode since we have a dark theme
+        document.documentElement.classList.add('dark');
     </script>
 </body>
 

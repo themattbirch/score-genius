@@ -1,8 +1,8 @@
 {
-  "name": "Sports Venue Weather",
-  "short_name": "VenueWeather",
+  "name": "Score Geniusr",
+  "short_name": "ScoreGenius",
   "version": "1.2",
-  "description": "Get real-time weather updates for every NFL, NCAA, MLB and MLS sports venue. Make informed decisions with accurate, up-to-date weather data.",
+  "description": "Get real-time NBA analytics with AI-powered score predictions that improve as games progress. Make informed betting decisions with accurate, quarter-by-quarter insights.",
   "start_url": "/app/",
   "scope": "/app/",
   "display": "standalone",

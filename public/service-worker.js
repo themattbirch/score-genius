@@ -1,10 +1,10 @@
-const CACHE_NAME = 'sports-venue-weather';
+const CACHE_NAME = 'score-genius';
 const PRECACHE_URLS = [
   '/app',
   '/index.html',
   '/offline.html',
   '/manifest.webmanifest',
-  '/icons/football-icon-48.png',
+  '/icons/ICON-48.png',
 ];
 
 const OFFLINE_FALLBACK_URL = '/offline.html';
