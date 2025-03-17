@@ -444,6 +444,10 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
     if home_stats:
         rebounds = home_stats.get('rebounds', {})
         threepoint = home_stats.get('threepoint_goals', {}) or home_stats.get('threePoint', {}) or {}
+        # Add field goals and free throws for home team
+        field_goals = home_stats.get('field_goals', {}) or home_stats.get('fieldGoals', {}) or {}
+        free_throws = home_stats.get('freethrows_goals', {}) or home_stats.get('freeThrows', {}) or {}
+        
         transformed.update({
             'home_assists': home_stats.get('assists', 0),
             'home_steals': home_stats.get('steals', 0),
@@ -455,10 +459,20 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
             'home_total_reb': rebounds.get('total', 0),
             'home_3pm': threepoint.get('total', 0) or threepoint.get('made', 0),
             'home_3pa': threepoint.get('attempts', 0) or threepoint.get('attempted', 0),
+            # Field Goals - NEW
+            'home_fg_made': field_goals.get('total', 0) or field_goals.get('made', 0),
+            'home_fg_attempted': field_goals.get('attempts', 0) or field_goals.get('attempted', 0),
+            # Free Throws - NEW
+            'home_ft_made': free_throws.get('total', 0) or free_throws.get('made', 0),
+            'home_ft_attempted': free_throws.get('attempts', 0) or free_throws.get('attempted', 0),
         })
     if away_stats:
         rebounds = away_stats.get('rebounds', {})
         threepoint = away_stats.get('threepoint_goals', {}) or away_stats.get('threePoint', {}) or {}
+        # Add field goals and free throws for away team
+        field_goals = away_stats.get('field_goals', {}) or away_stats.get('fieldGoals', {}) or {}
+        free_throws = away_stats.get('freethrows_goals', {}) or away_stats.get('freeThrows', {}) or {}
+        
         transformed.update({
             'away_assists': away_stats.get('assists', 0),
             'away_steals': away_stats.get('steals', 0),
@@ -470,6 +484,12 @@ def transform_team_stats(game: dict, team_stats_data: dict, official_schedule: d
             'away_total_reb': rebounds.get('total', 0),
             'away_3pm': threepoint.get('total', 0) or threepoint.get('made', 0),
             'away_3pa': threepoint.get('attempts', 0) or threepoint.get('attempted', 0),
+            # Field Goals - NEW
+            'away_fg_made': field_goals.get('total', 0) or field_goals.get('made', 0),
+            'away_fg_attempted': field_goals.get('attempts', 0) or field_goals.get('attempted', 0),
+            # Free Throws - NEW
+            'away_ft_made': free_throws.get('total', 0) or free_throws.get('made', 0),
+            'away_ft_attempted': free_throws.get('attempts', 0) or free_throws.get('attempted', 0),
         })
 
     print("DEBUG - Extracted team stats:")
@@ -549,9 +569,250 @@ def create_base_game_record(game: dict, official_schedule: dict = None) -> dict:
         'away_ot': away_scores.get('ot', 0) or away_scores.get('over_time', 0) or 0,
         'game_date': formatted_game_date,
         'current_quarter': determine_current_quarter(game),
-        'status': game_status  # <-- store short status
+        'status': game_status,  # <-- store short status
+        
+        # Default values for field goal and free throw stats
+        'home_fg_made': 0,
+        'home_fg_attempted': 0,
+        'away_fg_made': 0,
+        'away_fg_attempted': 0,
+        'home_ft_made': 0,
+        'home_ft_attempted': 0,
+        'away_ft_made': 0,
+        'away_ft_attempted': 0
     }
     return record
+
+###############################################################################
+# Team Season Stats Functions
+###############################################################################
+
+def get_teams_by_league_season(league: str, season: str) -> list:
+    """
+    Fetches a list of teams for the given league and season.
+    Returns the "response" list from the JSON.
+    """
+    url = f"{BASE_URL}/teams"
+    params = {"league": league, "season": season}
+    try:
+        resp = requests.get(url, headers=HEADERS, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        print(f"Fetched {len(data.get('response', []))} teams for league {league}, season {season}")
+        return data.get("response", [])
+    except Exception as e:
+        print(f"Error fetching teams for league {league}, season {season}: {e}")
+        return []
+
+def get_team_season_stats(team_id, league_id, season):
+    """
+    Fetch team season statistics from the /statistics endpoint.
+    """
+    url = f"{BASE_URL}/statistics"
+    params = {
+        "team": team_id,
+        "league": league_id,
+        "season": season
+    }
+    
+    try:
+        print(f"DEBUG - Requesting team season stats for team_id={team_id}, season={season}")
+        response = requests.get(url, headers=HEADERS, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        print(f"DEBUG - Team Season Stats API Response Status: {response.status_code}")
+        if 'response' in data and data['response']:
+            print(f"DEBUG - Successfully fetched season stats for team_id={team_id}")
+            return data.get('response', {})
+        else:
+            print(f"DEBUG - Empty or missing response for team_id={team_id} season stats")
+            return {}
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching team season statistics for team_id={team_id}: {e}")
+        return {}
+
+def transform_team_season_stats(team_id, team_name, stats, league_id, season):
+    """
+    Transform raw team season stats data into the expected record format.
+    """
+    # Extract games statistics
+    games = stats.get("games", {})
+    games_played_home = get_nested_value(games, "played", "home", default=0)
+    games_played_away = get_nested_value(games, "played", "away", default=0)
+    games_played_all = get_nested_value(games, "played", "all", default=0)
+    
+    # Extract wins statistics
+    wins_home_total = get_nested_value(games, "wins", "home", "total", default=0)
+    wins_home_percentage = get_nested_value(games, "wins", "home", "percentage", default=0)
+    wins_away_total = get_nested_value(games, "wins", "away", "total", default=0)
+    wins_away_percentage = get_nested_value(games, "wins", "away", "percentage", default=0)
+    wins_all_total = get_nested_value(games, "wins", "all", "total", default=0)
+    wins_all_percentage = get_nested_value(games, "wins", "all", "percentage", default=0)
+    
+    # Extract losses statistics - API might use either "loses" or "losses" as the key
+    losses_home_total = get_nested_value(games, "loses", "home", "total", default=0) or get_nested_value(games, "losses", "home", "total", default=0)
+    losses_home_percentage = get_nested_value(games, "loses", "home", "percentage", default=0) or get_nested_value(games, "losses", "home", "percentage", default=0)
+    losses_away_total = get_nested_value(games, "loses", "away", "total", default=0) or get_nested_value(games, "losses", "away", "total", default=0)
+    losses_away_percentage = get_nested_value(games, "loses", "away", "percentage", default=0) or get_nested_value(games, "losses", "away", "percentage", default=0)
+    losses_all_total = get_nested_value(games, "loses", "all", "total", default=0) or get_nested_value(games, "losses", "all", "total", default=0)
+    losses_all_percentage = get_nested_value(games, "loses", "all", "percentage", default=0) or get_nested_value(games, "losses", "all", "percentage", default=0)
+    
+    # Extract points for statistics
+    points = stats.get("points", {})
+    points_for_total_home = get_nested_value(points, "for", "total", "home", default=0)
+    points_for_total_away = get_nested_value(points, "for", "total", "away", default=0)
+    points_for_total_all = get_nested_value(points, "for", "total", "all", default=0)
+    points_for_avg_home = get_nested_value(points, "for", "average", "home", default=0)
+    points_for_avg_away = get_nested_value(points, "for", "average", "away", default=0)
+    points_for_avg_all = get_nested_value(points, "for", "average", "all", default=0)
+    
+    # Extract points against statistics
+    points_against_total_home = get_nested_value(points, "against", "total", "home", default=0)
+    points_against_total_away = get_nested_value(points, "against", "total", "away", default=0)
+    points_against_total_all = get_nested_value(points, "against", "total", "all", default=0)
+    points_against_avg_home = get_nested_value(points, "against", "average", "home", default=0)
+    points_against_avg_away = get_nested_value(points, "against", "average", "away", default=0)
+    points_against_avg_all = get_nested_value(points, "against", "average", "all", default=0)
+    
+    # Extract form/streak if available
+    form = get_nested_value(stats, "form", default="")
+    streak = 0
+    if form:
+        # Count consecutive wins or losses at the end of the form string
+        # Example: "WWLWW" would give a streak of 2 (wins)
+        streak_char = form[-1] if form else ""
+        for i in range(len(form)-1, -1, -1):
+            if form[i] != streak_char:
+                break
+            streak += 1
+        # Make streak negative for losses
+        if streak_char.upper() == "L":
+            streak = -streak
+    
+    record = {
+        "team_id": team_id,
+        "team_name": team_name,
+        "season": season,
+        "league_id": league_id,
+        
+        # Games played statistics
+        "games_played_home": games_played_home,
+        "games_played_away": games_played_away,
+        "games_played_all": games_played_all,
+        
+        # Wins statistics
+        "wins_home_total": wins_home_total,
+        "wins_home_percentage": wins_home_percentage,
+        "wins_away_total": wins_away_total,
+        "wins_away_percentage": wins_away_percentage,
+        "wins_all_total": wins_all_total,
+        "wins_all_percentage": wins_all_percentage,
+        
+        # Losses statistics
+        "losses_home_total": losses_home_total,
+        "losses_home_percentage": losses_home_percentage,
+        "losses_away_total": losses_away_total,
+        "losses_away_percentage": losses_away_percentage,
+        "losses_all_total": losses_all_total,
+        "losses_all_percentage": losses_all_percentage,
+        
+        # Points for statistics
+        "points_for_total_home": points_for_total_home,
+        "points_for_total_away": points_for_total_away,
+        "points_for_total_all": points_for_total_all,
+        "points_for_avg_home": points_for_avg_home,
+        "points_for_avg_away": points_for_avg_away,
+        "points_for_avg_all": points_for_avg_all,
+        
+        # Points against statistics
+        "points_against_total_home": points_against_total_home,
+        "points_against_total_away": points_against_total_away,
+        "points_against_total_all": points_against_total_all,
+        "points_against_avg_home": points_against_avg_home,
+        "points_against_avg_away": points_against_avg_away,
+        "points_against_avg_all": points_against_avg_all,
+        
+        # Live specific fields
+        "current_form": form,
+        "current_streak": streak,
+        "last_fetched_at": datetime.now(ZoneInfo("UTC")).isoformat(),
+        "updated_at": datetime.now(ZoneInfo("UTC")).isoformat()
+    }
+    
+    return record
+
+def upsert_live_team_season_stats(record):
+    """
+    Upsert team season statistics to the nba_live_team_stats table.
+    """
+    try:
+        result = supabase.table("nba_live_team_stats").upsert(
+            record, on_conflict="team_id,season,league_id"
+        ).execute()
+        return result
+    except Exception as e:
+        print(f"Error upserting team season stats: {e}")
+        traceback.print_exc()
+        return None
+
+def fetch_and_store_team_season_stats():
+    """
+    Fetch and store team season statistics for all NBA teams.
+    """
+    league_id = "12"  # NBA league ID
+    season = get_current_season()
+    
+    print(f"\n=== Fetching team season stats for NBA (league_id={league_id}) season {season} ===")
+    
+    # First, get all teams for this league and season
+    teams_list = get_teams_by_league_season(league_id, season)
+    if not teams_list:
+        print("No teams found.")
+        return 0
+    
+    # Filter out All-Star and special event teams
+    regular_teams = []
+    for team in teams_list:
+        team_name = team.get("name", "")
+        if "all-star" not in team_name.lower() and "team " not in team_name.lower():
+            if not any(x in team_name.lower() for x in ["rising stars", "global stars", "young stars", "ogs"]):
+                regular_teams.append(team)
+            else:
+                print(f"Filtering out special event team: {team_name}")
+        else:
+            print(f"Filtering out All-Star team: {team_name}")
+    
+    print(f"Found {len(regular_teams)} regular teams after filtering.")
+    
+    processed_count = 0
+    for team in regular_teams:
+        team_id = team.get("id")
+        team_name = team.get("name")
+        print(f"Processing season stats for team: {team_name} (ID: {team_id})")
+        
+        # Fetch team season statistics
+        team_stats = get_team_season_stats(team_id, league_id, season)
+        if not team_stats:
+            print(f"No statistics found for team_id={team_id}.")
+            continue
+        
+        # Transform the data to our required format
+        record = transform_team_season_stats(team_id, team_name, team_stats, league_id, season)
+        
+        print(f"[INFO] Upserting team season stats => Team ID: {record['team_id']}, Team Name: {record['team_name']}")
+        try:
+            res = upsert_live_team_season_stats(record)
+            print(f"[INFO] Upsert result: {res}")
+        except Exception as e:
+            print(f"[ERROR] Could not upsert team_id={team_id}: {e}")
+        
+        processed_count += 1
+        # Sleep to avoid rate limiting
+        time.sleep(1)
+    
+    print(f"Processed season stats for {processed_count} teams")
+    return processed_count
 
 ###############################################################################
 # 3) Main Driver: Fetch Live Games, Transform, and Upsert
@@ -619,12 +880,14 @@ def main():
     try:
         update_nba_schedule()
         run_live_games()
+        fetch_and_store_team_season_stats()
     except Exception as e:
         print(f"Error in main execution: {e}")
         traceback.print_exc()
 
 if __name__ == "__main__":
     main()
+
 
 ###############################################################################
 # 4) Optional Helper: Fetch ONLY Live Games (Based on Status)

@@ -172,6 +172,13 @@ def transform_team_stats(game: dict, team_stats_list: list) -> dict:
     home_3pt = home_stats.get("threepoint_goals", {}) or home_stats.get("threePoints", {})
     away_3pt = away_stats.get("threepoint_goals", {}) or away_stats.get("threePoints", {})
 
+    # Extract field goals and free throws data
+    home_fg = home_stats.get("field_goals", {})
+    away_fg = away_stats.get("field_goals", {})
+    
+    home_ft = home_stats.get("freethrows_goals", {}) or home_stats.get("freeThrows", {})
+    away_ft = away_stats.get("freethrows_goals", {}) or away_stats.get("freeThrows", {})
+
     record = {
         "game_id": game_id,
 
@@ -220,6 +227,18 @@ def transform_team_stats(game: dict, team_stats_list: list) -> dict:
         "home_3pa": home_3pt.get("attempts", 0) or home_3pt.get("attempted", 0),
         "away_3pm": away_3pt.get("total", 0) or away_3pt.get("made", 0),
         "away_3pa": away_3pt.get("attempts", 0) or away_3pt.get("attempted", 0),
+
+        # Field Goals - NEW
+        "home_fg_made": home_fg.get("total", 0) or home_fg.get("made", 0),
+        "home_fg_attempted": home_fg.get("attempts", 0) or home_fg.get("attempted", 0),
+        "away_fg_made": away_fg.get("total", 0) or away_fg.get("made", 0),
+        "away_fg_attempted": away_fg.get("attempts", 0) or away_fg.get("attempted", 0),
+        
+        # Free Throws - NEW
+        "home_ft_made": home_ft.get("total", 0) or home_ft.get("made", 0),
+        "home_ft_attempted": home_ft.get("attempts", 0) or home_ft.get("attempted", 0),
+        "away_ft_made": away_ft.get("total", 0) or away_ft.get("made", 0),
+        "away_ft_attempted": away_ft.get("attempts", 0) or away_ft.get("attempted", 0),
 
         # A date field if you store it
         "game_date": game.get("date", "").split("T")[0],  # Extract just the date part before the 'T'
@@ -276,8 +295,8 @@ def process_day(date_obj: datetime):
 ##############################################################################
 
 def main():
-    start_date = datetime(2025, 3, 13)
-    end_date = datetime(2025, 3, 16)
+    start_date = datetime(2025, 3, 16)
+    end_date = datetime(2025, 3, 17)
 
     print(f"Starting historical data import from {start_date} to {end_date}")
     current = start_date

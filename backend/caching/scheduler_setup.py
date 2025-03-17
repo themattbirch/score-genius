@@ -4,6 +4,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import pytz
 import config
+import traceback
+from caching.supabase_client import supabase
 
 # Import your functions
 from src.scripts.data_fetcher import fetch_live_game_data
@@ -46,6 +48,55 @@ def update_cache(league, season, date):
         import traceback
         traceback.print_exc()
 
+def archive_live_team_stats():
+    """
+    Archives live team data from the nba_live_team_stats table to the nba_historical_team_stats table,
+    then clears the nba_live_team_stats table.
+    """
+    try:
+        print("Starting team stats archive process...")
+        
+        # 1. Get all records from live team stats table
+        response = supabase.table("nba_live_team_stats").select("*").execute()
+        
+        if not response.data:
+            print("No live team stats data to archive.")
+            return 0
+            
+        live_team_stats = response.data
+        print(f"Found {len(live_team_stats)} team stat records to archive.")
+        
+        # 2. For each record, upsert into historical table
+        archived_count = 0
+        for record in live_team_stats:
+            # Remove id from live table
+            if 'id' in record:
+                del record['id']
+                
+            # Update timestamp
+            record['updated_at'] = datetime.now(pytz.timezone('UTC')).isoformat()
+            
+            # Upsert to historical table
+            result = supabase.table("nba_historical_team_stats").upsert(
+                record, on_conflict="team_id,season,league_id"
+            ).execute()
+            
+            archived_count += 1
+            
+        print(f"Successfully archived {archived_count} team stat records.")
+        
+        # 3. Clear live team stats table
+        if archived_count > 0:
+            result = supabase.table("nba_live_team_stats").delete().gte('id', 0).execute()
+            print(f"Cleared live team stats table. Result: {result}")
+            
+        return archived_count
+        
+    except Exception as e:
+        print(f"Error archiving live team stats: {e}")
+        traceback.print_exc()
+        return 0
+
 def attempt_archive_live_data():
     """
     Archives live game data from the nba_live_game_stats table to historical tables,
@@ -56,11 +107,16 @@ def attempt_archive_live_data():
     today = datetime.now(tz).date()
     if last_archive_date != today:
         try:
+            # Archive game stats
             archive_live_data()
+            
+            # Archive team stats
+            archive_live_team_stats()
+            
             last_archive_date = today
-            print(f"Archive job executed for {today}")
+            print(f"Archive jobs executed for {today}")
         except Exception as e:
-            print(f"Error during archive job: {e}")
+            print(f"Error during archive jobs: {e}")
 
 if __name__ == "__main__":
     scheduler = BackgroundScheduler()
@@ -121,7 +177,7 @@ if __name__ == "__main__":
         hour=6,
         minute=15,
         timezone='America/Los_Angeles',
-        id='archive_job_noon'
+        id='archive_job_morning'
     )
     scheduler.add_job(
         attempt_archive_live_data,
@@ -129,7 +185,7 @@ if __name__ == "__main__":
         hour=15,
         minute=25,
         timezone='America/Los_Angeles',
-        id='archive_job_6pm'
+        id='archive_job_afternoon'
     )
     
     scheduler.start()
