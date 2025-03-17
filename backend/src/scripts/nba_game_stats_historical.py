@@ -93,158 +93,105 @@ def parse_season_for_date(d: datetime) -> str:
 # 3) Transform Team Stats
 ##############################################################################
 
-def transform_team_stats(game: dict, team_stats_list: list) -> dict:
+def transform_team_stats(team: dict, stats: dict, league_id: str, season: str) -> dict:
     """
-    Transform raw game and team stats data into the expected record format.
+    Transform raw team stats data into the expected record format for our database.
     """
-    def get_quarter_score(scores: dict, key: str, fallback_key: str = None, default: int = 0) -> int:
-        # Handle different API formats for quarter scores
-        value = scores.get(key, None)
-        if value is not None:
-            return value
-        if fallback_key:
-            return scores.get(fallback_key, default)
-        return default
-
-    # Extract basic game info
-    game_id = game.get("id")
+    # Extract basic team info
+    team_id = team.get("id")
+    team_name = team.get("name")
     
-    home_id = game.get("teams", {}).get("home", {}).get("id")
-    away_id = game.get("teams", {}).get("away", {}).get("id")
-    home_name = game.get("teams", {}).get("home", {}).get("name")
-    away_name = game.get("teams", {}).get("away", {}).get("name")
-
-    # Get quarter-by-quarter from g["scores"]
-    home_scores = game.get("scores", {}).get("home", {})
-    away_scores = game.get("scores", {}).get("away", {})
-
-    home_q1 = get_quarter_score(home_scores, "quarter_1", "q1", 0) or 0
-    home_q2 = get_quarter_score(home_scores, "quarter_2", "q2", 0) or 0
-    home_q3 = get_quarter_score(home_scores, "quarter_3", "q3", 0) or 0
-    home_q4 = get_quarter_score(home_scores, "quarter_4", "q4", 0) or 0
-    home_ot = home_scores.get("over_time", 0) or home_scores.get("ot", 0) or 0
-    home_score = home_scores.get("total", 0) or 0
-
-    away_q1 = get_quarter_score(away_scores, "quarter_1", "q1", 0) or 0
-    away_q2 = get_quarter_score(away_scores, "quarter_2", "q2", 0) or 0
-    away_q3 = get_quarter_score(away_scores, "quarter_3", "q3", 0) or 0
-    away_q4 = get_quarter_score(away_scores, "quarter_4", "q4", 0) or 0
-    away_ot = away_scores.get("over_time", 0) or away_scores.get("ot", 0) or 0
-    away_score = away_scores.get("total", 0) or 0
-
-    # Find home and away team stats in the team_stats_list (already the response array)
-    home_data = None
-    away_data = None
+    # Extract games statistics
+    games = stats.get("games", {})
+    games_played_home = get_nested_value(games, "played", "home", default=0)
+    games_played_away = get_nested_value(games, "played", "away", default=0)
+    games_played_all = get_nested_value(games, "played", "all", default=0)
     
-    for team_obj in team_stats_list:
-        team_id = team_obj.get("team", {}).get("id")
-        if team_id == home_id:
-            home_data = team_obj
-        elif team_id == away_id:
-            away_data = team_obj
+    # Extract wins statistics
+    wins_home_total = get_nested_value(games, "wins", "home", "total", default=0)
+    wins_home_percentage = get_nested_value(games, "wins", "home", "percentage", default=0)
+    wins_away_total = get_nested_value(games, "wins", "away", "total", default=0)
+    wins_away_percentage = get_nested_value(games, "wins", "away", "percentage", default=0)
+    wins_all_total = get_nested_value(games, "wins", "all", "total", default=0)
+    wins_all_percentage = get_nested_value(games, "wins", "all", "percentage", default=0)
     
-    # Debug output
-    print(f"Home team ID: {home_id}, Found home data: {home_data is not None}")
-    print(f"Away team ID: {away_id}, Found away data: {away_data is not None}")
+    # Extract losses statistics - API might use either "loses" or "losses" as the key
+    losses_home_total = get_nested_value(games, "loses", "home", "total", default=0) or get_nested_value(games, "losses", "home", "total", default=0)
+    losses_home_percentage = get_nested_value(games, "loses", "home", "percentage", default=0) or get_nested_value(games, "losses", "home", "percentage", default=0)
+    losses_away_total = get_nested_value(games, "loses", "away", "total", default=0) or get_nested_value(games, "losses", "away", "total", default=0)
+    losses_away_percentage = get_nested_value(games, "loses", "away", "percentage", default=0) or get_nested_value(games, "losses", "away", "percentage", default=0)
+    losses_all_total = get_nested_value(games, "loses", "all", "total", default=0) or get_nested_value(games, "losses", "all", "total", default=0)
+    losses_all_percentage = get_nested_value(games, "loses", "all", "percentage", default=0) or get_nested_value(games, "losses", "all", "percentage", default=0)
     
-    # CRITICAL FIX: For historical games, the statistics aren't nested in a 'statistics'
-    # field - they are directly in the team_obj itself!
+    # Extract points for statistics
+    points = stats.get("points", {})
+    points_for_total_home = get_nested_value(points, "for", "total", "home", default=0)
+    points_for_total_away = get_nested_value(points, "for", "total", "away", default=0)
+    points_for_total_all = get_nested_value(points, "for", "total", "all", default=0)
+    points_for_avg_home = get_nested_value(points, "for", "average", "home", default=0)
+    points_for_avg_away = get_nested_value(points, "for", "average", "away", default=0)
+    points_for_avg_all = get_nested_value(points, "for", "average", "all", default=0)
     
-    # Get home statistics
-    if home_data:
-        home_stats = home_data  # Use the whole object, not just a nested 'statistics' field
-        print(f"Home stats direct access - assists: {home_stats.get('assists', 0)}")
-    else:
-        home_stats = {}
-        
-    # Get away statistics
-    if away_data:
-        away_stats = away_data  # Use the whole object, not just a nested 'statistics' field
-        print(f"Away stats direct access - assists: {away_stats.get('assists', 0)}")
-    else:
-        away_stats = {}
-
-    # Rebounds
-    home_rebs = home_stats.get("rebounds", {})
-    away_rebs = away_stats.get("rebounds", {})
-
-    # Three-pointers
-    home_3pt = home_stats.get("threepoint_goals", {}) or home_stats.get("threePoints", {})
-    away_3pt = away_stats.get("threepoint_goals", {}) or away_stats.get("threePoints", {})
-
-    # Extract field goals and free throws data
-    home_fg = home_stats.get("field_goals", {})
-    away_fg = away_stats.get("field_goals", {})
+    # Extract points against statistics
+    points_against_total_home = get_nested_value(points, "against", "total", "home", default=0)
+    points_against_total_away = get_nested_value(points, "against", "total", "away", default=0)
+    points_against_total_all = get_nested_value(points, "against", "total", "all", default=0)
+    points_against_avg_home = get_nested_value(points, "against", "average", "home", default=0)
+    points_against_avg_away = get_nested_value(points, "against", "average", "away", default=0)
+    points_against_avg_all = get_nested_value(points, "against", "average", "all", default=0)
     
-    home_ft = home_stats.get("freethrows_goals", {}) or home_stats.get("freeThrows", {})
-    away_ft = away_stats.get("freethrows_goals", {}) or away_stats.get("freeThrows", {})
-
+    # Removed extraction of form/streak data
+    
     record = {
-        "game_id": game_id,
-
-        # Basic identity
-        "home_team": home_name,
-        "away_team": away_name,
-
-        # Quarter-based scoring
-        "home_score": home_score,
-        "away_score": away_score,
-        "home_q1": home_q1,
-        "home_q2": home_q2,
-        "home_q3": home_q3,
-        "home_q4": home_q4,
-        "home_ot": home_ot,
-        "away_q1": away_q1,
-        "away_q2": away_q2,
-        "away_q3": away_q3,
-        "away_q4": away_q4,
-        "away_ot": away_ot,
-
-        # Advanced Stats - direct access from team object
-        "home_assists": home_stats.get("assists", 0),
-        "home_steals": home_stats.get("steals", 0),
-        "home_blocks": home_stats.get("blocks", 0),
-        "home_turnovers": home_stats.get("turnovers", 0),
-        "home_fouls": home_stats.get("fouls", 0) or home_stats.get("personal_fouls", 0),
-
-        "away_assists": away_stats.get("assists", 0),
-        "away_steals": away_stats.get("steals", 0),
-        "away_blocks": away_stats.get("blocks", 0),
-        "away_turnovers": away_stats.get("turnovers", 0),
-        "away_fouls": away_stats.get("fouls", 0) or away_stats.get("personal_fouls", 0),
-
-        # Rebounds
-        "home_off_reb": home_rebs.get("offence", 0) or home_rebs.get("offensive", 0),
-        "home_def_reb": home_rebs.get("defense", 0) or home_rebs.get("defensive", 0),
-        "home_total_reb": home_rebs.get("total", 0),
-
-        "away_off_reb": away_rebs.get("offence", 0) or away_rebs.get("offensive", 0),
-        "away_def_reb": away_rebs.get("defense", 0) or away_rebs.get("defensive", 0),
-        "away_total_reb": away_rebs.get("total", 0),
-
-        # 3-Point Goals
-        "home_3pm": home_3pt.get("total", 0) or home_3pt.get("made", 0),
-        "home_3pa": home_3pt.get("attempts", 0) or home_3pt.get("attempted", 0),
-        "away_3pm": away_3pt.get("total", 0) or away_3pt.get("made", 0),
-        "away_3pa": away_3pt.get("attempts", 0) or away_3pt.get("attempted", 0),
-
-        # Field Goals - NEW
-        "home_fg_made": home_fg.get("total", 0) or home_fg.get("made", 0),
-        "home_fg_attempted": home_fg.get("attempts", 0) or home_fg.get("attempted", 0),
-        "away_fg_made": away_fg.get("total", 0) or away_fg.get("made", 0),
-        "away_fg_attempted": away_fg.get("attempts", 0) or away_fg.get("attempted", 0),
+        "team_id": team_id,
+        "team_name": team_name,
+        "season": season,
+        "league_id": league_id,
         
-        # Free Throws - NEW
-        "home_ft_made": home_ft.get("total", 0) or home_ft.get("made", 0),
-        "home_ft_attempted": home_ft.get("attempts", 0) or home_ft.get("attempted", 0),
-        "away_ft_made": away_ft.get("total", 0) or away_ft.get("made", 0),
-        "away_ft_attempted": away_ft.get("attempts", 0) or away_ft.get("attempted", 0),
-
-        # A date field if you store it
-        "game_date": game.get("date", "").split("T")[0],  # Extract just the date part before the 'T'
-        "updated_at": datetime.utcnow().isoformat()
+        # Games played statistics
+        "games_played_home": games_played_home,
+        "games_played_away": games_played_away,
+        "games_played_all": games_played_all,
+        
+        # Wins statistics
+        "wins_home_total": wins_home_total,
+        "wins_home_percentage": wins_home_percentage,
+        "wins_away_total": wins_away_total,
+        "wins_away_percentage": wins_away_percentage,
+        "wins_all_total": wins_all_total,
+        "wins_all_percentage": wins_all_percentage,
+        
+        # Losses statistics
+        "losses_home_total": losses_home_total,
+        "losses_home_percentage": losses_home_percentage,
+        "losses_away_total": losses_away_total,
+        "losses_away_percentage": losses_away_percentage,
+        "losses_all_total": losses_all_total,
+        "losses_all_percentage": losses_all_percentage,
+        
+        # Points for statistics
+        "points_for_total_home": points_for_total_home,
+        "points_for_total_away": points_for_total_away,
+        "points_for_total_all": points_for_total_all,
+        "points_for_avg_home": points_for_avg_home,
+        "points_for_avg_away": points_for_avg_away,
+        "points_for_avg_all": points_for_avg_all,
+        
+        # Points against statistics
+        "points_against_total_home": points_against_total_home,
+        "points_against_total_away": points_against_total_away,
+        "points_against_total_all": points_against_total_all,
+        "points_against_avg_home": points_against_avg_home,
+        "points_against_avg_away": points_against_avg_away,
+        "points_against_avg_all": points_against_avg_all,
+        
+        # Keeping current_form (you specified to keep this one)
+        "current_form": get_nested_value(stats, "form", default=""),
+        
+        # Metadata
+        "updated_at": datetime.now().isoformat()
     }
-
+    
     return record
 
 ##############################################################################

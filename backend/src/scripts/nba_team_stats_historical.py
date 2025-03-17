@@ -3,6 +3,7 @@ import requests
 import sys
 import os
 import time
+import traceback
 from datetime import datetime, timedelta
 
 # Add the backend root to Python path for caching & config
@@ -113,6 +114,8 @@ def get_teams_by_league_season(league: str, season: str) -> list:
         print(f"Error fetching teams for league {league}, season {season}: {e}")
         return []
 
+import json  # Make sure to add this import at the top
+
 def get_team_stats(team_id: int, league: str, season: str) -> dict:
     """
     Fetches team statistics from /statistics for a given team, league, and season.
@@ -127,6 +130,11 @@ def get_team_stats(team_id: int, league: str, season: str) -> dict:
         resp = requests.get(url, headers=HEADERS, params=params)
         resp.raise_for_status()
         data = resp.json()
+        
+        # Add these debug lines:
+        print(f"DEBUG - Full API response for team {team_id}:")
+        print(json.dumps(data, indent=2))
+        
         print(f"Fetched stats for team_id={team_id}, league={league}, season={season}")
         # Return directly the response object, not the full dictionary
         # The statistics endpoint returns a single object, not a list
@@ -186,6 +194,23 @@ def transform_team_stats(team: dict, stats: dict, league_id: str, season: str) -
     points_against_avg_away = get_nested_value(points, "against", "average", "away", default=0)
     points_against_avg_all = get_nested_value(points, "against", "average", "all", default=0)
     
+    # Extract form/streak data (NEW)
+    form = get_nested_value(stats, "form", default="")
+    
+    # Calculate streak based on form (NEW)
+    streak = 0
+    if form:
+        # Count consecutive wins or losses at the end of the form string
+        # Example: "WWLWW" would give a streak of 2 (wins)
+        streak_char = form[-1] if form else ""
+        for i in range(len(form)-1, -1, -1):
+            if form[i] != streak_char:
+                break
+            streak += 1
+        # Make streak negative for losses
+        if streak_char.upper() == "L":
+            streak = -streak
+    
     record = {
         "team_id": team_id,
         "team_name": team_name,
@@ -229,8 +254,11 @@ def transform_team_stats(team: dict, stats: dict, league_id: str, season: str) -
         "points_against_avg_away": points_against_avg_away,
         "points_against_avg_all": points_against_avg_all,
         
+        # NEW FIELDS
+        "current_form": form,
+        
         # Metadata
-        "updated_at": datetime.utcnow().isoformat()
+        "updated_at": datetime.now().isoformat()
     }
     
     return record
@@ -255,6 +283,60 @@ def upsert_historical_team_stats(record):
 ##############################################################################
 # 4) Process Teams for Season
 ##############################################################################
+
+def calculate_team_form(team_id, team_name, num_games=5):
+    """
+    Calculate a team's form based on their most recent games.
+    
+    Args:
+        team_id (int): The ID of the team
+        team_name (str): The name of the team (for matching in game records)
+        num_games (int): Number of recent games to include in form (default: 5)
+        
+    Returns:
+        str: A string representation of recent form (e.g., "WLWWL")
+    """
+    try:
+        # Query recent games involving this team
+        # Use the correct order syntax for your Supabase client
+        response = supabase.table("nba_historical_game_stats").select("*").or_(
+            f"home_team.eq.{team_name},away_team.eq.{team_name}"
+        ).order('game_date.desc').limit(num_games).execute()
+        
+        games = response.data
+        
+        # If no games found, return empty form
+        if not games:
+            print(f"No recent games found for team: {team_name}")
+            return ""
+        
+        form = ""
+        for game in games:
+            home_team = game.get('home_team')
+            away_team = game.get('away_team')
+            
+            is_home_team = home_team == team_name
+            
+            # Get relevant scores
+            if is_home_team:
+                team_score = game.get('home_score', 0)
+                opponent_score = game.get('away_score', 0)
+            else:
+                team_score = game.get('away_score', 0)
+                opponent_score = game.get('home_score', 0)
+            
+            # Determine win or loss
+            if team_score > opponent_score:
+                form += "W"  # Add win at the end
+            else:
+                form += "L"  # Add loss at the end
+        
+        return form
+    
+    except Exception as e:
+        print(f"Error calculating form for team {team_name}: {e}")
+        traceback.print_exc()  # Added stacktrace to see more details
+        return ""
 
 def process_teams_for_season(league_id: str, season: str):
     """
@@ -297,6 +379,12 @@ def process_teams_for_season(league_id: str, season: str):
         # Transform the data to our required format
         record = transform_team_stats(team, team_stats, league_id, season)
         
+        # Calculate and add custom form data
+        current_form = calculate_team_form(team_id, team_name)
+        if current_form:
+            print(f"Calculated form for {team_name}: {current_form}")
+            record['current_form'] = current_form
+        
         print(f"[INFO] Upserting team stats => Team ID: {record['team_id']}, Team Name: {record['team_name']}")
         try:
             res = upsert_historical_team_stats(record)
@@ -311,16 +399,18 @@ def process_teams_for_season(league_id: str, season: str):
     print(f"Processed {processed_count} teams for league {league_id}, season {season}")
     return processed_count
 
+
+
 ##############################################################################
 # 5) Main Runner
 ##############################################################################
 
 def main():
     # Set your date range here
-    start_date = datetime(2019, 10, 19)
+    start_date = datetime(2025, 3, 10)
     end_date = datetime(2025, 3, 17)
     
-    # NBA League ID
+    # NBA League ID19
     league_id = "12"
     
     # Get unique seasons between start_date and end_date

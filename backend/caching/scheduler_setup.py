@@ -73,6 +73,14 @@ def archive_live_team_stats():
             if 'id' in record:
                 del record['id']
                 
+            # Remove fields that don't exist in historical table
+            if 'current_form' in record:
+                del record['current_form']
+            if 'current_streak' in record:
+                del record['current_streak']
+            if 'last_fetched_at' in record:
+                del record['last_fetched_at']
+            
             # Update timestamp
             record['updated_at'] = datetime.now(pytz.timezone('UTC')).isoformat()
             
@@ -85,16 +93,27 @@ def archive_live_team_stats():
             
         print(f"Successfully archived {archived_count} team stat records.")
         
-        # 3. Clear live team stats table
-        if archived_count > 0:
+        # 3. Clear live team stats table - even if there was an error earlier, try to clear the table
+        try:
             result = supabase.table("nba_live_team_stats").delete().gte('id', 0).execute()
             print(f"Cleared live team stats table. Result: {result}")
+        except Exception as e:
+            print(f"Error clearing live team stats table: {e}")
+            traceback.print_exc()
             
         return archived_count
         
     except Exception as e:
         print(f"Error archiving live team stats: {e}")
         traceback.print_exc()
+        
+        # Try to clear the table anyway
+        try:
+            result = supabase.table("nba_live_team_stats").delete().gte('id', 0).execute()
+            print(f"Attempted emergency clear of live team stats table. Result: {result}")
+        except Exception as clear_err:
+            print(f"Failed emergency clear of live team stats table: {clear_err}")
+            
         return 0
 
 def attempt_archive_live_data():
@@ -182,7 +201,7 @@ if __name__ == "__main__":
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
-        hour=15,
+        hour=16,
         minute=25,
         timezone='America/Los_Angeles',
         id='archive_job_afternoon'
