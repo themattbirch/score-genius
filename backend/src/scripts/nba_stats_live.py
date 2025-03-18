@@ -734,8 +734,6 @@ def transform_team_season_stats(team_id, team_name, stats, league_id, season):
         "points_against_avg_all": points_against_avg_all,
         
         # Live specific fields
-        "current_form": form,
-        "current_streak": streak,
         "last_fetched_at": datetime.now(ZoneInfo("UTC")).isoformat(),
         "updated_at": datetime.now(ZoneInfo("UTC")).isoformat()
     }
