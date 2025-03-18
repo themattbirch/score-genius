@@ -1,0 +1,10 @@
+{
+  "label": "Sample_Benchmark",
+  "timestamp": "2025-03-18T00:25:47.203712",
+  "success": true,
+  "execution_time": 0.911125898361206,
+  "memory_diff_mb": 0.03125,
+  "component_metrics": {},
+  "bottlenecks": [],
+  "optimization_recommendations": []
+}

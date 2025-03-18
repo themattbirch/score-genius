@@ -1,12 +1,46 @@
 {
-  "timestamp": "2025-03-17T20:09:37.681630",
+  "timestamp": "2025-03-18T09:00:52.883464",
   "num_games": 5,
   "cross_validation": true,
   "n_splits": 3,
-  "overall_metrics": {},
+  "overall_metrics": {
+    "mean_absolute_error": 5.90625,
+    "root_mean_squared_error": 7.507016988429785,
+    "winner_accuracy": 0.75
+  },
   "quarter_metrics": {},
   "game_results": [],
   "error_distribution": {},
-  "cross_val_results": [],
-  "error": "No model available"
+  "cross_val_results": [
+    {
+      "fold": 1,
+      "train_size": 3,
+      "test_size": 2,
+      "mean_absolute_error": 6.6875,
+      "root_mean_squared_error": 8.78564169540279,
+      "winner_accuracy": 0.75,
+      "error_std_dev": 5.6977928840911725,
+      "sample_size": 8
+    },
+    {
+      "fold": 2,
+      "train_size": 3,
+      "test_size": 2,
+      "mean_absolute_error": 5.90625,
+      "root_mean_squared_error": 7.213810539513774,
+      "winner_accuracy": 1.0,
+      "error_std_dev": 4.1418924946816285,
+      "sample_size": 8
+    },
+    {
+      "fold": 3,
+      "train_size": 4,
+      "test_size": 1,
+      "mean_absolute_error": 5.125,
+      "root_mean_squared_error": 6.521598730372791,
+      "winner_accuracy": 0.5,
+      "error_std_dev": 4.0330664512254195,
+      "sample_size": 4
+    }
+  ]
 }
