@@ -2,9 +2,9 @@
 
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from config import API_SPORTS_KEY, ODDS_API_KEY
+from config import API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY  # Changed to match your config
 
 # API-Sports configuration (for game previews)
 API_KEY_SPORTS = API_SPORTS_KEY
@@ -16,13 +16,6 @@ HEADERS_SPORTS = {
 
 # The Odds API configuration
 BASE_URL_ODDS = 'https://api.the-odds-api.com/v4/sports/basketball_nba/odds'
-ODDS_PARAMS = {
-    'apiKey': ODDS_API_KEY,
-    'regions': 'us',
-    'markets': 'h2h,spreads,totals',
-    'oddsFormat': 'american',
-    'bookmakers': 'draftkings'
-}
 
 def normalize_team_name(name: str) -> str:
     """Normalizes a team name by stripping extra whitespace and converting to lower-case."""
@@ -53,18 +46,43 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
         print(f"Error fetching game data for {date}: {e}")
         return {}
 
-def get_betting_odds() -> list:
+def get_betting_odds(date: datetime) -> list:
     """
-    Fetches betting odds for NBA events from The Odds API.
+    Fetches betting odds for NBA events from The Odds API for a specific date.
+    Uses a time range covering the entire day in UTC without microseconds,
+    formatted as "YYYY-MM-DDTHH:MM:SSZ".
     Returns a list of odds event objects.
     """
+    # Format the times correctly with a trailing "Z"
+    commence_time_from = date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+    commence_time_to = (date.replace(hour=23, minute=59, second=59, microsecond=0, tzinfo=ZoneInfo("UTC")) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    params = {
+        "regions": "us",
+        "markets": "h2h,spreads,totals",
+        "oddsFormat": "american",
+        "commenceTimeFrom": commence_time_from,
+        "commenceTimeTo": commence_time_to,
+        "apiKey": ODDS_API_KEY
+    }
+    
     try:
-        response = requests.get(BASE_URL_ODDS, params=ODDS_PARAMS)
+        response = requests.get(BASE_URL_ODDS, params=params)
         response.raise_for_status()
         return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        if response.status_code == 422:
+            # Log the error and return an empty list if no odds data is available for this date.
+            print(f"422 Unprocessable Entity: {response.text}")
+            return []
+        else:
+            print(f"Error fetching betting odds: {http_err}")
+            return []
     except requests.exceptions.RequestException as e:
         print(f"Error fetching betting odds: {e}")
         return []
+
+
 
 def match_odds_for_game(game: dict, odds_events: list) -> dict:
     """
@@ -97,24 +115,68 @@ def match_odds_for_game(game: dict, odds_events: list) -> dict:
                 continue
     return None
 
-def extract_simple_odds(odds_event: dict) -> list:
+def extract_odds_by_market(odds_event: dict) -> dict:
     """
-    Extracts a simplified list of odds from an odds event.
-    For each outcome, returns only "name", "price", and "point" (if available).
+    Extracts odds from an odds event, categorized by market type (moneyline, spread, total).
+    Focuses on DraftKings bookmaker if available, otherwise uses the first bookmaker.
     """
-    simple_odds = []
+    if not odds_event:
+        return {"moneyline": {}, "spread": {}, "total": {}}
+    
+    # Initialize empty structures for odds
+    moneyline_odds = {}
+    spread_odds = {}
+    total_odds = {}
+    
+    # Get bookmakers from the event
     bookmakers = odds_event.get('bookmakers', [])
-    for bookmaker in bookmakers:
-        markets = bookmaker.get('markets', [])
-        for market in markets:
-            outcomes = market.get('outcomes', [])
+    if not bookmakers:
+        return {"moneyline": {}, "spread": {}, "total": {}}
+    
+    # Try to find DraftKings first, otherwise use the first bookmaker
+    target_bookmaker = None
+    for bm in bookmakers:
+        if bm.get('key') == 'draftkings':
+            target_bookmaker = bm
+            break
+    
+    if not target_bookmaker and bookmakers:
+        target_bookmaker = bookmakers[0]
+    
+    if not target_bookmaker:
+        return {"moneyline": {}, "spread": {}, "total": {}}
+    
+    # Extract odds from the target bookmaker's markets
+    markets = target_bookmaker.get('markets', [])
+    for market in markets:
+        market_key = market.get('key')
+        outcomes = market.get('outcomes', [])
+        
+        if market_key == 'h2h':  # Moneyline
             for outcome in outcomes:
-                simple_odds.append({
-                    'name': outcome.get('name'),
-                    'price': outcome.get('price'),
-                    'point': outcome.get('point')
-                })
-    return simple_odds
+                team = outcome.get('name')
+                price = outcome.get('price')
+                moneyline_odds[team] = price
+        
+        elif market_key == 'spreads':  # Spread
+            for outcome in outcomes:
+                team = outcome.get('name')
+                price = outcome.get('price')
+                point = outcome.get('point')
+                spread_odds[team] = {'price': price, 'point': point}
+        
+        elif market_key == 'totals':  # Over/Under
+            for outcome in outcomes:
+                position = outcome.get('name')  # 'Over' or 'Under'
+                price = outcome.get('price')
+                point = outcome.get('point')
+                total_odds[position] = {'price': price, 'point': point}
+    
+    return {
+        "moneyline": moneyline_odds,
+        "spread": spread_odds,
+        "total": total_odds
+    }
 
 def build_game_preview() -> list:
     """
@@ -136,23 +198,85 @@ def build_game_preview() -> list:
         print("No pregame games found for the specified date.")
         return []
     
-    odds_events = get_betting_odds()
+    odds_events = get_betting_odds(eastern_now)
     previews = []
     for game in pregame_games:
+        # Extract venue information
+        venue_data = game.get("venue", "")
+        if isinstance(venue_data, dict):
+            venue_name = venue_data.get("name", "")
+        else:
+            venue_name = venue_data  # It's already a string
+        
+        # Compute game_date from the scheduled time
+        scheduled_time = game.get("date")
+        game_date = ""
+        if scheduled_time:
+            try:
+                game_date = datetime.fromisoformat(scheduled_time).date().isoformat()
+            except Exception:
+                game_date = ""
+        
         matched_event = match_odds_for_game(game, odds_events)
-        odds = extract_simple_odds(matched_event) if matched_event else []
+        odds_by_market = extract_odds_by_market(matched_event)
+        
         preview = {
             "game_id": game.get("id"),
-            "scheduled_time": game.get("date"),
-            "venue": game.get("venue"),
+            "scheduled_time": scheduled_time,
+            "game_date": game_date,  # New field for the DB
+            "venue": venue_name,
             "away_team": game.get("teams", {}).get("away", {}).get("name"),
             "home_team": game.get("teams", {}).get("home", {}).get("name"),
-            "betting_odds": odds
+            "moneyline": odds_by_market["moneyline"],
+            "spread": odds_by_market["spread"],
+            "total": odds_by_market["total"]
         }
         previews.append(preview)
+    
     return previews
+
+def upsert_previews_to_supabase(previews: list) -> None:
+    """
+    Upserts game previews into the Supabase nba_game_schedule table.
+    Uses game_id as the unique identifier for upsert operations.
+    """
+    from supabase import create_client
+    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    
+    for preview in previews:
+        game_id = preview.get('game_id')
+        if not game_id:
+            print("Skipping preview with no game_id")
+            continue
+        
+        upsert_data = {
+            'game_id': game_id,
+            'scheduled_time': preview.get('scheduled_time'),
+            'game_date': preview.get('game_date'),
+            'venue': preview.get('venue'),
+            'away_team': preview.get('away_team'),
+            'home_team': preview.get('home_team'),
+            'moneyline': preview.get('moneyline'),
+            'spread': preview.get('spread'),
+            'total': preview.get('total')
+        }
+        
+        try:
+            result = supabase.table('nba_game_schedule').upsert([upsert_data], on_conflict="game_id").execute()
+            print(f"Successfully upserted game_id {game_id}")
+        except Exception as e:
+            print(f"Error upserting game_id {game_id}: {e}")
 
 if __name__ == "__main__":
     preview_data = build_game_preview()
-    from pprint import pprint
-    pprint(preview_data)
+    if preview_data:
+        upsert_previews_to_supabase(preview_data)
+        print(f"Upserted {len(preview_data)} game previews to Supabase.")
+        
+        # Print sample data for verification
+        if len(preview_data) > 0:
+            print("\nSample preview data (first game):")
+            import pprint
+            pprint.pprint(preview_data[0])
+    else:
+        print("No game preview data to upsert.")
