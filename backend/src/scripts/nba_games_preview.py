@@ -4,7 +4,7 @@ import json
 import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from config import API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY  # Changed to match your config
+from config import API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
 
 # API-Sports configuration (for game previews)
 API_KEY_SPORTS = API_SPORTS_KEY
@@ -16,6 +16,7 @@ HEADERS_SPORTS = {
 
 # The Odds API configuration
 BASE_URL_ODDS = 'https://api.the-odds-api.com/v4/sports/basketball_nba/odds'
+
 
 def normalize_team_name(name: str) -> str:
     """Normalizes a team name by stripping extra whitespace and converting to lower-case."""
@@ -81,8 +82,6 @@ def get_betting_odds(date: datetime) -> list:
     except requests.exceptions.RequestException as e:
         print(f"Error fetching betting odds: {e}")
         return []
-
-
 
 def match_odds_for_game(game: dict, odds_events: list) -> dict:
     """
@@ -178,6 +177,39 @@ def extract_odds_by_market(odds_event: dict) -> dict:
         "total": total_odds
     }
 
+def clear_old_games():
+    """
+    Clears any games from nba_game_schedule that are scheduled before today's date in PT time.
+    Completed or past games are removed.
+    """
+    from supabase import create_client
+    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+    # We'll interpret scheduled_time as ISO8601 and compare only the date portion
+    # in America/Los_Angeles (PT).
+    response = supabase.table("nba_game_schedule").select("*").execute()
+    rows = response.data
+    if not rows:
+        print("No rows to consider for clearing old games.")
+        return
+
+    now_pt = datetime.now(ZoneInfo("America/Los_Angeles")).date()
+
+    for row in rows:
+        game_id = row.get("game_id")
+        scheduled_time = row.get("scheduled_time")
+        if not scheduled_time or not game_id:
+            continue
+        try:
+            # Parse as ISO 8601
+            dt = datetime.fromisoformat(scheduled_time)
+            dt_local = dt.astimezone(ZoneInfo("America/Los_Angeles"))
+            if dt_local.date() < now_pt:
+                supabase.table("nba_game_schedule").delete().eq("game_id", game_id).execute()
+                print(f"Cleared old game {game_id} scheduled for {scheduled_time}.")
+        except Exception as e:
+            print(f"Error parsing scheduled_time for game_id {game_id}: {e}")
+
 def build_game_preview() -> list:
     """
     Builds and returns a list of game preview dictionaries for today's date (Eastern Time).
@@ -223,7 +255,7 @@ def build_game_preview() -> list:
         preview = {
             "game_id": game.get("id"),
             "scheduled_time": scheduled_time,
-            "game_date": game_date,  # New field for the DB
+            "game_date": game_date,
             "venue": venue_name,
             "away_team": game.get("teams", {}).get("away", {}).get("name"),
             "home_team": game.get("teams", {}).get("home", {}).get("name"),
@@ -262,12 +294,35 @@ def upsert_previews_to_supabase(previews: list) -> None:
         }
         
         try:
-            result = supabase.table('nba_game_schedule').upsert([upsert_data], on_conflict="game_id").execute()
+            # Use on_conflict="game_id" to update existing rows
+            supabase.table('nba_game_schedule').upsert([upsert_data], on_conflict="game_id").execute()
             print(f"Successfully upserted game_id {game_id}")
         except Exception as e:
             print(f"Error upserting game_id {game_id}: {e}")
 
+def main():
+    """
+    Main function that orchestrates clearing old games and updating preview data.
+    Used for scheduled execution from scheduler_setup.py.
+    """
+    # First, clear old (past) games from the table
+    clear_old_games()
+    
+    # Then build new previews for today's games
+    preview_data = build_game_preview()
+    if preview_data:
+        upsert_previews_to_supabase(preview_data)
+        print(f"Upserted {len(preview_data)} game previews to Supabase.")
+        return len(preview_data)
+    else:
+        print("No game preview data to upsert.")
+        return 0
+
 if __name__ == "__main__":
+    # First, clear old (past) games from the table
+    clear_old_games()
+    
+    # Then build new previews for today's games
     preview_data = build_game_preview()
     if preview_data:
         upsert_previews_to_supabase(preview_data)
