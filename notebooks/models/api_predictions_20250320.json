@@ -1,0 +1,452 @@
+[
+  {
+    "game": {
+      "id": 414883,
+      "date": "2025-03-20",
+      "home_team": "Charlotte Hornets",
+      "away_team": "New York Knicks",
+      "status": "upcoming",
+      "start_time": "TBD"
+    },
+    "prediction": {
+      "home_score": 107.1,
+      "away_score": 108.6,
+      "point_differential": -1.5,
+      "total_score": 215.7,
+      "win_probability": 0.441,
+      "timestamp": "2025-03-20T02:12:16.385681",
+      "model_version": "1.0"
+    },
+    "recommendations": {
+      "moneyline": {
+        "home_fair_odds": 2.27,
+        "away_fair_odds": 1.79,
+        "home_american": 125,
+        "away_american": -125,
+        "recommendation": "New York Knicks moneyline"
+      },
+      "spread": {
+        "projected_diff": -1.5,
+        "closest_typical_spread": 1.5,
+        "recommendation": "Charlotte Hornets +1.5"
+      },
+      "total": {
+        "projected_total": 215.7,
+        "closest_typical_total": 215.5,
+        "recommendation": "No strong over/under value at 215.5"
+      },
+      "props": {
+        "home_team_props": "No strong team total recommendation",
+        "away_team_props": "No strong team total recommendation"
+      }
+    },
+    "metrics": {
+      "home_rest_days": 0,
+      "away_rest_days": 0,
+      "home_back_to_back": false,
+      "away_back_to_back": false
+    },
+    "simulation": {
+      "confidence_intervals": {
+        "home_score": [
+          93.32039719336245,
+          120.91896414614999
+        ],
+        "away_score": [
+          94.93721662356799,
+          122.34572706457458
+        ],
+        "point_diff": [
+          -21.03895717673496,
+          18.168127384339773
+        ],
+        "total_score": [
+          196.12849166429484,
+          235.0872551959769
+        ]
+      },
+      "spread_probabilities": {
+        "-10.5": 0.8181,
+        "-7.5": 0.7238,
+        "-5.5": 0.6504,
+        "-3.5": 0.571,
+        "-1.5": 0.4895,
+        "0": 0.4348,
+        "1.5": 0.3758,
+        "3.5": 0.3043,
+        "5.5": 0.2427,
+        "7.5": 0.182,
+        "10.5": 0.1098
+      },
+      "total_probabilities": {
+        "190.5": 0.9948,
+        "200.5": 0.9406,
+        "210.5": 0.6987,
+        "220.5": 0.3129,
+        "230.5": 0.0698,
+        "240.5": 0.0067,
+        "250.5": 0.0001
+      }
+    }
+  },
+  {
+    "game": {
+      "id": 414884,
+      "date": "2025-03-20",
+      "home_team": "Indiana Pacers",
+      "away_team": "Brooklyn Nets",
+      "status": "upcoming",
+      "start_time": "TBD"
+    },
+    "prediction": {
+      "home_score": 112.5,
+      "away_score": 105.5,
+      "point_differential": 7.0,
+      "total_score": 218.0,
+      "win_probability": 0.756,
+      "timestamp": "2025-03-20T02:12:16.393260",
+      "model_version": "1.0"
+    },
+    "recommendations": {
+      "moneyline": {
+        "home_fair_odds": 1.32,
+        "away_fair_odds": 4.1,
+        "home_american": -310,
+        "away_american": 310,
+        "recommendation": "Indiana Pacers moneyline"
+      },
+      "spread": {
+        "projected_diff": 7.0,
+        "closest_typical_spread": 6.5,
+        "recommendation": "Indiana Pacers -6.5"
+      },
+      "total": {
+        "projected_total": 218.0,
+        "closest_typical_total": 215.5,
+        "recommendation": "No strong over/under value at 215.5"
+      },
+      "props": {
+        "home_team_props": "Consider Indiana Pacers team total OVER if set below 109.5",
+        "away_team_props": "No strong team total recommendation"
+      }
+    },
+    "metrics": {
+      "home_rest_days": 0,
+      "away_rest_days": 0,
+      "home_back_to_back": false,
+      "away_back_to_back": false
+    },
+    "simulation": {
+      "confidence_intervals": {
+        "home_score": [
+          98.72039719336246,
+          126.31896414615
+        ],
+        "away_score": [
+          91.837216623568,
+          119.24572706457458
+        ],
+        "point_diff": [
+          -12.53895717673496,
+          26.668127384339773
+        ],
+        "total_score": [
+          198.42849166429485,
+          237.3872551959769
+        ]
+      },
+      "spread_probabilities": {
+        "-10.5": 0.9605,
+        "-7.5": 0.9262,
+        "-5.5": 0.8933,
+        "-3.5": 0.855,
+        "-1.5": 0.8025,
+        "0": 0.7581,
+        "1.5": 0.7051,
+        "3.5": 0.633,
+        "5.5": 0.5497,
+        "7.5": 0.471,
+        "10.5": 0.3574
+      },
+      "total_probabilities": {
+        "190.5": 0.9977,
+        "200.5": 0.9623,
+        "210.5": 0.7773,
+        "220.5": 0.4006,
+        "230.5": 0.1065,
+        "240.5": 0.0118,
+        "250.5": 0.0002
+      }
+    }
+  },
+  {
+    "game": {
+      "id": 414878,
+      "date": "2025-03-20",
+      "home_team": "Golden State Warriors",
+      "away_team": "Toronto Raptors",
+      "status": "upcoming",
+      "start_time": "TBD"
+    },
+    "prediction": {
+      "home_score": 109.8,
+      "away_score": 108.6,
+      "point_differential": 1.2,
+      "total_score": 218.4,
+      "win_probability": 0.547,
+      "timestamp": "2025-03-20T02:12:16.402309",
+      "model_version": "1.0"
+    },
+    "recommendations": {
+      "moneyline": {
+        "home_fair_odds": 1.83,
+        "away_fair_odds": 2.21,
+        "home_american": -120,
+        "away_american": 120,
+        "recommendation": "No strong moneyline value"
+      },
+      "spread": {
+        "projected_diff": 1.2,
+        "closest_typical_spread": 1.5,
+        "recommendation": "Toronto Raptors +1.5"
+      },
+      "total": {
+        "projected_total": 218.4,
+        "closest_typical_total": 220.5,
+        "recommendation": "No strong over/under value at 220.5"
+      },
+      "props": {
+        "home_team_props": "No strong team total recommendation",
+        "away_team_props": "No strong team total recommendation"
+      }
+    },
+    "metrics": {
+      "home_rest_days": 0,
+      "away_rest_days": 0,
+      "home_back_to_back": false,
+      "away_back_to_back": false
+    },
+    "simulation": {
+      "confidence_intervals": {
+        "home_score": [
+          96.02039719336246,
+          123.61896414614999
+        ],
+        "away_score": [
+          94.93721662356799,
+          122.34572706457458
+        ],
+        "point_diff": [
+          -18.338957176734958,
+          20.868127384339775
+        ],
+        "total_score": [
+          198.82849166429486,
+          237.78725519597688
+        ]
+      },
+      "spread_probabilities": {
+        "-10.5": 0.8776,
+        "-7.5": 0.8082,
+        "-5.5": 0.7467,
+        "-3.5": 0.6755,
+        "-1.5": 0.5998,
+        "0": 0.5353,
+        "1.5": 0.4794,
+        "3.5": 0.4025,
+        "5.5": 0.3284,
+        "7.5": 0.2623,
+        "10.5": 0.1749
+      },
+      "total_probabilities": {
+        "190.5": 0.998,
+        "200.5": 0.9649,
+        "210.5": 0.7883,
+        "220.5": 0.416,
+        "230.5": 0.1142,
+        "240.5": 0.0133,
+        "250.5": 0.0003
+      }
+    }
+  },
+  {
+    "game": {
+      "id": 414885,
+      "date": "2025-03-20",
+      "home_team": "Sacramento Kings",
+      "away_team": "Chicago Bulls",
+      "status": "upcoming",
+      "start_time": "TBD"
+    },
+    "prediction": {
+      "home_score": 109.7,
+      "away_score": 111.2,
+      "point_differential": -1.5,
+      "total_score": 220.9,
+      "win_probability": 0.441,
+      "timestamp": "2025-03-20T02:12:16.408944",
+      "model_version": "1.0"
+    },
+    "recommendations": {
+      "moneyline": {
+        "home_fair_odds": 2.27,
+        "away_fair_odds": 1.79,
+        "home_american": 125,
+        "away_american": -125,
+        "recommendation": "Chicago Bulls moneyline"
+      },
+      "spread": {
+        "projected_diff": -1.5,
+        "closest_typical_spread": 1.5,
+        "recommendation": "Sacramento Kings +1.5"
+      },
+      "total": {
+        "projected_total": 220.9,
+        "closest_typical_total": 220.5,
+        "recommendation": "No strong over/under value at 220.5"
+      },
+      "props": {
+        "home_team_props": "No strong team total recommendation",
+        "away_team_props": "Consider Chicago Bulls team total OVER if set below 108.2"
+      }
+    },
+    "metrics": {
+      "home_rest_days": 0,
+      "away_rest_days": 0,
+      "home_back_to_back": false,
+      "away_back_to_back": false
+    },
+    "simulation": {
+      "confidence_intervals": {
+        "home_score": [
+          95.92039719336246,
+          123.51896414615
+        ],
+        "away_score": [
+          97.537216623568,
+          124.94572706457458
+        ],
+        "point_diff": [
+          -21.03895717673496,
+          18.168127384339773
+        ],
+        "total_score": [
+          201.3284916642949,
+          240.28725519597688
+        ]
+      },
+      "spread_probabilities": {
+        "-10.5": 0.8181,
+        "-7.5": 0.7238,
+        "-5.5": 0.6504,
+        "-3.5": 0.571,
+        "-1.5": 0.4895,
+        "0": 0.4348,
+        "1.5": 0.3758,
+        "3.5": 0.3043,
+        "5.5": 0.2427,
+        "7.5": 0.182,
+        "10.5": 0.1098
+      },
+      "total_probabilities": {
+        "190.5": 0.9989,
+        "200.5": 0.9802,
+        "210.5": 0.8591,
+        "220.5": 0.5212,
+        "230.5": 0.1676,
+        "240.5": 0.0236,
+        "250.5": 0.0011
+      }
+    }
+  },
+  {
+    "game": {
+      "id": 414870,
+      "date": "2025-03-20",
+      "home_team": "Los Angeles Lakers",
+      "away_team": "Milwaukee Bucks",
+      "status": "upcoming",
+      "start_time": "TBD"
+    },
+    "prediction": {
+      "home_score": 109.8,
+      "away_score": 111.4,
+      "point_differential": -1.6,
+      "total_score": 221.2,
+      "win_probability": 0.438,
+      "timestamp": "2025-03-20T02:12:16.416727",
+      "model_version": "1.0"
+    },
+    "recommendations": {
+      "moneyline": {
+        "home_fair_odds": 2.28,
+        "away_fair_odds": 1.78,
+        "home_american": 130,
+        "away_american": -130,
+        "recommendation": "Milwaukee Bucks moneyline"
+      },
+      "spread": {
+        "projected_diff": -1.6,
+        "closest_typical_spread": 1.5,
+        "recommendation": "Milwaukee Bucks -1.5"
+      },
+      "total": {
+        "projected_total": 221.2,
+        "closest_typical_total": 220.5,
+        "recommendation": "No strong over/under value at 220.5"
+      },
+      "props": {
+        "home_team_props": "No strong team total recommendation",
+        "away_team_props": "Consider Milwaukee Bucks team total OVER if set below 108.4"
+      }
+    },
+    "metrics": {
+      "home_rest_days": 0,
+      "away_rest_days": 0,
+      "home_back_to_back": false,
+      "away_back_to_back": false
+    },
+    "simulation": {
+      "confidence_intervals": {
+        "home_score": [
+          96.02039719336246,
+          123.61896414614999
+        ],
+        "away_score": [
+          97.737216623568,
+          125.14572706457459
+        ],
+        "point_diff": [
+          -21.13895717673497,
+          18.068127384339764
+        ],
+        "total_score": [
+          201.62849166429487,
+          240.5872551959769
+        ]
+      },
+      "spread_probabilities": {
+        "-10.5": 0.8149,
+        "-7.5": 0.72,
+        "-5.5": 0.6486,
+        "-3.5": 0.5667,
+        "-1.5": 0.4863,
+        "0": 0.4308,
+        "1.5": 0.3713,
+        "3.5": 0.3009,
+        "5.5": 0.238,
+        "7.5": 0.1798,
+        "10.5": 0.1073
+      },
+      "total_probabilities": {
+        "190.5": 0.9989,
+        "200.5": 0.9815,
+        "210.5": 0.8655,
+        "220.5": 0.5335,
+        "230.5": 0.1749,
+        "240.5": 0.0257,
+        "250.5": 0.0014
+      }
+    }
+  }
+]
