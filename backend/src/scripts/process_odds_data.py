@@ -1,5 +1,3 @@
-# backend/src/scripts/process_odds_data.py
-
 import json
 from supabase import create_client, Client
 from typing import Any, Dict
@@ -24,10 +22,8 @@ def parse_spread(spread_data: Dict[str, Any]) -> str:
         if not isinstance(info, dict):
             continue
         point = info.get("point", 0)
-        price = info.get("price", 0)
         point_str = f"+{point}" if point > 0 else str(point)
-        price_str = f"+{price}" if price > 0 else str(price)
-        parts.append(f"{team} {point_str} ({price_str})")
+        parts.append(f"{team} {point_str}")  # Removed the odds in parentheses
     return " / ".join(parts)
 
 def parse_total(total_data: Dict[str, Any]) -> str:
@@ -38,9 +34,7 @@ def parse_total(total_data: Dict[str, Any]) -> str:
         if not isinstance(info, dict):
             continue
         point = info.get("point", 0)
-        price = info.get("price", 0)
-        price_str = f"+{price}" if price > 0 else str(price)
-        parts.append(f"{side} {point} ({price_str})")
+        parts.append(f"{side} {point}")  # Removed the odds in parentheses
     return " / ".join(parts)
 
 def main():
