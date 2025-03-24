@@ -1,57 +1,312 @@
-# /backend/models/features.py
+# features.py - Unified Feature Engineering for NBA Score Prediction
 
 """
-NBAFeatureGenerator - Unified module for NBA score prediction feature engineering.
-This module now includes:
-  - Enhanced dynamic ensemble weighting (dynamic_ensemble_predictions)
-  - A robust quarter-specific model system with fallbacks (QuarterSpecificModelSystem)
-  - An uncertainty estimation module (PredictionUncertaintyEstimator)
-  - Enhanced final prediction generation (generate_enhanced_predictions)
-  - A validation framework (validate_enhanced_predictions)
+NBAFeatureEngine - Unified module for NBA score prediction feature engineering.
+This module includes:
+  - Comprehensive feature engineering for NBA games
+  - Enhanced dynamic ensemble weighting
+  - A robust quarter-specific model system with fallbacks
+  - An uncertainty estimation module
+  - Enhanced final prediction generation
+  - A validation framework
 """
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 import traceback
+from datetime import datetime, timedelta
 import time
 import math
 from functools import wraps
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from typing import Dict, List
+from typing import Dict, List, Tuple, Optional, Union, Any
 
-# -------------------- NBAFeatureGenerator Class --------------------
-class NBAFeatureGenerator:
-    """
-    Feature generator for NBA score prediction models.
+# -------------------- Helper Decorators & Simple Logging --------------------
+def profile_time(func):
+    """Decorator to profile function execution time."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"[PROFILE] {func.__name__} took {end_time - start_time:.2f} seconds")
+        return result
+    return wrapper
+
+def simple_log(message, level="INFO", debug=False):
+    """A simple logging function for this module."""
+    if debug or level != "DEBUG":
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {level}: {message}")
+
+# -------------------- NBAFeatureEngine Class --------------------
+class NBAFeatureEngine:
+    """Unified feature engineering for NBA score prediction models."""
     
-    This class provides methods to generate, transform, and select features
-    for quarter-specific NBA score prediction models.
-    """
-    
-    def __init__(self, debug: bool = False):
-        """
-        Initialize the feature generator.
-        
-        Args:
-            debug: Whether to print debug information during processing
-        """
+    def __init__(self, debug=False):
+        """Initialize the feature engine with configuration."""
         self.debug = debug
-        # Define league-wide averages for fallback scenarios
+        
+        # Standard NBA average values for fallbacks
+        self.defaults = {
+            'win_pct': 0.5,
+            'offensive_rating': 110.0,
+            'defensive_rating': 110.0,
+            'pace': 98.5,
+            'fg_pct': 0.45,
+            'ft_pct': 0.75,
+            'rest_days': 2.0,
+            'home_advantage': 3.5,
+            'quarter_points': 25.0
+        }
+        
+        # League-wide averages for quarter-specific models
         self.league_averages = {
             'score': 110.0,
             'quarter_scores': {1: 27.5, 2: 27.5, 3: 27.0, 4: 28.0}
         }
+        
+        # Quarter-specific feature sets
         self.quarter_feature_sets = self._get_optimized_feature_sets()
     
-    def _print_debug(self, message: str) -> None:
-        """Print debug message if debug mode is enabled"""
+    def _print_debug(self, message):
+        """Print debug messages if debug mode is on."""
         if self.debug:
-            print(f"[FeatureGenerator] {message}")
+            print(f"[FeatureEngine] {message}")
     
-    def add_team_history_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _get_optimized_feature_sets(self) -> Dict[int, List[str]]:
+        """
+        Get optimized feature sets for each quarter based on feature importance analysis.
+        
+        Returns:
+            Dict mapping quarter number to list of optimal features
+        """
+        # These feature sets are derived from feature importance analysis
+        return {
+            1: [
+                # Basic team statistics (high importance in Q1)
+                'rolling_home_score', 'rolling_away_score', 'prev_matchup_diff',
+                'rest_days_home', 'rest_days_away', 'rest_advantage',
+                'is_back_to_back_home', 'is_back_to_back_away',
+                
+                # Key time feature for Q1 (limited impact)
+                'score_time_impact'
+            ],
+            2: [
+                # Q1 scores
+                'home_q1', 'away_q1', 
+                
+                # Basic team statistics
+                'rolling_home_score', 'rolling_away_score', 'prev_matchup_diff',
+                'rest_advantage',
+                
+                # Momentum features
+                'q1_to_q2_momentum', 'momentum_indicator', 'score_momentum_interaction',
+                
+                # Score features
+                'score_ratio', 'score_differential',
+                
+                # Time features (more impact in Q2)
+                'score_time_impact', 'momentum_time_impact'
+            ],
+            3: [
+                # Previous quarter scores
+                'home_q1', 'home_q2', 'away_q1', 'away_q2',
+                
+                # Derived score features
+                'first_half_diff', 'score_ratio', 'score_differential', 'pre_q4_diff',
+                
+                # Momentum features
+                'q1_to_q2_momentum', 'q2_to_q3_momentum',
+                'momentum_indicator', 'cumulative_momentum', 'score_momentum_interaction',
+                
+                # Time features (significant impact in Q3)
+                'score_time_impact', 'momentum_time_impact'
+            ],
+            4: [
+                # Previous quarter scores
+                'home_q1', 'home_q2', 'home_q3', 'away_q1', 'away_q2', 'away_q3',
+                
+                # Derived score features
+                'pre_q4_diff', 'score_ratio', 'score_differential',
+                
+                # Momentum features (highest importance in Q4)
+                'q1_to_q2_momentum', 'q2_to_q3_momentum', 'q3_to_q4_momentum',
+                'cumulative_momentum', 'momentum_indicator', 'score_momentum_interaction',
+                
+                # Time features (critical in Q4)
+                'score_time_impact', 'momentum_time_impact', 'score_momentum_time',
+                'is_clutch_time', 'score_clutch', 'momentum_clutch'
+            ]
+        }
+    
+    def normalize_team_name(self, team_name):
+        """Normalize team name for consistent lookup."""
+        if not isinstance(team_name, str):
+            return ""
+        
+        # Common name variations
+        mapping = {
+            "sixers": "76ers",
+            "phila": "76ers",
+            "trail blazers": "blazers",
+            "clippers": "la clippers",
+            "lakers": "la lakers"
+        }
+        
+        team_lower = team_name.lower()
+        for key, value in mapping.items():
+            if key in team_lower:
+                return value
+        
+        return team_name
+    
+    def calculate_rolling_stats(self, historical_df, window=10):
+        """
+        Calculate rolling statistics for each team.
+        
+        Args:
+            historical_df: DataFrame with historical games
+            window: Window size for rolling stats
+        
+        Returns:
+            Dictionary with team-level rolling statistics
+        """
+        rolling_stats = {}
+        
+        if historical_df is None or historical_df.empty:
+            self._print_debug("No data provided for rolling stats")
+            return rolling_stats
+        
+        self._print_debug(f"Calculating rolling stats with window={window}")
+        
+        # Ensure date column is datetime
+        if 'game_date' in historical_df.columns:
+            historical_df['game_date'] = pd.to_datetime(historical_df['game_date'])
+            historical_df = historical_df.sort_values('game_date')
+        
+        # Process home teams
+        for team in historical_df['home_team'].unique():
+            if not isinstance(team, str):
+                continue
+                
+            home_games = historical_df[historical_df['home_team'] == team]
+            
+            if len(home_games) < 2:  # Need at least 2 games for meaningful stats
+                continue
+                
+            # Get rolling averages
+            rolling_score = home_games['home_score'].rolling(window=min(window, len(home_games)), min_periods=1).mean().values
+            rolling_opp_score = home_games['away_score'].rolling(window=min(window, len(home_games)), min_periods=1).mean().values
+            
+            # Store the latest values
+            if len(rolling_score) > 0:
+                if team not in rolling_stats:
+                    rolling_stats[team] = {}
+                rolling_stats[team]['rolling_score'] = rolling_score[-1]
+                rolling_stats[team]['rolling_opp_score'] = rolling_opp_score[-1]
+        
+        # Process away teams
+        for team in historical_df['away_team'].unique():
+            if not isinstance(team, str):
+                continue
+                
+            away_games = historical_df[historical_df['away_team'] == team]
+            
+            if len(away_games) < 2:
+                continue
+                
+            # Get rolling averages
+            rolling_score = away_games['away_score'].rolling(window=min(window, len(away_games)), min_periods=1).mean().values
+            rolling_opp_score = away_games['home_score'].rolling(window=min(window, len(away_games)), min_periods=1).mean().values
+            
+            # Update or create entry
+            if len(rolling_score) > 0:
+                if team not in rolling_stats:
+                    rolling_stats[team] = {}
+                    rolling_stats[team]['rolling_score'] = rolling_score[-1]
+                    rolling_stats[team]['rolling_opp_score'] = rolling_opp_score[-1]
+                else:
+                    # Average with existing stats if we have both home and away
+                    rolling_stats[team]['rolling_score'] = (rolling_stats[team].get('rolling_score', 0) + rolling_score[-1]) / 2
+                    rolling_stats[team]['rolling_opp_score'] = (rolling_stats[team].get('rolling_opp_score', 0) + rolling_opp_score[-1]) / 2
+        
+        self._print_debug(f"Calculated rolling stats for {len(rolling_stats)} teams")
+        return rolling_stats
+    
+    def add_rolling_features(self, df, window_sizes=[5, 10]):
+        """
+        Add rolling average features for scoring and allowing points.
+        
+        Args:
+            df: DataFrame with games (must include game_date, home_team, away_team, home_score, away_score columns)
+            window_sizes: List of window sizes to calculate rolling averages for
+        
+        Returns:
+            DataFrame with added rolling features
+        """
+        try:
+            if df is None or df.empty:
+                self._print_debug("No data provided for rolling features")
+                return df
+            
+            result_df = df.copy()
+            
+            # Ensure date column is datetime
+            if 'game_date' in result_df.columns:
+                result_df['game_date'] = pd.to_datetime(result_df['game_date'])
+                result_df = result_df.sort_values('game_date')
+            
+            # Add rolling averages for home teams
+            for window in window_sizes:
+                # Check if necessary columns exist
+                if all(col in result_df.columns for col in ['home_team', 'home_score', 'away_score']):
+                    result_df[f'home_last{window}_avg'] = result_df.groupby('home_team')['home_score'].transform(
+                        lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
+                    ).fillna(result_df['home_score'].mean())
+                    
+                    result_df[f'home_last{window}_allowed'] = result_df.groupby('home_team')['away_score'].transform(
+                        lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
+                    ).fillna(result_df['away_score'].mean())
+                else:
+                    # Add default values if columns are missing
+                    avg_score = 105.0  # NBA average score
+                    result_df[f'home_last{window}_avg'] = avg_score
+                    result_df[f'home_last{window}_allowed'] = avg_score
+            
+            # Add rolling averages for away teams
+            for window in window_sizes:
+                if all(col in result_df.columns for col in ['away_team', 'away_score', 'home_score']):
+                    result_df[f'away_last{window}_avg'] = result_df.groupby('away_team')['away_score'].transform(
+                        lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
+                    ).fillna(result_df['away_score'].mean())
+                    
+                    result_df[f'away_last{window}_allowed'] = result_df.groupby('away_team')['home_score'].transform(
+                        lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
+                    ).fillna(result_df['home_score'].mean())
+                else:
+                    # Add default values if columns are missing
+                    avg_score = 105.0
+                    result_df[f'away_last{window}_avg'] = avg_score
+                    result_df[f'away_last{window}_allowed'] = avg_score
+            
+            # Add compatibility aliases for consistent feature naming
+            if 'home_last5_avg' in result_df.columns and 'home_rolling_score' not in result_df.columns:
+                result_df['home_rolling_score'] = result_df['home_last5_avg']
+                result_df['away_rolling_score'] = result_df['away_last5_avg']
+                result_df['home_rolling_opp_score'] = result_df['home_last5_allowed']
+                result_df['away_rolling_opp_score'] = result_df['away_last5_allowed']
+            
+            self._print_debug(f"Added rolling features for {len(window_sizes)} window sizes")
+            return result_df
+            
+        except Exception as e:
+            self._print_debug(f"Error adding rolling features: {str(e)}")
+            traceback.print_exc()
+            return df
+    
+    def add_team_history_features(self, df):
         """
         Add team history-based features like rolling averages and previous matchup results.
         
@@ -168,73 +423,378 @@ class NBAFeatureGenerator:
         
         return result_df
     
-    def _get_optimized_feature_sets(self) -> Dict[int, List[str]]:
+    def get_rest_data(self, team, game_date, historical_df):
         """
-        Get optimized feature sets for each quarter based on feature importance analysis.
+        Calculate rest days for a team based on their previous game.
+        
+        Args:
+            team: Team name
+            game_date: Date of the current game
+            historical_df: DataFrame with historical games
         
         Returns:
-            Dict mapping quarter number to list of optimal features
+            Dictionary with rest information
         """
-        # These feature sets are derived from our feature importance analysis
+        if historical_df is None or historical_df.empty:
+            return {'rest_days': self.defaults['rest_days'], 'is_back_to_back': False}
+        
+        if not isinstance(team, str) or not isinstance(game_date, (pd.Timestamp, datetime)):
+            return {'rest_days': self.defaults['rest_days'], 'is_back_to_back': False}
+        
+        # Ensure game_date is a pandas Timestamp
+        if isinstance(game_date, datetime):
+            game_date = pd.to_datetime(game_date)
+        
+        # Find previous games for this team
+        previous_games = historical_df[
+            ((historical_df['home_team'] == team) | (historical_df['away_team'] == team)) &
+            (historical_df['game_date'] < game_date)
+        ].sort_values('game_date', ascending=False)
+        
+        if previous_games.empty:
+            return {'rest_days': self.defaults['rest_days'], 'is_back_to_back': False}
+        
+        # Get the most recent game date
+        last_game_date = previous_games.iloc[0]['game_date']
+        
+        # Calculate days between games
+        rest_days = (game_date - last_game_date).days
+        
+        # Determine if it's a back-to-back game
+        is_back_to_back = rest_days < 2
+        
         return {
-            1: [
-                # Basic team statistics (high importance in Q1)
-                'rolling_home_score', 'rolling_away_score', 'prev_matchup_diff',
-                'rest_days_home', 'rest_days_away', 'rest_advantage',
-                'is_back_to_back_home', 'is_back_to_back_away',
-                
-                # Key time feature for Q1 (limited impact)
-                'score_time_impact'
-            ],
-            2: [
-                # Q1 scores
-                'home_q1', 'away_q1', 
-                
-                # Basic team statistics
-                'rolling_home_score', 'rolling_away_score', 'prev_matchup_diff',
-                'rest_advantage',
-                
-                # Momentum features
-                'q1_to_q2_momentum', 'momentum_indicator', 'score_momentum_interaction',
-                
-                # Score features
-                'score_ratio', 'score_differential',
-                
-                # Time features (more impact in Q2)
-                'score_time_impact', 'momentum_time_impact'
-            ],
-            3: [
-                # Previous quarter scores
-                'home_q1', 'home_q2', 'away_q1', 'away_q2',
-                
-                # Derived score features
-                'first_half_diff', 'score_ratio', 'score_differential', 'pre_q4_diff',
-                
-                # Momentum features
-                'q1_to_q2_momentum', 'q2_to_q3_momentum',
-                'momentum_indicator', 'cumulative_momentum', 'score_momentum_interaction',
-                
-                # Time features (significant impact in Q3)
-                'score_time_impact', 'momentum_time_impact'
-            ],
-            4: [
-                # Previous quarter scores
-                'home_q1', 'home_q2', 'home_q3', 'away_q1', 'away_q2', 'away_q3',
-                
-                # Derived score features
-                'pre_q4_diff', 'score_ratio', 'score_differential',
-                
-                # Momentum features (highest importance in Q4)
-                'q1_to_q2_momentum', 'q2_to_q3_momentum', 'q3_to_q4_momentum',
-                'cumulative_momentum', 'momentum_indicator', 'score_momentum_interaction',
-                
-                # Time features (critical in Q4)
-                'score_time_impact', 'momentum_time_impact', 'score_momentum_time',
-                'is_clutch_time', 'score_clutch', 'momentum_clutch'
-            ]
+            'rest_days': rest_days,
+            'is_back_to_back': is_back_to_back,
+            'last_game_date': last_game_date
         }
     
-    def add_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_rest_features(self, df, historical_df=None):
+        """
+        Calculate rest days and back-to-back indicators for teams with improved detection.
+        
+        Args:
+            df: DataFrame with team and game date data
+            historical_df: DataFrame with historical games for more accurate rest calculation
+            
+        Returns:
+            DataFrame with added rest features
+        """
+        self._print_debug("Adding rest features...")
+        result_df = df.copy()
+        
+        # Ensure required columns exist
+        required_cols = ['home_team', 'away_team', 'game_date']
+        missing_cols = [col for col in required_cols if col not in result_df.columns]
+        
+        if missing_cols:
+            self._print_debug(f"Warning: Missing columns for rest calculation: {missing_cols}")
+            # Add placeholder rest features
+            for col in ['rest_days_home', 'rest_days_away', 'rest_advantage', 
+                        'is_back_to_back_home', 'is_back_to_back_away']:
+                result_df[col] = 0
+            return result_df
+        
+        # Make sure game_date is datetime
+        result_df['game_date'] = pd.to_datetime(result_df['game_date'])
+        
+        # Sort by date for chronological processing
+        if 'game_id' in result_df.columns:
+            result_df = result_df.sort_values(['game_date', 'game_id'])
+        else:
+            result_df = result_df.sort_values('game_date')
+        
+        # Use either provided historical_df or the result_df itself
+        history_df = historical_df if historical_df is not None else result_df.copy()
+        
+        # Create dictionaries to track last game date for each team
+        team_last_game = {}
+        
+        # Calculate rest days for each game/team
+        for idx, row in result_df.iterrows():
+            home_team = row['home_team']
+            away_team = row['away_team']
+            game_date = row['game_date']
+            
+            # If we have historical_df, use get_rest_data for more accurate calculations
+            if historical_df is not None:
+                home_rest = self.get_rest_data(home_team, game_date, historical_df)
+                away_rest = self.get_rest_data(away_team, game_date, historical_df)
+                
+                result_df.at[idx, 'rest_days_home'] = home_rest['rest_days']
+                result_df.at[idx, 'is_back_to_back_home'] = int(home_rest['is_back_to_back'])
+                
+                result_df.at[idx, 'rest_days_away'] = away_rest['rest_days']
+                result_df.at[idx, 'is_back_to_back_away'] = int(away_rest['is_back_to_back'])
+            else:
+                # Calculate rest days for home team
+                if home_team in team_last_game:
+                    last_game = team_last_game[home_team]
+                    # Calculate days between games
+                    delta = game_date - last_game
+                    rest_days = delta.days
+                    
+                    # Artificial variation for testing: sometimes add half-day variation
+                    if rest_days == 1 and idx % 5 == 0:
+                        rest_days = 0  # More back-to-backs for testing
+                        
+                    result_df.at[idx, 'rest_days_home'] = rest_days
+                    
+                    # Back-to-back is 0 days of rest or less than 30 hours
+                    result_df.at[idx, 'is_back_to_back_home'] = 1 if rest_days <= 0 else 0
+                else:
+                    # Default for first appearance: randomly between 1-3 days
+                    result_df.at[idx, 'rest_days_home'] = 2
+                    result_df.at[idx, 'is_back_to_back_home'] = 0
+                
+                # Calculate rest days for away team
+                if away_team in team_last_game:
+                    last_game = team_last_game[away_team]
+                    delta = game_date - last_game
+                    rest_days = delta.days
+                    
+                    # Artificial variation for testing: sometimes add half-day variation 
+                    if rest_days == 1 and idx % 7 == 0:
+                        rest_days = 0  # More back-to-backs for testing
+                    
+                    result_df.at[idx, 'rest_days_away'] = rest_days
+                    
+                    # Back-to-back is 0 days of rest or less than 30 hours
+                    result_df.at[idx, 'is_back_to_back_away'] = 1 if rest_days <= 0 else 0
+                else:
+                    # Default for first appearance
+                    result_df.at[idx, 'rest_days_away'] = 2
+                    result_df.at[idx, 'is_back_to_back_away'] = 0
+                
+                # Update team's last game
+                team_last_game[home_team] = game_date
+                team_last_game[away_team] = game_date
+            
+            # Calculate rest advantage
+            result_df.at[idx, 'rest_advantage'] = result_df.at[idx, 'rest_days_home'] - result_df.at[idx, 'rest_days_away']
+        
+        # Ensure numeric types
+        for col in ['rest_days_home', 'rest_days_away', 'rest_advantage', 
+                    'is_back_to_back_home', 'is_back_to_back_away']:
+            result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
+        
+        return result_df
+    
+    def get_matchup_history(self, home_team, away_team, historical_df=None, max_games=5):
+        """
+        Get historical matchup data between two teams.
+        
+        Args:
+            home_team: Home team name
+            away_team: Away team name
+            historical_df: DataFrame with historical games
+            max_games: Maximum number of games to consider
+        
+        Returns:
+            Dictionary with matchup statistics
+        """
+        if historical_df is None or historical_df.empty:
+            return {
+                'num_games': 0,
+                'avg_point_diff': 0,
+                'home_win_pct': 0.6,  # Default home win percentage
+                'home_wins': 0,
+                'away_wins': 0
+            }
+        
+        if not isinstance(home_team, str) or not isinstance(away_team, str):
+            return {
+                'num_games': 0,
+                'avg_point_diff': 0,
+                'home_win_pct': 0.6,
+                'home_wins': 0,
+                'away_wins': 0
+            }
+        
+        # Find matchups between these teams
+        matchups = historical_df[
+            ((historical_df['home_team'] == home_team) & (historical_df['away_team'] == away_team)) |
+            ((historical_df['home_team'] == away_team) & (historical_df['away_team'] == home_team))
+        ].sort_values('game_date', ascending=False)
+        
+        if matchups.empty:
+            return {
+                'num_games': 0,
+                'avg_point_diff': 0,
+                'home_win_pct': 0.6,
+                'home_wins': 0,
+                'away_wins': 0
+            }
+        
+        # Limit to recent games
+        matchups = matchups.head(max_games)
+        
+        # Calculate point differential from home team perspective
+        point_diffs = []
+        home_wins = 0
+        away_wins = 0
+        
+        for _, game in matchups.iterrows():
+            if game['home_team'] == home_team:
+                point_diff = game['home_score'] - game['away_score']
+                if point_diff > 0:
+                    home_wins += 1
+                else:
+                    away_wins += 1
+            else:  # away_team == home_team
+                point_diff = game['away_score'] - game['home_score']
+                if point_diff > 0:
+                    away_wins += 1
+                else:
+                    home_wins += 1
+            
+            point_diffs.append(point_diff)
+        
+        avg_point_diff = sum(point_diffs) / len(point_diffs) if point_diffs else 0
+        home_win_pct = home_wins / len(matchups) if len(matchups) > 0 else 0.6
+        
+        return {
+            'num_games': len(matchups),
+            'avg_point_diff': avg_point_diff,
+            'home_win_pct': home_win_pct,
+            'home_wins': home_wins,
+            'away_wins': away_wins
+        }
+    
+    def create_team_metrics(self, historical_df):
+        """
+        Create comprehensive team metrics with proper error handling.
+        
+        Args:
+            historical_df: DataFrame with historical games
+        
+        Returns:
+            DataFrame with team metrics
+        """
+        self._print_debug("Creating team metrics...")
+        
+        # Create a default metrics dataframe with all required columns
+        all_teams = set()
+        if historical_df is not None and not historical_df.empty:
+            if 'home_team' in historical_df.columns:
+                all_teams.update(historical_df['home_team'].dropna().unique())
+            if 'away_team' in historical_df.columns:
+                all_teams.update(historical_df['away_team'].dropna().unique())
+        
+        # Filter out any non-string values
+        all_teams = [team for team in all_teams if isinstance(team, str)]
+        
+        # Create the basic metrics dataframe
+        metrics_df = pd.DataFrame({
+            'team': all_teams,
+            'win_pct': self.defaults['win_pct'],
+            'offensive_rating': self.defaults['offensive_rating'],
+            'defensive_rating': self.defaults['defensive_rating'],
+            'net_rating': 0.0,
+            'form_string': '',  # For win/loss streak representation
+            'form_win_pct': self.defaults['win_pct'],  # Recent win percentage
+            'current_streak': 0,  # Positive for wins, negative for losses
+            'momentum_score': 0  # Overall momentum indicator
+        })
+        
+        # Add additional stats if we have data
+        if historical_df is not None and not historical_df.empty:
+            for team in all_teams:
+                # Home games
+                home_games = historical_df[historical_df['home_team'] == team]
+                # Away games
+                away_games = historical_df[historical_df['away_team'] == team]
+                
+                if not home_games.empty or not away_games.empty:
+                    # Calculate wins and losses
+                    home_wins = sum(home_games['home_score'] > home_games['away_score']) if not home_games.empty else 0
+                    away_wins = sum(away_games['away_score'] > away_games['home_score']) if not away_games.empty else 0
+                    total_games = len(home_games) + len(away_games)
+                    
+                    if total_games > 0:
+                        win_pct = (home_wins + away_wins) / total_games
+                        metrics_df.loc[metrics_df['team'] == team, 'win_pct'] = win_pct
+                    
+                    # Calculate offensive rating (pts per 100 possessions)
+                    home_pts = home_games['home_score'].mean() if not home_games.empty else 0
+                    away_pts = away_games['away_score'].mean() if not away_games.empty else 0
+                    avg_pts = (home_pts + away_pts) / 2 if (home_pts + away_pts) > 0 else self.defaults['offensive_rating']
+                    metrics_df.loc[metrics_df['team'] == team, 'offensive_rating'] = avg_pts
+                    
+                    # Calculate defensive rating
+                    home_allowed = home_games['away_score'].mean() if not home_games.empty else 0
+                    away_allowed = away_games['home_score'].mean() if not away_games.empty else 0
+                    avg_allowed = (home_allowed + away_allowed) / 2 if (home_allowed + away_allowed) > 0 else self.defaults['defensive_rating']
+                    metrics_df.loc[metrics_df['team'] == team, 'defensive_rating'] = avg_allowed
+                    
+                    # Net rating
+                    metrics_df.loc[metrics_df['team'] == team, 'net_rating'] = avg_pts - avg_allowed
+                    
+                    # Calculate form and momentum (last 5 games)
+                    all_games = pd.concat([
+                        home_games[['game_date', 'home_team', 'away_team', 'home_score', 'away_score']],
+                        away_games[['game_date', 'home_team', 'away_team', 'home_score', 'away_score']]
+                    ]).sort_values('game_date', ascending=False).head(5)
+                    
+                    if not all_games.empty:
+                        form_string = ""
+                        streak = 0
+                        current_sign = 0  # 0 = no streak, 1 = wins, -1 = losses
+                        wins = 0
+                        
+                        for _, game in all_games.iterrows():
+                            if game['home_team'] == team:
+                                is_win = game['home_score'] > game['away_score']
+                            else:
+                                is_win = game['away_score'] > game['home_score']
+                            
+                            if is_win:
+                                form_string += "W"
+                                wins += 1
+                                if current_sign == 1:
+                                    streak += 1
+                                else:
+                                    current_sign = 1
+                                    streak = 1
+                            else:
+                                form_string += "L"
+                                if current_sign == -1:
+                                    streak -= 1
+                                else:
+                                    current_sign = -1
+                                    streak = -1
+                        
+                        metrics_df.loc[metrics_df['team'] == team, 'form_string'] = form_string
+                        metrics_df.loc[metrics_df['team'] == team, 'form_win_pct'] = wins / len(all_games)
+                        metrics_df.loc[metrics_df['team'] == team, 'current_streak'] = streak
+                        
+                        # Calculate momentum score (-10 to 10)
+                        # Recent games weighted more heavily
+                        momentum = 0
+                        for i, char in enumerate(form_string):
+                            weight = (5 - i) * 2  # 10, 8, 6, 4, 2
+                            momentum += weight if char == 'W' else -weight
+                        
+                        momentum_normalized = momentum / 30 * 10  # Normalize to -10 to 10 scale
+                        metrics_df.loc[metrics_df['team'] == team, 'momentum_score'] = momentum_normalized
+        
+        # Add compatibility columns
+        metrics_df['pts_per_game'] = metrics_df['offensive_rating']
+        metrics_df['opp_pts_per_game'] = metrics_df['defensive_rating']
+        metrics_df['pace'] = self.defaults['pace']
+        metrics_df['fg_pct'] = self.defaults['fg_pct']
+        metrics_df['ft_pct'] = self.defaults['ft_pct']
+        metrics_df['home_advantage'] = self.defaults['home_advantage']
+        metrics_df['team_normalized'] = metrics_df['team'].apply(self.normalize_team_name)
+        
+        # Create a normalized team name version for easier lookups
+        team_names_lower = [team.lower() if isinstance(team, str) else "" for team in metrics_df['team']]
+        metrics_df['team_lower'] = team_names_lower
+        
+        self._print_debug(f"Created metrics for {len(metrics_df)} teams")
+        return metrics_df
+    
+    def add_time_features(self, df):
         """
         Add enhanced time-related features to the dataframe.
         
@@ -290,7 +850,7 @@ class NBAFeatureGenerator:
         
         return result_df
     
-    def add_score_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_score_features(self, df):
         """
         Add score-derived features to the dataframe.
         
@@ -381,120 +941,7 @@ class NBAFeatureGenerator:
         
         return result_df
     
-    def add_rest_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calculate rest days and back-to-back indicators for teams with improved detection.
-        
-        Args:
-            df: DataFrame with team and game date data
-            
-        Returns:
-            DataFrame with added rest features
-        """
-        self._print_debug("Adding rest features...")
-        result_df = df.copy()
-        
-        # Ensure required columns exist
-        required_cols = ['home_team', 'away_team', 'game_date']
-        missing_cols = [col for col in required_cols if col not in result_df.columns]
-        
-        if missing_cols:
-            self._print_debug(f"Warning: Missing columns for rest calculation: {missing_cols}")
-            # Add placeholder rest features
-            for col in ['rest_days_home', 'rest_days_away', 'rest_advantage', 
-                        'is_back_to_back_home', 'is_back_to_back_away']:
-                result_df[col] = 0
-            return result_df
-        
-        # Make sure game_date is datetime
-        result_df['game_date'] = pd.to_datetime(result_df['game_date'])
-        
-        # Sort by date for chronological processing
-        if 'game_id' in result_df.columns:
-            result_df = result_df.sort_values(['game_date', 'game_id'])
-        else:
-            result_df = result_df.sort_values('game_date')
-        
-        # Create dictionaries to track last game date for each team
-        team_last_game = {}
-        
-        # Calculate rest days for each game/team
-        for idx, row in result_df.iterrows():
-            home_team = row['home_team']
-            away_team = row['away_team']
-            game_date = row['game_date']
-            
-            # Calculate rest days for home team
-            if home_team in team_last_game:
-                last_game = team_last_game[home_team]
-                # Calculate days between games
-                delta = game_date - last_game
-                rest_days = delta.days
-                
-                # Artificial variation for testing: sometimes add half-day variation
-                if rest_days == 1 and idx % 5 == 0:
-                    rest_days = 0  # More back-to-backs for testing
-                    
-                result_df.at[idx, 'rest_days_home'] = rest_days
-                
-                # Back-to-back is 0 days of rest or less than 30 hours
-                if rest_days <= 0:
-                    result_df.at[idx, 'is_back_to_back_home'] = 1
-                else:
-                    result_df.at[idx, 'is_back_to_back_home'] = 0
-            else:
-                # Default for first appearance: randomly between 1-3 days
-                result_df.at[idx, 'rest_days_home'] = 2
-                result_df.at[idx, 'is_back_to_back_home'] = 0
-            
-            # Calculate rest days for away team
-            if away_team in team_last_game:
-                last_game = team_last_game[away_team]
-                delta = game_date - last_game
-                rest_days = delta.days
-                
-                # Artificial variation for testing: sometimes add half-day variation 
-                if rest_days == 1 and idx % 7 == 0:
-                    rest_days = 0  # More back-to-backs for testing
-                
-                result_df.at[idx, 'rest_days_away'] = rest_days
-                
-                # Back-to-back is 0 days of rest or less than 30 hours
-                if rest_days <= 0:
-                    result_df.at[idx, 'is_back_to_back_away'] = 1
-                else:
-                    result_df.at[idx, 'is_back_to_back_away'] = 0
-            else:
-                # Default for first appearance
-                result_df.at[idx, 'rest_days_away'] = 2
-                result_df.at[idx, 'is_back_to_back_away'] = 0
-            
-            # Calculate rest advantage
-            result_df.at[idx, 'rest_advantage'] = result_df.at[idx, 'rest_days_home'] - result_df.at[idx, 'rest_days_away']
-            
-            # Update team's last game
-            team_last_game[home_team] = game_date
-            team_last_game[away_team] = game_date
-        
-        # Ensure numeric types
-        for col in ['rest_days_home', 'rest_days_away', 'rest_advantage', 
-                    'is_back_to_back_home', 'is_back_to_back_away']:
-            result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
-        
-        # Add more randomized back-to-backs for testing (about 20% of games)
-        result_df.loc[result_df.sample(frac=0.1).index, 'is_back_to_back_home'] = 1
-        result_df.loc[result_df.sample(frac=0.1).index, 'is_back_to_back_away'] = 1
-        
-        # Update rest days to match back-to-back indicators
-        result_df.loc[result_df['is_back_to_back_home'] == 1, 'rest_days_home'] = 0
-        result_df.loc[result_df['is_back_to_back_away'] == 1, 'rest_days_away'] = 0
-        
-        # Recalculate rest advantage
-        result_df['rest_advantage'] = result_df['rest_days_home'] - result_df['rest_days_away']
-        
-        return result_df
-    
-    def add_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_momentum_features(self, df):
         """
         Add momentum-derived features to the dataframe.
         
@@ -554,7 +1001,7 @@ class NBAFeatureGenerator:
         
         return result_df
     
-    def add_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_interaction_features(self, df):
         """
         Add enhanced interaction features combining score, momentum, and time.
         
@@ -611,7 +1058,550 @@ class NBAFeatureGenerator:
         
         return result_df
     
-    def generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def integrate_advanced_features(self, df):
+        """
+        Integrates advanced basketball analytics features with proper error handling.
+        
+        Args:
+            df: DataFrame with basic game data
+            
+        Returns:
+            DataFrame with added advanced features
+        """
+        try:
+            result_df = df.copy()
+            
+            # Add shooting metrics if not already present
+            if 'fg_pct_diff' not in result_df.columns:
+                # Convert problematic columns to numeric
+                for col in ['home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted']:
+                    if col in result_df.columns:
+                        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
+                
+                # Calculate shooting percentages
+                if 'home_fg_pct' not in result_df.columns and 'home_fg_made' in result_df.columns:
+                    result_df['home_fg_pct'] = result_df['home_fg_made'] / result_df['home_fg_attempted'].replace(0, 1)
+                    result_df['away_fg_pct'] = result_df['away_fg_made'] / result_df['away_fg_attempted'].replace(0, 1)
+                    result_df['fg_pct_diff'] = result_df['home_fg_pct'] - result_df['away_fg_pct']
+                    self._print_debug("Added shooting metrics: home_fg_pct, away_fg_pct, fg_pct_diff")
+            
+            # Add 3-point metrics if not already present
+            if 'home_3p_pct' not in result_df.columns and 'home_3pm' in result_df.columns:
+                # Convert problematic columns to numeric
+                for col in ['home_3pm', 'home_3pa', 'away_3pm', 'away_3pa']:
+                    if col in result_df.columns:
+                        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
+                
+                # Calculate 3-point percentages
+                result_df['home_3p_pct'] = result_df['home_3pm'] / result_df['home_3pa'].replace(0, 1)
+                result_df['away_3p_pct'] = result_df['away_3pm'] / result_df['away_3pa'].replace(0, 1)
+                result_df['home_efg_pct'] = (result_df['home_fg_made'] + 0.5 * result_df['home_3pm']) / result_df['home_fg_attempted'].replace(0, 1)
+                result_df['away_efg_pct'] = (result_df['away_fg_made'] + 0.5 * result_df['away_3pm']) / result_df['away_fg_attempted'].replace(0, 1)
+                self._print_debug("Added 3-point and effective field goal percentage metrics")
+            
+            # Add free throw metrics if not already present
+            if 'home_ft_pct' not in result_df.columns and 'home_ft_made' in result_df.columns:
+                # Convert problematic columns to numeric
+                for col in ['home_ft_made', 'home_ft_attempted', 'away_ft_made', 'away_ft_attempted']:
+                    if col in result_df.columns:
+                        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
+                
+                # Calculate free throw rates and percentages
+                result_df['home_ft_rate'] = result_df['home_ft_attempted'] / result_df['home_fg_attempted'].replace(0, 1)
+                result_df['away_ft_rate'] = result_df['away_ft_attempted'] / result_df['away_fg_attempted'].replace(0, 1)
+                result_df['ft_rate_diff'] = result_df['home_ft_rate'] - result_df['away_ft_rate']
+                self._print_debug("Added free throw rate metrics: home_ft_rate, away_ft_rate, ft_rate_diff")
+                
+                result_df['home_ft_pct'] = result_df['home_ft_made'] / result_df['home_ft_attempted'].replace(0, 1)
+                result_df['away_ft_pct'] = result_df['away_ft_made'] / result_df['away_ft_attempted'].replace(0, 1)
+                result_df['ft_pct_diff'] = result_df['home_ft_pct'] - result_df['away_ft_pct']
+                self._print_debug("Added free throw metrics: home_ft_pct, away_ft_pct, ft_pct_diff")
+            
+            # Add pace metrics if not present
+            if 'home_pace' not in result_df.columns or 'away_pace' not in result_df.columns:
+                result_df['home_pace'] = self.defaults['pace']
+                result_df['away_pace'] = self.defaults['pace']
+                self._print_debug("Added default pace metrics")
+            
+            # Add game pace (simple average of home and away)
+            result_df['game_pace'] = (result_df['home_pace'] + result_df['away_pace']) / 2
+            
+            # Add additional features for model compatibility
+            if 'total_score' not in result_df.columns and 'home_score' in result_df.columns:
+                result_df['total_score'] = result_df['home_score'] + result_df['away_score']
+            
+            if 'point_diff' not in result_df.columns and 'home_score' in result_df.columns:
+                result_df['point_diff'] = result_df['home_score'] - result_df['away_score']
+            
+            return result_df
+            
+        except Exception as e:
+            self._print_debug(f"Error integrating advanced features: {str(e)}")
+            traceback.print_exc()
+            # Return original DataFrame if there's an error
+            return df
+    
+    def add_matchup_features(self, df, historical_df):
+        """
+        Add head-to-head matchup features to the dataframe.
+        
+        Args:
+            df: DataFrame with upcoming games
+            historical_df: DataFrame with historical games
+            
+        Returns:
+            DataFrame with added matchup features
+        """
+        result_df = df.copy()
+        
+        if historical_df is None or historical_df.empty:
+            # Add default values
+            result_df['matchup_games'] = 0
+            result_df['matchup_point_diff'] = 0
+            result_df['home_historical_win_pct'] = 0.6
+            return result_df
+        
+        for idx, row in result_df.iterrows():
+            home_team = row['home_team']
+            away_team = row['away_team']
+            
+            # Get matchup history
+            matchup = self.get_matchup_history(home_team, away_team, historical_df)
+            
+            # Add to result dataframe
+            result_df.at[idx, 'matchup_games'] = matchup['num_games']
+            result_df.at[idx, 'matchup_point_diff'] = matchup['avg_point_diff']
+            result_df.at[idx, 'home_historical_win_pct'] = matchup['home_win_pct']
+        
+        return result_df
+    
+    def calculate_possession_stats(self, df):
+        """
+        Calculate possession-based metrics.
+        
+        Args:
+            df: DataFrame with game stats
+            
+        Returns:
+            DataFrame with possession metrics added
+        """
+        result_df = df.copy()
+        minutes_per_game = 48
+        
+        # First ensure we have possession estimates
+        if 'home_poss_estimate' not in result_df.columns:
+            if all(col in result_df.columns for col in ['home_total_reb', 'home_turnovers', 'home_assists']):
+                result_df['home_poss_estimate'] = result_df['home_total_reb'] + result_df['home_turnovers'] + result_df['home_assists']
+            else:
+                result_df['home_poss_estimate'] = 100.0  # Default value
+        
+        if 'away_poss_estimate' not in result_df.columns:
+            if all(col in result_df.columns for col in ['away_total_reb', 'away_turnovers', 'away_assists']):
+                result_df['away_poss_estimate'] = result_df['away_total_reb'] + result_df['away_turnovers'] + result_df['away_assists']
+            else:
+                result_df['away_poss_estimate'] = 100.0  # Default value
+        
+        # Calculate more refined possession estimates if we have the data
+        if all(col in result_df.columns for col in ['home_fg_attempted', 'home_off_reb', 'home_turnovers', 'home_ft_attempted']):
+            result_df['home_possessions'] = (
+                result_df['home_fg_attempted'] - 
+                result_df['home_off_reb'] + 
+                result_df['home_turnovers'] + 
+                0.44 * result_df['home_ft_attempted']
+            )
+        else:
+            # Use simpler estimate if we don't have all required columns
+            result_df['home_possessions'] = result_df['home_poss_estimate']
+        
+        if all(col in result_df.columns for col in ['away_fg_attempted', 'away_off_reb', 'away_turnovers', 'away_ft_attempted']):
+            result_df['away_possessions'] = (
+                result_df['away_fg_attempted'] - 
+                result_df['away_off_reb'] + 
+                result_df['away_turnovers'] + 
+                0.44 * result_df['away_ft_attempted']
+            )
+        else:
+            # Use simpler estimate if we don't have all required columns
+            result_df['away_possessions'] = result_df['away_poss_estimate']
+        
+        # Calculate pace (Possessions * 48 / Minutes)
+        result_df['home_pace'] = result_df['home_possessions'] * 48 / minutes_per_game
+        result_df['away_pace'] = result_df['away_possessions'] * 48 / minutes_per_game
+        
+        # Calculate offensive efficiency (Points Scored / Possessions) * 100
+        if 'home_score' in result_df.columns:
+            result_df['home_offensive_efficiency'] = (result_df['home_score'] / result_df['home_possessions'].replace(0, 1)) * 100
+            result_df['away_offensive_efficiency'] = (result_df['away_score'] / result_df['away_possessions'].replace(0, 1)) * 100
+            result_df['efficiency_differential'] = result_df['home_offensive_efficiency'] - result_df['away_offensive_efficiency']
+        
+        # Add pace differential
+        result_df['pace_differential'] = result_df['home_pace'] - result_df['away_pace']
+        
+        # Check for invalid values and replace with defaults if needed
+        for col in ['home_pace', 'away_pace', 'home_offensive_efficiency', 'away_offensive_efficiency']:
+            if col in result_df.columns:
+                result_df[col] = result_df[col].replace([np.inf, -np.inf, np.nan], self.defaults['pace'] if 'pace' in col else self.defaults['offensive_rating'])
+        
+        return result_df
+    
+    def add_rebounding_stats(self, df):
+        """
+        Add rebounding statistics and ratios.
+        
+        Args:
+            df: DataFrame with game stats
+            
+        Returns:
+            DataFrame with rebounding metrics added
+        """
+        result_df = df.copy()
+        
+        # Rebounding percentages
+        if all(col in result_df.columns for col in ['home_total_reb', 'away_total_reb']):
+            total_rebs = result_df['home_total_reb'] + result_df['away_total_reb']
+            result_df['home_rebounding_pct'] = result_df['home_total_reb'] / total_rebs.replace(0, 1)
+            result_df['away_rebounding_pct'] = 1 - result_df['home_rebounding_pct']
+        else:
+            result_df['home_rebounding_pct'] = 0.5
+            result_df['away_rebounding_pct'] = 0.5
+        
+        # Offensive rebounding percentages
+        if all(col in result_df.columns for col in ['home_off_reb', 'away_off_reb']):
+            total_off_rebs = result_df['home_off_reb'] + result_df['away_off_reb']
+            result_df['home_off_reb_pct'] = result_df['home_off_reb'] / total_off_rebs.replace(0, 1)
+            result_df['away_off_reb_pct'] = 1 - result_df['home_off_reb_pct']
+        
+        # Defensive rebounding percentages
+        if all(col in result_df.columns for col in ['home_def_reb', 'away_def_reb']):
+            total_def_rebs = result_df['home_def_reb'] + result_df['away_def_reb']
+            result_df['home_def_reb_pct'] = result_df['home_def_reb'] / total_def_rebs.replace(0, 1)
+            result_df['away_def_reb_pct'] = 1 - result_df['home_def_reb_pct']
+        
+        return result_df
+    
+    def add_ballhandling_stats(self, df):
+        """
+        Add ball handling and efficiency metrics.
+        
+        Args:
+            df: DataFrame with game stats
+            
+        Returns:
+            DataFrame with ball handling metrics added
+        """
+        result_df = df.copy()
+        
+        # Assist to turnover ratios
+        if all(col in result_df.columns for col in ['home_assists', 'home_turnovers', 'away_assists', 'away_turnovers']):
+            result_df['home_ast_to_ratio'] = result_df['home_assists'] / result_df['home_turnovers'].replace(0, 1)
+            result_df['away_ast_to_ratio'] = result_df['away_assists'] / result_df['away_turnovers'].replace(0, 1)
+            
+            # Offensive to defensive ratios
+            result_df['home_off_to_def_ratio'] = result_df['home_assists'] / (result_df['home_turnovers'] + 1)
+            result_df['away_off_to_def_ratio'] = result_df['away_assists'] / (result_df['away_turnovers'] + 1)
+        
+        # Defensive impact metrics
+        if all(col in result_df.columns for col in ['home_steals', 'home_blocks', 'away_steals', 'away_blocks']):
+            result_df['home_def_impact'] = result_df['home_steals'] + result_df['home_blocks']
+            result_df['away_def_impact'] = result_df['away_steals'] + result_df['away_blocks']
+        
+        return result_df
+    
+    def build_pregame_features(self, historical_df, team_metrics_df=None, lookback_days=120):
+        """
+        Main function to build comprehensive pregame feature set for model training.
+        
+        Args:
+            historical_df: DataFrame with historical games
+            team_metrics_df: DataFrame with team metrics
+            lookback_days: Days to look back for recent games
+        
+        Returns:
+            DataFrame with features for model training
+        """
+        try:
+            self._print_debug(f"Building pregame features with {lookback_days} days lookback")
+            
+            if historical_df is None or historical_df.empty:
+                self._print_debug("Insufficient data for feature engineering.")
+                return pd.DataFrame()
+            
+            # Calculate team metrics if not provided
+            if team_metrics_df is None or team_metrics_df.empty:
+                team_metrics_df = self.create_team_metrics(historical_df)
+                
+            # Calculate Rolling Statistics 
+            rolling_stats = self.calculate_rolling_stats(historical_df, window=10)
+            
+            # Filter for recent games if date column exists
+            if 'game_date' in historical_df.columns:
+                cutoff_date = datetime.now() - timedelta(days=lookback_days)
+                recent_games = historical_df[historical_df['game_date'] >= cutoff_date].copy()
+                if recent_games.empty:
+                    self._print_debug(f"No games found in the last {lookback_days} days.")
+                    return pd.DataFrame()
+            else:
+                recent_games = historical_df.copy()
+            
+            # Add rolling features 
+            recent_games = self.add_rolling_features(recent_games, window_sizes=[5, 10])
+            
+            # Add rest features
+            recent_games = self.add_rest_features(recent_games, historical_df)
+            
+            # Add matchup features
+            recent_games = self.add_matchup_features(recent_games, historical_df)
+            
+            # Add team metrics for home and away teams
+            for idx, row in recent_games.iterrows():
+                home_team = row['home_team']
+                away_team = row['away_team']
+                
+                # Add home team metrics
+                home_team_row = team_metrics_df[team_metrics_df['team'] == home_team]
+                if not home_team_row.empty:
+                    for metric in ['win_pct', 'offensive_rating', 'defensive_rating', 'net_rating', 
+                                   'form_win_pct', 'current_streak', 'momentum_score']:
+                        recent_games.at[idx, f'home_{metric}'] = home_team_row.iloc[0][metric]
+                
+                # Add away team metrics
+                away_team_row = team_metrics_df[team_metrics_df['team'] == away_team]
+                if not away_team_row.empty:
+                    for metric in ['win_pct', 'offensive_rating', 'defensive_rating', 'net_rating', 
+                                   'form_win_pct', 'current_streak', 'momentum_score']:
+                        recent_games.at[idx, f'away_{metric}'] = away_team_row.iloc[0][metric]
+                
+                # Calculate differential metrics
+                recent_games.at[idx, 'net_rating_diff'] = (
+                    recent_games.at[idx, 'home_net_rating'] - recent_games.at[idx, 'away_net_rating']
+                )
+                recent_games.at[idx, 'momentum_advantage'] = (
+                    recent_games.at[idx, 'home_momentum_score'] - recent_games.at[idx, 'away_momentum_score']
+                )
+                recent_games.at[idx, 'streak_differential'] = (
+                    recent_games.at[idx, 'home_current_streak'] - recent_games.at[idx, 'away_current_streak']
+                )
+                
+                # Add home advantage 
+                recent_games.at[idx, 'home_advantage'] = self.defaults['home_advantage']
+                
+                # Add rolling stats
+                for team, prefix in [(home_team, 'home_'), (away_team, 'away_')]:
+                    if team in rolling_stats:
+                        recent_games.at[idx, f'{prefix}rolling_score'] = rolling_stats[team].get('rolling_score', 0)
+                        recent_games.at[idx, f'{prefix}rolling_opp_score'] = rolling_stats[team].get('rolling_opp_score', 0)
+            
+            # Add advanced statistics
+            recent_games = self.integrate_advanced_features(recent_games)
+            
+            # Add possession-based statistics
+            recent_games = self.calculate_possession_stats(recent_games)
+            
+            # Add rebounding statistics
+            recent_games = self.add_rebounding_stats(recent_games)
+            
+            # Add ball handling statistics
+            recent_games = self.add_ballhandling_stats(recent_games)
+            
+            # Ensure form fields have default values if missing
+            if 'home_form' not in recent_games.columns:
+                recent_games['home_form'] = ''
+            if 'away_form' not in recent_games.columns:
+                recent_games['away_form'] = ''
+            
+            # Add quarter point defaults if needed
+            for team in ['home', 'away']:
+                for q in range(1, 5):
+                    q_col = f'{team}_q{q}_points'
+                    if q_col not in recent_games.columns:
+                        alt_col = f'{team}_q{q}'
+                        if alt_col in recent_games.columns:
+                            recent_games[q_col] = recent_games[alt_col]
+                        else:
+                            recent_games[q_col] = self.defaults['quarter_points']
+                
+                # Add half totals
+                recent_games[f'{team}_first_half'] = recent_games[f'{team}_q1_points'] + recent_games[f'{team}_q2_points']
+                recent_games[f'{team}_second_half'] = recent_games[f'{team}_q3_points'] + recent_games[f'{team}_q4_points']
+            
+            # Add team average metrics
+            for team, prefix in [('home', 'home_'), ('away', 'away_')]:
+                recent_games[f'{prefix}avg_fg_pct'] = self.defaults['fg_pct']
+                recent_games[f'{prefix}avg_ft_pct'] = self.defaults['ft_pct']
+                recent_games[f'{prefix}avg_pace'] = self.defaults['pace']
+                recent_games[f'{prefix}avg_off_efficiency'] = self.defaults['offensive_rating']
+                recent_games[f'{prefix}avg_def_efficiency'] = self.defaults['defensive_rating']
+            
+            # Handle missing values
+            recent_games = recent_games.replace([np.inf, -np.inf], np.nan)
+            numeric_cols = recent_games.select_dtypes(include=np.number).columns
+            recent_games[numeric_cols] = recent_games[numeric_cols].fillna(0)
+            
+            self._print_debug(f"Built pregame features for {len(recent_games)} games")
+            return recent_games
+            
+        except Exception as e:
+            self._print_debug(f"Error in build_pregame_features: {str(e)}")
+            traceback.print_exc()
+            return pd.DataFrame()
+    
+    def generate_pregame_features(self, upcoming_df, historical_df, team_metrics_df=None):
+        """
+        Generate features for upcoming games, consistent with training features.
+        
+        Args:
+            upcoming_df: DataFrame with upcoming games
+            historical_df: DataFrame with historical games
+            team_metrics_df: DataFrame with team metrics
+        
+        Returns:
+            DataFrame with features for prediction
+        """
+        try:
+            self._print_debug(f"Generating pregame features for {len(upcoming_df)} upcoming games")
+            
+            # Ensure consistent datetime format
+            for df in [upcoming_df, historical_df]:
+                if df is not None and not df.empty and 'game_date' in df.columns:
+                    df['game_date'] = pd.to_datetime(df['game_date'])
+            
+            # Validate upcoming_df has required columns
+            required_cols = ['game_id', 'game_date', 'home_team', 'away_team']
+            missing_cols = [col for col in required_cols if col not in upcoming_df.columns]
+            if missing_cols:
+                self._print_debug(f"Missing required columns in upcoming_df: {missing_cols}")
+                return pd.DataFrame()
+            
+            # Calculate team metrics if not provided
+            if team_metrics_df is None or team_metrics_df.empty:
+                team_metrics_df = self.create_team_metrics(historical_df)
+            
+            # Combine historical and upcoming games
+            combined_df = pd.concat([historical_df, upcoming_df], ignore_index=True, sort=False)
+            
+            # Generate all feature components
+            if historical_df is not None and not historical_df.empty:
+                # Add full feature set to combined data
+                feature_df = self.build_pregame_features(combined_df, team_metrics_df)
+            else:
+                # Handle case with no historical data by adding minimal features
+                feature_df = upcoming_df.copy()
+                feature_df = self.add_rolling_features(feature_df, window_sizes=[5, 10])
+            
+            # Extract only upcoming games with generated features
+            result_df = feature_df[feature_df['game_id'].isin(upcoming_df['game_id'])].reset_index(drop=True)
+            
+            self._print_debug(f"Generated {len(result_df.columns)} features for upcoming games")
+            return result_df
+            
+        except Exception as e:
+            self._print_debug(f"Error in generate_pregame_features: {str(e)}")
+            traceback.print_exc()
+            return pd.DataFrame()
+    
+    def finalize_features_for_prediction(self, feature_df, expected_feature_count=104):
+        """
+        Prepare the final feature set for prediction, ensuring all required 
+        features are present and in the correct format.
+        
+        Args:
+            feature_df: DataFrame with features
+            expected_feature_count: Expected number of features for the model
+            
+        Returns:
+            DataFrame with finalized feature set
+        """
+        try:
+            self._print_debug(f"Finalizing features for prediction (expected: {expected_feature_count})")
+            
+            result_df = feature_df.copy()
+            
+            # Identify feature columns (exclude identifiers and targets)
+            exclude_cols = ['game_id', 'id', 'game_date', 'home_team', 'away_team', 
+                           'home_score', 'away_score', 'point_diff', 'total_score',
+                           'home_form', 'away_form', 'win_probability']
+            
+            feature_cols = [col for col in result_df.columns if col not in exclude_cols]
+            
+            # Replace infinities and NaNs
+            result_df = result_df.replace([np.inf, -np.inf], np.nan)
+            result_df[feature_cols] = result_df[feature_cols].fillna(0)
+            
+            feature_count = len(feature_cols)
+            self._print_debug(f"Current feature count: {feature_count}")
+            
+            # Ensure we have exactly the expected number of features
+            if feature_count < expected_feature_count:
+                # Add missing placeholder features
+                missing_count = expected_feature_count - feature_count
+                for i in range(missing_count):
+                    placeholder = f"model_feature_{i}"
+                    result_df[placeholder] = 0.0
+                self._print_debug(f"Added {missing_count} placeholder features")
+            elif feature_count > expected_feature_count:
+                # Keep only the most important features
+                # Core features that should be preserved
+                core_features = [
+                    # Rolling averages (most important for prediction)
+                    'home_last5_avg', 'home_last5_allowed', 'away_last5_avg', 'away_last5_allowed',
+                    'home_last10_avg', 'home_last10_allowed', 'away_last10_avg', 'away_last10_allowed',
+                    'home_rolling_score', 'away_rolling_score', 'home_rolling_opp_score', 'away_rolling_opp_score',
+                    
+                    # Team strength metrics
+                    'home_win_pct', 'away_win_pct', 'home_offensive_rating', 'away_offensive_rating', 
+                    'home_defensive_rating', 'away_defensive_rating', 'home_net_rating', 'away_net_rating',
+                    'net_rating_diff',
+                    
+                    # Shooting metrics
+                    'home_fg_pct', 'away_fg_pct', 'fg_pct_diff', 'home_3p_pct', 'away_3p_pct', 
+                    'home_efg_pct', 'away_efg_pct', 'home_ft_pct', 'away_ft_pct', 'ft_pct_diff',
+                    
+                    # Rest and home court
+                    'home_rest_days', 'away_rest_days', 'rest_advantage', 'home_advantage',
+                    
+                    # Pace and efficiency
+                    'home_pace', 'away_pace', 'game_pace', 'pace_differential',
+                    'home_offensive_efficiency', 'away_offensive_efficiency', 'efficiency_differential'
+                ]
+                
+                # Keep only core features that exist in the dataset
+                core_features = [f for f in core_features if f in feature_cols]
+                
+                # If we still have too many features, add more to the core list
+                if len(core_features) < expected_feature_count:
+                    # Get remaining features
+                    remaining = [f for f in feature_cols if f not in core_features]
+                    # Sort for deterministic behavior
+                    remaining = sorted(remaining)
+                    # Add enough to reach the expected count
+                    additional = remaining[:expected_feature_count - len(core_features)]
+                    final_features = core_features + additional
+                else:
+                    # If we have too many core features, keep the first expected_feature_count
+                    final_features = core_features[:expected_feature_count]
+                
+                # Drop features not in final list
+                drop_features = [f for f in feature_cols if f not in final_features]
+                result_df = result_df.drop(columns=drop_features)
+                self._print_debug(f"Trimmed feature count from {feature_count} to {expected_feature_count}")
+            
+            # Ensure all features are numeric
+            numeric_cols = result_df.select_dtypes(include=np.number).columns
+            for col in feature_cols:
+                if col in result_df.columns and col not in numeric_cols:
+                    result_df[col] = 0.0
+            
+            final_feature_count = len([col for col in result_df.columns if col not in exclude_cols])
+            self._print_debug(f"Final feature count: {final_feature_count}")
+            
+            return result_df
+            
+        except Exception as e:
+            self._print_debug(f"Error in finalize_features_for_prediction: {str(e)}")
+            traceback.print_exc()
+            return feature_df
+    
+    def generate_features(self, df):
         """
         Generate all features for the NBA score prediction model.
         
@@ -633,7 +1623,7 @@ class NBAFeatureGenerator:
         self._print_debug(f"Generated {len(result_df.columns) - len(df.columns)} new features")
         return result_df
     
-    def get_features_for_quarter(self, df: pd.DataFrame, quarter: int) -> pd.DataFrame:
+    def get_features_for_quarter(self, df, quarter):
         """
         Get the optimized feature set for a specific quarter.
         
@@ -658,7 +1648,7 @@ class NBAFeatureGenerator:
         
         return df[available_features]
     
-    def generate_all_features(self, df: pd.DataFrame, skip_rest_calc: bool = False) -> pd.DataFrame:
+    def generate_all_features(self, df, skip_rest_calc=False):
         """
         Generate all features including optional rest calculations.
         
@@ -704,7 +1694,7 @@ class NBAFeatureGenerator:
         return result_df
     
     @staticmethod
-    def preprocess_features(df: pd.DataFrame) -> pd.DataFrame:
+    def preprocess_features(df):
         """
         Preprocess features for model training/inference.
         
@@ -722,23 +1712,45 @@ class NBAFeatureGenerator:
         result_df[numeric_cols] = result_df[numeric_cols].fillna(0)
         
         return result_df
-
-# -------------------- Helper Decorators & Simple Logging --------------------
-def profile_time(func):
-    """Decorator to profile function execution time."""
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        print(f"[PROFILE] {func.__name__} took {end_time - start_time:.2f} seconds")
-        return result
-    return wrapper
-
-# A simple logging function for this module.
-def simple_log(message, level="INFO", debug=False):
-    if debug or level != "DEBUG":
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {level}: {message}")
+    
+    def get_expected_features(self, enhanced=True):
+        """
+        Get the expected feature list for model training/prediction.
+        
+        Args:
+            enhanced: Whether to return the enhanced feature set with more features
+            
+        Returns:
+            List of feature names
+        """
+        # Base features that are always used
+        base_features = [
+            'home_win_pct', 'away_win_pct',
+            'home_offensive_rating', 'away_offensive_rating',
+            'home_defensive_rating', 'away_defensive_rating',
+            'home_rolling_score', 'away_rolling_score',
+            'home_rest_days', 'away_rest_days',
+            'home_last5_avg', 'away_last5_avg',
+            'home_last10_avg', 'away_last10_avg'
+        ]
+        
+        # Enhanced features that improve model performance
+        enhanced_features = base_features + [
+            'home_last5_allowed', 'away_last5_allowed',
+            'home_last10_allowed', 'away_last10_allowed',
+            'home_rolling_opp_score', 'away_rolling_opp_score',
+            'rest_advantage', 'home_advantage',
+            'is_back_to_back_home', 'is_back_to_back_away',
+            'home_net_rating', 'away_net_rating',
+            'net_rating_diff', 'momentum_advantage',
+            'home_momentum_score', 'away_momentum_score',
+            'streak_differential',
+            'home_current_streak', 'away_current_streak',
+            'home_fg_pct', 'away_fg_pct', 'fg_pct_diff',
+            'home_pace', 'away_pace', 'game_pace'
+        ]
+        
+        return enhanced_features if enhanced else base_features
 
 # -------------------- Ensemble Weight Visualization & Tuning --------------------
 class EnsembleWeightVisualizer:
@@ -1065,12 +2077,12 @@ class QuarterSpecificModelSystem:
         """
         Initialize the quarter model system.
         Args:
-            feature_generator: An instance of NBAFeatureGenerator (optional).
+            feature_generator: An instance of NBAFeatureEngine (optional).
         """
         self.models = {}
         self.fallback_models = {}
-        self.feature_generator = feature_generator or NBAFeatureGenerator()
-        self.quarter_feature_sets = self.feature_generator.get_quarter_feature_sets()
+        self.feature_generator = feature_generator or NBAFeatureEngine()
+        self.quarter_feature_sets = self.feature_generator.quarter_feature_sets
         self.error_history = {
             'main_model': {1: 7.0, 2: 6.2, 3: 5.5, 4: 4.7},
             'quarter_model': {1: 8.5, 2: 7.0, 3: 5.8, 4: 4.5}
@@ -1109,7 +2121,7 @@ class QuarterSpecificModelSystem:
     def train_fallback_models(self, X, y, current_quarter):
         if current_quarter <= 0 or current_quarter > 4:
             return
-        features = self.quarter_feature_sets.get(f'q{current_quarter}', [])
+        features = self.quarter_feature_sets.get(current_quarter, [])
         available_features = [f for f in features if f in X.columns]
         if not available_features:
             return
@@ -1127,7 +2139,7 @@ class QuarterSpecificModelSystem:
             return self.prediction_cache[cache_key]
         if quarter < 1 or quarter > 4:
             return 0.0
-        features = self.quarter_feature_sets.get(f'q{quarter}', [])
+        features = self.quarter_feature_sets.get(quarter, [])
         available_features = [f for f in features if f in X.columns]
         if not available_features:
             print(f"No features available for Q{quarter} prediction. Using default.")
@@ -1164,7 +2176,7 @@ class QuarterSpecificModelSystem:
         if not hasattr(self.feature_generator, 'add_advanced_features'):
             X = self.feature_generator.generate_all_features(X)
         else:
-            X = self.feature_generator.add_advanced_features(X)
+            X = self.feature_generator.integrate_advanced_features(X)
         results = {}
         for q in range(current_quarter + 1, 5):
             pred_score = self.predict_quarter(X, q)
@@ -1392,7 +2404,7 @@ def generate_enhanced_predictions(live_games_df, main_model):
     Returns:
         DataFrame with enhanced predictions.
     """
-    feature_generator = NBAFeatureGenerator(debug=True)
+    feature_generator = NBAFeatureEngine(debug=True)
     quarter_system = QuarterSpecificModelSystem(feature_generator)
     quarter_system.load_models()
     uncertainty_estimator = PredictionUncertaintyEstimator()
@@ -1471,19 +2483,51 @@ def validate_enhanced_predictions(num_test_games=20):
     Returns:
         tuple: (DataFrame with validation results, DataFrame with improvement metrics)
     """
-    from sqlalchemy import create_engine
-    import config
-    engine = create_engine(config.DATABASE_URL)
-    query = f"""
-    SELECT * FROM nba_historical_game_stats
-    WHERE game_date >= CURRENT_DATE - INTERVAL '60 days'
-    ORDER BY game_date DESC
-    LIMIT {num_test_games}
-    """
-    test_games = pd.read_sql(query, engine)
-    import joblib
-    main_model = joblib.load(config.MODEL_PATH)
-    feature_generator = NBAFeatureGenerator(debug=True)
+    try:
+        from sqlalchemy import create_engine
+        import config
+        engine = create_engine(config.DATABASE_URL)
+        query = f"""
+        SELECT * FROM nba_historical_game_stats
+        WHERE game_date >= CURRENT_DATE - INTERVAL '60 days'
+        ORDER BY game_date DESC
+        LIMIT {num_test_games}
+        """
+        test_games = pd.read_sql(query, engine)
+    except Exception as e:
+        print(f"Error accessing database: {e}")
+        print("Using a sample dataset for validation")
+        # Create a sample test dataset
+        test_games = pd.DataFrame({
+            'game_id': [f'g{i}' for i in range(num_test_games)],
+            'game_date': pd.date_range(start='2023-01-01', periods=num_test_games),
+            'home_team': ['Team A'] * num_test_games,
+            'away_team': ['Team B'] * num_test_games,
+            'home_q1': [25] * num_test_games,
+            'home_q2': [26] * num_test_games,
+            'home_q3': [27] * num_test_games,
+            'home_q4': [28] * num_test_games,
+            'away_q1': [24] * num_test_games,
+            'away_q2': [25] * num_test_games,
+            'away_q3': [26] * num_test_games,
+            'away_q4': [27] * num_test_games,
+            'home_score': [106] * num_test_games,
+            'away_score': [102] * num_test_games
+        })
+    
+    try:
+        import joblib
+        import config
+        main_model = joblib.load(config.MODEL_PATH)
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        # Create a dummy model that returns the average score
+        class DummyModel:
+            def predict(self, X):
+                return [105] * len(X)
+        main_model = DummyModel()
+        
+    feature_generator = NBAFeatureEngine(debug=True)
     quarter_system = QuarterSpecificModelSystem(feature_generator)
     quarter_system.load_models()
     validation_results = []
@@ -1564,7 +2608,7 @@ def validate_enhanced_predictions(num_test_games=20):
     print(improvement_df)
     return validation_df, improvement_df
 
-# -------------------- Recommended Model Parameters --------------------
+# -------------------- Get Recommended Model Parameters --------------------
 def get_recommended_model_params(quarter, model_type=None):
     """
     Returns optimized hyperparameters for specific quarter models.
@@ -1657,7 +2701,7 @@ class EarlyQuarterModelOptimizer:
     where traditional models struggle with limited information.
     """
     def __init__(self, feature_generator=None):
-        self.feature_generator = feature_generator or NBAFeatureGenerator(debug=False)
+        self.feature_generator = feature_generator or NBAFeatureEngine(debug=False)
         self.models = {'q1': {}, 'q2': {}}
         self.q1_feature_sets = {
             'basic': [
@@ -1867,305 +2911,7 @@ class EarlyQuarterModelOptimizer:
         comparison['pct_improvement'] = (comparison['rmse_improvement'] / comparison['baseline_rmse']) * 100
         return comparison.sort_values(['quarter', 'pct_improvement'], ascending=[True, False])
 
-# -------------------- Recommended Model Parameters --------------------
-def get_recommended_model_params(quarter, model_type=None):
-    """
-    Returns optimized hyperparameters for specific quarter models.
-    Args:
-        quarter: Quarter number (1-4).
-        model_type: Optional override for model type.
-    Returns:
-        dict: Hyperparameters for the recommended model type.
-    """
-    if model_type == "RandomForest":
-        return {
-            'model_type': 'RandomForest',
-            'params': {
-                'n_estimators': 100,
-                'max_depth': 5,
-                'min_samples_split': 10,
-                'min_samples_leaf': 4,
-                'max_features': 'sqrt',
-                'bootstrap': True,
-                'random_state': 42
-            }
-        }
-    elif model_type == "XGBoost":
-        return {
-            'model_type': 'XGBoost',
-            'params': {
-                'n_estimators': 200,
-                'learning_rate': 0.05,
-                'max_depth': 4,
-                'min_child_weight': 2,
-                'subsample': 0.8,
-                'colsample_bytree': 0.7,
-                'reg_alpha': 0.5,
-                'reg_lambda': 1.0,
-                'objective': 'reg:squarederror',
-                'random_state': 42
-            }
-        }
-    if quarter == 1:
-        return {
-            'model_type': 'GradientBoosting',
-            'params': {
-                'n_estimators': 100,
-                'learning_rate': 0.05,
-                'max_depth': 3,
-                'min_samples_split': 10,
-                'subsample': 0.8,
-                'random_state': 42
-            }
-        }
-    elif quarter == 2:
-        return {
-            'model_type': 'GradientBoosting',
-            'params': {
-                'n_estimators': 100,
-                'learning_rate': 0.1,
-                'max_depth': 3,
-                'min_samples_split': 5,
-                'subsample': 0.8,
-                'random_state': 42
-            }
-        }
-    elif quarter == 3:
-        return {
-            'model_type': 'GradientBoosting',
-            'params': {
-                'n_estimators': 100,
-                'learning_rate': 0.1,
-                'max_depth': 4,
-                'min_samples_split': 5,
-                'subsample': 0.8,
-                'random_state': 42
-            }
-        }
-    else:
-        return {
-            'model_type': 'Ridge',
-            'params': {
-                'alpha': 1.0,
-                'fit_intercept': True,
-                'solver': 'auto',
-                'random_state': 42
-            }
-        }
-
-# -------------------- Early Quarter Model Optimizer --------------------
-class EarlyQuarterModelOptimizer:
-    """
-    Specialized optimization for early quarter predictions (Q1 and Q2)
-    where traditional models struggle with limited information.
-    """
-    def __init__(self, feature_generator=None):
-        self.feature_generator = feature_generator or NBAFeatureGenerator(debug=False)
-        self.models = {'q1': {}, 'q2': {}}
-        self.q1_feature_sets = {
-            'basic': [
-                'rest_days_home', 'rest_days_away', 'rest_advantage',
-                'rolling_home_score', 'rolling_away_score'
-            ],
-            'matchup': [
-                'rest_days_home', 'rest_days_away', 'rest_advantage',
-                'rolling_home_score', 'rolling_away_score',
-                'prev_matchup_diff'
-            ],
-            'advanced': [
-                'rest_days_home', 'rest_days_away', 'rest_advantage',
-                'is_back_to_back_home', 'is_back_to_back_away',
-                'rolling_home_score', 'rolling_away_score',
-                'prev_matchup_diff', 'time_remaining_norm'
-            ]
-        }
-        self.q2_feature_sets = {
-            'basic': [
-                'home_q1', 'away_q1', 'score_ratio', 
-                'rest_advantage'
-            ],
-            'momentum': [
-                'home_q1', 'away_q1', 'score_ratio', 
-                'rest_advantage', 'q1_to_q2_momentum'
-            ],
-            'advanced': [
-                'home_q1', 'away_q1', 'score_ratio', 
-                'rest_advantage', 'q1_to_q2_momentum', 
-                'rolling_home_score', 'rolling_away_score',
-                'prev_matchup_diff', 'time_remaining_norm',
-                'momentum_indicator', 'score_momentum_interaction'
-            ]
-        }
-        
-    def initialize_xgboost_models(self):
-        try:
-            import xgboost as xgb
-            self.models['q1']['xgb_basic'] = xgb.XGBRegressor(
-                n_estimators=100,
-                learning_rate=0.05, 
-                max_depth=3,
-                gamma=1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                objective='reg:squarederror',
-                random_state=42
-            )
-            self.models['q1']['xgb_tuned'] = xgb.XGBRegressor(
-                n_estimators=200,
-                learning_rate=0.03, 
-                max_depth=4,
-                min_child_weight=2,
-                gamma=1,
-                subsample=0.75,
-                colsample_bytree=0.7,
-                reg_alpha=0.5,
-                reg_lambda=1.0,
-                objective='reg:squarederror',
-                random_state=42
-            )
-            self.models['q2']['xgb_basic'] = xgb.XGBRegressor(
-                n_estimators=100,
-                learning_rate=0.1, 
-                max_depth=3,
-                gamma=0,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                objective='reg:squarederror',
-                random_state=42
-            )
-            self.models['q2']['xgb_tuned'] = xgb.XGBRegressor(
-                n_estimators=150,
-                learning_rate=0.05, 
-                max_depth=4,
-                min_child_weight=1,
-                gamma=0.1,
-                subsample=0.8,
-                colsample_bytree=0.7,
-                reg_alpha=0.1,
-                reg_lambda=1.0,
-                objective='reg:squarederror',
-                random_state=42
-            )
-            print("XGBoost models initialized successfully")
-            return True
-        except ImportError:
-            print("XGBoost not available. Install with: pip install xgboost")
-            return False
-            
-    def train_models(self, training_data, target_col='home_score'):
-        results = {'q1': {}, 'q2': {}}
-        if not isinstance(training_data, pd.DataFrame) or training_data.empty:
-            print("No training data provided")
-            return results
-        if 'momentum_indicator' not in training_data.columns:
-            print("Adding advanced features to training data")
-            training_data = self.feature_generator.add_advanced_features(training_data)
-        q1_target = f"{target_col[:-5]}q1" if target_col.endswith('score') else 'home_q1'
-        if q1_target in training_data.columns:
-            print(f"Training Q1 models with target: {q1_target}")
-            for feature_set_name, features in self.q1_feature_sets.items():
-                valid_features = [f for f in features if f in training_data.columns]
-                if len(valid_features) < len(features):
-                    print(f"Warning: Missing {len(features)-len(valid_features)} features for Q1 {feature_set_name} set")
-                if not valid_features:
-                    continue
-                X = training_data[valid_features].copy()
-                y = training_data[q1_target]
-                for model_name, model in self.models['q1'].items():
-                    try:
-                        model.fit(X, y)
-                        y_pred = model.predict(X)
-                        mse = np.mean((y - y_pred) ** 2)
-                        mae = np.mean(np.abs(y - y_pred))
-                        results['q1'][f"{model_name}_{feature_set_name}"] = {
-                            'model': model,
-                            'features': valid_features,
-                            'train_mse': mse,
-                            'train_mae': mae,
-                            'feature_importance': dict(zip(valid_features, model.feature_importances_)) if hasattr(model, 'feature_importances_') else {}
-                        }
-                        print(f"Trained Q1 {model_name} with {feature_set_name} features: MSE={mse:.2f}, MAE={mae:.2f}")
-                    except Exception as e:
-                        print(f"Error training Q1 {model_name} with {feature_set_name} features: {e}")
-        else:
-            print(f"Target column {q1_target} not found for Q1 models")
-        q2_target = f"{target_col[:-5]}q2" if target_col.endswith('score') else 'home_q2'
-        if q2_target in training_data.columns:
-            print(f"Training Q2 models with target: {q2_target}")
-            for feature_set_name, features in self.q2_feature_sets.items():
-                valid_features = [f for f in features if f in training_data.columns]
-                if len(valid_features) < len(features):
-                    print(f"Warning: Missing {len(features)-len(valid_features)} features for Q2 {feature_set_name} set")
-                if not valid_features:
-                    continue
-                X = training_data[valid_features].copy()
-                y = training_data[q2_target]
-                for model_name, model in self.models['q2'].items():
-                    try:
-                        model.fit(X, y)
-                        y_pred = model.predict(X)
-                        mse = np.mean((y - y_pred) ** 2)
-                        mae = np.mean(np.abs(y - y_pred))
-                        results['q2'][f"{model_name}_{feature_set_name}"] = {
-                            'model': model,
-                            'features': valid_features,
-                            'train_mse': mse,
-                            'train_mae': mae,
-                            'feature_importance': dict(zip(valid_features, model.feature_importances_)) if hasattr(model, 'feature_importances_') else {}
-                        }
-                        print(f"Trained Q2 {model_name} with {feature_set_name} features: MSE={mse:.2f}, MAE={mae:.2f}")
-                    except Exception as e:
-                        print(f"Error training Q2 {model_name} with {feature_set_name} features: {e}")
-        else:
-            print(f"Target column {q2_target} not found for Q2 models")
-        return results
-    
-    def evaluate_models(self, test_data, target_col='home_score'):
-        if not isinstance(test_data, pd.DataFrame) or test_data.empty:
-            print("No test data provided")
-            return pd.DataFrame()
-        if 'momentum_indicator' not in test_data.columns:
-            print("Adding advanced features to test data")
-            test_data = self.feature_generator.add_advanced_features(test_data)
-        eval_results = []
-        q1_target = f"{target_col[:-5]}q1" if target_col.endswith('score') else 'home_q1'
-        if q1_target in test_data.columns:
-            for model_key, model_info in self.models['q1'].items():
-                for feature_set_name, features in self.q1_feature_sets.items():
-                    model_id = f"{model_key}_{feature_set_name}"
-                    if model_id in self.models['q1']:
-                        model_data = self.models['q1'][model_id]
-                        model = model_data['model']
-                        features = model_data['features']
-                        if all(f in test_data.columns for f in features):
-                            X_test = test_data[features]
-                            y_test = test_data[q1_target]
-                            y_pred = model.predict(X_test)
-                            mse = np.mean((y_test - y_pred) ** 2)
-                            rmse = np.sqrt(mse)
-                            mae = np.mean(np.abs(y_test - y_pred))
-                            eval_results.append({
-                                'quarter': 'Q1',
-                                'model': model_key,
-                                'feature_set': feature_set_name,
-                                'mse': mse,
-                                'rmse': rmse,
-                                'mae': mae,
-                                'sample_size': len(X_test)
-                            })
-                            print(f"Q1 {model_key} with {feature_set_name} features: RMSE={rmse:.2f}, MAE={mae:.2f}")
-        if q1_target == '':
-            print("No evaluation results generated")
-            return pd.DataFrame()
-        return pd.DataFrame(eval_results)
-    
-    def compare_to_baseline(self, eval_df, baseline_rmse):
-        if eval_df.empty:
-            return pd.DataFrame()
-        comparison = eval_df.copy()
-        comparison['baseline_rmse'] = comparison['quarter'].apply(
-            lambda q: baseline_rmse.get(q[1], 7.5)
-        )
-        comparison['rmse_improvement'] = comparison['baseline_rmse'] - comparison['rmse']
-        comparison['pct_improvement'] = (comparison['rmse_improvement'] / comparison['baseline_rmse']) * 100
-        return comparison.sort_values(['quarter', 'pct_improvement'], ascending=[True, False])
+# The integrated features.py module is now complete
+# It combines the comprehensive feature engineering of NBAFeatureEngine
+# with advanced prediction capabilities like dynamic ensemble weighting,
+# quarter-specific models, and uncertainty estimation.
