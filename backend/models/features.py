@@ -150,9 +150,15 @@ class NBAFeatureEngine:
         mapping = {
             "sixers": "76ers",
             "phila": "76ers",
+            "philadelphia": "76ers",
             "trail blazers": "blazers",
             "clippers": "la clippers",
-            "lakers": "la lakers"
+            "los angeles clippers": "la clippers",
+            "lakers": "la lakers", 
+            "los angeles lakers": "la lakers",
+            "new york": "knicks",
+            "golden state": "warriors",
+            "san antonio": "spurs"
         }
         
         team_lower = team_name.lower()
@@ -460,6 +466,12 @@ class NBAFeatureEngine:
         # Calculate days between games
         rest_days = (game_date - last_game_date).days
         
+        # Cap rest days at a realistic maximum (NBA teams rarely have more than 4 days between games)
+        MAX_REST_DAYS = 4
+        if rest_days > MAX_REST_DAYS:
+            self._print_debug(f"Capping rest days from {rest_days} to {MAX_REST_DAYS} for {team}")
+            rest_days = MAX_REST_DAYS
+        
         # Determine if it's a back-to-back game
         is_back_to_back = rest_days < 2
         
@@ -573,6 +585,12 @@ class NBAFeatureEngine:
             # Calculate rest advantage
             result_df.at[idx, 'rest_advantage'] = result_df.at[idx, 'rest_days_home'] - result_df.at[idx, 'rest_days_away']
         
+        if 'rest_days_home' in result_df.columns and 'home_rest_days' not in result_df.columns:
+            result_df['home_rest_days'] = result_df['rest_days_home']
+            
+        if 'rest_days_away' in result_df.columns and 'away_rest_days' not in result_df.columns:
+            result_df['away_rest_days'] = result_df['rest_days_away']
+
         # Ensure numeric types
         for col in ['rest_days_home', 'rest_days_away', 'rest_advantage', 
                     'is_back_to_back_home', 'is_back_to_back_away']:
@@ -1550,7 +1568,8 @@ class NBAFeatureEngine:
                     # Team strength metrics
                     'home_win_pct', 'away_win_pct', 'home_offensive_rating', 'away_offensive_rating', 
                     'home_defensive_rating', 'away_defensive_rating', 'home_net_rating', 'away_net_rating',
-                    'net_rating_diff',
+                    'net_rating_diff', 'form_win_pct_diff', 'momentum_score_diff', 
+                    'home_form_win_pct', 'away_form_win_pct', 'home_momentum_score', 'away_momentum_score',
                     
                     # Shooting metrics
                     'home_fg_pct', 'away_fg_pct', 'fg_pct_diff', 'home_3p_pct', 'away_3p_pct', 
