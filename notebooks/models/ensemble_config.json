@@ -1,27 +1,27 @@
 {
   "version": "1.0.0",
-  "created_at": "2025-03-26 05:05:09",
+  "created_at": "2025-03-26 05:15:58",
   "description": "Advanced NBA Score Prediction Ensemble Model",
   "model_weights": {
     "home_score": {
-      "RandomForest": 0.31789778853183115,
-      "XGBoost": 0.42881157791540647,
-      "Ridge": 0.2532906335527624
+      "RandomForest": 0.38336750252803536,
+      "XGBoost": 0.4766324974719647,
+      "Ridge": 0.14
     },
     "away_score": {
-      "RandomForest": 0.3146833200117632,
-      "XGBoost": 0.4391785881424534,
-      "Ridge": 0.24613809184578334
+      "RandomForest": 0.37199673418331547,
+      "XGBoost": 0.4880032658166845,
+      "Ridge": 0.13999999999999999
     },
     "point_diff": {
-      "RandomForest": 0.28019947566852027,
-      "XGBoost": 0.4097406432746623,
-      "Ridge": 0.31005988105681737
+      "RandomForest": 0.33284647357104213,
+      "XGBoost": 0.4571535264289579,
+      "Ridge": 0.21
     },
     "total_score": {
-      "RandomForest": 0.3126438790272869,
-      "XGBoost": 0.44694527607100804,
-      "Ridge": 0.240410844901705
+      "RandomForest": 0.3642827499471144,
+      "XGBoost": 0.4957172500528856,
+      "Ridge": 0.13999999999999999
     },
     "q1_total": {
       "RandomForest": 0.4198340418912532,
