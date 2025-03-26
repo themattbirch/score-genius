@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Now define MODEL_PATH relative to the project root.
-MODEL_PATH = str(PROJECT_ROOT / "backend" / "models" / "score_prediction_model.pkl")
+MODEL_PATH = str(PROJECT_ROOT / "notebooks" / "models" / "pregame_model.pkl")
 
 # Optionally load other environment variables
 env_path = PROJECT_ROOT / ".env"
