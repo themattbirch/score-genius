@@ -1,5 +1,3 @@
-# backend/caching/scheduler_setup.py
-
 import sys
 import os
 
@@ -28,6 +26,10 @@ from src.scripts.nba_games_preview import (
 )
 from src.scripts.process_odds_data import main as process_odds_data_main
 from caching.supabase_cache import cache_game_data
+
+# NEW: Import NBAFeatureEngine from your feature engineering module.
+# Adjust the import path as needed.
+from models.features import NBAFeatureEngine
 
 # Global variable to track archive execution per day
 last_archive_date = None
@@ -135,6 +137,17 @@ def scheduled_update_plus_preview():
     else:
         print("No game preview data to upsert.")
 
+# NEW: Define a function to update the expected features.
+def update_expected_features():
+    try:
+        engine = NBAFeatureEngine(debug=True)
+        features = engine.get_expected_features(enhanced=True)
+        print(f"Expected features updated at {datetime.now()}: {features}")
+        # Optionally, upsert or cache these features to Supabase or another store.
+    except Exception as e:
+        print(f"Error updating expected features: {e}")
+        traceback.print_exc()
+
 if __name__ == "__main__":
     scheduler = BackgroundScheduler()
     
@@ -199,13 +212,13 @@ if __name__ == "__main__":
     scheduler.add_job(
         run_model_inference,
         'cron',
-        hour=6,
-        minute=15,
+        hour=9,
+        minute=10,
         timezone='America/Los_Angeles',
         id='model_inference_job'
     )
     
-    # Archive jobs: Run at 6:15 PT and fallback at 6:25 PT
+    # Archive jobs: Run at 6:20 PT and fallback at 16:20 PT
     scheduler.add_job(
         attempt_archive_live_data,
         'cron',
@@ -221,6 +234,16 @@ if __name__ == "__main__":
         minute=20,
         timezone='America/Los_Angeles',
         id='archive_job_afternoon'
+    )
+
+    # NEW: Add job to update expected features daily at 6:25 PT.
+    scheduler.add_job(
+        update_expected_features,
+        'cron',
+        hour=6,
+        minute=25,
+        timezone='America/Los_Angeles',
+        id='update_expected_features_job'
     )
     
     scheduler.start()

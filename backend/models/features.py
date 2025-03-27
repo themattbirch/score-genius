@@ -1771,6 +1771,23 @@ class NBAFeatureEngine:
         
         return enhanced_features if enhanced else base_features
 
+from caching.supabase_client import supabase
+
+def fetch_enhanced_features():
+    try:
+        response = supabase.table("nba_enhanced_features").select("*").execute()
+        data = response.data
+        if data:
+            print(f"Fetched {len(data)} rows from nba_enhanced_features.")
+            return data
+        else:
+            print("No rows found in nba_enhanced_features.")
+            return []
+    except Exception as e:
+        print(f"Error fetching from nba_enhanced_features: {e}")
+        return []
+
+
 # -------------------- Ensemble Weight Visualization & Tuning --------------------
 class EnsembleWeightVisualizer:
     """
@@ -2128,13 +2145,10 @@ class QuarterSpecificModelSystem:
         self._create_fallback_models()
 
     def _create_fallback_models(self):
-        from sklearn.ensemble import GradientBoostingRegressor
         from sklearn.linear_model import Ridge
         for quarter in range(1, 5):
-            if quarter <= 3:
-                model = GradientBoostingRegressor(n_estimators=50, max_depth=3, learning_rate=0.1, random_state=42)
-            else:
-                model = Ridge(alpha=1.0, random_state=42)
+            # Use Ridge for all quarters
+            model = Ridge(alpha=1.0, random_state=42)
             self.fallback_models[quarter] = model
 
     def train_fallback_models(self, X, y, current_quarter):
@@ -2205,17 +2219,17 @@ class QuarterSpecificModelSystem:
                 X['first_half_diff'] = (X['home_q1'].values[0] + pred_score -
                                         X['away_q1'].values[0] - X.get('away_q2', pd.Series([0])).values[0])
                 X['q1_to_q2_momentum'] = (pred_score - X['home_q1'].values[0] -
-                                          (X.get('away_q2', pd.Series([0])).values[0] - X['away_q1'].values[0])
+                                        (X.get('away_q2', pd.Series([0])).values[0] - X['away_q1'].values[0])
                 )
             elif q == 3:
                 X['pre_q4_diff'] = (X['home_q1'].values[0] + X['home_q2'].values[0] + pred_score -
                                     X['away_q1'].values[0] - X['away_q2'].values[0] - X.get('away_q3', pd.Series([0])).values[0])
                 X['q2_to_q3_momentum'] = (pred_score - X['home_q2'].values[0] -
-                                          (X.get('away_q3', pd.Series([0])).values[0] - X['away_q2'].values[0])
+                                        (X.get('away_q3', pd.Series([0])).values[0] - X['away_q2'].values[0])
                 )
             elif q == 4:
                 X['q3_to_q4_momentum'] = (pred_score - X['home_q3'].values[0] -
-                                          (X.get('away_q4', pd.Series([0])).values[0] - X['away_q3'].values[0])
+                                        (X.get('away_q4', pd.Series([0])).values[0] - X['away_q3'].values[0])
                 )
         return results
 
@@ -2668,37 +2682,49 @@ def get_recommended_model_params(quarter, model_type=None):
         }
     if quarter == 1:
         return {
-            'model_type': 'GradientBoosting',
+            'model_type': 'XGBoost',
             'params': {
                 'n_estimators': 100,
                 'learning_rate': 0.05,
                 'max_depth': 3,
-                'min_samples_split': 10,
+                'min_child_weight': 2,
                 'subsample': 0.8,
+                'colsample_bytree': 0.7,
+                'reg_alpha': 0.5,
+                'reg_lambda': 1.0,
+                'objective': 'reg:squarederror',
                 'random_state': 42
             }
         }
     elif quarter == 2:
         return {
-            'model_type': 'GradientBoosting',
+            'model_type': 'XGBoost',
             'params': {
                 'n_estimators': 100,
                 'learning_rate': 0.1,
                 'max_depth': 3,
-                'min_samples_split': 5,
+                'min_child_weight': 3,
                 'subsample': 0.8,
+                'colsample_bytree': 0.7,
+                'reg_alpha': 0.5,
+                'reg_lambda': 1.0,
+                'objective': 'reg:squarederror',
                 'random_state': 42
             }
         }
     elif quarter == 3:
         return {
-            'model_type': 'GradientBoosting',
+            'model_type': 'XGBoost',
             'params': {
                 'n_estimators': 100,
                 'learning_rate': 0.1,
                 'max_depth': 4,
-                'min_samples_split': 5,
+                'min_child_weight': 2,
                 'subsample': 0.8,
+                'colsample_bytree': 0.7,
+                'reg_alpha': 0.5,
+                'reg_lambda': 1.0,
+                'objective': 'reg:squarederror',
                 'random_state': 42
             }
         }
