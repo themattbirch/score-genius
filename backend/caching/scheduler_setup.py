@@ -29,7 +29,7 @@ from caching.supabase_cache import cache_game_data
 
 # NEW: Import NBAFeatureEngine from your feature engineering module.
 # Adjust the import path as needed.
-from models.features import NBAFeatureEngine
+from predict_score.feature_engineering import NBAFeatureEngine
 
 # Global variable to track archive execution per day
 last_archive_date = None

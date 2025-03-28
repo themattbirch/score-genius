@@ -11,7 +11,7 @@ from models.player_projection import load_models as load_player_projection_model
 from models.nlp_summary import generate_game_summary
 
 # Import the new features and ensemble models from features.py
-from models.features import (
+from predict_score.feature_engineering import (
     NBAFeatureGenerator, 
     QuarterSpecificModelSystem, 
     PredictionUncertaintyEstimator,
