@@ -1,687 +1,1677 @@
-# backend/nba_score_prediction/evaluation.py
+# backend/score_prediction/evaluation.py
+"""
+Module for evaluating model predictions and visualizing results.
+
+Provides functions for calculating standard regression metrics, custom NBA-specific losses,
+and generating various plots for residual analysis, bias analysis, feature importance,
+and model comparison.
+"""
 
 import pandas as pd
 import numpy as np
-import traceback
-from typing import Dict, List, Optional, Tuple, Any, Union
-from datetime import datetime, timedelta
-import os
-import joblib
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
 from scipy import stats
-from sklearn.metrics import r2_score
+from pandas.api.types import is_datetime64_any_dtype as is_datetime
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from typing import Dict, Any, Optional, List, Union
 
+# Optional import for LOWESS smoother - plotting will work without it
+try:
+    import statsmodels.api as sm
+    _has_statsmodels = True
+except ImportError:
+    _has_statsmodels = False
+    print("Note: 'statsmodels' not found. LOWESS smoother will not be available in residual plots.")
 
-# Import the QuarterSpecificModelSystem class from the proper location
-from nba_score_prediction.models import QuarterSpecificModelSystem
+# --- Plotting Configuration ---
+plt.style.use('fivethirtyeight')
+sns.set_palette('colorblind')
+DEFAULT_FIG_SIZE = (12, 8)
+SMALL_FIG_SIZE = (10, 6)
+LARGE_FIG_SIZE = (15, 10)
 
-# -------------------- PredictionUncertaintyEstimator Class --------------------
+# --- Core Metric Calculation Functions ---
 
-
-class PredictionUncertaintyEstimator:
+def calculate_regression_metrics(y_true: Union[pd.Series, np.ndarray],
+                                 y_pred: Union[pd.Series, np.ndarray]
+                                 ) -> Dict[str, float]:
     """
-    Estimates uncertainty (confidence intervals) for NBA score predictions
-    based on historical error patterns and game context.
-    """
-    def __init__(self, debug=False):
-        """Initialize the uncertainty estimator with default values."""
-        self.debug = debug
-        
-        # Default mean absolute error by quarter (improves as game progresses)
-        self.mae_by_quarter = {0: 8.5, 1: 7.0, 2: 6.0, 3: 5.0, 4: 0.0}
-        
-        # Default standard deviation by quarter
-        self.std_by_quarter = {0: 4.5, 1: 3.8, 2: 3.2, 3: 2.6, 4: 0.0}
-        
-        # Adjustment factors for different game situations
-        self.margin_adjustments = {'close': 1.2, 'moderate': 1.0, 'blowout': 0.8}
-        self.momentum_effects = {'high': 1.2, 'moderate': 1.0, 'low': 0.8}
-        
-        # Storage for historical error tracking
-        self.historical_errors = {q: [] for q in range(5)}
-        self.interval_coverage = {q: {'inside': 0, 'total': 0} for q in range(5)}
-    
-    def _print_debug(self, message):
-        """Print debug messages if debug mode is enabled."""
-        if self.debug:
-             print(f"[{type(self).__name__}] {message}")
-
-    def calculate_prediction_interval(
-        self, 
-        prediction: float, 
-        current_quarter: int,
-        score_margin: Optional[float] = None, 
-        momentum: Optional[float] = None, 
-        confidence_level: float = 0.95
-    ) -> Tuple[float, float, float]:
-        """
-        Calculate a prediction interval based on quarter and game context.
-        
-        Args:
-            prediction: The point prediction value
-            current_quarter: Current quarter of the game (0-4)
-            score_margin: Current score margin between teams
-            momentum: Current momentum metric (positive or negative)
-            confidence_level: Desired confidence level (default: 0.95)
-            
-        Returns:
-            Tuple of (lower_bound, upper_bound, interval_width)
-        """
-        # Get base error metrics for this quarter
-        mae = self.mae_by_quarter.get(current_quarter, 8.0)
-        std = self.std_by_quarter.get(current_quarter, 4.0)
-        
-        # Adjust for score margin (close games are harder to predict)
-        if score_margin is not None:
-            if score_margin < 5:
-                margin_factor = self.margin_adjustments['close']
-            elif score_margin > 15:
-                margin_factor = self.margin_adjustments['blowout']
-            else:
-                margin_factor = self.margin_adjustments['moderate']
-            mae *= margin_factor
-            std *= margin_factor
-        
-        # Adjust for momentum (high momentum can affect predictability)
-        if momentum is not None:
-            abs_momentum = abs(momentum)
-            if abs_momentum > 0.6:
-                momentum_factor = self.momentum_effects['high']
-            elif abs_momentum > 0.3:
-                momentum_factor = self.momentum_effects['moderate']
-            else:
-                momentum_factor = self.momentum_effects['low']
-            mae *= momentum_factor
-            std *= momentum_factor
-        
-        # Calculate z-score for desired confidence level
-        z_score = stats.norm.ppf((1 + confidence_level) / 2)
-        
-        # Calculate interval half-width based on combined error
-        interval_half_width = z_score * np.sqrt(mae**2 + std**2)
-        
-        # Narrow interval as game progresses
-        narrowing_factor = 1.0 - (current_quarter * 0.15)
-        interval_half_width *= max(0.4, narrowing_factor)
-        
-        # Calculate bounds
-        lower_bound = max(0, prediction - interval_half_width)  # Scores can't be negative
-        upper_bound = prediction + interval_half_width
-        
-        return lower_bound, upper_bound, interval_half_width * 2
-
-    def update_error_metrics(self, errors_by_quarter: Dict[int, List[float]]) -> None:
-        """
-        Update error metrics based on new observations.
-        
-        Args:
-            errors_by_quarter: Dictionary mapping quarters to lists of prediction errors
-        """
-        for quarter, errors in errors_by_quarter.items():
-            if errors:
-                # Add new errors to history (keeping last 100 for each quarter)
-                self.historical_errors[quarter].extend(errors)
-                self.historical_errors[quarter] = self.historical_errors[quarter][-100:]
-                
-                # Recalculate MAE and STD
-                mae = np.mean(np.abs(self.historical_errors[quarter]))
-                std = np.std(self.historical_errors[quarter])
-                
-                # Update metrics
-                self.mae_by_quarter[quarter] = mae
-                self.std_by_quarter[quarter] = std
-                
-                self._print_debug(f"Updated Q{quarter} metrics: MAE={mae:.2f}, STD={std:.2f}")
-
-    def record_interval_coverage(self, quarter: int, lower: float, upper: float, actual: float) -> None:
-        """
-        Record whether an actual value fell within a prediction interval.
-        
-        Args:
-            quarter: Game quarter
-            lower: Lower bound of interval
-            upper: Upper bound of interval
-            actual: Actual observed value
-        """
-        self.interval_coverage[quarter]['total'] += 1
-        if lower <= actual <= upper:
-            self.interval_coverage[quarter]['inside'] += 1
-            
-        if quarter in [0, 1, 2, 3, 4]:  # Valid quarters only
-            coverage = self.interval_coverage[quarter]['inside'] / self.interval_coverage[quarter]['total'] * 100
-            self._print_debug(f"Q{quarter} interval coverage: {coverage:.1f}% ({self.interval_coverage[quarter]['inside']}/{self.interval_coverage[quarter]['total']})")
-
-    def get_coverage_stats(self) -> pd.DataFrame:
-      """
-      Get statistics on prediction interval coverage.
-
-      Returns:
-          DataFrame with coverage statistics by quarter
-      """
-      stats_list = []
-      for quarter, data in self.interval_coverage.items():
-          if data['total'] > 0:
-              coverage_pct = (data['inside'] / data['total']) * 100
-              stats_list.append({
-                  'quarter': quarter,
-                  'sample_size': data['total'],
-                  'covered': data['inside'],
-                  'coverage_pct': coverage_pct
-              })
-      return pd.DataFrame(stats_list)
-
-
-    def generate_confidence_svg(self, prediction, lower_bound, upper_bound, current_quarter,
-                                home_score=None, svg_min=0, svg_max=150, width=300, height=60,
-                                expected_width=None) -> str:
-        """
-        Generate SVG visualization for prediction confidence.
-
-        Args:
-            prediction: Predicted score
-            lower_bound: Lower bound of prediction interval
-            upper_bound: Upper bound of prediction interval
-            current_quarter: Current game quarter
-            home_score: (Optional) Actual current score to mark on the graph
-            svg_min: Minimum value for score axis
-            svg_max: Maximum value for score axis
-            width: SVG width
-            height: SVG height
-            expected_width: Optional dict of expected widths per quarter
-
-        Returns:
-            str: SVG markup
-        """
-        score_range = svg_max - svg_min
-
-        def to_svg_x(score):
-            return (score - svg_min) / score_range * width
-
-        pred_x = to_svg_x(prediction)
-        lower_x = to_svg_x(lower_bound)
-        upper_x = to_svg_x(upper_bound)
-
-        quarter_colors = {
-            0: "#d3d3d3",
-            1: "#ffa07a",
-            2: "#ff7f50",
-            3: "#ff4500",
-            4: "#8b0000"
-        }
-        color = quarter_colors.get(current_quarter, "#000000")
-
-        interval_width = upper_bound - lower_bound
-        expected = expected_width.get(current_quarter, 25) if expected_width else 25
-        confidence = max(0, min(100, 100 - (interval_width / expected * 100)))
-
-        svg = f"""<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">
-        <rect x="0" y="0" width="{width}" height="{height}" fill="#f8f9fa" rx="5" ry="5" />
-        <text x="10" y="15" font-family="Arial" font-size="12" fill="#555">Prediction Confidence (Q{current_quarter})</text>
-        <rect x="{lower_x}" y="{height/2 - 5}" width="{upper_x - lower_x}" height="10" fill="{color}" fill-opacity="0.3" stroke="{color}" stroke-width="1" rx="2" ry="2" />
-        <circle cx="{pred_x}" cy="{height/2}" r="6" fill="{color}" />
-        <text x="{pred_x}" y="{height/2 - 10}" text-anchor="middle" font-family="Arial" font-size="12" fill="#333" font-weight="bold">{prediction:.1f}</text>
-        <text x="{lower_x}" y="{height/2 + 20}" text-anchor="middle" font-family="Arial" font-size="10" fill="#555">{lower_bound:.1f}</text>
-        <text x="{upper_x}" y="{height/2 + 20}" text-anchor="middle" font-family="Arial" font-size="10" fill="#555">{upper_bound:.1f}</text>
-        <text x="{width - 10}" y="{height - 10}" text-anchor="end" font-family="Arial" font-size="12" fill="#333" font-weight="bold">{confidence:.0f}% confidence</text>
-        </svg>"""
-
-        if home_score is not None and home_score > 0:
-            score_x = to_svg_x(home_score)
-            svg = svg.replace('</svg>', f"""  <!-- Current Score -->
-        <circle cx="{score_x}" cy="{height/2}" r="5" fill="none" stroke="#28a745" stroke-width="2" />
-        <text x="{score_x}" y="{height/2 + 20}" text-anchor="middle" font-family="Arial" font-size="10" fill="#28a745" font-weight="bold">{home_score}</text>
-        </svg>""")
-
-        return svg
-      
-    def dynamically_adjust_interval(
-        self, 
-        prediction: float, 
-        current_quarter: int, 
-        historic_accuracy: Optional[Dict] = None
-    ) -> Tuple[float, float, float]:
-        """
-        Dynamically adjust prediction interval based on historical accuracy.
-        
-        Args:
-            prediction: Predicted score
-            current_quarter: Current game quarter (0-4)
-            historic_accuracy: Dictionary with historical coverage statistics
-            
-        Returns:
-            Tuple of (adjusted_lower_bound, adjusted_upper_bound, confidence_percentage)
-        """
-        # Get base prediction interval
-        lower, upper, width = self.calculate_prediction_interval(prediction, current_quarter)
-        
-        # Exit early if no historical data available
-        if not historic_accuracy or current_quarter not in historic_accuracy:
-            expected_width = {0: 30, 1: 26, 2: 22, 3: 18, 4: 14}.get(current_quarter, 25)
-            confidence = max(0, min(100, 100 - (width / expected_width * 100)))
-            return lower, upper, confidence
-        
-        # Get historical coverage for this quarter
-        accuracy = historic_accuracy[current_quarter]
-        
-        # Widen interval if coverage is too low
-        if accuracy.get('coverage_pct', 95) < 90:
-            # Calculate widening factor based on how far below target
-            widening_factor = (95 - accuracy.get('coverage_pct', 95)) / 50
-            width *= (1.0 + widening_factor)
-            self._print_debug(f"Widening Q{current_quarter} interval by factor {1.0 + widening_factor:.2f} due to low coverage ({accuracy.get('coverage_pct', 95):.1f}%)")
-            
-        # Narrow interval if coverage is too high
-        elif accuracy.get('coverage_pct', 95) > 98:
-            # Calculate narrowing factor based on how far above target
-            narrowing_factor = (accuracy.get('coverage_pct', 95) - 95) / 300
-            width *= (1.0 - narrowing_factor)
-            self._print_debug(f"Narrowing Q{current_quarter} interval by factor {1.0 - narrowing_factor:.2f} due to high coverage ({accuracy.get('coverage_pct', 95):.1f}%)")
-        
-        # Recalculate bounds with adjusted width
-        lower = max(0, prediction - width/2)
-        upper = prediction + width/2
-        
-        # Calculate confidence percentage
-        expected_width = {0: 30, 1: 26, 2: 22, 3: 18, 4: 14}.get(current_quarter, 25)
-        confidence = max(0, min(100, 100 - (width / expected_width * 100)))
-        
-        return lower, upper, confidence
-
-# -------------------- Validation Framework --------------------
-def validate_enhanced_predictions(
-    model_payload_path: str,  # Path to the saved model payload
-    feature_generator: Any,  # Instance of NBAFeatureEngine
-    historical_df: Optional[pd.DataFrame] = None,  # Source of historical games for testing
-    num_test_games: int = 20,
-    debug: bool = False,
-    # Add other necessary components if needed by feature_generator or quarter_system
-    quarter_system: Optional[Any] = None,  # Pass initialized QuarterSystem if needed
-    # Supabase/DB dependencies removed assuming historical_df is provided or loaded externally
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Validate enhanced prediction system on historical games using a loaded model payload.
+    Calculates standard regression metrics.
 
     Args:
-        model_payload_path: Path to the file containing the model and required features.
-        feature_generator: Instance of NBAFeatureEngine.
-        historical_df: DataFrame with historical games (MUST be provided for validation).
-        num_test_games: Number of historical games to test from the provided df.
-        debug: Whether to print debug messages.
-        quarter_system: Pre-initialized instance of QuarterSpecificModelSystem.
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
 
     Returns:
-        tuple: (DataFrame with detailed validation results per game/quarter,
-                DataFrame with aggregated improvement metrics by quarter)
+        Dictionary containing MSE, RMSE, MAE, and R-squared.
+        Returns NaNs if input arrays are empty or lengths mismatch.
     """
-    # --- Load Model and Required Features ---
     try:
-        model_payload = joblib.load(model_payload_path)
-        main_model = model_payload['model']
-        required_features = model_payload['features']
-        if debug:
-            print(f"[validate_enhanced_predictions] Loaded model and {len(required_features)} features from {model_payload_path}")
-    except FileNotFoundError:
-        print(f"ERROR: Model payload file not found at {model_payload_path}. Cannot run validation.")
-        return pd.DataFrame(), pd.DataFrame()  # Return empty DataFrames on critical error
-    except KeyError as e:
-        print(f"ERROR: Model payload at {model_payload_path} is missing key: {e}. Requires 'model' and 'features'.")
-        return pd.DataFrame(), pd.DataFrame()
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+
+        if len(y_true) != len(y_pred):
+            print(f"Error: Input arrays must have the same length. Got {len(y_true)} and {len(y_pred)}")
+            return {'mse': np.nan, 'rmse': np.nan, 'mae': np.nan, 'r2': np.nan}
+        if len(y_true) == 0:
+            print("Warning: Input arrays are empty.")
+            return {'mse': np.nan, 'rmse': np.nan, 'mae': np.nan, 'r2': np.nan}
+
+        mse = mean_squared_error(y_true, y_pred)
+        rmse = np.sqrt(mse)
+        mae = mean_absolute_error(y_true, y_pred)
+        # R2 score requires at least two samples
+        r2 = r2_score(y_true, y_pred) if len(y_true) >= 2 else np.nan
+
+        return {
+            'mse': mse,
+            'rmse': rmse,
+            'mae': mae,
+            'r2': r2
+        }
     except Exception as e:
-        print(f"ERROR: Failed to load model payload from {model_payload_path}: {e}")
-        traceback.print_exc()
-        return pd.DataFrame(), pd.DataFrame()
-
-    # --- Input Validation and Test Data Selection ---
-    if historical_df is None or historical_df.empty:
-        print("ERROR: historical_df must be provided for validation.")
-        return pd.DataFrame(), pd.DataFrame()
-
-    if 'game_date' not in historical_df.columns:
-        print("ERROR: historical_df missing 'game_date' column.")
-        return pd.DataFrame(), pd.DataFrame()
-    historical_df['game_date'] = pd.to_datetime(historical_df['game_date'])
-
-    # Use most recent games from provided DataFrame
-    test_games = historical_df.sort_values('game_date', ascending=False).head(num_test_games)
-    if debug:
-        print(f"Selected {len(test_games)} most recent games for validation.")
-
-    if len(test_games) == 0:
-        print("Warning: No test games selected.")
-        return pd.DataFrame(), pd.DataFrame()
-
-    # --- Initialize Quarter System (if not passed) ---
-    if quarter_system is None:
-        if debug:
-            print("Initializing QuarterSpecificModelSystem for validation...")
-        quarter_system = QuarterSpecificModelSystem(feature_generator, debug=debug)
-        quarter_system.load_models()  # Load quarter-specific models
-
-    # Check if quarter_system requires weight_manager and if it's present
-    if not hasattr(quarter_system, 'weight_manager'):
-        print("ERROR: QuarterSpecificModelSystem instance does not have 'weight_manager'. Ensemble calculation might fail.")
-        # Depending on implementation, you might need to initialize it here or ensure it's part of QuarterSystem init
-        # Example: from backend.score_prediction.feature_engineering import EnsembleWeightManager
-        # quarter_system.weight_manager = EnsembleWeightManager(debug=debug)
-
-    # --- Process Each Test Game ---
-    validation_results = []
-    required_base_cols = ['game_id', 'home_team', 'away_team', 'home_score', 'away_score']  # Check these exist in test_games
-    if not all(col in test_games.columns for col in required_base_cols):
-        print(f"ERROR: Test games missing one or more required columns: {required_base_cols}")
-        return pd.DataFrame(), pd.DataFrame()
-
-    for _, game in test_games.iterrows():
-        actual_home_score = float(game['home_score'])
-        game_id_log = game['game_id']
-
-        # Test predictions for each quarter state (0 = pregame, 1-4 = end of quarter)
-        for test_quarter in range(0, 5):
-            if debug and test_quarter == 0:
-                print(f"\n--- Testing Game: {game_id_log} ({game['home_team']} vs {game['away_team']}) ---")
-            if debug:
-                print(f"Simulating state at end of Q{test_quarter}...")
-
-            # Create a simulated game state DataFrame (single row)
-            sim_data = {
-                'game_id': game['game_id'],
-                'home_team': game['home_team'],
-                'away_team': game['away_team'],
-                'game_date': game['game_date'],  # Already datetime
-                'current_quarter': test_quarter,
-                # Include other base columns if feature generator needs them
-            }
-
-            # Add known quarter scores up to the simulated point
-            current_home_q_score = 0
-            current_away_q_score = 0
-            for q in range(1, test_quarter + 1):
-                home_q_col = f'home_q{q}'
-                away_q_col = f'away_q{q}'
-                sim_data[home_q_col] = game.get(home_q_col, 0)
-                sim_data[away_q_col] = game.get(away_q_col, 0)
-                current_home_q_score += sim_data[home_q_col]
-                current_away_q_score += sim_data[away_q_col]
-
-            # Add live score based on simulated state (needed for some features/context)
-            sim_data['home_score'] = current_home_q_score
-            sim_data['away_score'] = current_away_q_score
-            # sim_data['score_differential'] = current_home_q_score - current_away_q_score  # This will be recalculated by feature eng
-
-            sim_game_df = pd.DataFrame([sim_data])
-
-            # Generate features for this simulated state
-            try:
-                # Use the wrapper; pass historical_df for context like rest days
-                features_df = feature_generator.generate_all_features(
-                    sim_game_df,
-                    historical_games_df=historical_df  # Pass full history for context
-                    # team_stats_df can be added if needed
-                )
-
-                if features_df.empty:
-                    raise ValueError("Feature generation returned empty DataFrame.")
-
-                # Select features for main model using loaded required_features
-                missing_features_check = []
-                for f in required_features:
-                    if f not in features_df.columns:
-                        features_df[f] = 0  # Default fill
-                        missing_features_check.append(f)
-                if missing_features_check and debug:
-                    print(f"  Q{test_quarter}: Warning - Added {len(missing_features_check)} missing main model features: {missing_features_check[:5]}...")
-
-                # Select features IN ORDER
-                X_main_sim = features_df.reindex(columns=required_features, fill_value=0)
-
-                # Get main model prediction
-                main_pred = float(main_model.predict(X_main_sim)[0])
-
-                # Get ensemble prediction using quarter system
-                # Pass the feature-rich row as a dict
-                ensemble_pred, confidence, breakdown = quarter_system.predict_final_score(
-                    game_data_dict=features_df.iloc[0].to_dict(),
-                    main_model_prediction=main_pred,
-                    weight_manager=quarter_system.weight_manager  # Pass weight manager
-                )
-                ensemble_pred = float(ensemble_pred)  # Ensure float
-
-                # Calculate prediction errors
-                main_error = main_pred - actual_home_score
-                ensemble_error = ensemble_pred - actual_home_score
-
-                # Record results (include individual model errors for later analysis if needed)
-                # Also include quarter_model_sum_pred from breakdown
-                validation_results.append({
-                    'game_id': game['game_id'],
-                    'home_team': game['home_team'],
-                    'away_team': game['away_team'],
-                    'game_date': game['game_date'],
-                    'current_quarter': test_quarter,  # State being simulated (0-4)
-                    'actual_home_score': actual_home_score,
-                    'main_prediction': main_pred,
-                    'quarter_model_sum_prediction': breakdown.get('quarter_model_sum'),  # Store this
-                    'ensemble_prediction': ensemble_pred,
-                    'main_error': main_error,
-                    'quarter_model_sum_error': breakdown.get('quarter_model_sum', np.nan) - actual_home_score,  # Store this error too!
-                    'ensemble_error': ensemble_error,
-                    'main_abs_error': abs(main_error),
-                    'ensemble_abs_error': abs(ensemble_error),
-                    'main_squared_error': main_error**2,
-                    'ensemble_squared_error': ensemble_error**2,
-                    'confidence': confidence,  # From predict_final_score
-                    'main_weight': breakdown.get('weights', {}).get('main'),
-                    'quarter_weight': breakdown.get('weights', {}).get('quarter')
-                })
-                if debug:
-                    print(f"  Q{test_quarter}: Main={main_pred:.1f}, Ens={ensemble_pred:.1f} (Actual={actual_home_score}) -> MAE Ens={abs(ensemble_error):.1f}")
-
-            except Exception as e:
-                if debug:
-                    print(f"  Q{test_quarter}: Error processing game {game_id_log}: {e}")
-                    # Optionally print traceback for detailed debugging:
-                    # traceback.print_exc()
-                # Record error state
-                validation_results.append({
-                    'game_id': game['game_id'], 'home_team': game['home_team'], 'away_team': game['away_team'],
-                    'game_date': game['game_date'], 'current_quarter': test_quarter,
-                    'actual_home_score': actual_home_score, 'main_prediction': np.nan,
-                    'quarter_model_sum_prediction': np.nan, 'ensemble_prediction': np.nan,
-                    'main_error': np.nan, 'quarter_model_sum_error': np.nan, 'ensemble_error': np.nan,
-                    'main_abs_error': np.nan, 'ensemble_abs_error': np.nan,
-                    'main_squared_error': np.nan, 'ensemble_squared_error': np.nan,
-                    'confidence': np.nan, 'main_weight': np.nan, 'quarter_weight': np.nan,
-                    'error_flag': 1  # Add flag to indicate error
-                })
-
-    # --- Aggregate and Return Results ---
-    validation_df = pd.DataFrame(validation_results)
-
-    if validation_df.empty:
-        if debug:
-            print("No validation results generated.")
-        return pd.DataFrame(), pd.DataFrame()
-
-    # Calculate aggregated error metrics by quarter
-    # Use .agg named aggregation for cleaner output columns in Pandas >= 0.25
-    error_metrics = validation_df.groupby('current_quarter').agg(
-        count=('game_id', 'size'),
-        main_mae=('main_abs_error', 'mean'),
-        main_mae_std=('main_abs_error', 'std'),
-        main_rmse=('main_squared_error', lambda x: np.sqrt(x.mean())),  # Calculate RMSE from mean squared error
-        qsum_mae=('quarter_model_sum_error', lambda x: np.abs(x).mean()),  # Add metrics for quarter sum model
-        qsum_rmse=('quarter_model_sum_error', lambda x: np.sqrt((x**2).mean())),
-        ensemble_mae=('ensemble_abs_error', 'mean'),
-        ensemble_mae_std=('ensemble_abs_error', 'std'),
-        ensemble_rmse=('ensemble_squared_error', lambda x: np.sqrt(x.mean()))
-    ).reset_index()
-
-    if debug:
-        print("\n--- Validation Error Metrics by Quarter ---")
-        print(error_metrics.round(2))
-
-    # Calculate improvement metrics and R²
-    improvements = []
-    # Need r2_score if calculating R²
-    try:
-        from sklearn.metrics import r2_score
-    except ImportError:
-        r2_score = None
-        print("Warning: sklearn.metrics not found, cannot calculate R2.")
-
-    for quarter in range(0, 5):
-        quarter_data = validation_df[(validation_df['current_quarter'] == quarter) & validation_df['ensemble_prediction'].notna()].copy()
-        if not quarter_data.empty:
-            metrics = {
-                'quarter': quarter,
-                'sample_size': len(quarter_data)
-            }
-
-            # Calculate Mean Errors (MAE, RMSE) directly from aggregated metrics if preferred
-            agg_row = error_metrics[error_metrics['current_quarter'] == quarter].iloc[0]
-            metrics.update({
-                'main_mae': agg_row['main_mae'], 'ensemble_mae': agg_row['ensemble_mae'],
-                'main_rmse': agg_row['main_rmse'], 'ensemble_rmse': agg_row['ensemble_rmse'],
-            })
-
-            # Calculate % Improvements
-            metrics['mae_improvement_pct'] = ((metrics['main_mae'] - metrics['ensemble_mae']) / metrics['main_mae'] * 100) if metrics['main_mae'] else 0
-            metrics['rmse_improvement_pct'] = ((metrics['main_rmse'] - metrics['ensemble_rmse']) / metrics['main_rmse'] * 100) if metrics['main_rmse'] else 0
-
-            # Calculate R² if possible
-            if r2_score:
-                y_true = quarter_data['actual_home_score']
-                metrics['main_r2'] = r2_score(y_true, quarter_data['main_prediction'])
-                metrics['ensemble_r2'] = r2_score(y_true, quarter_data['ensemble_prediction'])
-                metrics['r2_improvement'] = metrics['ensemble_r2'] - metrics['main_r2']
-            else:
-                metrics['main_r2'], metrics['ensemble_r2'], metrics['r2_improvement'] = np.nan, np.nan, np.nan
-
-            improvements.append(metrics)
-
-    improvement_df = pd.DataFrame(improvements)
-
-    if debug:
-        print("\n--- Validation Improvement by Quarter ---")
-        print(improvement_df.round(2))
-
-    # Return both detailed results and aggregated improvements
-    # The detailed validation_df now includes 'quarter_model_sum_prediction' and 'quarter_model_sum_error'
-    # which can be used to update the EnsembleWeightManager's error history correctly.
-    return validation_df, improvement_df
+        print(f"Error calculating regression metrics: {e}")
+        return {'mse': np.nan, 'rmse': np.nan, 'mae': np.nan, 'r2': np.nan}
 
 
-def get_recommended_model_params(quarter, model_type=None):
+def calculate_nba_score_loss(y_true: Union[pd.Series, np.ndarray],
+                               y_pred: Union[pd.Series, np.ndarray]
+                               ) -> float:
     """
-    Returns optimized hyperparameters for specific quarter models.
-    
+    Calculates a basic mean squared error loss for NBA scores.
+    (Note: Based on provided code, this is currently just MSE).
+
     Args:
-        quarter: Quarter number (1-4)
-        model_type: Model type to override default recommendation (RandomForest, XGBoost, Ridge)
-        
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+
     Returns:
-        dict: Hyperparameters for the recommended model type
+        The mean squared error, or NaN if calculation fails.
     """
-    # Return hyperparameters for specific model type if requested
-    if model_type == "RandomForest":
-        return {
-            'model_type': 'RandomForest',
-            'params': {
-                'n_estimators': 100,
-                'max_depth': 5,
-                'min_samples_split': 10,
-                'min_samples_leaf': 4,
-                'max_features': 'sqrt',
-                'bootstrap': True,
-                'random_state': 42
-            }
-        }
-    elif model_type == "XGBoost":
-        return {
-            'model_type': 'XGBoost',
-            'params': {
-                'n_estimators': 200,
-                'learning_rate': 0.05,
-                'max_depth': 4,
-                'min_child_weight': 2,
-                'subsample': 0.8,
-                'colsample_bytree': 0.7,
-                'reg_alpha': 0.5,
-                'reg_lambda': 1.0,
-                'objective': 'reg:squarederror',
-                'random_state': 42
-            }
-        }
-    elif model_type == "Ridge":
-        return {
-            'model_type': 'Ridge',
-            'params': {
-                'alpha': 1.0,
-                'fit_intercept': True,
-                'solver': 'auto',
-                'random_state': 42
-            }
-        }
-    
-    # Return quarter-specific optimal model configuration
-    if quarter == 1:
-        # For Q1, use XGBoost with parameters optimized for early game prediction
-        return {
-            'model_type': 'XGBoost',
-            'params': {
-                'n_estimators': 100,
-                'learning_rate': 0.05,
-                'max_depth': 3,
-                'min_child_weight': 2,
-                'subsample': 0.8,
-                'colsample_bytree': 0.7,
-                'reg_alpha': 0.5,
-                'reg_lambda': 1.0,
-                'objective': 'reg:squarederror',
-                'random_state': 42
-            }
-        }
-    elif quarter == 2:
-        # For Q2, use XGBoost with parameters that incorporate Q1 information
-        return {
-            'model_type': 'XGBoost',
-            'params': {
-                'n_estimators': 100,
-                'learning_rate': 0.1,
-                'max_depth': 3,
-                'min_child_weight': 3,
-                'subsample': 0.8,
-                'colsample_bytree': 0.7,
-                'reg_alpha': 0.5,
-                'reg_lambda': 1.0,
-                'objective': 'reg:squarederror',
-                'random_state': 42
-            }
-        }
-    elif quarter == 3:
-        # For Q3, use XGBoost with parameters that balance complexity and robustness
-        return {
-            'model_type': 'XGBoost',
-            'params': {
-                'n_estimators': 100,
-                'learning_rate': 0.1,
-                'max_depth': 4,
-                'min_child_weight': 2,
-                'subsample': 0.8,
-                'colsample_bytree': 0.7,
-                'reg_alpha': 0.5,
-                'reg_lambda': 1.0,
-                'objective': 'reg:squarederror',
-                'random_state': 42
-            }
-        }
-    else:  # quarter == 4 or any other value
-        # For Q4, use Ridge regression for stability and robustness
-        return {
-            'model_type': 'Ridge',
-            'params': {
-                'alpha': 1.0,
-                'fit_intercept': True,
-                'solver': 'auto',
-                'random_state': 42
-            }
-        }
+    try:
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+
+        if len(y_true) != len(y_pred):
+            print(f"Error: Input arrays must have the same length for NBA score loss. Got {len(y_true)} and {len(y_pred)}")
+            return np.nan
+        if len(y_true) == 0:
+            print("Warning: Input arrays are empty for NBA score loss.")
+            return np.nan
+
+        return mean_squared_error(y_true, y_pred)
+    except Exception as e:
+        print(f"Error calculating NBA score loss: {e}")
+        return np.nan
+
+
+def calculate_nba_distribution_loss(y_pred: Union[pd.Series, np.ndarray],
+                                      target_type: str = 'total'
+                                      ) -> float:
+    """
+    Calculates a loss based on deviation from expected NBA score distributions.
+    Penalizes predictions far from typical score ranges.
+
+    Args:
+        y_pred: Array or Series of predicted values.
+        target_type: Type of score ('home', 'away', 'total', 'diff') to determine
+                     expected distribution.
+
+    Returns:
+        The mean squared Z-score relative to the expected distribution, or NaN if calculation fails.
+    """
+    try:
+        y_pred = np.asarray(y_pred).flatten()
+        if len(y_pred) == 0:
+            print("Warning: Input array is empty for NBA distribution loss.")
+            return np.nan
+
+        # Expected distribution parameters (refined based on recent seasons, may need tuning)
+        if target_type == 'home':
+            expected_mean, expected_std = 114, 13.5
+        elif target_type == 'away':
+            expected_mean, expected_std = 112, 13.5
+        elif target_type == 'total':
+            expected_mean, expected_std = 226, 23
+        elif target_type == 'diff':
+            # Home team point differential mean tends to be slightly positive
+            expected_mean, expected_std = 2.5, 13.5
+        else:
+            # Default fallback (e.g., for generic score)
+            expected_mean, expected_std = 112, 14
+
+        if expected_std <= 0:
+            raise ValueError("Expected standard deviation must be positive.")
+
+        # Calculate squared Z-scores relative to the expected distribution
+        z_score_squared = ((y_pred - expected_mean) / expected_std) ** 2
+        return np.mean(z_score_squared)
+
+    except Exception as e:
+        print(f"Error calculating NBA distribution loss: {e}")
+        return np.nan
+
+
+def evaluate_predictions(y_true: Union[pd.Series, np.ndarray],
+                         y_pred: Union[pd.Series, np.ndarray],
+                         target_type: str = 'total',
+                         calculate_custom_losses: bool = True
+                         ) -> Dict[str, float]:
+    """
+    Calculates both standard and custom evaluation metrics for predictions.
+
+    Args:
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+        target_type: Type of score ('home', 'away', 'total', 'diff') for distribution loss.
+        calculate_custom_losses: Flag to include custom NBA loss calculations.
+
+    Returns:
+        Dictionary containing calculated metrics. Includes NaNs for failed calculations.
+    """
+    metrics = calculate_regression_metrics(y_true, y_pred)
+
+    if calculate_custom_losses:
+        metrics['nba_score_loss'] = calculate_nba_score_loss(y_true, y_pred)
+        metrics['nba_distribution_loss'] = calculate_nba_distribution_loss(y_pred, target_type)
+
+    return metrics
+
+# --- Core Visualization Functions ---
+
+def plot_actual_vs_predicted(y_true: Union[pd.Series, np.ndarray],
+                             y_pred: Union[pd.Series, np.ndarray],
+                             title: str = "Actual vs. Predicted Scores",
+                             metrics: Optional[Dict[str, float]] = None,
+                             figsize: tuple = SMALL_FIG_SIZE,
+                             save_path: Optional[Union[str, Path]] = None):
+    """
+    Generates a scatter plot of actual vs. predicted values.
+
+    Args:
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+        title: Title for the plot.
+        metrics: Optional dict with 'r2' and 'rmse' to display on plot.
+        figsize: Figure size.
+        save_path: Optional path (string or Path object) to save the figure.
+    """
+    try:
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+
+        if len(y_true) != len(y_pred) or len(y_true) == 0:
+            print("Warning: Invalid input arrays for actual vs predicted plot. Skipping.")
+            return
+
+        plt.figure(figsize=figsize)
+        plt.scatter(y_true, y_pred, alpha=0.5, label="Predictions")
+        min_val = min(np.min(y_true), np.min(y_pred)) - 5
+        max_val = max(np.max(y_true), np.max(y_pred)) + 5
+        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Ideal Fit (y=x)')
+        plt.xlabel('Actual Values')
+        plt.ylabel('Predicted Values')
+        plt.title(title)
+        plt.xlim(min_val, max_val)
+        plt.ylim(min_val, max_val)
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+
+        # Add R² and RMSE text if provided and valid
+        if metrics and 'r2' in metrics and 'rmse' in metrics:
+            r2 = metrics['r2']
+            rmse = metrics['rmse']
+            if not (np.isnan(r2) or np.isnan(rmse)):
+                plt.text(0.05, 0.95, f'R² = {r2:.4f}\nRMSE = {rmse:.2f}',
+                         transform=plt.gca().transAxes, fontsize=11,
+                         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        plt.tight_layout()
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        plt.show()
+
+    except Exception as e:
+        print(f"Error generating actual vs predicted plot: {e}")
+
+
+def plot_residuals_distribution(y_true: Union[pd.Series, np.ndarray],
+                                y_pred: Union[pd.Series, np.ndarray],
+                                title: str = "Residuals Analysis",
+                                figsize: tuple = (15, 6),
+                                save_path_prefix: Optional[Union[str, Path]] = None):
+    """
+    Generates plots for residual analysis: histogram and residuals vs. predicted.
+
+    Args:
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+        title: Title prefix for the plots.
+        figsize: Figure size for the combined plot.
+        save_path_prefix: Optional path prefix (string or Path object) to save the figure.
+                          Appends '_distribution.png'.
+    """
+    try:
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+
+        if len(y_true) != len(y_pred) or len(y_true) == 0:
+            print("Warning: Invalid input arrays for residuals distribution plot. Skipping.")
+            return
+
+        residuals = y_true - y_pred
+
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        fig.suptitle(title, fontsize=16)
+
+        # 1. Residuals Histogram
+        sns.histplot(residuals, kde=True, ax=axes[0])
+        axes[0].axvline(x=0, color='r', linestyle='--')
+        axes[0].set_xlabel('Residual (Actual - Predicted)')
+        axes[0].set_title(f'Residuals Distribution (Mean: {np.mean(residuals):.2f})')
+        axes[0].grid(True, linestyle='--', alpha=0.7)
+
+        # 2. Residuals vs Predicted
+        axes[1].scatter(y_pred, residuals, alpha=0.5)
+        axes[1].axhline(y=0, color='r', linestyle='--')
+        axes[1].set_xlabel('Predicted Values')
+        axes[1].set_ylabel('Residuals')
+        axes[1].set_title('Residuals vs. Predicted Values')
+        axes[1].grid(True, linestyle='--', alpha=0.7)
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent title overlap
+        if save_path_prefix:
+            save_path = Path(f"{save_path_prefix}_distribution.png")
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        plt.show()
+
+    except Exception as e:
+        print(f"Error generating residuals distribution plot: {e}")
+
+
+def plot_error_by_prediction_range(y_true: Union[pd.Series, np.ndarray],
+                                   y_pred: Union[pd.Series, np.ndarray],
+                                   num_bins: int = 10,
+                                   title: str = "Mean Prediction Error by Score Range",
+                                   figsize: tuple = SMALL_FIG_SIZE,
+                                   save_path: Optional[Union[str, Path]] = None):
+    """
+    Visualizes the mean residual (error) across different bins of predicted values.
+    Uses Standard Error of the Mean (SEM) for error bars.
+
+    Args:
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+        num_bins: Number of bins to divide the prediction range into.
+        title: Title for the plot.
+        figsize: Figure size.
+        save_path: Optional path (string or Path object) to save the figure.
+    """
+    try:
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+
+        if len(y_true) != len(y_pred) or len(y_true) == 0:
+            print("Warning: Invalid input arrays for error by range plot. Skipping.")
+            return
+
+        residuals = y_true - y_pred
+
+        # Create DataFrame for easier binning and aggregation
+        df = pd.DataFrame({'prediction': y_pred, 'residual': residuals})
+
+        # Handle edge case with very few data points where binning might fail
+        if len(df) < num_bins * 2:
+            print(f"Warning: Not enough data points ({len(df)}) for {num_bins} bins. Skipping error range plot.")
+            return
+
+        # Use quantiles for potentially more equal bin sizes
+        df['bin_q'] = pd.qcut(df['prediction'], q=num_bins, labels=False, duplicates='drop')
+        n_actual_bins = df['bin_q'].nunique()
+        if n_actual_bins < 2:
+             print(f"Warning: Could only create {n_actual_bins} bin(s) using quantiles. Skipping error range plot.")
+             return
+
+        # Calculate mean residual, standard error of the mean (SEM), and bin center
+        binned_stats = df.groupby('bin_q').agg(
+            mean_residual=('residual', 'mean'),
+            sem_residual=('residual', lambda x: np.std(x, ddof=1) / np.sqrt(len(x)) if len(x) > 1 else 0),
+            bin_center=('prediction', 'mean'),
+            count=('residual', 'size')
+        ).reset_index()
+
+        # Filter out bins with unreliable SEM
+        binned_stats = binned_stats[binned_stats['count'] > 1]
+
+        if binned_stats.empty:
+            print("Warning: No bins with sufficient data found for error range plot.")
+            return
+
+        # Sort by bin center for plotting
+        binned_stats = binned_stats.sort_values('bin_center')
+
+        plt.figure(figsize=figsize)
+        plt.errorbar(binned_stats['bin_center'], binned_stats['mean_residual'],
+                     yerr=binned_stats['sem_residual'], fmt='o-', capsize=5, label='Mean Residual ± SEM')
+        plt.axhline(y=0, color='r', linestyle='--')
+        plt.xlabel('Average Predicted Score in Bin')
+        plt.ylabel('Mean Residual (Actual - Predicted)')
+        plt.title(title)
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.tight_layout()
+
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        plt.show()
+
+    except ValueError as e:
+        print(f"Warning: Could not create bins for error range plot. Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred during error range plot generation: {e}")
+
+
+def plot_score_distribution_density(y_true: Union[pd.Series, np.ndarray],
+                                     y_pred: Union[pd.Series, np.ndarray],
+                                     title: str = "Score Distribution Density",
+                                     figsize: tuple = SMALL_FIG_SIZE,
+                                     save_path: Optional[Union[str, Path]] = None):
+    """
+    Visualizes the density distribution of actual vs. predicted scores using KDE plots.
+
+    Args:
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+        title: Title for the plot.
+        figsize: Figure size.
+        save_path: Optional path (string or Path object) to save the figure.
+    """
+    try:
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+
+        if len(y_true) != len(y_pred) or len(y_true) == 0:
+            print("Warning: Invalid input arrays for score density plot. Skipping.")
+            return
+
+        plt.figure(figsize=figsize)
+        sns.kdeplot(y_true, label='Actual Distribution', color='blue', fill=True, alpha=0.3, bw_adjust=0.5)
+        sns.kdeplot(y_pred, label='Predicted Distribution', color='red', fill=True, alpha=0.3, bw_adjust=0.5)
+        plt.title(title)
+        plt.xlabel('Score')
+        plt.ylabel('Density')
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.3)
+        plt.tight_layout()
+
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        plt.show()
+
+    except Exception as e:
+        print(f"Error generating score density plot: {e}")
+
+
+def plot_metrics_comparison(metrics_dict: Dict[str, Dict[str, float]],
+                            metric_to_plot: str = 'rmse',
+                            higher_is_better: bool = False,
+                            title: Optional[str] = None,
+                            figsize: tuple = SMALL_FIG_SIZE,
+                            save_path: Optional[Union[str, Path]] = None):
+    """
+    Creates a bar chart comparing a specific metric across different models/evaluations.
+
+    Args:
+        metrics_dict: Dictionary where keys are model/evaluation names and
+                      values are dictionaries of metrics (e.g., {'model_a': {'rmse': 10, 'r2': 0.8}}).
+        metric_to_plot: The key of the metric to visualize (e.g., 'rmse', 'r2', 'test_mae').
+        higher_is_better: Set to True if a higher value of the metric is better (e.g., for R²).
+        title: Optional title for the plot. If None, a default title is generated.
+        figsize: Figure size.
+        save_path: Optional path (string or Path object) to save the figure.
+    """
+    try:
+        if not metrics_dict:
+            print("Warning: No metrics data provided for comparison plot.")
+            return
+
+        model_names = list(metrics_dict.keys())
+        metric_values = [metrics_dict[name].get(metric_to_plot, np.nan) for name in model_names]
+
+        # Filter out entries where the metric is missing or NaN
+        valid_entries = [(name, val) for name, val in zip(model_names, metric_values) if pd.notna(val)]
+        if not valid_entries:
+            print(f"Warning: No valid data found for metric '{metric_to_plot}' in the provided dictionary.")
+            return
+
+        model_names, metric_values = zip(*valid_entries)
+        metric_values = np.array(metric_values) # For easier calculations
+
+        if title is None:
+            title = f'{metric_to_plot.upper()} Comparison ({ "Higher" if higher_is_better else "Lower"} is Better)'
+
+        plt.figure(figsize=figsize)
+        bars = plt.bar(model_names, metric_values)
+        plt.ylabel(metric_to_plot.upper())
+        plt.title(title)
+        plt.xticks(rotation=45, ha='right')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+        # Add values on top of bars
+        max_val = np.max(metric_values) if len(metric_values) > 0 else 0
+        min_val = np.min(metric_values) if len(metric_values) > 0 else 0
+        val_range = max(abs(max_val), abs(min_val))
+        offset = val_range * 0.02 if val_range > 0 else 0.1 # Default offset if range is 0
+
+        for bar in bars:
+            yval = bar.get_height()
+            va = 'bottom' if yval >= 0 else 'top'
+            text_y = yval + offset if yval >= 0 else yval - offset
+            plt.text(bar.get_x() + bar.get_width()/2, text_y,
+                     f'{yval:.3f}', ha='center', va=va, fontsize=9)
+
+        plt.tight_layout()
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        plt.show()
+
+    except Exception as e:
+        print(f"Error generating metrics comparison plot: {e}")
+
+
+def plot_ensemble_component_comparison(component_metrics: Dict[str, Dict[str, float]],
+                                       ensemble_metrics: Optional[Dict[str, float]] = None,
+                                       target_name: str = "Score",
+                                       figsize: tuple = (14, 10),
+                                       save_path_prefix: Optional[Union[str, Path]] = None):
+    """
+    Visualizes RMSE and R² comparison between ensemble components and the final ensemble.
+
+    Args:
+        component_metrics: Dict where keys are component names and values are metrics dicts
+                           (must include 'rmse', 'r2', and optionally 'weight').
+        ensemble_metrics: Optional metrics dict for the final ensemble (must include 'rmse', 'r2').
+        target_name: Name of the target variable for titles (e.g., "Total Score").
+        figsize: Figure size for the combined plot.
+        save_path_prefix: Optional path prefix (string or Path object) to save the figures.
+                          Appends '_component_comparison.png'.
+    """
+    try:
+        metrics_to_plot = {}
+        metrics_to_plot.update(component_metrics)
+        if ensemble_metrics:
+            metrics_to_plot['Ensemble'] = ensemble_metrics
+
+        if not metrics_to_plot:
+            print("Warning: No component or ensemble metrics provided for comparison.")
+            return
+
+        # --- Prepare data for plotting ---
+        df_data = []
+        for name, metrics in metrics_to_plot.items():
+            # Ensure required metrics exist and are valid numbers
+            if ('rmse' in metrics and pd.notna(metrics['rmse']) and
+                'r2' in metrics and pd.notna(metrics['r2'])):
+                 df_data.append({
+                    'Model': name.replace('_', ' ').title(), # Prettify name
+                    'RMSE': metrics['rmse'],
+                    'R2': metrics['r2'],
+                    'Weight': metrics.get('weight', np.nan) # Get weight if available
+                })
+            else:
+                print(f"Warning: Skipping model '{name}' due to missing or invalid 'rmse' or 'r2' metric.")
+
+        if not df_data:
+            print("Warning: No valid data entries after checking for required metrics.")
+            return
+
+        comp_df = pd.DataFrame(df_data)
+        comp_df = comp_df.sort_values(by='RMSE') # Sort by RMSE for clearer comparison
+
+        # --- Create Visualization ---
+        fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True) # Share x-axis
+        fig.suptitle(f'Ensemble vs. Component Performance for {target_name}', fontsize=16)
+
+        # Plot colors - highlight Ensemble if present
+        colors = ['#d62728' if model == 'Ensemble' else '#1f77b4' for model in comp_df['Model']]
+
+        # 1. RMSE comparison
+        sns.barplot(x='Model', y='RMSE', data=comp_df, ax=axes[0], palette=colors, dodge=False)
+        axes[0].set_title('RMSE Comparison (Lower is Better)')
+        axes[0].set_ylabel('RMSE')
+        axes[0].grid(True, axis='y', linestyle='--', alpha=0.7)
+        # axes[0].tick_params(axis='x', rotation=15) # Rotation handled by sharex
+
+        # Add RMSE values and weights (if available)
+        rmse_max = comp_df['RMSE'].max()
+        for i, (idx, row) in enumerate(comp_df.iterrows()):
+            rmse_val = row['RMSE']
+            weight_val = row['Weight']
+            axes[0].text(i, rmse_val + rmse_max * 0.01, f'{rmse_val:.2f}', ha='center', va='bottom', fontsize=9)
+            if pd.notna(weight_val) and row['Model'] != 'Ensemble':
+                axes[0].text(i, rmse_val + rmse_max * 0.05, f'W: {weight_val:.2f}', ha='center', va='bottom', fontsize=8, color='gray')
+
+
+        # 2. R² comparison
+        sns.barplot(x='Model', y='R2', data=comp_df, ax=axes[1], palette=colors, dodge=False)
+        axes[1].set_title('R² Comparison (Higher is Better)')
+        axes[1].set_ylabel('R² Score')
+        axes[1].grid(True, axis='y', linestyle='--', alpha=0.7)
+        axes[1].tick_params(axis='x', rotation=30, ha='right') # Rotate labels on bottom plot
+        # Adjust y-lims for better visibility, ensuring 0 is included if R2 can be negative
+        r2_min = comp_df['R2'].min()
+        r2_max = comp_df['R2'].max()
+        axes[1].set_ylim(bottom=min(0, r2_min - 0.05), top=min(1.05, r2_max + 0.05))
+
+        # Add R² values
+        for i, (idx, row) in enumerate(comp_df.iterrows()):
+            r2_val = row['R2']
+            axes[1].text(i, r2_val + 0.005, f'{r2_val:.4f}', ha='center', va='bottom', fontsize=9)
+
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout
+        if save_path_prefix:
+            save_path = Path(f"{save_path_prefix}_component_comparison.png")
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        plt.show()
+
+        print("\nPerformance Summary:")
+        print(comp_df[['Model', 'RMSE', 'R2', 'Weight']].to_string(index=False, float_format='%.4f'))
+
+    except Exception as e:
+        print(f"Error generating ensemble component comparison plot: {e}")
+
+
+# --- Feature Importance Visualization ---
+
+def _get_feature_importance(model: Any, feature_names: List[str]) -> Optional[Dict[str, float]]:
+    """Helper to extract feature importance from various model types."""
+    # Check for feature_importances_ (common in tree-based models)
+    if hasattr(model, 'feature_importances_'):
+        importances = model.feature_importances_
+        if len(feature_names) == len(importances):
+            return dict(zip(feature_names, importances))
+        else:
+            print(f"Warning: Feature name count ({len(feature_names)}) doesn't match model importance count ({len(importances)}) for {type(model).__name__}. Skipping.")
+            return None
+    # Check for coef_ (common in linear models)
+    elif hasattr(model, 'coef_'):
+        # Coef_ can be multi-dimensional for multi-output models, handle simple case
+        if model.coef_.ndim == 1 or model.coef_.shape[0] == 1:
+            coefs = model.coef_.flatten()
+            if len(feature_names) == len(coefs):
+                # Use absolute coefficient value as importance measure
+                return dict(zip(feature_names, np.abs(coefs)))
+            else:
+                print(f"Warning: Feature name count ({len(feature_names)}) doesn't match model coefficient count ({len(coefs)}) for {type(model).__name__}. Skipping.")
+                return None
+        else:
+            print(f"Warning: Model {type(model).__name__} has multi-output coefficients. Importance extraction not implemented for this case.")
+            return None
+    # Check if it's a pipeline and try the final step
+    elif hasattr(model, 'named_steps') and hasattr(model, 'steps') and model.steps:
+        final_step_name = model.steps[-1][0]
+        final_step_model = model.named_steps[final_step_name]
+        print(f"Attempting to extract importance from final pipeline step: '{final_step_name}' ({type(final_step_model).__name__})")
+        return _get_feature_importance(final_step_model, feature_names)
+
+    print(f"Warning: Feature importance not directly available or extraction not implemented for model type {type(model).__name__}.")
+    return None
+
+
+def plot_feature_importances(models_dict: Dict[str, Any],
+                             feature_names: List[str],
+                             ensemble_weights: Optional[Dict[str, float]] = None,
+                             top_n: int = 20,
+                             plot_groups: bool = True,
+                             feature_group_config: Optional[Dict[str, List[str]]] = None,
+                             figsize_individual: tuple = (10, 8),
+                             figsize_group: tuple = (10, 10),
+                             save_dir: Optional[Union[str, Path]] = None):
+    """
+    Visualizes feature importance for individual models and a weighted ensemble average.
+
+    Args:
+        models_dict: Dictionary where keys are model names and values are fitted model objects.
+                     Models should have 'feature_importances_' or 'coef_' attributes, or be pipelines
+                     where the final step has one of these.
+        feature_names: List of feature names corresponding to the model inputs, in the correct order.
+        ensemble_weights: Optional dictionary mapping model names (must match keys in models_dict)
+                          to their weights in an ensemble. Required for weighted average plot.
+        top_n: Number of top features to display for each model/ensemble.
+        plot_groups: Whether to plot feature importance grouped by category (pie chart for ensemble).
+        feature_group_config: Optional dictionary defining feature groups. Keys are group
+                              names, values are lists of keywords found in feature names.
+                              If None, uses default NBA-related groups.
+        figsize_individual: Figure size for individual importance plots (ignored, size adjusts).
+        figsize_group: Figure size for group importance plot.
+        save_dir: Optional directory (string or Path object) to save plots.
+    """
+    print("\n--- Generating Feature Importance Report ---")
+    save_dir_path = Path(save_dir) if save_dir else None
+    if save_dir_path:
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+        print(f"Saving plots to: {save_dir_path}")
+
+    importances = {}
+    valid_model_names_for_ensemble = []
+
+    # --- Get Individual Importances ---
+    print("Extracting feature importance from models...")
+    for name, model in models_dict.items():
+        imp = _get_feature_importance(model, feature_names)
+        if imp:
+            importances[name] = imp
+            # Only consider for ensemble average if weights are provided and positive
+            if ensemble_weights and name in ensemble_weights and ensemble_weights[name] > 0:
+                 valid_model_names_for_ensemble.append(name)
+        else:
+            print(f"-> Could not extract importance for model: {name} ({type(model).__name__})")
+
+    if not importances:
+        print("Error: No feature importance data could be extracted from any model.")
+        return
+
+    # --- Calculate Weighted Ensemble Importance ---
+    if ensemble_weights and valid_model_names_for_ensemble:
+        print(f"Calculating weighted ensemble importance using models: {', '.join(valid_model_names_for_ensemble)}")
+        weighted_imp = {}
+
+        relevant_weights = {name: ensemble_weights[name] for name in valid_model_names_for_ensemble}
+        norm_factor = sum(relevant_weights.values())
+
+        if norm_factor > 0:
+            normalized_weights = {name: weight / norm_factor for name, weight in relevant_weights.items()}
+            print(f"  Normalized weights used: { {k: f'{v:.2f}' for k, v in normalized_weights.items()} }")
+
+            all_relevant_features = set(f for name in valid_model_names_for_ensemble for f in importances[name])
+
+            for feature in all_relevant_features:
+                feature_score = 0.0
+                for name in valid_model_names_for_ensemble:
+                    imp_value = importances[name].get(feature, 0.0)
+                    feature_score += normalized_weights[name] * imp_value
+
+                if feature_score > 1e-9:
+                    weighted_imp[feature] = feature_score
+
+            if weighted_imp:
+                importances["Ensemble (Weighted)"] = weighted_imp
+                print("  Successfully calculated weighted importance.")
+            else:
+                 print("  Warning: Weighted importance calculation resulted in zero values.")
+        else:
+             print("  Warning: Sum of weights for models with importance is zero.")
+    elif ensemble_weights:
+         print("Warning: Ensemble weights provided, but no importance could be extracted from weighted models.")
+
+
+    # --- Plot Individual Model Importances ---
+    num_plots = len(importances)
+    if num_plots == 0:
+         print("No importance data to plot.")
+         return
+
+    n_cols = min(3, num_plots)
+    n_rows = (num_plots + n_cols - 1) // n_cols
+    # Adjust figsize dynamically based on number of plots and top_n features
+    fig_height = max(5, n_rows * (top_n * 0.3 + 1)) # Estimate height needed
+    fig_width = n_cols * 6.5
+    fig_ind, axes_ind = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), squeeze=False)
+    axes_ind = axes_ind.flatten()
+
+    plot_idx = 0
+    print("Generating individual importance plots...")
+    for name, imp_dict in importances.items():
+        if not imp_dict: continue
+
+        imp_df = pd.DataFrame({'Feature': list(imp_dict.keys()), 'Importance': list(imp_dict.values())})
+
+        total_imp = imp_df['Importance'].sum()
+        if total_imp > 1e-9:
+            imp_df['Normalized Importance'] = imp_df['Importance'] / total_imp
+        else:
+            print(f"  Warning: Total importance for {name} is near zero. Using raw values.")
+            imp_df['Normalized Importance'] = imp_df['Importance']
+
+        imp_df = imp_df.sort_values('Normalized Importance', ascending=False).head(top_n)
+
+        if not imp_df.empty:
+            ax = axes_ind[plot_idx]
+            sns.barplot(x='Normalized Importance', y='Feature', data=imp_df, ax=ax, palette='viridis')
+            ax.set_title(f'Top {top_n} Features - {name}')
+            ax.set_xlabel("Normalized Importance")
+            ax.tick_params(axis='y', labelsize=9)
+            plot_idx += 1
+        else:
+             print(f"  No importance values to plot for {name}.")
+
+    for i in range(plot_idx, len(axes_ind)):
+        fig_ind.delaxes(axes_ind[i])
+
+    if plot_idx > 0:
+        fig_ind.suptitle('Feature Importance by Model', fontsize=16, y=1.01) # Adjust y slightly
+        fig_ind.tight_layout(rect=[0, 0.03, 1, 0.98])
+        if save_dir_path:
+            f_path = save_dir_path / "feature_importance_individual.png"
+            try:
+                plt.savefig(f_path, bbox_inches='tight')
+                print(f"Plot saved to {f_path}")
+            except Exception as e:
+                print(f"Error saving plot {f_path}: {e}")
+        plt.show()
+    else:
+        plt.close(fig_ind)
+
+
+    # --- Plot Feature Group Importance (Pie Chart) for Ensemble ---
+    if plot_groups and "Ensemble (Weighted)" in importances:
+        ensemble_imp = importances["Ensemble (Weighted)"]
+        if not ensemble_imp:
+            print("Skipping group importance plot as weighted ensemble importance is empty.")
+        else:
+            print("Generating feature group importance plot (Ensemble Weighted)...")
+            if feature_group_config is None:
+                feature_group_config = {
+                    'Recent Form': ['form', 'rolling', 'streak', 'last_'],
+                    'Pace & Efficiency': ['pace', 'poss', 'eff', 'rating', 'ortg', 'drtg', 'netrtg'],
+                    'Shooting': ['fgm', 'fga', 'pct', '3p', 'ftm', 'fta', 'efg', 'ts_'],
+                    'Rebounding': ['oreb', 'dreb', 'reb', '_reb_rate', '_reb_pct'],
+                    'Playmaking & Defense': ['ast', 'stl', 'blk', 'tov', 'pf', 'assist_ratio', 'turnover_ratio', 'defensive'],
+                    'Team Performance': ['win', 'loss', 'elo', '_rank', 'seed', 'record', 'ppg', 'papg'],
+                    'Matchup': ['matchup', 'h2h', 'vs_', '_adv', '_diff', '_comp'],
+                    'Rest & Schedule': ['rest', 'b2b', 'back_to_back', 'days_since', 'travel'],
+                    'Game State': ['time_rem', 'quarter', 'score_lead', 'in_game', 'clutch'],
+                }
+                print("  Using default NBA feature group definitions.")
+
+            group_totals = {group: 0.0 for group in feature_group_config}
+            group_totals['Other'] = 0.0
+            assigned_features = set()
+
+            for feature, importance in ensemble_imp.items():
+                feature_lower = feature.lower()
+                assigned = False
+                for group, keywords in feature_group_config.items():
+                    if any(keyword in feature_lower for keyword in keywords):
+                        group_totals[group] += importance
+                        assigned_features.add(feature)
+                        assigned = True
+                        break
+                if not assigned:
+                    group_totals['Other'] += importance
+                    assigned_features.add(feature)
+
+            group_totals_filtered = {k: v for k, v in group_totals.items() if v > 1e-6}
+
+            if group_totals_filtered:
+                labels = list(group_totals_filtered.keys())
+                sizes = list(group_totals_filtered.values())
+                explode = [0.1 if label == 'Other' and sizes[i]/sum(sizes) > 0.01 else 0.01 for i, label in enumerate(labels)]
+
+                plt.figure(figsize=figsize_group)
+                wedges, texts, autotexts = plt.pie(
+                    sizes, labels=labels, autopct='%1.1f%%', startangle=110,
+                    pctdistance=0.80, explode=explode, shadow=False,
+                    textprops={'fontsize': 9}
+                )
+                for autotext in autotexts:
+                    autotext.set_color('white')
+                    autotext.set_weight('bold')
+
+                plt.title('Feature Importance by Group (Ensemble Weighted Average)', fontsize=14)
+                plt.axis('equal')
+                plt.tight_layout()
+                if save_dir_path:
+                    f_path = save_dir_path / "feature_importance_groups.png"
+                    try:
+                        plt.savefig(f_path, bbox_inches='tight')
+                        print(f"Plot saved to {f_path}")
+                    except Exception as e:
+                        print(f"Error saving plot {f_path}: {e}")
+                plt.show()
+            else:
+                print("Could not plot feature group importance (total importance is zero or near-zero).")
+
+    elif plot_groups:
+         print("Skipping group importance plot as weighted ensemble importance was not calculated.")
+
+    print("--- Feature Importance Report Complete ---")
+
+
+# --- Prediction Range / Model Agreement Visualization ---
+
+def plot_model_agreement(predictions_dict: Dict[str, np.ndarray],
+                         game_identifiers: Union[List, pd.Series, np.ndarray],
+                         y_true: Optional[Union[pd.Series, np.ndarray]] = None,
+                         ensemble_pred: Optional[np.ndarray] = None,
+                         ensemble_weights: Optional[Dict[str, float]] = None,
+                         target_name: str = "Score",
+                         num_games_to_plot: int = 20,
+                         figsize: tuple = (15, 8),
+                         save_dir: Optional[Union[str, Path]] = None):
+    """
+    Visualizes predictions from multiple models for recent games, showing model agreement
+    based on the standard deviation of component predictions.
+
+    Args:
+        predictions_dict: Dictionary where keys are model names and values are prediction arrays
+                          (all arrays must be for the same games in the same order).
+        game_identifiers: List or Series or array identifying the games (e.g., "TeamA vs TeamB Date").
+                          Must be same length as prediction arrays.
+        y_true: Optional array/Series of actual true values for the games.
+        ensemble_pred: Optional pre-calculated ensemble prediction array.
+        ensemble_weights: Optional weights dict, used to calculate ensemble if not provided.
+                          Weights should correspond to keys in predictions_dict.
+        target_name: Name of the target variable for the y-axis label.
+        num_games_to_plot: Number of most recent games (samples) to plot. If <=0 or None, plots all.
+        figsize: Figure size.
+        save_dir: Optional directory (string or Path object) to save plots.
+    """
+    print("\n--- Generating Model Agreement Plot ---")
+    save_dir_path = Path(save_dir) if save_dir else None
+    if save_dir_path:
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+
+    if not predictions_dict:
+        print("Error: No component predictions provided in predictions_dict.")
+        return
+
+    # Validate input lengths
+    n_preds = -1
+    model_names = list(predictions_dict.keys())
+    if len(model_names) < 2:
+        print("Warning: Model agreement plot requires predictions from at least 2 models.")
+
+    for name, preds in predictions_dict.items():
+        preds_arr = np.asarray(preds)
+        predictions_dict[name] = preds_arr # Ensure numpy arrays
+        if n_preds == -1:
+            n_preds = len(preds_arr)
+        elif len(preds_arr) != n_preds:
+            print(f"Error: Prediction array length mismatch for '{name}'. Expected {n_preds}, got {len(preds_arr)}.")
+            return
+
+    game_identifiers = np.asarray(game_identifiers)
+    if len(game_identifiers) != n_preds:
+         print(f"Error: Game identifiers length ({len(game_identifiers)}) mismatch with predictions ({n_preds}).")
+         return
+
+    if y_true is not None:
+        y_true = np.asarray(y_true)
+        if len(y_true) != n_preds:
+             print(f"Error: True values length ({len(y_true)}) mismatch ({n_preds}).")
+             return
+
+    if ensemble_pred is not None:
+        ensemble_pred = np.asarray(ensemble_pred)
+        if len(ensemble_pred) != n_preds:
+             print(f"Error: Provided ensemble prediction length ({len(ensemble_pred)}) mismatch ({n_preds}).")
+             return
+
+
+    # --- Data Slicing for Plotting ---
+    if num_games_to_plot is None or num_games_to_plot <= 0 or num_games_to_plot >= n_preds:
+         plot_slice = slice(None) # Plot all games
+         num_games_plotted = n_preds
+    else:
+        plot_slice = slice(-num_games_to_plot, None)
+        num_games_plotted = num_games_to_plot
+
+    game_identifiers_plot = game_identifiers[plot_slice]
+    y_true_plot = y_true[plot_slice] if y_true is not None else None
+    predictions_plot = {name: preds[plot_slice] for name, preds in predictions_dict.items()}
+    ensemble_pred_plot = ensemble_pred[plot_slice] if ensemble_pred is not None else None
+
+    if len(game_identifiers_plot) == 0:
+        print("Error: No games left to plot after slicing.")
+        return
+
+    x_indices = np.arange(len(game_identifiers_plot))
+
+    # --- Calculate Ensemble and Standard Deviation ---
+    component_preds_array = np.array(list(predictions_plot.values())) # Use list() for consistency
+    model_agreement_std = None
+    if component_preds_array.shape[0] > 1:
+         model_agreement_std = np.std(component_preds_array, axis=0, ddof=1)
+
+    if ensemble_pred_plot is None and ensemble_weights and len(model_names) > 0:
+        print("Calculating ensemble prediction from components and weights...")
+        weighted_preds_sum = np.zeros(len(game_identifiers_plot))
+        total_weight = 0
+        valid_weights = 0
+        for name in model_names:
+            weight = ensemble_weights.get(name, 0)
+            if weight > 0 and name in predictions_plot: # Check name exists
+                weighted_preds_sum += predictions_plot[name] * weight
+                total_weight += weight
+                valid_weights += 1
+        if total_weight > 0:
+            ensemble_pred_plot = weighted_preds_sum / total_weight
+            print(f"  Ensemble calculated using {valid_weights} models with total weight {total_weight:.2f}.")
+        else:
+            print("  Warning: Sum of valid weights is zero. Cannot calculate weighted ensemble.")
+            if component_preds_array.shape[0] > 0:
+                 ensemble_pred_plot = np.mean(component_preds_array, axis=0)
+                 print("  Using simple average of components as fallback ensemble.")
+
+
+    # --- Plotting ---
+    plt.figure(figsize=figsize)
+
+    colors = plt.cm.get_cmap('tab10', len(model_names))
+    for i, name in enumerate(model_names):
+        if name in predictions_plot: # Check again before plotting
+            plt.scatter(x_indices, predictions_plot[name], label=f"{name} Pred.",
+                        alpha=0.6, s=35, color=colors(i))
+
+    if ensemble_pred_plot is not None:
+        plt.plot(x_indices, ensemble_pred_plot, 'k-o', linewidth=2, markersize=5, label='Ensemble Pred.', zorder=len(model_names) + 1) # Ensure it's on top
+        if model_agreement_std is not None:
+            ci_low = ensemble_pred_plot - 1.96 * model_agreement_std
+            ci_high = ensemble_pred_plot + 1.96 * model_agreement_std
+            plt.fill_between(x_indices, ci_low, ci_high, color='gray', alpha=0.25,
+                             label='Model Agreement (±1.96 * StDev)')
+
+    if y_true_plot is not None:
+        plt.plot(x_indices, y_true_plot, 'r-X', linewidth=2, markersize=7, label='Actual Value', zorder=len(model_names) + 2)
+
+    plt.xticks(x_indices, game_identifiers_plot, rotation=90, fontsize=9)
+    plt.ylabel(target_name)
+    plt.title(f'Model Predictions & Agreement ({num_games_plotted} Games)')
+    plt.legend(loc='center left', bbox_to_anchor=(1.01, 0.5), fontsize=9)
+    plt.grid(True, axis='y', linestyle='--', alpha=0.6)
+    plt.tight_layout(rect=[0, 0.05, 0.88, 0.97])
+
+    if save_dir_path:
+        f_path = save_dir_path / "model_agreement_range.png"
+        try:
+            plt.savefig(f_path, bbox_inches='tight')
+            print(f"Plot saved to {f_path}")
+        except Exception as e:
+            print(f"Error saving plot {f_path}: {e}")
+    plt.show()
+
+    # --- Plot Error vs Model Agreement (if possible) ---
+    if y_true_plot is not None and ensemble_pred_plot is not None and model_agreement_std is not None:
+        print("Generating error vs. model agreement plot...")
+        errors = np.abs(y_true_plot - ensemble_pred_plot)
+        valid_std_mask = np.isfinite(model_agreement_std) & (model_agreement_std >= 0)
+
+        if np.sum(valid_std_mask) < 5:
+             print("  Skipping error vs agreement plot: Insufficient valid standard deviation values.")
+             print("--- Model Agreement Plot Complete ---")
+             return
+
+        agreement_df = pd.DataFrame({
+            'Absolute Error': errors[valid_std_mask],
+            'Model Agreement (StDev)': model_agreement_std[valid_std_mask]
+        })
+
+        try:
+            num_quantiles = min(3, max(1, len(agreement_df) // 5))
+            if num_quantiles < 2:
+                 print("  Skipping error vs agreement plot: Not enough data for multiple bins.")
+                 print("--- Model Agreement Plot Complete ---")
+                 return
+
+            agreement_df['Agreement Level'] = pd.qcut(agreement_df['Model Agreement (StDev)'], q=num_quantiles,
+                                                     labels=[f'Level {i+1}' for i in range(num_quantiles)],
+                                                     duplicates='drop')
+
+            # Generate descriptive labels dynamically based on actual bins created
+            unique_bins = sorted(agreement_df['Agreement Level'].unique())
+            level_map = {bin_label: f'High-{i+1}' for i, bin_label in enumerate(unique_bins)}
+            desc_labels = [level_map[bin_label] for bin_label in unique_bins]
+            agreement_df['Agreement Level Desc'] = agreement_df['Agreement Level'].map(level_map)
+
+
+            plt.figure(figsize=(max(6, len(desc_labels)*2.5), 5))
+            sns.boxplot(x='Agreement Level Desc', y='Absolute Error', data=agreement_df,
+                        order=desc_labels, palette='coolwarm')
+            plt.title('Prediction Error vs. Model Agreement Level')
+            plt.xlabel('Model Agreement (Lower StDev = Higher Agreement)')
+            plt.ylabel('Absolute Prediction Error')
+            plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            if save_dir_path:
+                f_path = save_dir_path / "error_vs_agreement.png"
+                try:
+                    plt.savefig(f_path, bbox_inches='tight')
+                    print(f"Plot saved to {f_path}")
+                except Exception as e:
+                    print(f"Error saving plot {f_path}: {e}")
+            plt.show()
+
+        except ValueError as e:
+             print(f"  Warning: Could not create bins for error vs agreement plot: {e}")
+        except Exception as e:
+             print(f"  An unexpected error occurred during error vs agreement plot: {e}")
+
+    # Print reason for skipping if applicable
+    elif y_true_plot is None: print("Skipping error vs agreement plot: Actual values (y_true) not provided.")
+    elif ensemble_pred_plot is None: print("Skipping error vs agreement plot: Ensemble predictions not available.")
+    elif model_agreement_std is None: print("Skipping error vs agreement plot: Model agreement (StDev) could not be calculated.")
+
+    print("--- Model Agreement Plot Complete ---")
+
+
+# --- Prediction Trend Plot ---
+def plot_predictions_over_time(dates: Union[List, pd.Series, np.ndarray],
+                               y_true: Union[pd.Series, np.ndarray],
+                               y_pred: Union[pd.Series, np.ndarray],
+                               title: str = "Predictions Over Time",
+                               target_name: str = "Score",
+                               figsize: tuple = (14, 7),
+                               save_dir: Optional[Union[str, Path]] = None):
+    """
+    Plots actual vs predicted values over time. Requires dates to be sortable.
+
+    Args:
+        dates: List, Series or array of dates/timestamps or other sortable identifiers
+               corresponding to the predictions.
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+        title: Title for the plot.
+        target_name: Name of the target variable for the y-axis label.
+        figsize: Figure size.
+        save_dir: Optional directory (string or Path object) to save plots.
+    """
+    try:
+        dates = np.asarray(dates)
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+
+        if not (len(dates) == len(y_true) == len(y_pred)):
+            print(f"Error: Length mismatch between dates ({len(dates)}), y_true ({len(y_true)}), and y_pred ({len(y_pred)}).")
+            return
+
+        try:
+            dates_dt = pd.to_datetime(dates)
+            is_datetime_type = True
+        except Exception:
+            print("Warning: Could not convert 'dates' to datetime objects. Plotting against original values.")
+            dates_dt = dates
+            is_datetime_type = False
+
+        df = pd.DataFrame({'Date': dates_dt, 'Actual': y_true, 'Predicted': y_pred})
+
+        try:
+            df = df.sort_values('Date')
+        except TypeError:
+            print("Warning: Could not sort by 'Date'. Plotting in original order.")
+
+        plt.figure(figsize=figsize)
+        # Use index for x-axis if dates are not reliably numeric/datetime for plotting
+        x_plot = df.index if not is_datetime_type else df['Date'].values
+        plt.plot(x_plot, df['Actual'], 'o-', label='Actual', alpha=0.8, markersize=4, linewidth=1.5)
+        plt.plot(x_plot, df['Predicted'], 'o--', label='Predicted', alpha=0.8, markersize=4, linewidth=1.5)
+
+        plt.title(title, fontsize=14)
+        if is_datetime_type:
+            plt.xlabel('Date', fontsize=12)
+            try:
+                plt.gca().xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%Y-%m-%d'))
+                plt.gcf().autofmt_xdate(rotation=30, ha='right')
+            except Exception as fmt_e:
+                print(f"Could not apply date formatting: {fmt_e}")
+                plt.xticks(rotation=30, ha='right')
+        else:
+            plt.xlabel('Game Sequence / Identifier', fontsize=12)
+            # Only show limited ticks if identifiers are non-numeric and numerous
+            if len(df) > 20:
+                 step = len(df) // 10
+                 plt.xticks(ticks=df.index[::step], labels=df['Date'].iloc[::step], rotation=30, ha='right')
+            else:
+                 plt.xticks(ticks=df.index, labels=df['Date'], rotation=30, ha='right')
+
+
+        plt.ylabel(target_name, fontsize=12)
+        plt.legend(fontsize=10)
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.tight_layout()
+
+        if save_dir:
+            save_dir_path = Path(save_dir)
+            save_dir_path.mkdir(parents=True, exist_ok=True)
+            f_path = save_dir_path / "predictions_over_time.png"
+            try:
+                plt.savefig(f_path, bbox_inches='tight')
+                print(f"Plot saved to {f_path}")
+            except Exception as e:
+                print(f"Error saving plot {f_path}: {e}")
+        plt.show()
+
+    except Exception as e:
+        print(f"Error generating predictions over time plot: {e}")
+
+# --- Advanced Residual/Bias Analysis Visualizations ---
+
+def plot_residuals_analysis_detailed(y_true: Union[pd.Series, np.ndarray],
+                                     y_pred: Union[pd.Series, np.ndarray],
+                                     title_prefix: str = "",
+                                     figsize: tuple = (12, 10),
+                                     save_dir: Optional[Union[str, Path]] = None):
+    """
+    Generates a detailed set of residual analysis plots.
+
+    Includes: Distribution, Q-Q plot, Residuals vs. Predicted (with optional LOWESS),
+              and Residuals vs. Actual.
+
+    Args:
+        y_true: Array or Series of true target values.
+        y_pred: Array or Series of predicted values.
+        title_prefix: Prefix for the plot titles (e.g., "Training Data").
+        figsize: Figure size for the combined plot.
+        save_dir: Optional directory (string or Path object) to save the figure.
+    """
+    print(f"\n--- Generating Detailed Residual Analysis: {title_prefix} ---")
+    try:
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+
+        if len(y_true) != len(y_pred) or len(y_true) == 0:
+            print("Warning: Invalid input arrays for detailed residual analysis. Skipping.")
+            return
+
+        residuals = y_true - y_pred
+        mean_residual = np.mean(residuals)
+
+        fig, axes = plt.subplots(2, 2, figsize=figsize)
+        fig.suptitle(f'{title_prefix} Residual Analysis'.strip(), fontsize=16)
+        axes = axes.flatten()
+
+        # 1. Residuals Histogram
+        sns.histplot(residuals, kde=True, bins=30, ax=axes[0])
+        axes[0].axvline(0, color='r', linestyle='--', label='Zero Residual')
+        axes[0].axvline(mean_residual, color='g', linestyle='-', label=f'Mean: {mean_residual:.2f}')
+        axes[0].set_xlabel('Residual (Actual - Predicted)')
+        axes[0].set_title('Distribution of Residuals')
+        axes[0].legend()
+        axes[0].grid(True, linestyle='--', alpha=0.6)
+
+        # 2. Residuals vs Predicted
+        axes[1].scatter(y_pred, residuals, alpha=0.5)
+        axes[1].axhline(y=0, color='r', linestyle='--')
+        if _has_statsmodels: # Check if import succeeded
+            try:
+                lowess = sm.nonparametric.lowess(residuals, y_pred, frac=0.3)
+                axes[1].plot(lowess[:, 0], lowess[:, 1], color='orange', lw=2, label='LOWESS Smoother')
+                axes[1].legend()
+            except Exception as e:
+                print(f"Note: Could not add LOWESS smoother: {e}")
+        axes[1].set_xlabel('Predicted Value')
+        axes[1].set_ylabel('Residual')
+        axes[1].set_title('Residuals vs. Predicted Values')
+        axes[1].grid(True, linestyle='--', alpha=0.6)
+
+        # 3. Q-Q plot
+        try:
+            stats.probplot(residuals, dist="norm", plot=axes[2])
+            # Style the Q-Q plot points and line for consistency
+            if len(axes[2].get_lines()) == 2: # Ensure plot generated lines
+                 axes[2].get_lines()[0].set_markerfacecolor('C0')
+                 axes[2].get_lines()[0].set_markeredgecolor('C0')
+                 axes[2].get_lines()[0].set_markersize(4.0)
+                 axes[2].get_lines()[1].set_color('r')
+            axes[2].set_title('Q-Q Plot (Normality Check)')
+            axes[2].grid(True, linestyle='--', alpha=0.6)
+        except Exception as e:
+            print(f"Could not generate Q-Q plot: {e}")
+            axes[2].set_title('Q-Q Plot (Error)')
+
+
+        # 4. Residuals vs. True Values
+        axes[3].scatter(y_true, residuals, alpha=0.5)
+        axes[3].axhline(y=0, color='r', linestyle='--')
+        axes[3].set_xlabel('Actual Value')
+        axes[3].set_ylabel('Residual')
+        axes[3].set_title('Residuals vs. Actual Values')
+        axes[3].grid(True, linestyle='--', alpha=0.6)
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        if save_dir:
+            save_dir_path = Path(save_dir)
+            save_dir_path.mkdir(parents=True, exist_ok=True)
+            f_name = f"{title_prefix.replace(' ', '_').lower()}_residuals_detailed.png".lstrip("_")
+            f_path = save_dir_path / f_name
+            try:
+                plt.savefig(f_path, bbox_inches='tight')
+                print(f"Plot saved to {f_path}")
+            except Exception as e:
+                print(f"Error saving plot {f_path}: {e}")
+        plt.show()
+
+    except Exception as e:
+        print(f"Error generating detailed residual analysis plot: {e}")
+
+
+def plot_conditional_bias(y_pred: Union[pd.Series, np.ndarray],
+                          residuals: Union[pd.Series, np.ndarray],
+                          n_bins: int = 10,
+                          title: str = "Conditional Bias by Predicted Range",
+                          figsize: tuple = (12, 6),
+                          save_dir: Optional[Union[str, Path]] = None):
+    """
+    Analyzes and plots how the mean residual (bias) varies across predicted value ranges.
+    Uses quantile-based bins for robustness.
+
+    Args:
+        y_pred: Array or Series of predicted values.
+        residuals: Array or Series of corresponding residuals (actual - predicted).
+        n_bins: Target number of bins to divide the prediction range into using quantiles.
+        title: Title for the plot.
+        figsize: Figure size.
+        save_dir: Optional directory (string or Path object) to save the figure.
+    """
+    print("\n--- Generating Conditional Bias Plot ---")
+    try:
+        y_pred = np.asarray(y_pred)
+        residuals = np.asarray(residuals)
+
+        if len(y_pred) != len(residuals) or len(y_pred) == 0:
+            print("Warning: Invalid input arrays for conditional bias plot. Skipping.")
+            return
+
+        df = pd.DataFrame({'prediction': y_pred, 'residual': residuals})
+
+        if len(df) < n_bins * 2: # Need sufficient points for binning
+            print(f"Warning: Not enough data points ({len(df)}) for {n_bins} bins. Skipping conditional bias plot.")
+            return
+
+        # Use quantiles for binning
+        df['bin_q'] = pd.qcut(df['prediction'], q=n_bins, labels=False, duplicates='drop')
+        n_actual_bins = df['bin_q'].nunique()
+        if n_actual_bins < 2:
+             print(f"Warning: Could only create {n_actual_bins} valid bin(s) using quantiles. Skipping plot.")
+             return
+
+        analysis = df.groupby('bin_q').agg(
+            bin_center=('prediction', 'mean'),
+            mean_residual=('residual', 'mean'),
+            std_residual=('residual', 'std'),
+            count=('residual', 'size')
+        ).reset_index()
+
+        # Calculate 95% CI, requires count > 1
+        analysis = analysis[analysis['count'] > 1].copy() # Use copy to avoid SettingWithCopyWarning
+        if analysis.empty:
+             print("Warning: No bins with sufficient data (>1) found for conditional bias plot.")
+             return
+
+        analysis['sem'] = analysis['std_residual'] / np.sqrt(analysis['count'])
+        analysis['ci_lower'] = analysis['mean_residual'] - 1.96 * analysis['sem']
+        analysis['ci_upper'] = analysis['mean_residual'] + 1.96 * analysis['sem']
+
+        analysis = analysis.sort_values('bin_center')
+
+        # Visualize conditional bias
+        plt.figure(figsize=figsize)
+        plt.plot(analysis['bin_center'], analysis['mean_residual'], 'o-', label='Mean Residual (Bias)')
+        plt.fill_between(
+            analysis['bin_center'], analysis['ci_lower'], analysis['ci_upper'],
+            alpha=0.3, label='95% CI for Mean Residual'
+        )
+        plt.axhline(y=0, color='r', linestyle='--')
+        plt.title(title)
+        plt.xlabel('Average Predicted Value in Bin')
+        plt.ylabel('Mean Residual (Bias)')
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.tight_layout()
+
+        if save_dir:
+            save_dir_path = Path(save_dir)
+            save_dir_path.mkdir(parents=True, exist_ok=True)
+            f_path = save_dir_path / "conditional_bias.png"
+            try:
+                plt.savefig(f_path, bbox_inches='tight')
+                print(f"Plot saved to {f_path}")
+            except Exception as e:
+                print(f"Error saving plot {f_path}: {e}")
+        plt.show()
+
+    except ValueError as e: # Catch qcut errors etc.
+        print(f"Warning: Could not create bins for conditional bias plot. Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred during conditional bias plot generation: {e}")
+
+    print("--- Conditional Bias Plot Complete ---")
+
+
+def plot_temporal_bias(dates: Union[List, pd.Series, np.ndarray],
+                       residuals: Union[pd.Series, np.ndarray],
+                       freq: str = 'M',
+                       title: str = "Temporal Bias Trend",
+                       figsize: tuple = (12, 6),
+                       save_dir: Optional[Union[str, Path]] = None):
+    """
+    Analyzes and plots the trend of mean residual (bias) over time.
+
+    Args:
+        dates: List, Series or array of dates/timestamps corresponding to the residuals.
+               Must be convertible to datetime objects.
+        residuals: Array or Series of corresponding residuals (actual - predicted).
+        freq: Pandas frequency string for grouping (e.g., 'M', 'W', 'D', 'Q').
+        title: Title for the plot.
+        figsize: Figure size.
+        save_dir: Optional directory (string or Path object) to save the figure.
+    """
+    print("\n--- Generating Temporal Bias Plot ---")
+    try:
+        residuals = np.asarray(residuals)
+        try:
+            # Attempt conversion, raise error immediately if it fails fundamentally
+            dates_dt = pd.to_datetime(dates, errors='raise')
+        except Exception as e:
+            print(f"Error: Could not convert 'dates' to datetime objects: {e}")
+            return
+
+        if len(dates_dt) != len(residuals) or len(dates_dt) == 0:
+            print("Error: Length mismatch or empty arrays for temporal bias plot.")
+            return
+
+        df = pd.DataFrame({'date': dates_dt, 'residual': residuals})
+
+        # Group by the specified frequency
+        df['period'] = df['date'].dt.to_period(freq)
+        period_bias = df.groupby('period')['residual'].agg(['mean', 'std', 'count']).reset_index()
+        period_bias['timestamp'] = period_bias['period'].dt.to_timestamp() # For plotting
+
+        # Filter periods with enough data points
+        period_bias = period_bias[period_bias['count'] > 2].copy()
+        if period_bias.empty:
+            print(f"Warning: No periods with sufficient data (>2) found for frequency '{freq}'. Skipping temporal bias plot.")
+            return
+
+        period_bias['sem'] = period_bias['std'] / np.sqrt(period_bias['count'])
+        period_bias['ci_lower'] = period_bias['mean'] - 1.96 * period_bias['sem']
+        period_bias['ci_upper'] = period_bias['mean'] + 1.96 * period_bias['sem']
+
+        period_bias = period_bias.sort_values('timestamp')
+
+        # Visualize temporal bias
+        plt.figure(figsize=figsize)
+        plt.plot(period_bias['timestamp'], period_bias['mean'], 'o-', label=f'Mean Bias ({freq})')
+        plt.fill_between(
+            period_bias['timestamp'], period_bias['ci_lower'], period_bias['ci_upper'],
+            alpha=0.3, label='95% CI for Mean Bias'
+        )
+        plt.axhline(y=0, color='r', linestyle='--', label='Zero Bias')
+        plt.title(title + f" ({freq})")
+        plt.xlabel('Time Period')
+        plt.ylabel('Mean Residual (Bias)')
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+
+        try:
+            plt.gca().xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%Y-%m'))
+            plt.gcf().autofmt_xdate(rotation=30, ha='right')
+        except Exception as fmt_e:
+            print(f"Could not apply date formatting: {fmt_e}")
+            plt.xticks(rotation=30, ha='right')
+
+        plt.tight_layout()
+
+        if save_dir:
+            save_dir_path = Path(save_dir)
+            save_dir_path.mkdir(parents=True, exist_ok=True)
+            f_path = save_dir_path / f"temporal_bias_{freq}.png"
+            try:
+                plt.savefig(f_path, bbox_inches='tight')
+                print(f"Plot saved to {f_path}")
+            except Exception as e:
+                print(f"Error saving plot {f_path}: {e}")
+        plt.show()
+
+    except Exception as e:
+         print(f"An unexpected error occurred during temporal bias plot generation: {e}")
+
+    print("--- Temporal Bias Plot Complete ---")
+
+
+# --- Higher-Level Report Generation ---
+def generate_evaluation_report(y_true: Union[pd.Series, np.ndarray],
+                               y_pred: Union[pd.Series, np.ndarray],
+                               model_name: str,
+                               target_type: str = 'total',
+                               dates: Optional[Union[List, pd.Series, np.ndarray]] = None,
+                               calculate_custom_losses: bool = True,
+                               include_bias_analysis: bool = True,
+                               save_dir: Optional[Union[str, Path]] = None):
+    """
+    Generates a comprehensive evaluation report with metrics and various plots.
+
+    Args:
+        y_true: True target values.
+        y_pred: Predicted values.
+        model_name: Name of the model being evaluated (for titles/filenames).
+        target_type: Type of score ('home', 'away', 'total', 'diff').
+        dates: Optional dates corresponding to predictions for temporal analysis.
+        calculate_custom_losses: Whether to include custom loss calculations.
+        include_bias_analysis: Whether to include detailed residual and bias plots.
+        save_dir: Optional directory (string or Path object) to save plots.
+
+    Returns:
+        Dictionary of calculated metrics.
+    """
+    print(f"\n{'='*20} Evaluation Report: {model_name} ({target_type}) {'='*20}")
+    save_dir_path = Path(save_dir) if save_dir else None
+    if save_dir_path:
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+        print(f"Saving plots to: {save_dir_path}")
+
+    # --- 1. Calculate Metrics ---
+    print("\n--- Calculating Metrics ---")
+    metrics = evaluate_predictions(y_true, y_pred, target_type, calculate_custom_losses)
+    print("Evaluation Metrics:")
+    if all(pd.isna(v) for v in metrics.values()):
+         print("  Error: All metrics are NaN. Cannot proceed with report.")
+         return metrics
+
+    for key, value in metrics.items():
+        # Check if value is not NaN before formatting
+        if pd.notna(value):
+            print(f"  {key.replace('_', ' ').title():<25}: {value:.4f}")
+        else:
+            print(f"  {key.replace('_', ' ').title():<25}: NaN")
+
+
+    # --- 2. Generate Core Visualizations ---
+    print("\n--- Generating Core Visualizations ---")
+    base_filename = f"{model_name}_{target_type}".replace(" ", "_").lower()
+
+    plot_actual_vs_predicted(
+        y_true, y_pred,
+        title=f"{model_name} - Actual vs. Predicted ({target_type})",
+        metrics=metrics,
+        save_path=save_dir_path / f"{base_filename}_actual_vs_pred.png" if save_dir_path else None
+    )
+
+    plot_score_distribution_density(
+        y_true, y_pred,
+        title=f"{model_name} - Score Distribution Density ({target_type})",
+        save_path=save_dir_path / f"{base_filename}_density.png" if save_dir_path else None
+    )
+
+    # --- 3. Generate Residual and Bias Analysis Plots (Optional) ---
+    if include_bias_analysis:
+        print("\n--- Generating Residual & Bias Analysis ---")
+        residuals = np.asarray(y_true) - np.asarray(y_pred)
+
+        plot_residuals_analysis_detailed(
+            y_true, y_pred,
+            title_prefix=f"{model_name} ({target_type})",
+            save_dir=save_dir_path
+        )
+
+        plot_conditional_bias(
+            y_pred, residuals,
+            title=f"{model_name} - Conditional Bias ({target_type})",
+            save_dir=save_dir_path
+        )
+
+        plot_error_by_prediction_range(
+            y_true, y_pred,
+            title=f"{model_name} - Mean Error by Range ({target_type})",
+            save_path=save_dir_path / f"{base_filename}_error_range.png" if save_dir_path else None
+        )
+
+        if dates is not None:
+            plot_temporal_bias(
+                dates, residuals, freq='M', # Default to Monthly
+                title=f"{model_name} - Temporal Bias ({target_type})",
+                save_dir=save_dir_path
+            )
+        else:
+            print("Skipping temporal bias plot: 'dates' not provided.")
+
+    # --- 4. Generate Time Series Plot (Optional) ---
+    if dates is not None:
+         print("\n--- Generating Time Series Plot ---")
+         plot_predictions_over_time(
+             dates=dates,
+             y_true=y_true,
+             y_pred=y_pred,
+             title=f"{model_name} - Predictions Over Time ({target_type})",
+             target_name=target_type.replace('_', ' ').title(),
+             save_dir=save_dir_path
+         )
+    else:
+         print("Skipping predictions over time plot: 'dates' not provided.")
+
+
+    print(f"\n{'='*20} Report Generation Complete: {model_name} ({target_type}) {'='*20}")
+    return metrics
+
+
+# --- Main Example Block ---
+if __name__ == '__main__':
+    print("Running evaluation.py example...")
+    print(f"Statsmodels available: {_has_statsmodels}")
+
+    # --- Simulate some data ---
+    np.random.seed(42)
+    n_samples = 250
+    y_true_total = np.random.normal(loc=225, scale=22, size=n_samples).round()
+    # Simulate ensemble predictions (with some bias and noise)
+    y_pred_ensemble = y_true_total + np.random.normal(loc=-2.5, scale=11, size=n_samples)
+    # Simulate component predictions
+    y_pred_xgb = y_true_total + np.random.normal(loc=-3, scale=13, size=n_samples)
+    y_pred_rf = y_true_total + np.random.normal(loc=-1, scale=15, size=n_samples)
+    y_pred_ridge = y_true_total + np.random.normal(loc=-4, scale=19, size=n_samples)
+    # Simulate dates
+    dates_sim = pd.to_datetime('2025-01-01') + pd.to_timedelta(np.arange(n_samples) * (12/n_samples) , unit='M') # Spread over a year
+
+    # --- Generate Full Report for Ensemble ---
+    ensemble_metrics = generate_evaluation_report(
+        y_true=y_true_total,
+        y_pred=y_pred_ensemble,
+        model_name="Example Ensemble",
+        target_type='total',
+        dates=dates_sim, # Include dates for temporal plots
+        calculate_custom_losses=True,
+        include_bias_analysis=True,
+        save_dir="./evaluation_plots/ensemble_report" # Save all plots here
+    )
+
+    # --- Evaluate Component Models (for comparison plots) ---
+    print("\n--- Evaluating Components for Comparison ---")
+    comp_metrics = {}
+    comp_preds = {'XGBoost': y_pred_xgb, 'RandomForest': y_pred_rf, 'Ridge': y_pred_ridge}
+    weights = {'XGBoost': 0.5, 'RandomForest': 0.3, 'Ridge': 0.2}
+
+    for name, pred in comp_preds.items():
+        metrics = evaluate_predictions(y_true_total, pred, target_type='total')
+        metrics['weight'] = weights.get(name, 0)
+        comp_metrics[name] = metrics
+        if pd.notna(metrics.get('rmse')) and pd.notna(metrics.get('r2')):
+             print(f"  {name} Metrics: RMSE={metrics['rmse']:.2f}, R2={metrics['r2']:.4f}")
+        else:
+             print(f"  {name} Metrics: Calculation failed.")
+
+
+    # --- Generate Comparison Plots ---
+    print("\n--- Generating Comparison Plots ---")
+    # Combine metrics for plotting functions
+    all_metrics_for_plots = {}
+    all_metrics_for_plots.update(comp_metrics)
+    if ensemble_metrics and not all(pd.isna(v) for v in ensemble_metrics.values()): # Check if ensemble metrics are valid
+         all_metrics_for_plots['Ensemble'] = ensemble_metrics
+
+    plot_ensemble_component_comparison(
+        component_metrics=comp_metrics,
+        ensemble_metrics=ensemble_metrics,
+        target_name="Total Score",
+        save_path_prefix="./evaluation_plots/comparison" # Save plot here
+    )
+
+    plot_metrics_comparison(
+        all_metrics_for_plots,
+        metric_to_plot='rmse',
+        higher_is_better=False,
+        save_path="./evaluation_plots/comparison/rmse_comparison.png"
+    )
+
+    plot_metrics_comparison(
+        all_metrics_for_plots,
+        metric_to_plot='r2',
+        higher_is_better=True,
+        save_path="./evaluation_plots/comparison/r2_comparison.png"
+    )
+
+    # --- Example: Feature Importance (Requires loading/simulating actual models & features) ---
+    print("\n--- Generating Feature Importance Example (Requires Fitted Models) ---")
+    # Simulate fitted models (replace with actual loaded models)
+    class MockModel:
+        def __init__(self, importance):
+            self.feature_importances_ = importance
+    mock_features = [f'feature_{i}' for i in range(10)]
+    models_loaded_example = {
+        'XGBoost': MockModel(np.random.rand(10) * 0.5 + 0.1),
+        'RandomForest': MockModel(np.random.rand(10) * 0.3 + 0.05),
+        'Ridge': MockModel(np.random.rand(10) * 0.1) # Linear model needs coef_ usually, mocking with importances_ here
+    }
+    # Note: _get_feature_importance would need adjustment for Ridge coef_ if not mocking like this
+    plot_feature_importances(
+        models_dict=models_loaded_example,
+        feature_names=mock_features,
+        ensemble_weights=weights,
+        save_dir="./evaluation_plots/feature_importance"
+    )
+
+    # --- Example: Model Agreement ---
+    print("\n--- Generating Model Agreement Example ---")
+    all_predictions_dict = {'XGBoost': y_pred_xgb, 'RandomForest': y_pred_rf, 'Ridge': y_pred_ridge}
+    # Simulate game identifiers
+    game_ids_sim = [f"{d.strftime('%Y-%m-%d')}_Game{i%2+1}" for i, d in enumerate(dates_sim)]
+
+    plot_model_agreement(
+        predictions_dict=all_predictions_dict,
+        game_identifiers=game_ids_sim, # Use simulated identifiers
+        y_true=y_true_total,
+        ensemble_pred=y_pred_ensemble, # Pass the simulated ensemble prediction
+        target_name="Total Score",
+        num_games_to_plot=30, # Plot last 30 "games"
+        save_dir="./evaluation_plots/agreement"
+    )
+
+    print("\nEvaluation script example finished.")
