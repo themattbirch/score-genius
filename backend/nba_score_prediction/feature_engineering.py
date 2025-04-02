@@ -226,103 +226,154 @@ class NBAFeatureEngine:
         logger.debug("Finished adding intra-game momentum features.")
         return result_df
 
+    # In feature_engineering.py -> NBAFeatureEngine class
+
+    # --- integrate_advanced_features (Modified for Detailed Input Debugging) ---
     @profile_time
     def integrate_advanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """REVISED: Calculates advanced metrics. Includes Pace/Poss debugging."""
-        logger.debug("Integrating advanced metrics (v4 - Debugging Pace/Poss)...")
+        """REVISED: Calculates advanced metrics. Logs inputs. NO CLIPPING applied."""
+        logger.debug("Integrating advanced metrics (v7 - Input Debug, NO CLIPPING)...")
         result_df = df.copy()
         # Ensure all required input columns exist and are numeric
-        stat_cols = ['home_score', 'away_score', 'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted','home_3pm', 'home_3pa', 'away_3pm', 'away_3pa', 'home_ft_made', 'home_ft_attempted','away_ft_made', 'away_ft_attempted', 'home_off_reb', 'home_def_reb', 'home_total_reb','away_off_reb', 'away_def_reb', 'away_total_reb', 'home_turnovers', 'away_turnovers','home_ot', 'away_ot']
-        for col in stat_cols: result_df[col] = pd.to_numeric(result_df.get(col), errors='coerce').fillna(0)
+                # Ensure all required input columns exist and are numeric
+                # Ensure all required input columns exist and are numeric
+        stat_cols = [
+            'home_score', 'away_score', 'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted',
+            'home_3pm', 'home_3pa', 'away_3pm', 'away_3pa', 'home_ft_made', 'home_ft_attempted',
+            'away_ft_made', 'away_ft_attempted', 'home_off_reb', 'home_def_reb', 'home_total_reb',
+            'away_off_reb', 'away_def_reb', 'away_total_reb', 'home_turnovers', 'away_turnovers',
+            'home_ot', 'away_ot'
+            # Add any other essential raw stats used below if not listed
+        ]
+        # Denominator columns list (useful for checks later if needed, but not for this fillna)
+        # denominator_cols = ['home_fg_attempted', 'away_fg_attempted', 'home_ft_attempted', 'away_ft_attempted',
+        #                     'home_possessions', 'away_possessions', 'game_minutes_played']
+
+        missing_stat_cols = [col for col in stat_cols if col not in result_df.columns]
+        if missing_stat_cols:
+             logger.warning(f"Advanced Metrics: Missing required input columns: {missing_stat_cols}. Filling with 0.")
+
+        # --- CORRECTED LOOP ---
+        for col in stat_cols:
+            if col not in result_df.columns:
+                # Add completely missing columns as 0
+                result_df[col] = 0
+                logger.warning(f"Column '{col}' was missing entirely, filled with 0.")
+                continue # Go to next column
+
+            # Convert to numeric, coercing errors (turns non-numbers into NaN)
+            numeric_col = pd.to_numeric(result_df[col], errors='coerce')
+
+            # Fill any NaNs (from coercion or original data) with 0
+            # Assumes 0 is acceptable if loading fixed source NULLs to NaN correctly
+            result_df[col] = numeric_col.fillna(0)
+        # --- END CORRECTION ---
+
 
         def safe_divide(numerator, denominator, default_val):
-            num = pd.to_numeric(numerator, errors='coerce'); den = pd.to_numeric(denominator, errors='coerce').replace(0, np.nan)
-            return (num / den).fillna(default_val)
+            num = pd.to_numeric(numerator, errors='coerce');
+            den = pd.to_numeric(denominator, errors='coerce').replace(0, np.nan) # Replace 0 with NaN for division
+            result = num / den
+            # Replace infinite values that might arise from division involving NaNs or large numbers
+            result.replace([np.inf, -np.inf], np.nan, inplace=True)
+            return result.fillna(default_val)
 
-        # --- Basic Shooting Stats ---
+        # --- eFG% Calculation & Input Debug ---
+        if self.debug and len(result_df) > 0:
+            logger.debug("--- eFG% Input Debug ---")
+            efg_inputs = ['home_fg_made', 'home_3pm', 'home_fg_attempted', 'away_fg_made', 'away_3pm', 'away_fg_attempted']
+            if all(c in result_df.columns for c in efg_inputs):
+                logger.debug(f"eFG% Input Stats (Describe):\n{result_df[efg_inputs].describe().to_string()}")
+                logger.debug(f"eFG% Input Stats (Head):\n{result_df[efg_inputs].head().to_string()}")
+            else: logger.warning(f"Missing inputs for eFG% debug: {[c for c in efg_inputs if c not in result_df.columns]}")
         result_df['home_efg_pct'] = safe_divide(result_df['home_fg_made'] + 0.5 * result_df['home_3pm'], result_df['home_fg_attempted'], self.defaults['efg_pct'])
         result_df['away_efg_pct'] = safe_divide(result_df['away_fg_made'] + 0.5 * result_df['away_3pm'], result_df['away_fg_attempted'], self.defaults['efg_pct'])
         result_df['efg_pct_diff'] = result_df['home_efg_pct'] - result_df['away_efg_pct']
+
+        # --- FT Rate Calculation & Input Debug ---
+        if self.debug and len(result_df) > 0:
+            logger.debug("--- FT Rate Input Debug ---")
+            ftr_inputs = ['home_ft_attempted', 'home_fg_attempted', 'away_ft_attempted', 'away_fg_attempted']
+            if all(c in result_df.columns for c in ftr_inputs):
+                logger.debug(f"FTr Input Stats (Describe):\n{result_df[ftr_inputs].describe().to_string()}")
+                logger.debug(f"FTr Input Stats (Head):\n{result_df[ftr_inputs].head().to_string()}")
+            else: logger.warning(f"Missing inputs for FTr debug: {[c for c in ftr_inputs if c not in result_df.columns]}")
         result_df['home_ft_rate'] = safe_divide(result_df['home_ft_attempted'], result_df['home_fg_attempted'], self.defaults['ft_rate'])
         result_df['away_ft_rate'] = safe_divide(result_df['away_ft_attempted'], result_df['away_fg_attempted'], self.defaults['ft_rate'])
         result_df['ft_rate_diff'] = result_df['home_ft_rate'] - result_df['away_ft_rate']
 
         # --- Rebounding Percentages ---
         result_df['home_oreb_pct'] = safe_divide(result_df['home_off_reb'], result_df['home_off_reb'] + result_df['away_def_reb'], self.defaults['oreb_pct'])
-        result_df['away_dreb_pct'] = safe_divide(result_df['away_def_reb'], result_df['away_def_reb'] + result_df['home_off_reb'], self.defaults['dreb_pct']) # Team perspective DReb%
+        result_df['away_dreb_pct'] = safe_divide(result_df['away_def_reb'], result_df['away_def_reb'] + result_df['home_off_reb'], self.defaults['dreb_pct'])
         result_df['away_oreb_pct'] = safe_divide(result_df['away_off_reb'], result_df['away_off_reb'] + result_df['home_def_reb'], self.defaults['oreb_pct'])
-        result_df['home_dreb_pct'] = safe_divide(result_df['home_def_reb'], result_df['home_def_reb'] + result_df['away_off_reb'], self.defaults['dreb_pct']) # Team perspective DReb%
+        result_df['home_dreb_pct'] = safe_divide(result_df['home_def_reb'], result_df['home_def_reb'] + result_df['away_off_reb'], self.defaults['dreb_pct'])
         result_df['oreb_pct_diff'] = result_df['home_oreb_pct'] - result_df['away_oreb_pct']
         result_df['dreb_pct_diff'] = result_df['home_dreb_pct'] - result_df['away_dreb_pct']
         result_df['home_trb_pct'] = safe_divide(result_df['home_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], self.defaults['trb_pct'])
         result_df['away_trb_pct'] = safe_divide(result_df['away_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], self.defaults['trb_pct'])
         result_df['trb_pct_diff'] = result_df['home_trb_pct'] - result_df['away_trb_pct']
 
-        # --- Possessions and Pace (CORRECTED FORMULA + DEBUGGING) ---
+        # --- Possessions and Pace (CORRECTED FORMULA + INPUT DEBUGGING) ---
         # ** Add Debug Logging for Inputs **
-            # --- Add Detailed Input Logging for Possession ---
         if self.debug and len(result_df) > 0:
             logger.debug("--- Possession Input Debug ---")
             inputs_to_check = ['home_fg_attempted', 'home_ft_attempted', 'home_off_reb', 'home_turnovers',
                                'away_fg_attempted', 'away_ft_attempted', 'away_off_reb', 'away_turnovers']
-            # Log stats for required inputs
             if all(c in result_df.columns for c in inputs_to_check):
                 logger.debug(f"Input Stats (Describe):\n{result_df[inputs_to_check].describe().to_string()}")
-                # Log first few rows
                 logger.debug(f"Input Stats (Head):\n{result_df[inputs_to_check].head().to_string()}")
             else:
-                logger.warning(f"Missing some inputs needed for possession debug log: {[c for c in inputs_to_check if c not in result_df]}")
-        # --- End Input Logging ---
+                logger.warning(f"Missing some inputs needed for possession debug log: {[c for c in inputs_to_check if c not in result_df.columns]}")
+        # ** End Input Logging **
 
         # Standard approximation: Poss ≈ FGA + 0.44*FTA - OReb + TOV
         home_poss = result_df['home_fg_attempted'] + 0.44 * result_df['home_ft_attempted'] - result_df['home_off_reb'] + result_df['home_turnovers']
         away_poss = result_df['away_fg_attempted'] + 0.44 * result_df['away_ft_attempted'] - result_df['away_off_reb'] + result_df['away_turnovers']
 
-        # Average team possessions for game estimate
+        # Average team possessions - NO CLIPPING FOR DEBUG
         result_df['possessions_est'] = (0.5 * (home_poss + away_poss)).fillna(self.defaults['estimated_possessions'])
-        # REMOVE CLIP lower=70 temporarily for debugging
-        # result_df['possessions_est'] = result_df['possessions_est'].clip(lower=70.0)
+        # result_df['possessions_est'] = result_df['possessions_est'].clip(lower=70.0) # Keep clipping commented
 
         if self.debug:
              logger.debug(f"RAW Possession Estimates (Describe):\n{result_df['possessions_est'].describe().to_string()}")
              logger.debug(f"RAW Possession Estimates (Sample):\n{result_df['possessions_est'].head().to_string()}")
+
+        # Use NaN for potential division by zero, fillna later
         result_df['home_possessions'] = result_df['possessions_est'].replace(0, np.nan)
         result_df['away_possessions'] = result_df['possessions_est'].replace(0, np.nan)
 
-        # Pace: Possessions per 48 minutes
+        # Pace
         num_ot = np.where((result_df['home_ot'] > 0) | (result_df['away_ot'] > 0), 1, 0)
         game_minutes_calc = 48.0 + num_ot * 5.0
-        result_df['game_minutes_played'] = np.where(game_minutes_calc <= 0, 48.0, game_minutes_calc) # Use corrected non-replace version
-
-        # Calculate Pace using the NEW raw possessions_est
+        result_df['game_minutes_played'] = np.where(game_minutes_calc <= 0, 48.0, game_minutes_calc) # Corrected check
         result_df['game_pace'] = safe_divide(result_df['possessions_est'] * 48.0, result_df['game_minutes_played'], self.defaults['pace'])
         result_df['home_pace'] = result_df['game_pace']; result_df['away_pace'] = result_df['game_pace']
-        result_df['pace_differential'] = 0.0 # Pace is game-level
+        result_df['pace_differential'] = 0.0
 
-        # --- Efficiency (Ratings) - Points per 100 Possessions ---
+        # --- Efficiency (Ratings) - NO CLIPPING ---
         result_df['home_offensive_rating'] = safe_divide(result_df['home_score'] * 100, result_df['home_possessions'], self.defaults['offensive_rating'])
         result_df['away_offensive_rating'] = safe_divide(result_df['away_score'] * 100, result_df['away_possessions'], self.defaults['offensive_rating'])
-        result_df['home_defensive_rating'] = result_df['away_offensive_rating']; result_df['away_defensive_rating'] = result_df['home_offensive_rating']
-        # ** CLIPPING REMOVED **
+        result_df['home_defensive_rating'] = result_df['away_offensive_rating']
+        result_df['away_defensive_rating'] = result_df['home_offensive_rating']
         rating_cols = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating']
-        for col in rating_cols: result_df[col] = result_df[col].fillna(self.defaults.get(col.split('_')[1]+'_rating', 115.0)) # Keep fillna
+        for col in rating_cols: result_df[col] = result_df[col].fillna(self.defaults.get(col.split('_')[1]+'_rating', 115.0)) # NO CLIP
         result_df['home_net_rating'] = result_df['home_offensive_rating'] - result_df['home_defensive_rating']
         result_df['away_net_rating'] = result_df['away_offensive_rating'] - result_df['away_defensive_rating']
         result_df['efficiency_differential'] = result_df['home_net_rating'] - result_df['away_net_rating']
 
-        # --- Turnover Rate (TOV per 100 Poss) ---
+        # --- Turnover Rate (TOV per 100 Poss) - NO CLIPPING ---
         result_df['home_tov_rate'] = safe_divide(result_df['home_turnovers'] * 100, result_df['home_possessions'], self.defaults['tov_rate'])
         result_df['away_tov_rate'] = safe_divide(result_df['away_turnovers'] * 100, result_df['away_possessions'], self.defaults['tov_rate'])
-        # ** CLIPPING REMOVED **
-        result_df['home_tov_rate'] = result_df['home_tov_rate'].fillna(self.defaults['tov_rate']) # Keep fillna
-        result_df['away_tov_rate'] = result_df['away_tov_rate'].fillna(self.defaults['tov_rate']) # Keep fillna
+        # ** NO CLIPPING **
+        result_df['home_tov_rate'] = result_df['home_tov_rate'].fillna(self.defaults['tov_rate'])
+        result_df['away_tov_rate'] = result_df['away_tov_rate'].fillna(self.defaults['tov_rate'])
         result_df['tov_rate_diff'] = result_df['away_tov_rate'] - result_df['home_tov_rate']
 
         # --- Convenience Score Columns ---
         if 'total_score' not in result_df.columns: result_df['total_score'] = result_df['home_score'] + result_df['away_score']
         if 'point_diff' not in result_df.columns: result_df['point_diff'] = result_df['home_score'] - result_df['away_score']
 
-        # Final fillna for potentially NaN possession columns used as divisors
+        # Final fillna for possession columns (do this AFTER they've been used in calculations)
         result_df['home_possessions'] = result_df['home_possessions'].fillna(self.defaults['estimated_possessions'])
         result_df['away_possessions'] = result_df['away_possessions'].fillna(self.defaults['estimated_possessions'])
 
@@ -331,7 +382,7 @@ class NBAFeatureEngine:
             try:
                 FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
                 logger.info("Generating debug stats for integrate_advanced_features...")
-                key_metrics = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating', 'game_pace', 'home_efg_pct', 'away_efg_pct', 'home_tov_rate', 'away_tov_rate', 'home_trb_pct', 'away_trb_pct', 'possessions_est', 'home_net_rating', 'away_net_rating', 'efficiency_differential', 'home_ft_rate', 'away_ft_rate'] # Added FT Rate
+                key_metrics = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating', 'game_pace', 'home_efg_pct', 'away_efg_pct', 'home_tov_rate', 'away_tov_rate', 'home_trb_pct', 'away_trb_pct', 'possessions_est', 'home_net_rating', 'away_net_rating', 'efficiency_differential', 'home_ft_rate', 'away_ft_rate']
                 metrics_to_describe = [m for m in key_metrics if m in result_df.columns]
                 if metrics_to_describe:
                     summary = result_df[metrics_to_describe].describe()
@@ -339,17 +390,17 @@ class NBAFeatureEngine:
                     with open(summary_path, 'w') as f: f.write(f"Summary Stats for Advanced Metrics (n={len(result_df)}):\n{summary.to_string()}")
                     logger.info(f"Saved advanced metrics summary to {summary_path}")
                     if PLOTTING_AVAILABLE:
-                        plot_cols = ['home_offensive_rating', 'game_pace', 'home_efg_pct', 'home_tov_rate', 'possessions_est', 'home_ft_rate'] # Added Poss and FTr
+                        plot_cols = ['home_offensive_rating', 'game_pace', 'home_efg_pct', 'home_tov_rate', 'possessions_est', 'home_ft_rate']
                         for col in plot_cols:
                              if col in result_df.columns:
-                                 plt.figure(figsize=(8, 5)); sns.histplot(result_df[col].dropna(), kde=True, bins=30); plt.title(f'Distribution: {col}')
+                                 plt.figure(figsize=(8, 5)); sns.histplot(result_df[col].dropna(), kde=True, bins=50); plt.title(f'Distribution: {col}')
                                  plot_path = FEATURE_DEBUG_DIR / f"advanced_{col}_dist.png"; plt.savefig(plot_path); plt.close()
                                  logger.info(f"Saved distribution plot to {plot_path}")
                     else: logger.warning("Plotting libraries not available.")
                 else: logger.warning("No key advanced metrics found to describe.")
             except Exception as e: logger.error(f"Error generating debug stats for advanced features: {e}", exc_info=True)
 
-        logger.debug("Finished integrating advanced features (v4 - Debugging Pace/Poss, No Clipping).")
+        logger.debug("Finished integrating advanced features (v7 - Input Debug, NO CLIPPING).")
         return result_df
 
     # --- add_rolling_features ---
@@ -725,9 +776,9 @@ class NBAFeatureEngine:
                     ts_df[col] = default  # Use standard assignment
             team_stats_available = True
         else:
-            logger.warning("`team_stats_df` is empty/None. Adding placeholders.")
+            logger.warning("team_stats_df is empty/None. Adding placeholders.")
         if 'game_date' not in result_df.columns or pd.isna(result_df['game_date']).all():
-            logger.error("`game_date` missing/all NaN. Cannot merge.")
+            logger.error("game_date missing/all NaN. Cannot merge.")
             team_stats_available = False
 
         if not team_stats_available:
@@ -1035,9 +1086,9 @@ class NBAFeatureEngine:
         logger.info("Starting comprehensive feature generation pipeline...")
         start_time_total = time.time()
         # --- Input Validation ---
-        if df is None or df.empty: logger.error("Input DataFrame `df` is empty."); return pd.DataFrame()
+        if df is None or df.empty: logger.error("Input DataFrame df is empty."); return pd.DataFrame()
         essential_cols = ['game_id', 'game_date', 'home_team', 'away_team']
-        if not all(col in df.columns for col in essential_cols): logger.error(f"Input `df` missing essential columns."); return pd.DataFrame()
+        if not all(col in df.columns for col in essential_cols): logger.error(f"Input df missing essential columns."); return pd.DataFrame()
 
         # --- Prepare DataFrames ---
         target_games_df = df.copy() # This is the df for which we want final features

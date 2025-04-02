@@ -270,14 +270,14 @@ def process_day(date_obj: datetime):
 
 def main():
     # Example: fetch data from 2025-03-16 to 2025-03-17
-    start_date = datetime(2025, 3, 24)
-    end_date = datetime(2025, 3, 28)
+    start_date = datetime(2024, 4, 1)
+    end_date = datetime(2025, 1, 1)
 
     print(f"Starting historical data import from {start_date} to {end_date}")
     current = start_date
     while current <= end_date:
         process_day(current)
-        time.sleep(60)  # to avoid potential rate-limiting
+        time.sleep(5)  # to avoid potential rate-limiting
         current += timedelta(days=1)
 
     print("\nCompleted processing historical GAME-level stats.")

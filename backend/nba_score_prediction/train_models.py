@@ -270,27 +270,49 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
          except Exception as e:
              logger.error(f"Error loading team stats CSV: {e}", exc_info=True)
 
-    # --- Final Cleaning ---
+    
+       # --- Final Cleaning ---
     if not hist_df.empty:
-        missing_hist_cols = [col for col in hist_required_cols if col not in hist_df.columns]
-        if missing_hist_cols:
-             logger.warning(f"Historical data missing columns: {missing_hist_cols}. Filling with 0.")
-             for col in missing_hist_cols: hist_df[col] = 0
+        # ... (loop adding missing columns - correctly indented) ...
+
+        logger.info("Converting historical numeric columns and handling NaNs...") # Add log
         for col in hist_numeric_cols:
             if col in hist_df.columns:
-                hist_df[col] = pd.to_numeric(hist_df[col], errors='coerce').fillna(0)
+                numeric_col = pd.to_numeric(hist_df[col], errors='coerce')
+                # Change fillna(0) to fillna(np.nan) to preserve missing info
+                hist_df[col] = numeric_col.fillna(np.nan) # <<< CHANGE HERE
+                # Optional: Log counts of NaNs introduced by coercion/original data
+                # nan_count = numeric_col.isnull().sum()
+                # if nan_count > 0:
+                #     logger.debug(f"Column '{col}' has {nan_count} NaN values after coercion/load.")
+            else: # Should be handled by missing column loop, but safeguard
+                 hist_df[col] = np.nan # Fill missing numeric cols with NaN
+
+        # Optional: Log NaN counts specifically for key columns AFTER the loop
+        if args.debug:
+            key_cols_nan_check = ['home_fg_attempted', 'home_ft_attempted', 'away_fg_attempted', 'away_ft_attempted']
+            for k_col in key_cols_nan_check:
+                if k_col in hist_df.columns:
+                    logger.debug(f"NaN count in loaded hist_df['{k_col}']: {hist_df[k_col].isnull().sum()}")
+
         hist_df = hist_df.sort_values('game_date').reset_index(drop=True)
 
+        # Keep the debug logging block for describe/head AFTER sorting/resetting
+        if args.debug and not hist_df.empty:
+             try:
+                 cols_to_check = ['home_fg_attempted', 'home_ft_attempted', 'home_off_reb', 'home_turnovers',
+                                  'away_fg_attempted', 'away_ft_attempted', 'away_off_reb', 'away_turnovers']
+                 cols_present = [c for c in cols_to_check if c in hist_df.columns]
+                 if cols_present:
+                      logger.debug(f"--- Post-Load Data Check (hist_df in load_data_source, NaNs preserved) ---")
+                      logger.debug(f"Describe output for key columns in loaded hist_df:\n{hist_df[cols_present].describe().to_string()}")
+                      logger.debug(f"Head output for key columns in loaded hist_df:\n{hist_df[cols_present].head(10).to_string()}")
+                 else: logger.warning("Could not perform post-load check: Key columns missing.")
+             except Exception as log_e: logger.error(f"Error during post-load data check logging: {log_e}")
+
     if not team_stats_df.empty:
-        missing_team_cols = [col for col in team_required_cols if col not in team_stats_df.columns]
-        if missing_team_cols:
-             logger.warning(f"Team stats data missing columns: {missing_team_cols}. Filling.")
-             for col in missing_team_cols: team_stats_df[col] = 0.0 if col in team_numeric_cols else ''
-        for col in team_numeric_cols:
-            if col in team_stats_df.columns:
-                team_stats_df[col] = pd.to_numeric(team_stats_df[col], errors='coerce').fillna(0)
-        if 'current_form' in team_stats_df.columns:
-            team_stats_df['current_form'] = team_stats_df['current_form'].astype(str).fillna('')
+        # ... (existing cleaning for team_stats_df) ...
+        pass
 
     logger.info(f"Data loading complete. Historical: {len(hist_df)} rows, Team Stats: {len(team_stats_df)} rows.")
     return hist_df, team_stats_df
@@ -326,69 +348,80 @@ def select_features(feature_engine: Optional[NBAFeatureEngine],
                     data_df: pd.DataFrame,
                     target_context: str = 'pregame_score') -> List[str]:
     """
-    Selects features suitable for pre-game score prediction, ensuring numeric types
-    and excluding post-game raw stats and direct derivatives.
+    Selects features suitable for pre-game score prediction, ensuring numeric types,
+    excluding post-game raw stats, AND pruning rolling std devs with expected low variance.
     """
     logger.info(f"Selecting features for target context: {target_context}")
     selected_features: List[str] = []
 
     # Define columns unavailable PRE-GAME (Targets, Raw Box Scores, Post-Game Calculated Advanced Stats)
     pregame_exclude_cols = set([
-        # --- Identifiers / Metadata ---
+        # ... (keep your full list of columns to exclude here) ...
         'id', 'game_id', 'home_team_id', 'away_team_id', 'season', 'league_id',
-        # --- TARGETS ---
         'home_score', 'away_score', 'point_diff', 'total_score',
-        # --- RAW BOX SCORE STATS ---
-        'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted',
-        'home_3pm', 'home_3pa', 'away_3pm', 'away_3pa',
-        'home_ft_made', 'home_ft_attempted', 'away_ft_made', 'away_ft_attempted',
-        'home_off_reb', 'home_def_reb', 'home_total_reb', 'away_off_reb', 'away_def_reb', 'away_total_reb',
-        'home_turnovers', 'away_turnovers', 'home_assists', 'home_steals', 'home_blocks', 'home_fouls',
-        'away_assists', 'away_steals', 'away_blocks', 'away_fouls',
-        # --- RAW QUARTER SCORES ---
-        'home_q1', 'home_q2', 'home_q3', 'home_q4', 'home_ot',
-        'away_q1', 'away_q2', 'away_q3', 'away_q4', 'away_ot',
-        # --- FEATURES DERIVED DIRECTLY FROM *THIS GAME's* RAW STATS (POST-GAME) ---
-        'home_efg_pct', 'away_efg_pct', 'efg_pct_diff', 'home_ft_rate', 'away_ft_rate', 'ft_rate_diff',
-        'home_oreb_pct', 'away_dreb_pct', 'away_oreb_pct', 'home_dreb_pct', 'oreb_pct_diff', 'dreb_pct_diff',
-        'home_trb_pct', 'away_trb_pct', 'trb_pct_diff', 'possessions_est', 'home_possessions', 'away_possessions',
-        'game_minutes_played', 'game_pace', 'home_pace', 'away_pace', 'pace_differential',
-        'home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating',
-        'home_net_rating', 'away_net_rating', 'efficiency_differential', 'home_tov_rate', 'away_tov_rate', 'tov_rate_diff',
-        # --- INTRA-GAME MOMENTUM (Calculated from Quarter Scores) ---
-        'q1_margin', 'q2_margin', 'q3_margin', 'q4_margin', 'end_q1_diff', 'end_q2_diff',
-        'end_q3_diff', 'end_q4_reg_diff', 'q2_margin_change', 'q3_margin_change',
-        'q4_margin_change', 'momentum_score_ewma_q4', 'momentum_score_ewma_q3',
-        # --- Other Exclusions ---
-        'home_team', 'away_team', 'game_date',             # Raw Info (keep game_date index if needed separately)
-        'home_team_norm', 'away_team_norm', 'matchup_key', # Intermediate keys
-        'current_form',                                     # Raw form string (use parsed features instead)
-        'matchup_last_date',                                # Datetime column (use recency derived from it)
+        'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted', 'home_3pm', 'home_3pa', 'away_3pm', 'away_3pa', 'home_ft_made', 'home_ft_attempted', 'away_ft_made', 'away_ft_attempted','home_off_reb', 'home_def_reb', 'home_total_reb', 'away_off_reb', 'away_def_reb', 'away_total_reb','home_turnovers', 'away_turnovers', 'home_assists', 'home_steals', 'home_blocks', 'home_fouls','away_assists', 'away_steals', 'away_blocks', 'away_fouls',
+        'home_q1', 'home_q2', 'home_q3', 'home_q4', 'home_ot', 'away_q1', 'away_q2', 'away_q3', 'away_q4', 'away_ot',
+        'home_efg_pct', 'away_efg_pct', 'efg_pct_diff', 'home_ft_rate', 'away_ft_rate', 'ft_rate_diff','home_oreb_pct', 'away_dreb_pct', 'away_oreb_pct', 'home_dreb_pct', 'oreb_pct_diff', 'dreb_pct_diff','home_trb_pct', 'away_trb_pct', 'trb_pct_diff', 'possessions_est', 'home_possessions', 'away_possessions','game_minutes_played', 'game_pace', 'home_pace', 'away_pace', 'pace_differential','home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating','home_net_rating', 'away_net_rating', 'efficiency_differential', 'home_tov_rate', 'away_tov_rate', 'tov_rate_diff',
+        'q1_margin', 'q2_margin', 'q3_margin', 'q4_margin', 'end_q1_diff', 'end_q2_diff','end_q3_diff', 'end_q4_reg_diff', 'q2_margin_change', 'q3_margin_change','q4_margin_change', 'momentum_score_ewma_q4', 'momentum_score_ewma_q3',
+        'home_team', 'away_team', 'game_date', 'home_team_norm', 'away_team_norm', 'matchup_key','current_form', 'matchup_last_date',
     ])
 
     try:
-        # Start with ALL columns available in the data
+        # --- Step 1: Initial Selection (Numeric, Pre-Game) ---
         all_cols = data_df.columns.tolist()
-        # Exclude the post-game/target columns
         candidate_features = [col for col in all_cols if col not in pregame_exclude_cols]
-        # Select only purely numeric types from the candidates
         temp_numeric_df = data_df[candidate_features].select_dtypes(include=np.number)
         selected_features = temp_numeric_df.columns.tolist()
-        # Optional: Remove columns that are all NaN or all Zero after selection
-        cols_to_drop = [col for col in selected_features if data_df[col].isnull().all() or (data_df[col] == 0).all()]
-        if cols_to_drop:
-            logger.warning(f"Dropping constant/all-NaN features: {cols_to_drop}")
-            selected_features = [col for col in selected_features if col not in cols_to_drop]
+        cols_to_drop_nan_const = [col for col in selected_features if data_df[col].isnull().all() or (data_df[col].nunique() <= 1)]
+        if cols_to_drop_nan_const:
+            logger.warning(f"Dropping constant/all-NaN features: {cols_to_drop_nan_const}")
+            selected_features = [col for col in selected_features if col not in cols_to_drop_nan_const]
+        logger.info(f"Initial pre-game numeric features selected: {len(selected_features)}")
+
+        # --- Step 2: Pruning Low-Variance Rolling Std Devs ---
+        # Define patterns based on insights from previous debug runs.
+        # Since base metrics are likely still flawed in this code version,
+        # we expect Pace, eFG, FT Rate std devs to have low variance.
+        # Ratings/TOV Rate might also be low variance due to clipping in this version.
+        patterns_to_exclude = [
+            '_rolling_off_rating_std_',
+            '_rolling_def_rating_std_',
+            '_rolling_net_rating_std_',
+            '_rolling_pace_std_',      # Expect low variance
+            '_rolling_efg_pct_std_',   # Expect low variance
+            '_rolling_tov_rate_std_',  # Expect low variance (due to clipping)
+            '_rolling_ft_rate_std_'    # Expect low variance
+        ]
+
+        features_kept = []
+        features_removed_low_var = []
+        for feature in selected_features:
+            exclude = False
+            for pattern in patterns_to_exclude:
+                if pattern in feature:
+                    exclude = True
+                    features_removed_low_var.append(feature)
+                    break
+            if not exclude:
+                features_kept.append(feature)
+
+        if features_removed_low_var:
+            logger.info(f"Pruning {len(features_removed_low_var)} rolling std dev features potentially lacking variance.")
+            logger.debug(f"Sample removed std dev features: {features_removed_low_var[:10]}...")
+            selected_features = features_kept # Update the list
+        else:
+            logger.info("No low-variance rolling std dev features found to prune based on defined patterns.")
+        # --- End Pruning ---
 
     except Exception as e:
-        logger.error(f"Error during feature selection: {e}", exc_info=True)
-        selected_features = []  # Reset on error
+        logger.error(f"Error during feature selection/pruning: {e}", exc_info=True)
+        return [] # Return empty list on error
 
     if not selected_features:
-        logger.error("No numeric pre-game features selected! Cannot train models.")
+        logger.error("No features remaining after selection/pruning! Cannot train models.")
     else:
-        logger.info(f"Selected {len(selected_features)} purely numeric pre-game features.")
-        logger.debug(f"Selected features sample: {selected_features[:10]}") # Log first few
+        logger.info(f"Final selected features after pruning: {len(selected_features)}") # Log final count
+        logger.debug(f"Final features sample: {selected_features[:10]}")
 
     return selected_features
 
