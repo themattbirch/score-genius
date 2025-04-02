@@ -95,6 +95,8 @@ backend/analytics/outputs/*
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
+notebooks/
+
 
 # Misc
 Thumbs.db

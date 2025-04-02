@@ -1,0 +1,5 @@
+# robots.txt
+
+User-agent: *
+Disallow: /app/
+Allow: /1

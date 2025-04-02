@@ -1,0 +1,1477 @@
+{
+    "metadata": {
+        "last_updated": "2024-11-26T23:27:28.447079",
+        "version": "1.0"
+    },
+    "nfl": {
+        "Acrisure Stadium": {
+            "location": "Pittsburgh, Pennsylvania",
+            "team": "Pittsburgh Steelers",
+            "latitude": 40.4467166,
+            "longitude": -80.01571985200171,
+            "display_name": "Acrisure Stadium, Art Rooney Avenue, North Shore, Pittsburgh, Allegheny County, Pennsylvania, 15290, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:29.103099"
+        },
+        "Allegiant Stadium": {
+            "location": "Paradise, Nevada",
+            "team": "Las Vegas Raiders",
+            "latitude": 36.09073585,
+            "longitude": -115.18333029577104,
+            "display_name": "Allegiant Stadium, 3333, Al Davis Way, Las Vegas, Clark County, Nevada, 89118, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:30.361398"
+        },
+        "Arrowhead Stadium": {
+            "location": "Kansas City, Missouri",
+            "team": "Kansas City Chiefs",
+            "latitude": 39.04894045,
+            "longitude": -94.48499381102714,
+            "display_name": "Arrowhead Stadium, 1, Arrowhead Drive, Kansas City, Jackson County, Missouri, 64129, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:31.683543"
+        },
+        "AT&T Stadium": {
+            "location": "Arlington, Texas",
+            "team": "Dallas Cowboys",
+            "latitude": 32.74785025,
+            "longitude": -97.09283370737742,
+            "display_name": "AT&T Stadium, 900, East Randol Mill Road, Arlington, Tarrant County, Texas, 76011, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:32.923684"
+        },
+        "Bank of America Stadium": {
+            "location": "Charlotte, North Carolina",
+            "team": "Carolina Panthers",
+            "latitude": 35.22579505,
+            "longitude": -80.85385877910787,
+            "display_name": "Bank of America Stadium, 800, South Mint Street, Third Ward, Uptown, Charlotte, Mecklenburg County, North Carolina, 28202, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:34.165761"
+        },
+        "Caesars Superdome": {
+            "location": "New Orleans, Louisiana",
+            "team": "New Orleans Saints",
+            "latitude": 29.9510489,
+            "longitude": -90.08230762538903,
+            "display_name": "Caesars Superdome, 1500, Sugar Bowl Drive, Storyville, New Orleans, Orleans Parish, Louisiana, 70112, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:35.426653"
+        },
+        "Empower Field at Mile High": {
+            "location": "Denver, Colorado",
+            "team": "Denver Broncos",
+            "latitude": 39.7434472,
+            "longitude": -105.0132309,
+            "display_name": "Empower Field at Mile High, 1499, West 4th Street, Auraria, Denver, Colorado, 80204, United States",
+            "type": "station",
+            "last_verified": "2024-11-26T23:27:36.655424"
+        },
+        "EverBank Stadium": {
+            "location": "Jacksonville, Florida",
+            "team": "Jacksonville Jaguars",
+            "latitude": 30.32398105,
+            "longitude": -81.63730457034035,
+            "display_name": "EverBank Stadium, 1, Gator Bowl Boulevard, Jacksonville, Duval County, Florida, 32202, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:38.066203"
+        },
+        "Ford Field": {
+            "location": "Detroit, Michigan",
+            "team": "Detroit Lions",
+            "latitude": 42.33995675,
+            "longitude": -83.04561657403696,
+            "display_name": "Ford Field, Saint Antoine Street, Lafayette Park, Midtown, Detroit, Wayne County, Michigan, 48226, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:39.356894"
+        },
+        "Gillette Stadium": {
+            "location": "Foxborough, Massachusetts",
+            "team": "New England Patriots",
+            "latitude": 42.091252600000004,
+            "longitude": -71.2644646105907,
+            "display_name": "Gillette Stadium, Patriot Place, Foxborough, Norfolk County, Massachusetts, 02071, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:40.634368"
+        },
+        "Hard Rock Stadium": {
+            "location": "Miami Gardens, Florida",
+            "team": "Miami Dolphins",
+            "latitude": 25.95790315,
+            "longitude": -80.24001919530573,
+            "display_name": "Hard Rock Stadium, 347, Northwest 199th Street, Miami Gardens, Miami-Dade County, Florida, 33056, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:41.888705"
+        },
+        "Highmark Stadium": {
+            "location": "Orchard Park, New York",
+            "team": "Buffalo Bills",
+            "latitude": 42.7737131,
+            "longitude": -78.78690321060253,
+            "display_name": "Highmark Blue Cross Blue Shield Stadium, 1, Bills Drive, Town of Orchard Park, Erie County, New York, 14127, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:43.391412"
+        },
+        "Huntington Bank Field": {
+            "location": "Cleveland, Ohio",
+            "team": "Cleveland Browns",
+            "latitude": 41.5060559,
+            "longitude": -81.69971184525946,
+            "display_name": "Huntington Bank Field, 100, Alfred Lerner Way, Downtown Cleveland, Cleveland, Cuyahoga County, Ohio, 44113, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:44.643686"
+        },
+        "Lambeau Field": {
+            "location": "Green Bay, Wisconsin",
+            "team": "Green Bay Packers",
+            "latitude": 44.50095825,
+            "longitude": -88.06103404376007,
+            "display_name": "Lambeau Field, 1265, Lombardi Avenue, Lombardi, Green Bay, Brown County, Wisconsin, 54304, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:45.900583"
+        },
+        "Levi's Stadium": {
+            "location": "Santa Clara, California",
+            "team": "San Francisco 49ers",
+            "latitude": 37.403158250000004,
+            "longitude": -121.96983144425579,
+            "display_name": "Levi\u2019s Stadium, 4900, Marie P. DeBartolo Way, Santa Clara, Santa Clara County, California, 95054, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:47.186396"
+        },
+        "Lincoln Financial Field": {
+            "location": "Philadelphia, Pennsylvania",
+            "team": "Philadelphia Eagles",
+            "latitude": 39.9009099,
+            "longitude": -75.16748915605905,
+            "display_name": "Lincoln Financial Field, 1, South Darien Street, South Philadelphia Sports Complex, South Philadelphia, Philadelphia, Philadelphia County, Pennsylvania, 19147, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:48.471561"
+        },
+        "Lucas Oil Stadium": {
+            "location": "Indianapolis, Indiana",
+            "team": "Indianapolis Colts",
+            "latitude": 39.7590621,
+            "longitude": -86.16383761053042,
+            "display_name": "Lucas Oil Stadium, West Empire Street, Old Southside, Indianapolis, Marion County, Indiana, 46206, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:49.750654"
+        },
+        "Lumen Field": {
+            "location": "Seattle, Washington",
+            "team": "Seattle Seahawks",
+            "latitude": 47.5953459,
+            "longitude": -122.33164431196111,
+            "display_name": "Lumen Field, 800, Occidental Avenue South, Yesler Terrace, Seattle, King County, Washington, 98134, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:51.054274"
+        },
+        "M&T Bank Stadium": {
+            "location": "Baltimore, Maryland",
+            "team": "Baltimore Ravens",
+            "latitude": 39.2779734,
+            "longitude": -76.62266511553918,
+            "display_name": "M&T Bank Stadium, Russell Street Service Drive, Sowebo, Baltimore, Maryland, 21230, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:52.326380"
+        },
+        "Mercedes-Benz Stadium\u2021": {
+            "location": "Atlanta, Georgia",
+            "team": "Atlanta Falcons",
+            "latitude": 33.7554123,
+            "longitude": -84.40084932004368,
+            "display_name": "Mercedes-Benz Stadium, 1414, Andrew Young International Boulevard, Castleberry Hill, Atlanta, Fulton County, Georgia, 30313, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:53.602348"
+        },
+        "MetLife Stadium": {
+            "location": "East Rutherford, New Jersey",
+            "team": "New York Giants, New York Jets",
+            "latitude": 40.81352375,
+            "longitude": -74.07340074891175,
+            "display_name": "MetLife Stadium, 1, MetLife Stadium Drive, East Rutherford, Bergen County, New Jersey, 07073, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:54.902311"
+        },
+        "Nissan Stadium": {
+            "location": "Nashville, Tennessee",
+            "team": "Tennessee Titans",
+            "latitude": 36.16652355,
+            "longitude": -86.77131480177009,
+            "display_name": "Nissan Stadium, 1, Titans Way, East Nashville, Nashville-Davidson, Davidson County, Middle Tennessee, Tennessee, 37201, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:56.150179"
+        },
+        "Northwest Stadium": {
+            "location": "Landover, Maryland",
+            "team": "Washington Commanders",
+            "latitude": 38.9077002,
+            "longitude": -76.86332608690218,
+            "display_name": "Northwest Stadium, 1600, Ring Road, Landover, Prince George's County, Maryland, 20785, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:57.426336"
+        },
+        "NRG Stadium": {
+            "location": "Houston, Texas",
+            "team": "Houston Texans",
+            "latitude": 29.6848581,
+            "longitude": -95.41080145326987,
+            "display_name": "NRG Stadium, 1, NRG Parkway, Houston, Harris County, Texas, 77054, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:58.753724"
+        },
+        "Paycor Stadium": {
+            "location": "Cincinnati, Ohio",
+            "team": "Cincinnati Bengals",
+            "latitude": 39.0954645,
+            "longitude": -84.5160488350198,
+            "display_name": "Paycor Stadium, 1, West Pete Rose Way, West Fourth Street Historic District, Central Business District, Cincinnati, Hamilton County, Ohio, 45202, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:27:59.990894"
+        },
+        "Raymond James Stadium": {
+            "location": "Tampa, Florida",
+            "team": "Tampa Bay Buccaneers",
+            "latitude": 27.97597925,
+            "longitude": -82.50421799673616,
+            "display_name": "Raymond James Stadium, West Tampa Bay Boulevard, Fair Ground Farms, Tampa, Hillsborough County, Florida, 33607, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:01.267193"
+        },
+        "SoFi Stadium": {
+            "location": "Inglewood, California",
+            "team": "Los Angeles Chargers, Los Angeles Rams",
+            "latitude": 33.95340735,
+            "longitude": -118.33900981025587,
+            "display_name": "SoFi Stadium, 1001, Champion Drive, Hollywood Park, Inglewood, Los Angeles County, California, 90301, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:02.581656"
+        },
+        "Soldier Field": {
+            "location": "Chicago, Illinois",
+            "team": "Chicago Bears",
+            "latitude": 41.86245145,
+            "longitude": -87.61671514704074,
+            "display_name": "Soldier Field, 1410, South Special Olympics Drive, Near South Side, Chicago, Cook County, Illinois, 60605, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:03.833065"
+        },
+        "State Farm Stadium": {
+            "location": "Glendale, Arizona",
+            "team": "Arizona Cardinals",
+            "latitude": 33.52779565,
+            "longitude": -112.26267190264335,
+            "display_name": "State Farm Stadium, 1, West Cardinals Drive, Glendale, Maricopa County, Arizona, 85305, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:05.157654"
+        },
+        "U.S. Bank Stadium": {
+            "location": "Minneapolis, Minnesota",
+            "team": "Minnesota Vikings",
+            "latitude": 44.9751097,
+            "longitude": -93.2593387,
+            "display_name": "U.S. Bank Stadium, US Bank Stadium Station, Minneapolis, Hennepin County, Minnesota, 55415, United States",
+            "type": "stop",
+            "last_verified": "2024-11-26T23:28:06.439135"
+        }
+    },
+    "ncaa": {
+        "Acrisure Stadium": {
+            "location": "Pittsburgh PA",
+            "team": "Pittsburgh",
+            "latitude": 40.4467166,
+            "longitude": -80.01571985200171,
+            "display_name": "Acrisure Stadium, Art Rooney Avenue, North Shore, Pittsburgh, Allegheny County, Pennsylvania, 15290, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:08.023102"
+        },
+        "Aggie Memorial Stadium": {
+            "location": "Las Cruces NM",
+            "team": "New Mexico State",
+            "latitude": 32.279636100000005,
+            "longitude": -106.74111145,
+            "display_name": "Aggie Memorial Stadium, 1810, East University Avenue, Las Cruces, Do\u00f1a Ana County, New Mexico, 88004, United States",
+            "type": "pitch",
+            "last_verified": "2024-11-26T23:28:10.934308"
+        },
+        "Alamodome": {
+            "location": "San Antonio TX",
+            "team": "UTSA",
+            "latitude": 29.4168923,
+            "longitude": -98.47889487569296,
+            "display_name": "Alamodome, 100, Montana Street, Hemisfair, San Antonio, Bexar County, Texas, 78203, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:12.740885"
+        },
+        "Alaska Airlines Field at Husky Stadium": {
+            "location": "Seattle WA",
+            "team": "Washington",
+            "latitude": 47.650373599999995,
+            "longitude": -122.30197598251354,
+            "display_name": "Husky Stadium, 3800, Montlake Boulevard Northeast, Central Campus, University District, Seattle, King County, Washington, 98105, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:14.026287"
+        },
+        "Albertsons Stadium": {
+            "location": "Boise ID",
+            "team": "Boise State",
+            "latitude": 43.60355615,
+            "longitude": -116.1957917192275,
+            "display_name": "Albertsons Stadium, South Bronco Lane, Boise, Ada County, Idaho, 83725, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:15.269193"
+        },
+        "Allegiant Stadium": {
+            "location": "Paradise NV",
+            "team": "UNLV",
+            "latitude": 36.09073585,
+            "longitude": -115.18333029577104,
+            "display_name": "Allegiant Stadium, 3333, Al Davis Way, Las Vegas, Clark County, Nevada, 89118, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:16.558138"
+        },
+        "Allen E Paulson Stadium": {
+            "location": "Statesboro GA",
+            "team": "Georgia Southern",
+            "latitude": 32.4121444,
+            "longitude": -81.7833368417609,
+            "display_name": "Paulson Stadium, Chandler Road, Pine Cove, Stadium Walk, Statesboro, Bulloch County, Georgia, 30458, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:17.812557"
+        },
+        "Alumni Stadium": {
+            "location": "Newton MA",
+            "team": "Boston College",
+            "latitude": 42.3370414,
+            "longitude": -71.2092214,
+            "display_name": "Newton, Middlesex County, Massachusetts, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:20.119331"
+        },
+        "Amon G Carter Stadium": {
+            "location": "Fort Worth TX",
+            "team": "TCU",
+            "latitude": 32.70978705,
+            "longitude": -97.36818000852281,
+            "display_name": "Amon G. Carter Stadium, Higview Street, Fort Worth, Tarrant County, Texas, 76129, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:21.933969"
+        },
+        "DATCU Stadium": {
+            "location": "Denton TX",
+            "team": "North Texas",
+            "latitude": 33.2039363,
+            "longitude": -97.1600466338925,
+            "display_name": "DATCU Stadium, 1251, South Bonnie Brae Street, Denton, Denton County, Texas, 76207, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:23.215870"
+        },
+        "Arizona Stadium": {
+            "location": "Tucson AZ",
+            "team": "Arizona",
+            "latitude": 32.2288359,
+            "longitude": -110.94877964287623,
+            "display_name": "Arizona Stadium, Enke Drive, Tucson, Pima County, Arizona, 85721, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:24.453340"
+        },
+        "Arthur L Williams Stadium": {
+            "location": "Lynchburg VA",
+            "team": "Liberty",
+            "latitude": 37.4137536,
+            "longitude": -79.1422464,
+            "display_name": "Lynchburg, Virginia, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:27.392532"
+        },
+        "Autzen Stadium": {
+            "location": "Eugene OR",
+            "team": "Oregon",
+            "latitude": 44.058217799999994,
+            "longitude": -123.0684379319035,
+            "display_name": "Autzen Stadium, 2700, Leo Harris Parkway, Eugene, Lane County, Oregon, 97401, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:28.654422"
+        },
+        "Bagwell Field at Dowdy Ficklen Stadium": {
+            "location": "Greenville NC",
+            "team": "East Carolina",
+            "latitude": 35.5906541,
+            "longitude": -77.34793652453996,
+            "display_name": "Greenville, NC, Greenville Boulevard Southeast, Dellwood, Greenville, Pitt County, North Carolina, 27858, United States",
+            "type": "water_tower",
+            "last_verified": "2024-11-26T23:28:30.662379"
+        },
+        "Beaver Stadium": {
+            "location": "College Township PA",
+            "team": "Penn State",
+            "latitude": 40.812074249999995,
+            "longitude": -77.85494312546311,
+            "display_name": "Beaver Stadium, 775, Curtin Road, College Township, Centre County, Pennsylvania, 16802, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:32.530085"
+        },
+        "Benson Field at Yulman Stadium": {
+            "location": "New Orleans LA",
+            "team": "Tulane",
+            "latitude": 29.9759983,
+            "longitude": -90.0782127,
+            "display_name": "New Orleans, Orleans Parish, Louisiana, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:36.042303"
+        },
+        "Bill Snyder Family Football Stadium": {
+            "location": "Manhattan KS",
+            "team": "Kansas State",
+            "latitude": 39.1836082,
+            "longitude": -96.5716694,
+            "display_name": "Manhattan, Riley County, Kansas, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:40.738207"
+        },
+        "Blaik Field at Michie Stadium": {
+            "location": "West Point NY",
+            "team": "Army",
+            "latitude": 41.3927227,
+            "longitude": -73.95986305044411,
+            "display_name": "United States Military Academy, West Street, Village of Highland Falls, Town of Highlands, Orange County, New York, 10928, United States",
+            "type": "university",
+            "last_verified": "2024-11-26T23:28:42.890705"
+        },
+        "Bobby Bowden Field at Doak S Campbell Stadium": {
+            "location": "Tallahassee FL",
+            "team": "Florida State",
+            "latitude": 30.4380832,
+            "longitude": -84.2809332,
+            "display_name": "Tallahassee, Leon County, Florida, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:45.286818"
+        },
+        "Bobby Dodd Stadium at Hyundai Field": {
+            "location": "Atlanta GA",
+            "team": "Georgia Tech",
+            "latitude": 33.7489924,
+            "longitude": -84.3902644,
+            "display_name": "Atlanta, Fulton County, Georgia, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:49.622250"
+        },
+        "Boone Pickens Stadium": {
+            "location": "Stillwater OK",
+            "team": "Oklahoma State",
+            "latitude": 36.1256929,
+            "longitude": -97.06686984320964,
+            "display_name": "Boone Pickens Stadium, West Hall of Fame Avenue, Stillwater, Payne County, Oklahoma, 74077, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:50.919008"
+        },
+        "Elliott T Bowers Stadium": {
+            "location": "Huntsville TX",
+            "team": "Sam Houston",
+            "latitude": 30.7235263,
+            "longitude": -95.5507771,
+            "display_name": "Huntsville, Walker County, Texas, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:53.559477"
+        },
+        "Bridgeforth Stadium": {
+            "location": "Harrisonburg VA",
+            "team": "James Madison",
+            "latitude": 38.4351564,
+            "longitude": -78.87305339121141,
+            "display_name": "Bridgeforth Stadium, Godwin Transit Center, Ridge Area, Harrisonburg, Virginia, 22081, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:28:54.900023"
+        },
+        "Brigham Field at Huskie Stadium": {
+            "location": "DeKalb IL",
+            "team": "NIU",
+            "latitude": 41.8903447,
+            "longitude": -88.7713953,
+            "display_name": "DeKalb County, Illinois, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:28:57.449360"
+        },
+        "Brooks Field at Wallace Wade Stadium": {
+            "location": "Durham NC",
+            "team": "Duke",
+            "latitude": 35.996653,
+            "longitude": -78.9018053,
+            "display_name": "Durham, Durham County, North Carolina, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:02.406147"
+        },
+        "Brooks Stadium": {
+            "location": "Conway SC",
+            "team": "Coastal Carolina",
+            "latitude": 33.7929764,
+            "longitude": -79.01748200485565,
+            "display_name": "Brooks Stadium, University Boulevard, Conway, Horry County, South Carolina, 29528, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:03.649942"
+        },
+        "Burgess Snow Field at JSU Stadium": {
+            "location": "Jacksonville AL",
+            "team": "Jacksonville State",
+            "latitude": 33.8137919,
+            "longitude": -85.7612872,
+            "display_name": "Jacksonville, Calhoun County, Alabama, 36265, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:06.722224"
+        },
+        "Cajun Field": {
+            "location": "Lafayette LA",
+            "team": "Louisiana",
+            "latitude": 30.21587275,
+            "longitude": -92.04173596347152,
+            "display_name": "Cajun Field, Reinhardt Drive, Lafayette, Lafayette Parish, Louisiana, 70504, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:08.023451"
+        },
+        "Camp Randall Stadium": {
+            "location": "Madison WI",
+            "team": "Wisconsin",
+            "latitude": 43.07007075,
+            "longitude": -89.41185545675701,
+            "display_name": "Camp Randall Stadium, 1440, Monroe Street, South Campus, Bowens Addition, Madison, Dane County, Wisconsin, 53711, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:09.298549"
+        },
+        "L N Federal Credit Union Stadium": {
+            "location": "Louisville KY",
+            "team": "Louisville",
+            "latitude": 38.206016149999996,
+            "longitude": -85.75877338041424,
+            "display_name": "L&N Federal Credit Union Stadium, South Floyd Street, Louisville, Jefferson County, Kentucky, 40292, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:10.621688"
+        },
+        "Carl Smith Center Home of David A Harrison III Field at Scott Stadium": {
+            "location": "Charlottesville VA",
+            "team": "Virginia",
+            "latitude": 38.029306,
+            "longitude": -78.4766781,
+            "display_name": "Charlottesville, Virginia, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:13.211214"
+        },
+        "Carlisle-Faulkner Field at M M Roberts Stadium": {
+            "location": "Hattiesburg MS",
+            "team": "Southern Miss",
+            "latitude": 31.3271189,
+            "longitude": -89.2903392,
+            "display_name": "Hattiesburg, Forrest County, Mississippi, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:16.015618"
+        },
+        "CEFCU Stadium": {
+            "location": "San Jose CA",
+            "team": "San Jose State",
+            "latitude": 37.319689499999996,
+            "longitude": -121.86831393740505,
+            "display_name": "CEFCU Stadium, South 7th Street, Spartan Keyes, San Jose, Santa Clara County, California, 95192, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:17.875886"
+        },
+        "Centennial Bank Stadium": {
+            "location": "Jonesboro AR",
+            "team": "Arkansas State",
+            "latitude": 35.84885975,
+            "longitude": -90.66718138858229,
+            "display_name": "Centennial Bank Stadium, Olympic Drive, Jonesboro, Craighead County, Arkansas, 72467, United States",
+            "type": "pitch",
+            "last_verified": "2024-11-26T23:29:19.408914"
+        },
+        "Center Parc Stadium": {
+            "location": "Atlanta GA",
+            "team": "Georgia State",
+            "latitude": 33.735526699999994,
+            "longitude": -84.3886513344851,
+            "display_name": "Center Parc Stadium, 755, Hank Aaron Drive Southeast, Peoplestown, Atlanta, Fulton County, Georgia, 30315, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:20.682700"
+        },
+        "Clarence T C Ching Athletics Complex": {
+            "location": "Honolulu HI",
+            "team": "Hawai i",
+            "latitude": 21.2942909,
+            "longitude": -157.81712089406557,
+            "display_name": "Clarence T.C. Ching Athletics Complex, Lower Campus Road, Moiliili, Saint Louis Heights, East Honolulu, Honolulu County, Hawaii, 96848, United States",
+            "type": "pitch",
+            "last_verified": "2024-11-26T23:29:21.937181"
+        },
+        "Darrell K Royal Texas Memorial Stadium": {
+            "location": "Austin TX",
+            "team": "Texas",
+            "latitude": 30.283810000000003,
+            "longitude": -97.732699361616,
+            "display_name": "Darrell K Royal-Texas Memorial Stadium, San Jacinto Boulevard, Medical District, Austin, Travis County, Texas, 78705, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:23.171654"
+        },
+        "David Booth Kansas Memorial Stadium": {
+            "location": "Lawrence KS",
+            "team": "Kansas",
+            "latitude": 38.9631054,
+            "longitude": -95.24646886063312,
+            "display_name": "David Booth Kansas Memorial stadium renovation, Lawrence, Douglas County, Kansas, United States",
+            "type": "construction",
+            "last_verified": "2024-11-26T23:29:25.347127"
+        },
+        "Davis Wade Stadium at Scott Field": {
+            "location": "Starkville, MS",
+            "team": "Mississippi State",
+            "latitude": 33.4638745,
+            "longitude": -88.8152074,
+            "display_name": "Starkville, Oktibbeha County, Mississippi, 39759, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:27.489819"
+        },
+        "Dix Stadium": {
+            "location": "Kent OH",
+            "team": "Kent State",
+            "latitude": 41.13902745,
+            "longitude": -81.31367539200747,
+            "display_name": "Dix Stadium, 2213, Summit Road, Kent, Franklin Township, Portage County, Ohio, 44266, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:28.736745"
+        },
+        "Donald W Reynolds Razorback Stadium Frank Broyles Field": {
+            "location": "Fayetteville AR",
+            "team": "Arkansas",
+            "latitude": 36.0625843,
+            "longitude": -94.1574328,
+            "display_name": "Fayetteville, Washington County, Arkansas, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:32.336342"
+        },
+        "Doyt L Perry Stadium": {
+            "location": "Bowling Green OH",
+            "team": "Bowling Green",
+            "latitude": 41.3780256,
+            "longitude": -83.62249751671973,
+            "display_name": "Doyt L. Perry Stadium, Stadium Drive, Athletics District, Bowling Green, Wood County, Ohio, 43403, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:34.312857"
+        },
+        "Falcon Stadium": {
+            "location": "USAF Academy CO",
+            "team": "Air Force",
+            "latitude": 38.978759,
+            "longitude": -104.8643892,
+            "display_name": "United States Post Office USAF Academy Station, 5136, Community Center Drive, El Paso County, Colorado, 80840, United States",
+            "type": "post_office",
+            "last_verified": "2024-11-26T23:29:36.856407"
+        },
+        "Faurot Field at Memorial Stadium": {
+            "location": "Columbia MO",
+            "team": "Missouri",
+            "latitude": 38.93571765,
+            "longitude": -92.33235844274179,
+            "display_name": "Faurot Field at Memorial Stadium, Mick Deaver Memorial Drive, Columbia, Columbia Township, Boone County, Missouri, 65211, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:38.074476"
+        },
+        "FBC Mortgage Stadium": {
+            "location": "Orlando FL",
+            "team": "UCF",
+            "latitude": 28.5479786,
+            "longitude": -81.41278418563017,
+            "display_name": "Orlando, FL, John Young Parkway, Orlando, Orange County, Florida, 32805, United States",
+            "type": "bus_station",
+            "last_verified": "2024-11-26T23:29:39.871544"
+        },
+        "Fifth Third Stadium": {
+            "location": "Kennesaw GA",
+            "team": "Kennesaw State",
+            "latitude": 34.02878715,
+            "longitude": -84.56779814513445,
+            "display_name": "Fifth Third Bank Stadium, 3200, George Busbee Parkway Northwest, Kennesaw, Cobb County, Georgia, 30144, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:43.047030"
+        },
+        "Folsom Field": {
+            "location": "Boulder CO",
+            "team": "Colorado",
+            "latitude": 40.009388799999996,
+            "longitude": -105.2660794290957,
+            "display_name": "Folsom Field, 2085, Colorado Avenue, Boulder, Boulder County, Colorado, 80309, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:44.343618"
+        },
+        "Mountain America Stadium Home of the ASU Sun Devils Frank Kush Field": {
+            "location": "Tempe AZ",
+            "team": "Arizona State",
+            "latitude": 33.4255117,
+            "longitude": -111.940016,
+            "display_name": "Tempe, Maricopa County, Arizona, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:46.534598"
+        },
+        "Frank Howard Field at Clemson Memorial Stadium": {
+            "location": "Clemson SC",
+            "team": "Clemson",
+            "latitude": 34.6850749,
+            "longitude": -82.8364111,
+            "display_name": "Clemson, Pickens County, South Carolina, 29631, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:29:49.190957"
+        },
+        "Fred C Yager Stadium": {
+            "location": "Oxford OH",
+            "team": "Miami",
+            "latitude": 39.519414749999996,
+            "longitude": -84.7330855440365,
+            "display_name": "Fred C. Yager Stadium, Weeb Ewbank Way, Oxford, Oxford Township, Butler County, Ohio, 45056, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:50.410372"
+        },
+        "California Memorial Stadium": {
+            "location": "Berkeley CA",
+            "team": "California",
+            "latitude": 37.8709949,
+            "longitude": -122.25073605072417,
+            "display_name": "California Memorial Stadium, Canyon Road, Panoramic Hill, Berkeley, Alameda County, California, 94720, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:51.638197"
+        },
+        "Gaylord Family Oklahoma Memorial Stadium": {
+            "location": "Norman OK",
+            "team": "Oklahoma",
+            "latitude": 35.2056786,
+            "longitude": -97.441540475,
+            "display_name": "Gaylord Family - Oklahoma Memorial Stadium, 1185, Asp Avenue, Norman, Cleveland County, Oklahoma, 73019, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:52.914640"
+        },
+        "Gerald J Ford Stadium": {
+            "location": "University Park TX",
+            "team": "SMU",
+            "latitude": 32.837789900000004,
+            "longitude": -96.7827909959054,
+            "display_name": "Gerald J. Ford Stadium, 5801, Bush Avenue, University Park, Dallas County, Texas, 75205, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:54.934552"
+        },
+        "Glass Bowl": {
+            "location": "Toledo OH",
+            "team": "Toledo",
+            "latitude": 41.6571615,
+            "longitude": -83.61359589888053,
+            "display_name": "Glass Bowl Stadium, 1745, Stadium Drive, Secor Gardens, Vulcan, Toledo, Lucas County, Ohio, 43606, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:56.501453"
+        },
+        "Hancock Whitney Stadium": {
+            "location": "Mobile AL",
+            "team": "South Alabama",
+            "latitude": 30.69693195,
+            "longitude": -88.19201804075955,
+            "display_name": "Hancock Whitney Stadium, John Counts Drive, Wheelerville, Mobile, Mobile County, Alabama, 36608, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:57.713188"
+        },
+        "Hard Rock Stadium": {
+            "location": "Miami Gardens FL",
+            "team": "Miami",
+            "latitude": 25.95790315,
+            "longitude": -80.24001919530573,
+            "display_name": "Hard Rock Stadium, 347, Northwest 199th Street, Miami Gardens, Miami-Dade County, Florida, 33056, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:29:59.672961"
+        },
+        "Houchens Industries L T Smith Stadium at Jimmy Feix Field": {
+            "location": "Bowling Green KY",
+            "team": "Western Kentucky",
+            "latitude": 36.9903199,
+            "longitude": -86.4436018,
+            "display_name": "Bowling Green, Warren County, Kentucky, 42101, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:03.890818"
+        },
+        "Howard Schnellenberger Field at FAU Stadium": {
+            "location": "Boca Raton FL",
+            "team": "Florida Atlantic",
+            "latitude": 26.3586885,
+            "longitude": -80.0830984,
+            "display_name": "Boca Raton, Palm Beach County, Florida, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:07.761844"
+        },
+        "Huntington Bank Stadium": {
+            "location": "Minneapolis MN",
+            "team": "Minnesota",
+            "latitude": 44.97653965,
+            "longitude": -93.2231906824895,
+            "display_name": "Huntington Bank Stadium, 420, Southeast 23rd Avenue, Prospect Park - East River Road, Minneapolis, Hennepin County, Minnesota, 55455, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:09.024021"
+        },
+        "InfoCision Stadium Summa Field": {
+            "location": "Akron OH",
+            "team": "Akron",
+            "latitude": 41.083064,
+            "longitude": -81.518485,
+            "display_name": "Akron, Summit County, Ohio, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:11.492304"
+        },
+        "JMA Wireless Dome": {
+            "location": "Syracuse NY",
+            "team": "Syracuse",
+            "latitude": 43.03628365,
+            "longitude": -76.13636031709831,
+            "display_name": "JMA Wireless Dome, 901, Irving Avenue, University Hill, City of Syracuse, Onondaga County, New York, 13210, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:12.796044"
+        },
+        "Jack Trice Stadium": {
+            "location": "Ames IA",
+            "team": "Iowa State",
+            "latitude": 42.01400485,
+            "longitude": -93.63575932363813,
+            "display_name": "Jack Trice Stadium, 1732, Jack Trice Way, Iowa State Center, Ames, Story County, Iowa, 50011, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:14.291818"
+        },
+        "Jim Wacker Field at Bobcat Stadium": {
+            "location": "San Marcos TX",
+            "team": "Texas State",
+            "latitude": 29.8826436,
+            "longitude": -97.9405828,
+            "display_name": "San Marcos, Hays County, Texas, 78666, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:17.450936"
+        },
+        "Joan C Edwards Stadium": {
+            "location": "Huntington WV",
+            "team": "Marshall",
+            "latitude": 38.4248685,
+            "longitude": -82.42100877672945,
+            "display_name": "Joan C. Edwards Stadium, M Club Drive, Huntington, Cabell County, West Virginia, 25703, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:18.794631"
+        },
+        "Joe Aillet Stadium": {
+            "location": "Ruston LA",
+            "team": "Louisiana Tech",
+            "latitude": 32.532013649999996,
+            "longitude": -92.65593967695996,
+            "display_name": "Joe Aillet Stadium, Stadium Circle, Ruston, Lincoln Parish, Louisiana, 71272, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:20.109775"
+        },
+        "John O'Quinn Field at TDECU Stadium": {
+            "location": "Houston TX",
+            "team": "Houston",
+            "latitude": 29.7589382,
+            "longitude": -95.3676974,
+            "display_name": "Houston, Harris County, Texas, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:22.584279"
+        },
+        "Johnny Red Floyd Stadium": {
+            "location": "Murfreesboro TN",
+            "team": "Middle Tennessee",
+            "latitude": 35.85128735,
+            "longitude": -86.36823862876923,
+            "display_name": "Johnny \"Red\" Floyd Stadium, Faulkinberry Drive, Murfreesboro, Rutherford County, Middle Tennessee, Tennessee, 37132, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:23.954505"
+        },
+        "Jonah Field at War Memorial Stadium": {
+            "location": "Laramie WY",
+            "team": "Wyoming",
+            "latitude": 41.31173415,
+            "longitude": -105.5681860863372,
+            "display_name": "War Memorial Stadium, Willett Drive, Laramie, Albany County, Wyoming, 82071, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:25.219655"
+        },
+        "Jones AT T Stadium": {
+            "location": "Lubbock TX",
+            "team": "Texas Tech",
+            "latitude": 33.591251650000004,
+            "longitude": -101.87295027480607,
+            "display_name": "Jones AT&T Stadium and Cody Campbell Field, 2526, Mac Davis Lane, Lubbock, Lubbock County, Texas, 79409, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:27.111874"
+        },
+        "JPS Field at Malone Stadium": {
+            "location": "Monroe LA",
+            "team": "Louisiana-Monroe",
+            "latitude": 41.7517711,
+            "longitude": -72.641709,
+            "display_name": "Monroe Lane, East Hartford, Capitol Planning Region, Connecticut, 06118, United States",
+            "type": "residential",
+            "last_verified": "2024-11-26T23:30:29.118243"
+        },
+        "Kramer Deromedi Field at Kelly Shorts Stadium": {
+            "location": "Mount Pleasant MI",
+            "team": "Central Michigan",
+            "latitude": 43.597646,
+            "longitude": -84.7668495,
+            "display_name": "Mount Pleasant, Isabella County, Michigan, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:31.651318"
+        },
+        "Kenan Memorial Stadium": {
+            "location": "Chapel Hill NC",
+            "team": "North Carolina",
+            "latitude": 35.906943150000004,
+            "longitude": -79.04781990822377,
+            "display_name": "Kenan Memorial Stadium, 104, Stadium Drive, Downtown, Chapel Hill, Orange County, North Carolina, 27514, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:34.818453"
+        },
+        "Kidd Brewer Stadium": {
+            "location": "Boone NC",
+            "team": "Appalachian State",
+            "latitude": 36.21148865,
+            "longitude": -81.68557170976591,
+            "display_name": "Kidd Brewer Stadium, 1, Jack Branch Drive, Dougherty Heights, Downtown, Boone, Watauga County, North Carolina, 28608, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:36.074312"
+        },
+        "Nile Kinnick Stadium": {
+            "location": "Iowa City IA",
+            "team": "Iowa",
+            "latitude": 41.6612561,
+            "longitude": -91.5299106,
+            "display_name": "Iowa City, Johnson County, Iowa, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:39.994197"
+        },
+        "Kornblau Field at S B Ballard Stadium": {
+            "location": "Norfolk VA",
+            "team": "Old Dominion",
+            "latitude": 36.8493695,
+            "longitude": -76.2899539,
+            "display_name": "Norfolk, Virginia, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:43.414297"
+        },
+        "Kroger Field at C M Newton Grounds": {
+            "location": "Lexington KY",
+            "team": "Kentucky",
+            "latitude": 38.0464066,
+            "longitude": -84.4970393,
+            "display_name": "Lexington, Fayette County, Kentucky, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:30:45.720013"
+        },
+        "Kyle Field": {
+            "location": "College Station TX",
+            "team": "Texas A M",
+            "latitude": 30.6098548,
+            "longitude": -96.34036975830077,
+            "display_name": "Kyle Field, Joe Routt Boulevard, College Station, Brazos County, Texas, 77843, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:47.561666"
+        },
+        "Lane Stadium Worsham Field": {
+            "location": "Blacksburg VA",
+            "team": "Virginia Tech",
+            "latitude": 37.21989015,
+            "longitude": -80.41800385907507,
+            "display_name": "Lane Stadium, 285, Beamer Way, Southgate, Blacksburg, Montgomery County, Virginia, 24061, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:49.542621"
+        },
+        "LaVell Edwards Stadium": {
+            "location": "Provo UT",
+            "team": "BYU",
+            "latitude": 40.257528300000004,
+            "longitude": -111.6545580032379,
+            "display_name": "LaVell Edwards Stadium, 1700, North Canyon Road, Pleasant View, Provo, Utah County, Utah, 84604, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:50.775838"
+        },
+        "Lincoln Financial Field": {
+            "location": "Philadelphia PA",
+            "team": "Temple",
+            "latitude": 39.9009099,
+            "longitude": -75.16748915605905,
+            "display_name": "Lincoln Financial Field, 1, South Darien Street, South Philadelphia Sports Complex, South Philadelphia, Philadelphia, Philadelphia County, Pennsylvania, 19147, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:52.030411"
+        },
+        "Los Angeles Memorial Coliseum": {
+            "location": "Los Angeles CA",
+            "team": "USC",
+            "latitude": 34.013915850000004,
+            "longitude": -118.28779962546673,
+            "display_name": "Los Angeles Memorial Coliseum, 3911, South Figueroa Street, Los Angeles, Los Angeles County, California, 90037, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:54.478239"
+        },
+        "Mackay Stadium": {
+            "location": "Reno NV",
+            "team": "Nevada",
+            "latitude": 39.5468915,
+            "longitude": -119.81739798009238,
+            "display_name": "Mackay Stadium, South Medical Way, Reno, Washoe County, Nevada, 89557, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:30:55.783904"
+        },
+        "Martin Stadium": {
+            "location": "Pullman WA",
+            "team": "Washington State",
+            "latitude": 46.73180345,
+            "longitude": -117.16037306214982,
+            "display_name": "Martin Stadium, Pullman, Whitman County, Washington, United States",
+            "type": "recreation_ground",
+            "last_verified": "2024-11-26T23:30:57.002841"
+        },
+        "McColl Richardson Field at Jerry Richardson Stadium": {
+            "location": "Charlotte NC",
+            "team": "Charlotte",
+            "latitude": 35.2272086,
+            "longitude": -80.8430827,
+            "display_name": "Charlotte, Mecklenburg County, North Carolina, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:31:00.422618"
+        },
+        "McLane Stadium": {
+            "location": "Waco TX",
+            "team": "Baylor",
+            "latitude": 31.5582247,
+            "longitude": -97.11568211561965,
+            "display_name": "McLane Stadium, 1001, South Martin Luther King Jr Boulevard, Waco, McLennan County, Texas, 76704, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:01.642763"
+        },
+        "Memorial Stadium": {
+            "location": "Bloomington IN",
+            "team": "Indiana",
+            "latitude": 39.180894300000006,
+            "longitude": -86.52564200951528,
+            "display_name": "Memorial Stadium, Faris Way, Bloomington, Monroe County, Indiana, 47405, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:04.263011"
+        },
+        "Memorial Stadium Tom Osborne Field": {
+            "location": "Lincoln NE",
+            "team": "Nebraska",
+            "latitude": 40.8088861,
+            "longitude": -96.7077751,
+            "display_name": "Lincoln, Lancaster County, Nebraska, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:31:07.138210"
+        },
+        "Merlin Olsen Field at Maverik Stadium": {
+            "location": "Logan UT",
+            "team": "Utah State",
+            "latitude": 41.7313063,
+            "longitude": -111.834914,
+            "display_name": "Logan, Cache County, Utah, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:31:09.306165"
+        },
+        "Michigan Stadium": {
+            "location": "Ann Arbor MI",
+            "team": "Michigan",
+            "latitude": 42.2658652,
+            "longitude": -83.74868376764053,
+            "display_name": "Michigan Stadium, 1201, South Main Street, Ann Arbor, Washtenaw County, Michigan, 48104, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:11.067258"
+        },
+        "Mountaineer Field at Milan Puskar Stadium": {
+            "location": "Morgantown WV",
+            "team": "West Virginia",
+            "latitude": 39.6502016,
+            "longitude": -79.95506485,
+            "display_name": "Mountaineer Field at Milan Puskar Stadium, Law School Drive, The Flatts, Evansdale, Morgantown, Monongalia County, West Virginia, 26505, United States",
+            "type": "pitch",
+            "last_verified": "2024-11-26T23:31:12.339041"
+        },
+        "Navy Marine Corps Memorial Stadium": {
+            "location": "Annapolis MD",
+            "team": "Navy",
+            "latitude": 38.9847567,
+            "longitude": -76.50707648829473,
+            "display_name": "Navy-Marine Corps Memorial Stadium, Navy-Marine Corps Memorial Stadium Trail, West Annapolis, Annapolis, Anne Arundel County, Maryland, 21411, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:13.568945"
+        },
+        "Neyland Stadium": {
+            "location": "Knoxville TN",
+            "team": "Tennessee",
+            "latitude": 35.95506465,
+            "longitude": -83.92598717244445,
+            "display_name": "Neyland Stadium, 1300, Phillip Fulmer Way, University of Tennessee, Knoxville, Knox County, East Tennessee, Tennessee, 37916, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:14.796797"
+        },
+        "Nippert Stadium": {
+            "location": "Cincinnati OH",
+            "team": "Cincinnati",
+            "latitude": 39.131121300000004,
+            "longitude": -84.51622983928571,
+            "display_name": "Nippert Stadium, Backstage Drive, Corryville, Cincinnati, Hamilton County, Ohio, 45221, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:16.074120"
+        },
+        "Northwestern Medicine Field at Martin Stadium": {
+            "location": "Evanston IL",
+            "team": "Northwestern",
+            "latitude": 42.0470043,
+            "longitude": -87.6846053,
+            "display_name": "Evanston, Evanston Township, Cook County, Illinois, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:31:18.206186"
+        },
+        "Notre Dame Stadium": {
+            "location": "Notre Dame IN",
+            "team": "Notre Dame",
+            "latitude": 41.69842305,
+            "longitude": -86.2339582320651,
+            "display_name": "Notre Dame Stadium, Moose Krause Circle, Notre Dame, Saint Joseph County, Indiana, 46556, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:20.883411"
+        },
+        "Ohio Stadium": {
+            "location": "Columbus OH",
+            "team": "Ohio State",
+            "latitude": 40.00164575,
+            "longitude": -83.01973744224524,
+            "display_name": "Ohio Stadium, 411, Woody Hayes Drive, University District District 2, Columbus, Sharon, Franklin County, Ohio, 43210, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:22.117119"
+        },
+        "Pat Dye Field at Jordan Hare Stadium": {
+            "location": "Auburn AL",
+            "team": "Auburn",
+            "latitude": 39.950058338747205,
+            "longitude": -82.01979109496843,
+            "display_name": "Auburn Alley, Zanesville, Muskingum County, Ohio, 43701, United States",
+            "type": "service",
+            "last_verified": "2024-11-26T23:31:24.522571"
+        },
+        "Frank Solich Field at Peden Stadium": {
+            "location": "Athens OH",
+            "team": "Ohio",
+            "latitude": 39.355589,
+            "longitude": -82.0610404,
+            "display_name": "Athens County, Ohio, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:31:27.727710"
+        },
+        "Pitbull Stadium": {
+            "location": "Miami FL",
+            "team": "FIU",
+            "latitude": 25.7524884,
+            "longitude": -80.37789033384085,
+            "display_name": "Pitbull Stadium, 11200, Southwest 8th Street, Miami, Miami-Dade County, Florida, 33199, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:28.966086"
+        },
+        "Pratt Whitney Stadium at Rentschler Field": {
+            "location": "East Hartford CT",
+            "team": "UConn",
+            "latitude": 42.105337679716435,
+            "longitude": -87.95328609528715,
+            "display_name": "East Hartford Court, Arlington Heights, Wheeling Township, Cook County, Illinois, 60004, United States",
+            "type": "residential",
+            "last_verified": "2024-11-26T23:31:31.104743"
+        },
+        "Protective Stadium": {
+            "location": "Birmingham AL",
+            "team": "UAB",
+            "latitude": 33.5275724,
+            "longitude": -86.80906255479098,
+            "display_name": "Protective Stadium, 11th Avenue North, Norwood, Birmingham, Jefferson County, Alabama, 35234, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:32.325197"
+        },
+        "Raymond James Stadium": {
+            "location": "Tampa FL",
+            "team": "South Florida",
+            "latitude": 27.97597925,
+            "longitude": -82.50421799673616,
+            "display_name": "Raymond James Stadium, West Tampa Bay Boulevard, Fair Ground Farms, Tampa, Hillsborough County, Florida, 33607, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:33.622185"
+        },
+        "Reser Stadium": {
+            "location": "Corvallis OR",
+            "team": "Oregon State",
+            "latitude": 44.55956245,
+            "longitude": -123.28147524239792,
+            "display_name": "Reser Stadium, 660, Southwest 26th Street, Corvallis, Benton County, Oregon, 97331, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:34.847935"
+        },
+        "Rice Stadium": {
+            "location": "Houston TX",
+            "team": "Rice",
+            "latitude": 29.7163227,
+            "longitude": -95.40932454846403,
+            "display_name": "Rice Stadium, Entrance 17 Drive, Houston, Harris County, Texas, 77005, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:36.183044"
+        },
+        "Rice Eccles Stadium": {
+            "location": "Salt Lake City UT",
+            "team": "Utah",
+            "latitude": 40.75985365,
+            "longitude": -111.84891949263991,
+            "display_name": "Rice-Eccles Stadium, 451, 1400 East, Salt Lake City, Salt Lake County, Utah, 84112, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:37.903374"
+        },
+        "Rose Bowl Stadium": {
+            "location": "Pasadena CA",
+            "team": "UCLA",
+            "latitude": 34.16134915000001,
+            "longitude": -118.16766739828785,
+            "display_name": "Rose Bowl Stadium, Stivers Way, Pasadena, Los Angeles County, California, 91109, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:39.130217"
+        },
+        "Ross Ade Stadium": {
+            "location": "West Lafayette IN",
+            "team": "Purdue",
+            "latitude": 40.434431849999996,
+            "longitude": -86.91774818394232,
+            "display_name": "Ross-Ade Stadium, John R. Wooden Drive, West Lafayette, Tippecanoe County, Indiana, 46906, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:40.966496"
+        },
+        "Rynearson Stadium": {
+            "location": "Ypsilanti MI",
+            "team": "Eastern Michigan",
+            "latitude": 42.2558724,
+            "longitude": -83.64737474598931,
+            "display_name": "Rynearson Stadium, Westview Street, Ypsilanti, Washtenaw County, Michigan, 48197, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:42.315023"
+        },
+        "Saban Field at Bryant Denny Stadium": {
+            "location": "Tuscaloosa AL",
+            "team": "Alabama",
+            "latitude": 33.487828314578536,
+            "longitude": -86.86224207223162,
+            "display_name": "Tuscaloosa Alley, Berney Points, Birmingham, Jefferson County, Alabama, 35211, United States",
+            "type": "service",
+            "last_verified": "2024-11-26T23:31:45.850287"
+        },
+        "Sanford Stadium": {
+            "location": "Athens GA",
+            "team": "Georgia",
+            "latitude": 33.94977095,
+            "longitude": -83.37226687142837,
+            "display_name": "Sanford Stadium, 200, Sanford Drive, Athens-Clarke County Unified Government, Athens-Clarke County, Georgia, 30334, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:47.126343"
+        },
+        "Scheumann Stadium": {
+            "location": "Muncie IN",
+            "team": "Ball State",
+            "latitude": 40.216007149999996,
+            "longitude": -85.41682543092398,
+            "display_name": "Scheumann Stadium, North Richmond Drive, Muncie, Delaware County, Indiana, 47304, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:48.445614"
+        },
+        "SECU Stadium": {
+            "location": "College Park MD",
+            "team": "Maryland",
+            "latitude": 38.99029865,
+            "longitude": -76.94745341520814,
+            "display_name": "SECU Stadium, Stadium Drive, Lakeland, College Park, Prince George's County, Maryland, 20742, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:50.133898"
+        },
+        "SHI Stadium": {
+            "location": "Piscataway NJ",
+            "team": "Rutgers",
+            "latitude": 40.513503650000004,
+            "longitude": -74.46424350578357,
+            "display_name": "SHI Stadium, Sutphen Road, Piscataway Township, Middlesex County, New Jersey, 08855, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:51.435423"
+        },
+        "Simmons Bank Liberty Stadium": {
+            "location": "Memphis TN",
+            "team": "Memphis",
+            "latitude": 35.12113045,
+            "longitude": -89.97741528770362,
+            "display_name": "Simmons Bank Liberty Stadium, 335, South Hollywood Street, Buntyn, Memphis, Shelby County, West Tennessee, Tennessee, 38104, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:52.675675"
+        },
+        "Skelly Field at H A Chapman Stadium": {
+            "location": "Tulsa OK",
+            "team": "Tulsa",
+            "latitude": 36.1563122,
+            "longitude": -95.9927516,
+            "display_name": "Tulsa, Tulsa County, Oklahoma, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:31:55.202755"
+        },
+        "Snapdragon Stadium": {
+            "location": "San Diego CA",
+            "team": "San Diego State",
+            "latitude": 32.78418875,
+            "longitude": -117.12169820746657,
+            "display_name": "Snapdragon Stadium, 1, Stadium Way, San Diego, San Diego County, California, 92182, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:31:57.333853"
+        },
+        "Sonny Lubick Field at Canvas Stadium": {
+            "location": "Fort Collins CO",
+            "team": "Colorado State",
+            "latitude": 40.5871782,
+            "longitude": -105.0770113,
+            "display_name": "Fort Collins, Larimer County, Colorado, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:31:59.702916"
+        },
+        "Spartan Stadium": {
+            "location": "East Lansing MI",
+            "team": "Michigan State",
+            "latitude": 42.7281642,
+            "longitude": -84.48505088268398,
+            "display_name": "Spartan Stadium, Red Cedar Road, North Neighborhood, East Lansing, Ingham County, Michigan, 48825, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:01.286113"
+        },
+        "Stanford Stadium": {
+            "location": "Stanford CA",
+            "team": "Stanford",
+            "latitude": 37.43453005,
+            "longitude": -122.16116296732366,
+            "display_name": "Stanford Stadium, 625, Nelson Road, Stanford, Santa Clara County, California, 94301, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:02.588379"
+        },
+        "Steve Spurrier-Florida Field at Ben Hill Griffin Stadium": {
+            "location": "Gainesville FL",
+            "team": "Florida",
+            "latitude": 29.67357765,
+            "longitude": -82.32337460192167,
+            "display_name": "Gainesville, FL, 101, Northeast 23rd Avenue, Gainesville, Alachua County, Florida, 32609, United States",
+            "type": "bus_station",
+            "last_verified": "2024-11-26T23:32:04.564626"
+        },
+        "Sun Bowl Stadium": {
+            "location": "El Paso TX",
+            "team": "UTEP",
+            "latitude": 31.7733646,
+            "longitude": -106.50794006545833,
+            "display_name": "Sun Bowl Stadium, 2701, Sun Bowl Drive, El Paso, El Paso County, Texas, 79902, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:06.309902"
+        },
+        "Tiger Stadium": {
+            "location": "Baton Rouge LA",
+            "team": "LSU",
+            "latitude": 30.41197725,
+            "longitude": -91.18383029663619,
+            "display_name": "Tiger Stadium, South Stadium Road, Baton Rouge, East Baton Rouge Parish, Louisiana, 70803, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:08.339581"
+        },
+        "Allegacy Federal Credit Union Stadium": {
+            "location": "Winston-Salem NC",
+            "team": "Wake Forest",
+            "latitude": 36.0998131,
+            "longitude": -80.2440518,
+            "display_name": "Winston-Salem, Forsyth County, North Carolina, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:32:11.032091"
+        },
+        "UB Stadium": {
+            "location": "Amherst NY",
+            "team": "Buffalo",
+            "latitude": 42.999058649999995,
+            "longitude": -78.77744130513912,
+            "display_name": "UB Stadium, Stampede Square, South Lake Village, Town of Amherst, Erie County, New York, 14260, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:12.300112"
+        },
+        "University Stadium": {
+            "location": "Albuquerque NM",
+            "team": "New Mexico",
+            "latitude": 35.0669629,
+            "longitude": -106.6282450621233,
+            "display_name": "University Stadium, 1414, University Boulevard Southeast, Albuquerque, Bernalillo County, New Mexico, 87106, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:13.506956"
+        },
+        "Valley Children's Stadium": {
+            "location": "Fresno CA",
+            "team": "Fresno State",
+            "latitude": 36.81439585,
+            "longitude": -119.75803831036679,
+            "display_name": "Valley Children's Stadium, East Barstow Avenue, Fresno, Fresno County, California, 93710, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:14.791288"
+        },
+        "FirstBank Stadium": {
+            "location": "Nashville TN",
+            "team": "Vanderbilt",
+            "latitude": 36.1439196,
+            "longitude": -86.80892051257632,
+            "display_name": "FirstBank Stadium, 210, Natchez Trace, Nashville-Davidson, Davidson County, Middle Tennessee, Tennessee, 37203, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:16.002230"
+        },
+        "Vaught Hemingway Stadium at Hollingsworth Field": {
+            "location": "University MS",
+            "team": "Mississippi",
+            "latitude": 40.7348235,
+            "longitude": -74.2218125,
+            "display_name": "University Middle School, Myrtle Avenue, Irvington, Essex County, New Jersey, 07111, United States",
+            "type": "school",
+            "last_verified": "2024-11-26T23:32:18.246091"
+        },
+        "Veterans Memorial Stadium at Larry Blakeney Field": {
+            "location": "Troy AL",
+            "team": "Troy",
+            "latitude": 37.79229281594816,
+            "longitude": -122.41812100200829,
+            "display_name": "Troy Alley, Polk Gulch, San Francisco, California, 94109, United States",
+            "type": "service",
+            "last_verified": "2024-11-26T23:32:22.036071"
+        },
+        "Waldo Stadium": {
+            "location": "Kalamazoo MI",
+            "team": "Western Michigan",
+            "latitude": 42.28576205,
+            "longitude": -85.60111972018308,
+            "display_name": "Waldo Stadium WMU, Stadium Drive, West Main Hill, Kalamazoo, Kalamazoo County, Michigan, 49008, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:23.631563"
+        },
+        "Warren McGuirk Alumni Stadium": {
+            "location": "Hadley MA",
+            "team": "UMass",
+            "latitude": 42.3772457,
+            "longitude": -72.53604564191687,
+            "display_name": "Warren P. McGuirk Alumni Stadium, Stadium Drive, Hadley, Hampshire County, Massachusetts, 01004, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:25.484471"
+        },
+        "Wayne Day Family Field at Carter Finley Stadium": {
+            "location": "Raleigh NC",
+            "team": "NC State",
+            "latitude": 35.7803977,
+            "longitude": -78.6390989,
+            "display_name": "Raleigh, Wake County, North Carolina, United States",
+            "type": "administrative",
+            "last_verified": "2024-11-26T23:32:30.102229"
+        },
+        "Williams-Brice Stadium": {
+            "location": "Columbia SC",
+            "team": "South Carolina",
+            "latitude": 33.9731167,
+            "longitude": -81.01915641237008,
+            "display_name": "Williams-Brice Stadium, Bluff Road, Columbia, Richland County, South Carolina, 29209, United States",
+            "type": "stadium",
+            "last_verified": "2024-11-26T23:32:32.467622"
+        }
+    }
+}
