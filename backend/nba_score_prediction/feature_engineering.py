@@ -286,6 +286,7 @@ class NBAFeatureEngine:
         if self.debug:
              logger.debug(f"RAW Possession Estimates (Describe):\n{result_df['possessions_est'].describe().to_string()}")
              logger.debug(f"RAW Possession Estimates (Sample):\n{result_df['possessions_est'].head().to_string()}")
+        result_df['home_possessions'] = result_df['possessions_est'].replace(0, np.nan)
         result_df['away_possessions'] = result_df['possessions_est'].replace(0, np.nan)
 
         # Pace: Possessions per 48 minutes
