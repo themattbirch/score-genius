@@ -1,0 +1,110 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+venv_pytorch/
+
+# Node/React
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+
+# Build outputs
+/build
+/frontend/build
+/frontend/dist
+/reports/
+/backend/possible_future_models/
+/backend/tests/
+/evaluation_plots/
+
+# Cache
+.cache/
+.parcel-cache/
+.npm
+.eslintcache
+cached_*
+.transformers/
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# ML and Data Files
+*.pth
+*.pt
+*.pkl
+.pytorch/
+torch/
+*.bin
+*.h5
+*.hdf5
+*.npy
+*.npz
+
+backend/caching/data/*
+!backend/caching/*.py
+
+backend/analytics/outputs/*
+!backend/analytics/*.py
+
+# Keep source code files
+!backend/routers/*.py
+!backend/src/scripts/*.py
+!backend/utils/*.py
+!backend/*.py
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Misc
+Thumbs.db
+*.pem
+*.cert
+*.key
+
+# Remove backend/models from remote but keep locally
+backend/models/*
+!backend/models/*.py  # optional: keep this if you want to keep .py files tracked later
+
+# Fully ignore backend/models
+backend/models/

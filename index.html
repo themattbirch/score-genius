@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScoreGenius - AI-Driven NBA Analytics & Predictions</title>
+    <meta name="description"
+        content="Get real-time NBA analytics with AI-powered score predictions that improve as games progress. Make informed betting decisions with accurate, quarter-by-quarter insights.">
+    <link rel="icon" href="/icons/favicon-16x16.png" sizes="16x16" type="image/png">
+    <link rel="icon" href="/icons/favicon-32x32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="/icons/favicon-192x192.png" sizes="192x192" type="image/png">    
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#B91C1C" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-b from-gray-900 to-black">
+    <!-- Navigation -->
+    <nav class="fixed w-full bg-black/80 backdrop-blur-sm z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center">
+                    <i data-lucide="bar-chart" class="w-8 h-8 text-red-600"></i>
+                    <span class="ml-2 font-bold text-white">ScoreGenius</span>
+                </div>
+                <div>
+                    <a href="/app"
+                        class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
+                        Launch App
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="pt-32 pb-16 px-4">
+        <div class="max-w-7xl mx-auto text-center">
+            <h1 class="text-4xl sm:text-5xl font-bold text-white mb-6">
+                AI-Powered NBA Analytics & Predictions
+            </h1>
+            <p class="text-xl text-gray-300 max-w-2xl mx-auto mb-8">
+                Real-time predictive analytics that improve as games unfold. Get live win probability, score predictions, and betting insights powered by advanced machine learning.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="/app"
+                    class="bg-red-600 text-white px-8 py-4 rounded-lg text-lg font-medium hover:bg-red-700 transition-colors">
+                    Get Started
+                </a>
+                <a href="#features"
+                    class="bg-gray-800 text-white px-8 py-4 rounded-lg text-lg font-medium hover:bg-gray-700 transition-colors">
+                    Learn More
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Features Grid -->
+    <section id="features" class="py-16 px-4">
+        <div class="max-w-7xl mx-auto">
+            <h2 class="text-3xl font-bold text-center text-white mb-12">
+                Key Features
+            </h2>
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <!-- Predictive Analytics -->
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <div class="w-12 h-12 bg-red-900 rounded-lg flex items-center justify-center mb-4">
+                        <i data-lucide="line-chart" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Live Predictions</h3>
+                    <p class="text-gray-300">Real-time win probability, momentum shifts, and dynamic score predictions that improve as games progress.</p>
+                </div>
+
+                <!-- Quarter-specific Models -->
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <div class="w-12 h-12 bg-red-900 rounded-lg flex items-center justify-center mb-4">
+                        <i data-lucide="timer" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Quarter-Specific Models</h3>
+                    <p class="text-gray-300">Adaptive ensemble models with increasing accuracy as each quarter unfolds.</p>
+                </div>
+
+                <!-- AI Game Recaps -->
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <div class="w-12 h-12 bg-red-900 rounded-lg flex items-center justify-center mb-4">
+                        <i data-lucide="file-text" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">AI Game Recaps</h3>
+                    <p class="text-gray-300">Natural language summaries and key play breakdowns generated via LLM integration.</p>
+                </div>
+
+                <!-- Betting Insights -->
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <div class="w-12 h-12 bg-red-900 rounded-lg flex items-center justify-center mb-4">
+                        <i data-lucide="trending-up" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Betting Insights</h3>
+                    <p class="text-gray-300">Real-time odds analysis with automated recommendations based on model confidence.</p>
+                </div>
+
+                <!-- Data Visualization -->
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <div class="w-12 h-12 bg-red-900 rounded-lg flex items-center justify-center mb-4">
+                        <i data-lucide="bar-chart-4" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Interactive Dashboards</h3>
+                    <p class="text-gray-300">Compelling visualizations of prediction confidence, historical trends, and live stats.</p>
+                </div>
+
+                <!-- PWA Capabilities -->
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <div class="w-12 h-12 bg-red-900 rounded-lg flex items-center justify-center mb-4">
+                        <i data-lucide="smartphone" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">PWA Support</h3>
+                    <p class="text-gray-300">Install as a Progressive Web App for quick access on any device with offline capabilities.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="py-16 px-4 bg-red-600">
+        <div class="max-w-7xl mx-auto text-center">
+            <h2 class="text-3xl font-bold text-white mb-4">
+                Elevate Your NBA Experience
+            </h2>
+            <p class="text-red-100 mb-8 max-w-2xl mx-auto">
+                Join fans who trust ScoreGenius for cutting-edge NBA analytics and predictions that give you the edge.
+            </p>
+            <a href="/app"
+                class="bg-white text-red-600 px-8 py-4 rounded-lg text-lg font-medium hover:bg-gray-100 transition-colors inline-block">
+                Get Started Now
+            </a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="py-8 px-4 bg-black">
+        <div class="max-w-7xl mx-auto text-center">
+            <p class="text-gray-400">
+                © 2025 Optimize Web Solutions. All rights reserved.
+            </p>
+            <div class="mt-4 space-x-4">
+                <a href="/privacy" class="text-gray-400 hover:text-white">
+                    Privacy Policy
+                </a>
+                <a href="/terms" class="text-gray-400 hover:text-white">
+                    Terms of Service
+                </a>
+                <a href="/support" class="text-gray-400 hover:text-white">
+                    Support
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+        // Always use dark mode
+        document.documentElement.classList.add('dark');
+    </script>
+    <div id="root"></div>
+    <!-- <script type="module" src="../src/entry.tsx">-->
+    </script>
+</body>
+
+</html>
