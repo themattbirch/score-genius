@@ -226,103 +226,129 @@ class NBAFeatureEngine:
         logger.debug("Finished adding intra-game momentum features.")
         return result_df
 
-    # --- integrate_advanced_features ---
     @profile_time
     def integrate_advanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """REVISED (v2): Calculates advanced metrics with improved robustness."""
-        logger.debug("Integrating advanced metrics (v2)...")
+        """REVISED: Calculates advanced metrics. Includes Pace/Poss debugging."""
+        logger.debug("Integrating advanced metrics (v4 - Debugging Pace/Poss)...")
         result_df = df.copy()
+        # Ensure all required input columns exist and are numeric
         stat_cols = ['home_score', 'away_score', 'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted','home_3pm', 'home_3pa', 'away_3pm', 'away_3pa', 'home_ft_made', 'home_ft_attempted','away_ft_made', 'away_ft_attempted', 'home_off_reb', 'home_def_reb', 'home_total_reb','away_off_reb', 'away_def_reb', 'away_total_reb', 'home_turnovers', 'away_turnovers','home_ot', 'away_ot']
-        for col in stat_cols: result_df[col] = pd.to_numeric(result_df.get(col), errors='coerce').fillna(0) # Use .get()
+        for col in stat_cols: result_df[col] = pd.to_numeric(result_df.get(col), errors='coerce').fillna(0)
+
         def safe_divide(numerator, denominator, default_val):
             num = pd.to_numeric(numerator, errors='coerce'); den = pd.to_numeric(denominator, errors='coerce').replace(0, np.nan)
             return (num / den).fillna(default_val)
+
+        # --- Basic Shooting Stats ---
         result_df['home_efg_pct'] = safe_divide(result_df['home_fg_made'] + 0.5 * result_df['home_3pm'], result_df['home_fg_attempted'], self.defaults['efg_pct'])
         result_df['away_efg_pct'] = safe_divide(result_df['away_fg_made'] + 0.5 * result_df['away_3pm'], result_df['away_fg_attempted'], self.defaults['efg_pct'])
+        result_df['efg_pct_diff'] = result_df['home_efg_pct'] - result_df['away_efg_pct']
         result_df['home_ft_rate'] = safe_divide(result_df['home_ft_attempted'], result_df['home_fg_attempted'], self.defaults['ft_rate'])
         result_df['away_ft_rate'] = safe_divide(result_df['away_ft_attempted'], result_df['away_fg_attempted'], self.defaults['ft_rate'])
+        result_df['ft_rate_diff'] = result_df['home_ft_rate'] - result_df['away_ft_rate']
+
+        # --- Rebounding Percentages ---
         result_df['home_oreb_pct'] = safe_divide(result_df['home_off_reb'], result_df['home_off_reb'] + result_df['away_def_reb'], self.defaults['oreb_pct'])
-        result_df['away_dreb_pct'] = safe_divide(result_df['away_def_reb'], result_df['away_def_reb'] + result_df['home_off_reb'], self.defaults['dreb_pct'])
+        result_df['away_dreb_pct'] = safe_divide(result_df['away_def_reb'], result_df['away_def_reb'] + result_df['home_off_reb'], self.defaults['dreb_pct']) # Team perspective DReb%
         result_df['away_oreb_pct'] = safe_divide(result_df['away_off_reb'], result_df['away_off_reb'] + result_df['home_def_reb'], self.defaults['oreb_pct'])
-        result_df['home_dreb_pct'] = safe_divide(result_df['home_def_reb'], result_df['home_def_reb'] + result_df['away_off_reb'], self.defaults['dreb_pct'])
+        result_df['home_dreb_pct'] = safe_divide(result_df['home_def_reb'], result_df['home_def_reb'] + result_df['away_off_reb'], self.defaults['dreb_pct']) # Team perspective DReb%
+        result_df['oreb_pct_diff'] = result_df['home_oreb_pct'] - result_df['away_oreb_pct']
+        result_df['dreb_pct_diff'] = result_df['home_dreb_pct'] - result_df['away_dreb_pct']
         result_df['home_trb_pct'] = safe_divide(result_df['home_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], self.defaults['trb_pct'])
         result_df['away_trb_pct'] = safe_divide(result_df['away_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], self.defaults['trb_pct'])
-        home_poss = result_df['home_fg_attempted'] - result_df['home_off_reb'] + result_df['home_turnovers'] + 0.44 * result_df['home_ft_attempted']
-        away_poss = result_df['away_fg_attempted'] - result_df['away_off_reb'] + result_df['away_turnovers'] + 0.44 * result_df['away_ft_attempted']
-        result_df['possessions_est'] = (0.5 * (home_poss + away_poss)).clip(lower=1.0).fillna(self.defaults['estimated_possessions'])
-        result_df['home_possessions'] = result_df['possessions_est'].replace(0, np.nan) # Use NaN for safe_divide
-        result_df['away_possessions'] = result_df['possessions_est'].replace(0, np.nan) # Use NaN for safe_divide
+        result_df['trb_pct_diff'] = result_df['home_trb_pct'] - result_df['away_trb_pct']
+
+        # --- Possessions and Pace (CORRECTED FORMULA + DEBUGGING) ---
+        # ** Add Debug Logging for Inputs **
+            # --- Add Detailed Input Logging for Possession ---
+        if self.debug and len(result_df) > 0:
+            logger.debug("--- Possession Input Debug ---")
+            inputs_to_check = ['home_fg_attempted', 'home_ft_attempted', 'home_off_reb', 'home_turnovers',
+                               'away_fg_attempted', 'away_ft_attempted', 'away_off_reb', 'away_turnovers']
+            # Log stats for required inputs
+            if all(c in result_df.columns for c in inputs_to_check):
+                logger.debug(f"Input Stats (Describe):\n{result_df[inputs_to_check].describe().to_string()}")
+                # Log first few rows
+                logger.debug(f"Input Stats (Head):\n{result_df[inputs_to_check].head().to_string()}")
+            else:
+                logger.warning(f"Missing some inputs needed for possession debug log: {[c for c in inputs_to_check if c not in result_df]}")
+        # --- End Input Logging ---
+
+        # Standard approximation: Poss ≈ FGA + 0.44*FTA - OReb + TOV
+        home_poss = result_df['home_fg_attempted'] + 0.44 * result_df['home_ft_attempted'] - result_df['home_off_reb'] + result_df['home_turnovers']
+        away_poss = result_df['away_fg_attempted'] + 0.44 * result_df['away_ft_attempted'] - result_df['away_off_reb'] + result_df['away_turnovers']
+
+        # Average team possessions for game estimate
+        result_df['possessions_est'] = (0.5 * (home_poss + away_poss)).fillna(self.defaults['estimated_possessions'])
+        # REMOVE CLIP lower=70 temporarily for debugging
+        # result_df['possessions_est'] = result_df['possessions_est'].clip(lower=70.0)
+
+        if self.debug:
+             logger.debug(f"RAW Possession Estimates (Describe):\n{result_df['possessions_est'].describe().to_string()}")
+             logger.debug(f"RAW Possession Estimates (Sample):\n{result_df['possessions_est'].head().to_string()}")
+        result_df['away_possessions'] = result_df['possessions_est'].replace(0, np.nan)
+
+        # Pace: Possessions per 48 minutes
         num_ot = np.where((result_df['home_ot'] > 0) | (result_df['away_ot'] > 0), 1, 0)
         game_minutes_calc = 48.0 + num_ot * 5.0
-        result_df['game_minutes_played'] = np.where(game_minutes_calc == 0, 48.0, game_minutes_calc) # Replace 0 with 48.0
+        result_df['game_minutes_played'] = np.where(game_minutes_calc <= 0, 48.0, game_minutes_calc) # Use corrected non-replace version
+
+        # Calculate Pace using the NEW raw possessions_est
         result_df['game_pace'] = safe_divide(result_df['possessions_est'] * 48.0, result_df['game_minutes_played'], self.defaults['pace'])
         result_df['home_pace'] = result_df['game_pace']; result_df['away_pace'] = result_df['game_pace']
+        result_df['pace_differential'] = 0.0 # Pace is game-level
+
+        # --- Efficiency (Ratings) - Points per 100 Possessions ---
         result_df['home_offensive_rating'] = safe_divide(result_df['home_score'] * 100, result_df['home_possessions'], self.defaults['offensive_rating'])
         result_df['away_offensive_rating'] = safe_divide(result_df['away_score'] * 100, result_df['away_possessions'], self.defaults['offensive_rating'])
         result_df['home_defensive_rating'] = result_df['away_offensive_rating']; result_df['away_defensive_rating'] = result_df['home_offensive_rating']
+        # ** CLIPPING REMOVED **
         rating_cols = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating']
-        for col in rating_cols: result_df[col] = result_df[col].clip(lower=70, upper=150).fillna(self.defaults.get(col.split('_')[1]+'_rating', 115.0))
+        for col in rating_cols: result_df[col] = result_df[col].fillna(self.defaults.get(col.split('_')[1]+'_rating', 115.0)) # Keep fillna
         result_df['home_net_rating'] = result_df['home_offensive_rating'] - result_df['home_defensive_rating']
         result_df['away_net_rating'] = result_df['away_offensive_rating'] - result_df['away_defensive_rating']
         result_df['efficiency_differential'] = result_df['home_net_rating'] - result_df['away_net_rating']
-        result_df['efg_pct_diff'] = result_df['home_efg_pct'] - result_df['away_efg_pct']
-        result_df['ft_rate_diff'] = result_df['home_ft_rate'] - result_df['away_ft_rate']
-        result_df['oreb_pct_diff'] = result_df['home_oreb_pct'] - result_df['away_oreb_pct']
-        result_df['dreb_pct_diff'] = result_df['home_dreb_pct'] - result_df['away_dreb_pct']
-        result_df['trb_pct_diff'] = result_df['home_trb_pct'] - result_df['away_trb_pct']
-        result_df['pace_differential'] = 0.0
+
+        # --- Turnover Rate (TOV per 100 Poss) ---
         result_df['home_tov_rate'] = safe_divide(result_df['home_turnovers'] * 100, result_df['home_possessions'], self.defaults['tov_rate'])
         result_df['away_tov_rate'] = safe_divide(result_df['away_turnovers'] * 100, result_df['away_possessions'], self.defaults['tov_rate'])
-        result_df['home_tov_rate'] = result_df['home_tov_rate'].clip(lower=5, upper=25).fillna(self.defaults['tov_rate'])
-        result_df['away_tov_rate'] = result_df['away_tov_rate'].clip(lower=5, upper=25).fillna(self.defaults['tov_rate'])
+        # ** CLIPPING REMOVED **
+        result_df['home_tov_rate'] = result_df['home_tov_rate'].fillna(self.defaults['tov_rate']) # Keep fillna
+        result_df['away_tov_rate'] = result_df['away_tov_rate'].fillna(self.defaults['tov_rate']) # Keep fillna
         result_df['tov_rate_diff'] = result_df['away_tov_rate'] - result_df['home_tov_rate']
+
+        # --- Convenience Score Columns ---
         if 'total_score' not in result_df.columns: result_df['total_score'] = result_df['home_score'] + result_df['away_score']
         if 'point_diff' not in result_df.columns: result_df['point_diff'] = result_df['home_score'] - result_df['away_score']
-        # Fill potentially NaN possession columns used as divisors before returning
+
+        # Final fillna for potentially NaN possession columns used as divisors
         result_df['home_possessions'] = result_df['home_possessions'].fillna(self.defaults['estimated_possessions'])
         result_df['away_possessions'] = result_df['away_possessions'].fillna(self.defaults['estimated_possessions'])
 
-        # --- Debug Stats Generation ---
-        if self.debug: # Check the debug flag passed during engine initialization
+        # --- Debug Stats Generation (Keep this block) ---
+        if self.debug:
             try:
-                FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True) # Ensure exists
+                FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
                 logger.info("Generating debug stats for integrate_advanced_features...")
-                key_metrics = [
-                    'home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating',
-                    'game_pace', 'home_efg_pct', 'away_efg_pct', 'home_tov_rate', 'away_tov_rate', 'home_trb_pct', 'away_trb_pct',
-                    'possessions_est', 'home_net_rating', 'away_net_rating', 'efficiency_differential'
-                ]
+                key_metrics = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating', 'game_pace', 'home_efg_pct', 'away_efg_pct', 'home_tov_rate', 'away_tov_rate', 'home_trb_pct', 'away_trb_pct', 'possessions_est', 'home_net_rating', 'away_net_rating', 'efficiency_differential', 'home_ft_rate', 'away_ft_rate'] # Added FT Rate
                 metrics_to_describe = [m for m in key_metrics if m in result_df.columns]
-
                 if metrics_to_describe:
-                    # Save Summary Stats
                     summary = result_df[metrics_to_describe].describe()
                     summary_path = FEATURE_DEBUG_DIR / "advanced_metrics_summary.txt"
-                    with open(summary_path, 'w') as f:
-                        f.write(f"Summary Statistics for Advanced Metrics (n={len(result_df)}):\n")
-                        f.write(summary.to_string())
+                    with open(summary_path, 'w') as f: f.write(f"Summary Stats for Advanced Metrics (n={len(result_df)}):\n{summary.to_string()}")
                     logger.info(f"Saved advanced metrics summary to {summary_path}")
-
-                    # Save Distribution Plots (Optional)
                     if PLOTTING_AVAILABLE:
-                        plot_cols = ['home_offensive_rating', 'game_pace', 'home_efg_pct', 'home_tov_rate']
+                        plot_cols = ['home_offensive_rating', 'game_pace', 'home_efg_pct', 'home_tov_rate', 'possessions_est', 'home_ft_rate'] # Added Poss and FTr
                         for col in plot_cols:
                              if col in result_df.columns:
-                                 plt.figure(figsize=(8, 5))
-                                 sns.histplot(result_df[col].dropna(), kde=True, bins=30)
-                                 plt.title(f'Distribution: {col}')
-                                 plot_path = FEATURE_DEBUG_DIR / f"advanced_{col}_dist.png"
-                                 plt.savefig(plot_path)
-                                 plt.close() # Close plot to free memory
+                                 plt.figure(figsize=(8, 5)); sns.histplot(result_df[col].dropna(), kde=True, bins=30); plt.title(f'Distribution: {col}')
+                                 plot_path = FEATURE_DEBUG_DIR / f"advanced_{col}_dist.png"; plt.savefig(plot_path); plt.close()
                                  logger.info(f"Saved distribution plot to {plot_path}")
-                    else:
-                         logger.warning("Plotting libraries not available, skipping debug plots.")
-                else:
-                     logger.warning("No key advanced metrics found to describe.")
-            except Exception as e:
-                logger.error(f"Error generating debug stats for advanced features: {e}", exc_info=True)
+                    else: logger.warning("Plotting libraries not available.")
+                else: logger.warning("No key advanced metrics found to describe.")
+            except Exception as e: logger.error(f"Error generating debug stats for advanced features: {e}", exc_info=True)
 
-        logger.debug("Finished integrating advanced features (v2).")
+        logger.debug("Finished integrating advanced features (v4 - Debugging Pace/Poss, No Clipping).")
         return result_df
 
     # --- add_rolling_features ---
