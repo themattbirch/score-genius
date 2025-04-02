@@ -1,0 +1,302 @@
+{
+  "get": "games",
+  "parameters": {
+    "league": "12",
+    "season": "2024-2025",
+    "date": "2025-03-24"
+  },
+  "errors": [],
+  "results": 5,
+  "response": [
+    {
+      "id": 414909,
+      "date": "2025-03-24T01:00:00+00:00",
+      "time": "01:00",
+      "timestamp": 1742778000,
+      "timezone": "UTC",
+      "stage": null,
+      "week": null,
+      "venue": "Crypto.com Arena",
+      "status": {
+        "long": "Game Finished",
+        "short": "FT",
+        "timer": null
+      },
+      "league": {
+        "id": 12,
+        "name": "NBA",
+        "type": "League",
+        "season": "2024-2025",
+        "logo": "https://media.api-sports.io/basketball/leagues/12.png"
+      },
+      "country": {
+        "id": 5,
+        "name": "USA",
+        "code": "US",
+        "flag": "https://media.api-sports.io/flags/us.svg"
+      },
+      "teams": {
+        "home": {
+          "id": 144,
+          "name": "Los Angeles Clippers",
+          "logo": "https://media.api-sports.io/basketball/teams/144.png"
+        },
+        "away": {
+          "id": 152,
+          "name": "Oklahoma City Thunder",
+          "logo": "https://media.api-sports.io/basketball/teams/152.png"
+        }
+      },
+      "scores": {
+        "home": {
+          "quarter_1": 34,
+          "quarter_2": 17,
+          "quarter_3": 26,
+          "quarter_4": 24,
+          "over_time": null,
+          "total": 101
+        },
+        "away": {
+          "quarter_1": 24,
+          "quarter_2": 33,
+          "quarter_3": 24,
+          "quarter_4": 22,
+          "over_time": null,
+          "total": 103
+        }
+      }
+    },
+    {
+      "id": 414910,
+      "date": "2025-03-24T23:00:00+00:00",
+      "time": "23:00",
+      "timestamp": 1742857200,
+      "timezone": "UTC",
+      "stage": null,
+      "week": null,
+      "venue": "Gainbridge Fieldhouse",
+      "status": {
+        "long": "Game Finished",
+        "short": "FT",
+        "timer": null
+      },
+      "league": {
+        "id": 12,
+        "name": "NBA",
+        "type": "League",
+        "season": "2024-2025",
+        "logo": "https://media.api-sports.io/basketball/leagues/12.png"
+      },
+      "country": {
+        "id": 5,
+        "name": "USA",
+        "code": "US",
+        "flag": "https://media.api-sports.io/flags/us.svg"
+      },
+      "teams": {
+        "home": {
+          "id": 143,
+          "name": "Indiana Pacers",
+          "logo": "https://media.api-sports.io/basketball/teams/143.png"
+        },
+        "away": {
+          "id": 149,
+          "name": "Minnesota Timberwolves",
+          "logo": "https://media.api-sports.io/basketball/teams/149.png"
+        }
+      },
+      "scores": {
+        "home": {
+          "quarter_1": 25,
+          "quarter_2": 29,
+          "quarter_3": 41,
+          "quarter_4": 24,
+          "over_time": null,
+          "total": 119
+        },
+        "away": {
+          "quarter_1": 23,
+          "quarter_2": 25,
+          "quarter_3": 25,
+          "quarter_4": 30,
+          "over_time": null,
+          "total": 103
+        }
+      }
+    },
+    {
+      "id": 414911,
+      "date": "2025-03-24T23:00:00+00:00",
+      "time": "23:00",
+      "timestamp": 1742857200,
+      "timezone": "UTC",
+      "stage": null,
+      "week": null,
+      "venue": "Kia Center",
+      "status": {
+        "long": "Game Finished",
+        "short": "FT",
+        "timer": null
+      },
+      "league": {
+        "id": 12,
+        "name": "NBA",
+        "type": "League",
+        "season": "2024-2025",
+        "logo": "https://media.api-sports.io/basketball/leagues/12.png"
+      },
+      "country": {
+        "id": 5,
+        "name": "USA",
+        "code": "US",
+        "flag": "https://media.api-sports.io/flags/us.svg"
+      },
+      "teams": {
+        "home": {
+          "id": 153,
+          "name": "Orlando Magic",
+          "logo": "https://media.api-sports.io/basketball/teams/153.png"
+        },
+        "away": {
+          "id": 145,
+          "name": "Los Angeles Lakers",
+          "logo": "https://media.api-sports.io/basketball/teams/145.png"
+        }
+      },
+      "scores": {
+        "home": {
+          "quarter_1": 26,
+          "quarter_2": 32,
+          "quarter_3": 34,
+          "quarter_4": 26,
+          "over_time": null,
+          "total": 118
+        },
+        "away": {
+          "quarter_1": 30,
+          "quarter_2": 30,
+          "quarter_3": 18,
+          "quarter_4": 28,
+          "over_time": null,
+          "total": 106
+        }
+      }
+    },
+    {
+      "id": 414912,
+      "date": "2025-03-24T23:00:00+00:00",
+      "time": "23:00",
+      "timestamp": 1742857200,
+      "timezone": "UTC",
+      "stage": null,
+      "week": null,
+      "venue": "Capital One Arena",
+      "status": {
+        "long": "Game Finished",
+        "short": "FT",
+        "timer": null
+      },
+      "league": {
+        "id": 12,
+        "name": "NBA",
+        "type": "League",
+        "season": "2024-2025",
+        "logo": "https://media.api-sports.io/basketball/leagues/12.png"
+      },
+      "country": {
+        "id": 5,
+        "name": "USA",
+        "code": "US",
+        "flag": "https://media.api-sports.io/flags/us.svg"
+      },
+      "teams": {
+        "home": {
+          "id": 161,
+          "name": "Washington Wizards",
+          "logo": "https://media.api-sports.io/basketball/teams/161.png"
+        },
+        "away": {
+          "id": 159,
+          "name": "Toronto Raptors",
+          "logo": "https://media.api-sports.io/basketball/teams/159.png"
+        }
+      },
+      "scores": {
+        "home": {
+          "quarter_1": 32,
+          "quarter_2": 18,
+          "quarter_3": 26,
+          "quarter_4": 28,
+          "over_time": null,
+          "total": 104
+        },
+        "away": {
+          "quarter_1": 28,
+          "quarter_2": 24,
+          "quarter_3": 26,
+          "quarter_4": 34,
+          "over_time": null,
+          "total": 112
+        }
+      }
+    },
+    {
+      "id": 414913,
+      "date": "2025-03-24T23:30:00+00:00",
+      "time": "23:30",
+      "timestamp": 1742859000,
+      "timezone": "UTC",
+      "stage": null,
+      "week": null,
+      "venue": "Barclays Center",
+      "status": {
+        "long": "Game Finished",
+        "short": "FT",
+        "timer": null
+      },
+      "league": {
+        "id": 12,
+        "name": "NBA",
+        "type": "League",
+        "season": "2024-2025",
+        "logo": "https://media.api-sports.io/basketball/leagues/12.png"
+      },
+      "country": {
+        "id": 5,
+        "name": "USA",
+        "code": "US",
+        "flag": "https://media.api-sports.io/flags/us.svg"
+      },
+      "teams": {
+        "home": {
+          "id": 134,
+          "name": "Brooklyn Nets",
+          "logo": "https://media.api-sports.io/basketball/teams/134.png"
+        },
+        "away": {
+          "id": 138,
+          "name": "Dallas Mavericks",
+          "logo": "https://media.api-sports.io/basketball/teams/138.png"
+        }
+      },
+      "scores": {
+        "home": {
+          "quarter_1": 17,
+          "quarter_2": 31,
+          "quarter_3": 29,
+          "quarter_4": 24,
+          "over_time": null,
+          "total": 101
+        },
+        "away": {
+          "quarter_1": 32,
+          "quarter_2": 30,
+          "quarter_3": 34,
+          "quarter_4": 24,
+          "over_time": null,
+          "total": 120
+        }
+      }
+    }
+  ]
+}
