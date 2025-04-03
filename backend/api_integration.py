@@ -72,8 +72,8 @@ def score_prediction(request: ScorePredictionRequest):
                     ensemble_prediction += prediction  # Simple average (can be weighted)
                 else:
                     raise HTTPException(status_code=500, detail=f"Prediction failed for {name} model.")
-            ensemble_prediction /= len(models)
-            return {"predicted_score": round(ensemble_prediction, 1)}
+        ensemble_prediction /= len(models)
+        return {"predicted_score": round(ensemble_prediction, 1)}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error during score prediction: {str(e)}")
@@ -204,7 +204,7 @@ def quarter_prediction(request: QuarterAnalysisRequest):
             request.current_quarter
         )
 
-        return {"quarter_predictions": predictions}
+        return {"quarter_predictions": predictions.to_dict(orient='records')}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error predicting quarters: {str(e)}")
 
