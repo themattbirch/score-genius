@@ -1,4 +1,6 @@
-# backend/main.py
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +12,7 @@ app = FastAPI(
     description="API for live sports analytics and predictive modeling.",
     version="1.0.0"
 )
+
 
 app.add_middleware(
     CORSMiddleware,
