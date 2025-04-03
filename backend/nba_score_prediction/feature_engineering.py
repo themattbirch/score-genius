@@ -237,37 +237,41 @@ class NBAFeatureEngine:
         # Ensure all required input columns exist and are numeric
                 # Ensure all required input columns exist and are numeric
                 # Ensure all required input columns exist and are numeric
+                # Ensure all required input columns exist and are numeric
         stat_cols = [
             'home_score', 'away_score', 'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted',
             'home_3pm', 'home_3pa', 'away_3pm', 'away_3pa', 'home_ft_made', 'home_ft_attempted',
             'away_ft_made', 'away_ft_attempted', 'home_off_reb', 'home_def_reb', 'home_total_reb',
             'away_off_reb', 'away_def_reb', 'away_total_reb', 'home_turnovers', 'away_turnovers',
             'home_ot', 'away_ot'
-            # Add any other essential raw stats used below if not listed
         ]
-        # Denominator columns list (useful for checks later if needed, but not for this fillna)
-        # denominator_cols = ['home_fg_attempted', 'away_fg_attempted', 'home_ft_attempted', 'away_ft_attempted',
-        #                     'home_possessions', 'away_possessions', 'game_minutes_played']
+        # Define columns used as denominators - crucial for correct NaN handling
+        denominator_cols = ['home_fg_attempted', 'away_fg_attempted', 'home_ft_attempted', 'away_ft_attempted',
+                           'home_possessions', 'away_possessions', 'game_minutes_played'] # Added possessions/minutes here too
 
         missing_stat_cols = [col for col in stat_cols if col not in result_df.columns]
         if missing_stat_cols:
-             logger.warning(f"Advanced Metrics: Missing required input columns: {missing_stat_cols}. Filling with 0.")
+             logger.warning(f"Advanced Metrics: Missing required input columns: {missing_stat_cols}. Filling defaults.")
 
-        # --- CORRECTED LOOP ---
+        # --- CORRECTED fillna Logic ---
         for col in stat_cols:
             if col not in result_df.columns:
-                # Add completely missing columns as 0
-                result_df[col] = 0
-                logger.warning(f"Column '{col}' was missing entirely, filled with 0.")
-                continue # Go to next column
-
+                # Add missing columns - use NaN if it's a denominator, 0 otherwise
+                result_df[col] = np.nan if col in denominator_cols else 0
+                logger.warning(f"Column '{col}' was missing entirely, filled with {'NaN' if col in denominator_cols else 0}.")
+                # We still convert below, which will handle the type
+                
             # Convert to numeric, coercing errors (turns non-numbers into NaN)
             numeric_col = pd.to_numeric(result_df[col], errors='coerce')
 
-            # Fill any NaNs (from coercion or original data) with 0
-            # Assumes 0 is acceptable if loading fixed source NULLs to NaN correctly
-            result_df[col] = numeric_col.fillna(0)
-        # --- END CORRECTION ---
+            # Fill NaNs resulting from coercion or original data
+            if col in denominator_cols:
+                # For denominators, keep NaN values so safe_divide uses default
+                result_df[col] = numeric_col.fillna(np.nan)
+            else:
+                # For other stats (scores, makes, rebs, TOs), filling NaN with 0 is usually acceptable
+                result_df[col] = numeric_col.fillna(0)
+        # --- End Correction ---
 
 
         def safe_divide(numerator, denominator, default_val):

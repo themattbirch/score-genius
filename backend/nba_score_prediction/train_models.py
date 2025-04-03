@@ -271,29 +271,34 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
              logger.error(f"Error loading team stats CSV: {e}", exc_info=True)
 
     
-       # --- Final Cleaning ---
+        # --- Final Cleaning ---
     if not hist_df.empty:
-        # ... (loop adding missing columns - correctly indented) ...
+        missing_hist_cols = [col for col in hist_required_cols if col not in hist_df.columns]
+        if missing_hist_cols:
+             logger.warning(f"Historical data missing columns: {missing_hist_cols}. Filling with NaN.")
+             for col in missing_hist_cols: hist_df[col] = np.nan # Fill totally missing columns with NaN
 
-        logger.info("Converting historical numeric columns and handling NaNs...") # Add log
+        logger.info("Converting historical numeric columns and handling NaNs...")
         for col in hist_numeric_cols:
             if col in hist_df.columns:
                 numeric_col = pd.to_numeric(hist_df[col], errors='coerce')
-                # Change fillna(0) to fillna(np.nan) to preserve missing info
-                hist_df[col] = numeric_col.fillna(np.nan) # <<< CHANGE HERE
-                # Optional: Log counts of NaNs introduced by coercion/original data
-                # nan_count = numeric_col.isnull().sum()
-                # if nan_count > 0:
-                #     logger.debug(f"Column '{col}' has {nan_count} NaN values after coercion/load.")
-            else: # Should be handled by missing column loop, but safeguard
-                 hist_df[col] = np.nan # Fill missing numeric cols with NaN
+                # Change fillna(0) to fillna(np.nan) to preserve missing info from source/coercion
+                hist_df[col] = numeric_col.fillna(np.nan) # <<< MODIFIED LINE
+            else:
+                 # This case should ideally be caught by the missing_hist_cols check above
+                 logger.warning(f"Numeric column '{col}' unexpectedly missing, adding as NaN.")
+                 hist_df[col] = np.nan # Ensure numeric cols always exist, fill with NaN
 
-        # Optional: Log NaN counts specifically for key columns AFTER the loop
+        # Optional Debug: Log NaN counts specifically for key columns AFTER cleaning
         if args.debug:
             key_cols_nan_check = ['home_fg_attempted', 'home_ft_attempted', 'away_fg_attempted', 'away_ft_attempted']
+            logger.debug("--- NaN Check After Loading/Cleaning ---")
             for k_col in key_cols_nan_check:
                 if k_col in hist_df.columns:
-                    logger.debug(f"NaN count in loaded hist_df['{k_col}']: {hist_df[k_col].isnull().sum()}")
+                    nan_count = hist_df[k_col].isnull().sum()
+                    logger.debug(f"NaN count in loaded hist_df['{k_col}']: {nan_count} ({nan_count*100.0/len(hist_df):.1f}%)")
+                else:
+                    logger.warning(f"Column '{k_col}' not found for NaN check.")
 
         hist_df = hist_df.sort_values('game_date').reset_index(drop=True)
 
@@ -305,9 +310,10 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
                  cols_present = [c for c in cols_to_check if c in hist_df.columns]
                  if cols_present:
                       logger.debug(f"--- Post-Load Data Check (hist_df in load_data_source, NaNs preserved) ---")
+                      # Use .describe(include='all') to see NaN counts if describe() hides them
                       logger.debug(f"Describe output for key columns in loaded hist_df:\n{hist_df[cols_present].describe().to_string()}")
                       logger.debug(f"Head output for key columns in loaded hist_df:\n{hist_df[cols_present].head(10).to_string()}")
-                 else: logger.warning("Could not perform post-load check: Key columns missing.")
+                 else: logger.warning("Could not perform post-load check: Key columns missing from hist_df.")
              except Exception as log_e: logger.error(f"Error during post-load data check logging: {log_e}")
 
     if not team_stats_df.empty:
