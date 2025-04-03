@@ -9,11 +9,11 @@ import pandas as pd
 from backend.nba_score_prediction.models import XGBoostScorePredictor, RandomForestScorePredictor, RidgeScorePredictor
 from backend.nba_score_prediction.prediction import predict_final_score, generate_enhanced_predictions
 
-# Import the feature engineering components
-from backend.nba_score_prediction.feature_engineering import (
-    NBAFeatureEngine,
-    QuarterSpecificModelSystem,
-    PredictionUncertaintyEstimator )
+from backend.nba_score_prediction.feature_engineering import NBAFeatureEngine
+from backend.nba_score_prediction.models import QuarterSpecificModelSystem, predict_final_score
+from backend.nba_score_prediction.ensemble import generate_enhanced_predictions
+from backend.nba_score_prediction.simulation import PredictionUncertaintyEstimator
+
 
 # Define Pydantic models for API requests
 class ScorePredictionRequest(BaseModel):
@@ -165,8 +165,7 @@ def momentum_shifts():
         processed_df = feature_generator.generate_all_features(df)
         # Extract momentum-related features
         shifts = processed_df[['game_id', 'home_team', 'away_team',
-                            'q1_to_q2_momentum', 'q2_to_q3_momentum',
-                            'q3_to_q4_momentum', 'cumulative_momentum']]
+                            'cumulative_momentum']]
         return {"momentum_shifts": shifts.to_dict(orient='records')}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing momentum shifts: {str(e)}")

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import os
 import joblib
 from scipy import stats
+from backend.nba_score_prediction.simulation import PredictionUncertaintyEstimator
 
 # -------------------- Ensemble Weight Manager --------------------
 class EnsembleWeightManager:
@@ -504,4 +505,3 @@ def generate_enhanced_predictions(
             })
 
     return pd.DataFrame(results)
-

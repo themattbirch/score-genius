@@ -15,11 +15,10 @@ from backend.nba_score_prediction.models import (
     RandomForestScorePredictor,
     RidgeScorePredictor,
 )
-from backend.nba_score_prediction.prediction import predict_final_score, generate_enhanced_predictions
 from backend.nba_score_prediction.feature_engineering import NBAFeatureEngine
-from backend.nba_score_prediction.ensemble import QuarterSpecificModelSystem
-from backend.nba_score_prediction.evaluation import PredictionUncertaintyEstimator  # Assuming this is where it's defined
-
+from backend.nba_score_prediction.models import QuarterSpecificModelSystem, predict_final_score
+from backend.nba_score_prediction.ensemble import generate_enhanced_predictions
+from backend.nba_score_prediction.simulation import PredictionUncertaintyEstimator
 
 class ScorePredictionRequest(BaseModel):
     features: list
@@ -156,9 +155,6 @@ def momentum_shifts():
                 'game_id',
                 'home_team',
                 'away_team',
-                'q1_to_q2_momentum',
-                'q2_to_q3_momentum',
-                'q3_to_q4_momentum',
                 'cumulative_momentum',
             ]
         ]
