@@ -270,7 +270,7 @@ def process_day(date_obj: datetime):
 
 def main():
     # Example: fetch data from 2025-03-16 to 2025-03-17
-    start_date = datetime(2022, 12, 1)
+    start_date = datetime(2023, 10, 6)
     end_date = datetime(2024, 1, 14)
 
     print(f"Starting historical data import from {start_date} to {end_date}")

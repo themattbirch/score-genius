@@ -1,213 +1,66 @@
 # backend/routers/analysis_routes.py
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends # Added Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-import os
-import pandas as pd
+from pydantic import BaseModel # Keep BaseModel if needed for request bodies here
+import logging
 
-from backend.ml.llama_inference import generate_recap
-from backend.analytics.win_probability import calculate_win_probability
+# --- Potentially import shared components via Dependency Injection ---
+# This requires defining 'getter' functions elsewhere, often near your main app setup
+# from ..dependencies import get_feature_engine # Example dependency function
 
-# Additional imports:
-from backend.nba_score_prediction.models import (
-    XGBoostScorePredictor,
-    RandomForestScorePredictor,
-    RidgeScorePredictor,
+# --- Import specific analysis functions ---
+try:
+    from backend.ml.llama_inference import generate_recap
+    from backend.analytics.win_probability import calculate_win_probability
+    # Import the feature engine class if needed for type hinting Dependencies
+    from backend.nba_score_prediction.feature_engineering import NBAFeatureEngine
+except ImportError as e:
+    logging.error(f"Error importing analysis dependencies: {e}", exc_info=True)
+    # Handle missing dependencies appropriately
+    raise RuntimeError(f"Analysis routes failed to load dependencies: {e}") from e
+
+logger = logging.getLogger(__name__)
+router = APIRouter(
+    prefix="/analysis", # Add a prefix for organization
+    tags=["Analysis"]   # Tag endpoints in OpenAPI docs
 )
-from backend.nba_score_prediction.feature_engineering import NBAFeatureEngine
-from backend.nba_score_prediction.models import QuarterSpecificModelSystem, predict_final_score
-from backend.nba_score_prediction.ensemble import generate_enhanced_predictions
-from backend.nba_score_prediction.simulation import PredictionUncertaintyEstimator
 
-class ScorePredictionRequest(BaseModel):
-    features: list
+# Define request/response models IF NEEDED by these specific endpoints
+class RecapRequest(BaseModel):
+     game_data: dict # Or a more specific model
 
-
-class EnhancedScorePredictionRequest(BaseModel):
-    game_data: dict
+class WinProbRequest(BaseModel):
+     game_data: dict # Or a more specific model
 
 
-class QuarterAnalysisRequest(BaseModel):
-    current_quarter: int
-    quarter_scores: dict
-    team_stats: dict
+# --- Analysis Specific Endpoints ---
 
-
-router = APIRouter()
-
-
-@router.post("/recap")
-async def generate_game_recap(game_data: dict):
-    recap = generate_recap(game_data)
-    return JSONResponse(content={"recap": recap})
-
-
-@router.post("/win-probability")
-async def get_win_probability(game_data: dict):
-    probability = calculate_win_probability(game_data)
-    return JSONResponse(content={"win_probability": probability})
-
-
-@router.post("/predict/score")
-def score_prediction(request: ScorePredictionRequest):
-    # Ensemble model loading logic (MATCH api_integration.py)
-    predictors = {
-        "xgboost": XGBoostScorePredictor(),
-        "random_forest": RandomForestScorePredictor(),
-        "ridge": RidgeScorePredictor(),
-    }
-    models = {}
-    for name, predictor in predictors.items():
-        predictor.load_model()  # Load the model for each predictor
-        models[name] = predictor.pipeline_home  # Access the actual model
-
-    if not models:
-        raise HTTPException(status_code=500, detail="No score prediction models available.")
-
+@router.post("/recap", summary="Generate Game Recap")
+async def generate_game_recap_endpoint(request: RecapRequest):
+    """Generates a textual recap for a given game's data."""
+    # If generate_recap needs shared components, inject them:
+    # feature_engine: NBAFeatureEngine = Depends(get_feature_engine)
     try:
-        # Ensemble prediction logic (simplified example)
-        ensemble_prediction = 0
-        for name, model in models.items():
-            if model:  # Ensure model loaded correctly
-                prediction = predict_final_score(model, request.features)
-                if prediction is not None:
-                    ensemble_prediction += prediction  # Simple average (can be weighted)
-                else:
-                    raise HTTPException(status_code=500, detail=f"Prediction failed for {name} model.")
-        ensemble_prediction /= len(models)
-        return {"predicted_score": round(ensemble_prediction, 1)}
+        # Pass necessary data or components to the analysis function
+        recap = generate_recap(request.game_data) # Assuming it takes the dict
+        return JSONResponse(content={"recap": recap})
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error during score prediction: {str(e)}")
+        logger.error(f"Error generating recap: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error generating recap: {str(e)}")
 
 
-@router.post("/predict/score/enhanced")
-def enhanced_score_prediction(request: EnhancedScorePredictionRequest):
+@router.post("/win-probability", summary="Calculate Win Probability")
+async def get_win_probability_endpoint(request: WinProbRequest):
+    """Calculates win probability based on game data/state."""
+    # If calculate_win_probability needs shared components, inject them
     try:
-        # Ensemble model loading logic (MATCH api_integration.py)
-        predictors = {
-            "xgboost": XGBoostScorePredictor(),
-            "random_forest": RandomForestScorePredictor(),
-            "ridge": RidgeScorePredictor(),
-        }
-        models = {}
-        for name, predictor in predictors.items():
-            predictor.load_model()  # Load the model for each predictor
-            models[name] = predictor.pipeline_home  # Access the actual model
-
-        if not models:
-            raise HTTPException(status_code=500, detail="Main prediction model not available.")
-
-        # Load the main model (example: XGBoost, adjust as needed)
-        main_model = models.get("xgboost")
-        if not main_model:
-            raise HTTPException(status_code=500, detail="Main prediction model (XGBoost) not available.")
-
-        game_data = pd.DataFrame([request.game_data])
-        feature_generator = NBAFeatureEngine()  # Initialize here
-        features_df = feature_generator.generate_all_features(game_data)
-        expected_features = feature_generator.get_expected_features(
-            enhanced=hasattr(main_model, 'feature_importances_') and len(main_model.feature_importances_) > 8
-        )
-        main_pred = main_model.predict(features_df[expected_features])[0]
-        quarter_system = QuarterSpecificModelSystem(feature_generator=feature_generator)  # Initialize here
-        ensemble_pred, confidence, breakdown = quarter_system.predict_final_score(
-            game_data=request.game_data,
-            main_model_prediction=main_pred,
-            weight_manager=quarter_system.weight_manager,
-        )
-        uncertainty_estimator = PredictionUncertaintyEstimator()  # Initialize here
-        current_quarter = int(features_df.iloc[0].get('current_quarter', 0))
-        score_margin = abs(float(features_df.iloc[0].get('score_differential', 0)))
-        lower_bound, upper_bound, interval_width = uncertainty_estimator.calculate_prediction_interval(
-            ensemble_pred, current_quarter, score_margin
-        )
-        result = {
-            "main_model_prediction": float(main_pred),
-            "quarter_model_prediction": float(breakdown['quarter_model_pred']),
-            "ensemble_prediction": float(ensemble_pred),
-            "confidence": float(confidence),
-            "prediction_interval": {
-                "lower_bound": float(lower_bound),
-                "upper_bound": float(upper_bound),
-                "width": float(interval_width),
-            },
-            "weights": breakdown['weights'],
-        }
-        if 'quarter_predictions' in breakdown:
-            result["quarter_predictions"] = {
-                q: float(score) for q, score in breakdown['quarter_predictions'].items()
-            }
-        return result
+        # Pass necessary data or components
+        probability = calculate_win_probability(request.game_data) # Assuming it takes the dict
+        # Basic validation
+        if probability is None or not (0 <= probability <= 1):
+             logger.warning(f"Win probability calculation returned invalid value: {probability}")
+             raise HTTPException(status_code=500, detail="Win probability calculation failed.")
+        return JSONResponse(content={"win_probability": float(probability)})
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error in enhanced prediction: {str(e)}")
-
-
-@router.get("/quarter/momentum_shifts")
-def momentum_shifts():
-    try:
-        data_path = os.path.join(os.path.dirname(__file__), '../../data/historical_games.csv')
-        df = pd.read_csv(data_path)
-        feature_generator = NBAFeatureEngine()  # Initialize here
-        processed_df = feature_generator.generate_all_features(df)
-        shifts = processed_df[
-            [
-                'game_id',
-                'home_team',
-                'away_team',
-                'cumulative_momentum',
-            ]
-        ]
-        return {"momentum_shifts": shifts.to_dict(orient='records')}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing momentum shifts: {str(e)}")
-
-
-@router.post("/quarter/predict")
-def quarter_prediction(request: QuarterAnalysisRequest):
-    try:
-        game_data = {
-            'current_quarter': request.current_quarter,
-            'home_team': request.team_stats.get('home_team', 'Home'),
-            'away_team': request.team_stats.get('away_team', 'Away'),
-        }
-        for quarter in range(1, 5):
-            game_data[f'home_q{quarter}'] = request.quarter_scores.get(f'home_q{quarter}', 0)
-            game_data[f'away_q{quarter}'] = request.quarter_scores.get(f'away_q{quarter}', 0)
-        for key, value in request.team_stats.items():
-            game_data[key] = value
-        df = pd.DataFrame([game_data])
-        feature_generator = NBAFeatureEngine()  # Initialize here
-        processed_df = feature_generator.generate_all_features(df)
-        quarter_system = QuarterSpecificModelSystem(feature_generator=feature_generator)  # Initialize here
-        predictions = quarter_system.predict_remaining_quarters(
-            processed_df.iloc[0],
-            request.current_quarter
-        )
-        return {"quarter_predictions": predictions.to_dict(orient='records')}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error predicting quarters: {str(e)}")
-
-
-@router.post("/predict/batch")
-def batch_predictions(request: list):
-    try:
-        # Ensemble model loading logic (MATCH other endpoints)
-        predictors = {
-            "xgboost": XGBoostScorePredictor(),
-            "random_forest": RandomForestScorePredictor(),
-            "ridge": RidgeScorePredictor(),
-        }
-        models = {}
-        for name, predictor in predictors.items():
-            predictor.load_model()  # Load the model for each predictor
-            models[name] = predictor.pipeline_home  # Access the actual model
-
-        if not models:
-            raise HTTPException(status_code=500, detail="Main prediction model not available.")
-
-        games_df = pd.DataFrame(request)
-        predictions = generate_enhanced_predictions(games_df, models)
-        return {"predictions": predictions.to_dict(orient='records')}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error in batch prediction: {str(e)}")
+        logger.error(f"Error calculating win probability: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error calculating win probability: {str(e)}")
