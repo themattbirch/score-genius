@@ -597,25 +597,66 @@ def generate_predictions(
     """
     logger.info("--- Starting NBA Prediction Pipeline (On-the-Fly Features) ---")
     start_time = time.time()
-    if not PROJECT_MODULES_IMPORTED: logger.critical("Core project modules not imported."); return [], []
+    if not PROJECT_MODULES_IMPORTED:
+        logger.critical("Core project modules not imported.")
+        return [], []
 
     # --- Setup ---
     supabase_client = get_supabase_client()
-    if not supabase_client: logger.error("Supabase Client initialization failed."); return [], []
+    if not supabase_client:
+        logger.error("Supabase Client initialization failed.")
+        return [], []
+
+    # --- Initialize Engines ---
+    feature_engine = None
+    uncertainty_estimator = None
+    hist_stats_df = None # Initialize DataFrame variable outside the try block
+
     try:
+        # Initialize Feature Engine
         feature_engine = NBAFeatureEngine(supabase_client=supabase_client, debug=False)
-        # <<< ADDED: Instantiate Uncertainty Estimator >>>
-        # You might load historical stats here if available, otherwise uses defaults
-        # e.g., hist_stats = load_historical_coverage_from_db()
-        # uncertainty_estimator = PredictionUncertaintyEstimator(historical_coverage_stats=hist_stats, debug=False)
-        uncertainty_estimator = PredictionUncertaintyEstimator(debug=False)
-        logger.info("Initialized FeatureEngine and PredictionUncertaintyEstimator.")
+        logger.debug("FeatureEngine initialized.")
+
+        # Attempt to load historical coverage stats (graceful failure)
+        try:
+            coverage_stats_path = REPORTS_DIR / "historical_coverage_stats.csv"
+            if coverage_stats_path.is_file():
+                 hist_stats_df = pd.read_csv(coverage_stats_path)
+                 # Optional: Basic validation of the loaded DataFrame
+                 if 'quarter' in hist_stats_df.columns and 'actual_coverage' in hist_stats_df.columns:
+                     logger.info(f"Loaded historical coverage stats ({len(hist_stats_df)} rows) for uncertainty estimator from {coverage_stats_path}")
+                 else:
+                     logger.warning(f"Loaded coverage stats file {coverage_stats_path} is missing required columns ('quarter', 'actual_coverage'). Ignoring.")
+                     hist_stats_df = None # Set back to None if invalid
+            else:
+                 logger.info(f"Historical coverage stats file not found at {coverage_stats_path}. Using default uncertainty settings.")
+                 hist_stats_df = None
+        except Exception as e:
+            logger.warning(f"Could not load or process historical coverage stats: {e}. Using default uncertainty settings.")
+            hist_stats_df = None # Ensure it's None on any error
+
+        # Initialize Uncertainty Estimator, passing the loaded stats (or None)
+        uncertainty_estimator = PredictionUncertaintyEstimator(
+            historical_coverage_stats=hist_stats_df, # Pass the result of the loading attempt
+            debug=False
+        )
+        logger.debug("PredictionUncertaintyEstimator initialized.")
+
+        logger.info("Successfully initialized FeatureEngine and PredictionUncertaintyEstimator.")
+
     except Exception as init_e:
-         logger.error(f"Failed to initialize engines: {init_e}", exc_info=True)
+         # This catches errors during the instantiation of NBAFeatureEngine or PredictionUncertaintyEstimator itself
+         logger.error(f"FATAL: Failed to initialize core engines: {init_e}", exc_info=True)
          return [], []
+
+    # --- Check if engines were successfully initialized ---
+    if feature_engine is None or uncertainty_estimator is None:
+        logger.error("Core engine initialization failed (check previous errors). Cannot proceed.")
+        return [], []
 
     # --- Load Data ---
     logger.info("Step 1: Loading data...")
+    # ... (rest of the generate_predictions function continues from here) ...
     historical_data = load_recent_historical_data(supabase_client, days_lookback=historical_lookback)
     team_stats_data = load_team_stats_data(supabase_client)
     upcoming_games_df = fetch_upcoming_games_data(supabase_client, days_window=days_window)

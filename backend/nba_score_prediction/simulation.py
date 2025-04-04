@@ -175,10 +175,14 @@ class PredictionUncertaintyEstimator:
         expected_width_for_q = self.expected_ranges.get(current_quarter, self.DEFAULT_EXPECTED_RANGES[0]) * 2.0
 
         if expected_width_for_q > 1e-6:
-            # Example: If final width matches expected, confidence = 75%. Wider = lower, Narrower = higher.
-            # Scaled linearly, capped at 0 and 100.
-            confidence = 100.0 - (final_width / expected_width_for_q * 75.0)
-            confidence = max(0.0, min(100.0, confidence))
+         # Suggestion: Define a target confidence for when width matches expected,
+            # and scale deviation from there. Example:
+            target_conf_at_expected_width = 80.0 # e.g., 80% confidence if width is as expected
+            width_ratio = final_width / expected_width_for_q if expected_width_for_q > 1e-6 else 1.0
+            # Example scaling: Lower confidence if wider (ratio > 1), higher if narrower (ratio < 1)
+            # This needs careful thought - maybe non-linear scaling? Start simple:
+            confidence = target_conf_at_expected_width - (width_ratio - 1.0) * 50.0 # Adjust the '50.0' sensitivity factor
+            confidence = max(5.0, min(95.0, confidence)) # Apply caps (avoiding 0 or 100 maybe)
         else:
             confidence = 50.0 # Default confidence if expected range is zero
 
