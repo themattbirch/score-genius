@@ -1,4 +1,11 @@
-# backend/nba_score_prediction/ensemble.py
+"""
+ensemble.py - Ensemble Weight Management Module
+
+This module provides:
+  - EnsembleWeightManager: A class to compute and adjust ensemble weights based on error history and game context.
+  - generate_enhanced_predictions: A function to generate enhanced predictions for live games by combining
+    a main model and quarter-specific predictions, applying uncertainty estimation and ensemble weighting.
+"""
 
 import pandas as pd
 import numpy as np
@@ -8,338 +15,235 @@ from datetime import datetime, timedelta
 import os
 import joblib
 from scipy import stats
+import logging
+
+# Import PredictionUncertaintyEstimator from simulation module
 from backend.nba_score_prediction.simulation import PredictionUncertaintyEstimator
 
-# -------------------- Ensemble Weight Manager --------------------
+# Configure module-level logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# -------------------- EnsembleWeightManager --------------------
 class EnsembleWeightManager:
     """
-    Manages ensemble weights, including base strategies and dynamic adjustments,
-    to calculate the final ensemble prediction.
+    Manages ensemble weights using both standard and adaptive strategies.
+    Allows dynamic adjustments based on game context (time remaining, score differential, momentum)
+    and tracks error history for potential feedback-based updates.
     """
-    def __init__(self, error_history: Optional[Dict[str, Dict[int, float]]] = None, debug: bool = False):
-        self.error_history = error_history or {
+    def __init__(self, error_history: Optional[Dict[str, Dict[int, float]]] = None, debug: bool = False) -> None:
+        self.error_history: Dict[str, Dict[int, float]] = error_history or {
             'main_model': {1: 7.0, 2: 6.2, 3: 5.5, 4: 4.7},
             'quarter_model': {1: 8.5, 2: 7.0, 3: 5.8, 4: 4.5}
         }
-        self.weighting_strategies = {
+        self.weighting_strategies: Dict[str, Any] = {
             'standard': self._standard_weights,
             'adaptive': self._adaptive_weights,
         }
         self.weight_history: List[Dict[str, Any]] = []
-        # Constants for adaptive weighting and heuristic adjustments
-        self.BASE_WEIGHT_MIN = 0.6  # Min weight for main model in adaptive strategy
-        self.BASE_WEIGHT_MAX = 0.95 # Max weight for main model in adaptive strategy
-        self.HEURISTIC_MAIN_WEIGHT_MAX = 0.95 # Overall cap after heuristics
-        self.HEURISTIC_QUARTER_WEIGHT_MAX = 0.4 # Cap for quarter weight after heuristics (implicitly caps main at 0.6)
+        self.BASE_WEIGHT_MIN: float = 0.6    # Minimum base weight for main model in adaptive strategy
+        self.BASE_WEIGHT_MAX: float = 0.95   # Maximum base weight for main model in adaptive strategy
+        self.HEURISTIC_MAIN_WEIGHT_MAX: float = 0.95  # Overall cap for main model weight after heuristics
+        self.HEURISTIC_QUARTER_WEIGHT_MAX: float = 0.4  # Cap for quarter model weight after heuristics
+        self.HISTORIC_WEIGHT_SMOOTHING: float = 0.7  # Smoothing factor for updating error history
+        self.debug: bool = debug
 
-        self.HISTORIC_WEIGHT_SMOOTHING = 0.7 # Smoothing factor for error history updates
-        self.debug = debug
-
-    def log(self, message, level="INFO"):
-         """Log messages based on debug flag."""
-         if self.debug or level != "DEBUG":
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [WeightManager] {level}: {message}")
+    def log(self, message: str, level: str = "INFO") -> None:
+        """Logs messages using the module logger."""
+        log_func = getattr(logger, level.lower(), logger.info)
+        if self.debug or level.upper() != "DEBUG":
+            log_func(f"[WeightManager] {message}")
 
     def _standard_weights(self, quarter: int, **kwargs) -> Tuple[float, float]:
-        """ Standard weighting strategy. """
-        weights = { 1: (0.80, 0.20), 2: (0.85, 0.15), 3: (0.90, 0.10), 4: (0.95, 0.05) }
-        return weights.get(quarter, (0.90, 0.10)) # Default for Q0 or invalid
+        """Returns standard fixed weights for a given quarter."""
+        weights = {1: (0.80, 0.20), 2: (0.85, 0.15), 3: (0.90, 0.10), 4: (0.95, 0.05)}
+        return weights.get(quarter, (0.90, 0.10))
 
     def _adaptive_weights(self, quarter: int, **kwargs) -> Tuple[float, float]:
-        """ Adaptive weighting based on historical error rates. """
-        if not self.error_history or quarter not in self.error_history.get('main_model', {}) or quarter not in self.error_history.get('quarter_model', {}):
+        """
+        Computes adaptive weights based on error history.
+        Returns a tuple (main_weight, quarter_weight) where higher weight is given to the model with lower error.
+        """
+        if (quarter not in self.error_history.get('main_model', {})) or (quarter not in self.error_history.get('quarter_model', {})):
             self.log(f"Insufficient error history for Q{quarter}. Using standard weights.", level="DEBUG")
             return self._standard_weights(quarter)
 
         main_error = self.error_history['main_model'][quarter]
         quarter_error = self.error_history['quarter_model'][quarter]
-
         total_error = main_error + quarter_error
-        if total_error <= 0: # Avoid division by zero
-             self.log(f"Total error is zero or negative for Q{quarter}. Using standard weights.", level="WARNING")
-             return self._standard_weights(quarter)
+        if total_error <= 0:
+            self.log(f"Total error non-positive for Q{quarter}. Using standard weights.", level="WARNING")
+            return self._standard_weights(quarter)
 
-        # Higher weight to model with lower error (weight = other_error / total_error)
+        # Weight inversely proportional: main_weight is quarter_error / total_error.
         main_weight = quarter_error / total_error
-
-        # Constrain base weights
         main_weight = min(max(main_weight, self.BASE_WEIGHT_MIN), self.BASE_WEIGHT_MAX)
         quarter_weight = 1.0 - main_weight
-        self.log(f"Adaptive base weights for Q{quarter}: Main={main_weight:.3f}, Quarter={quarter_weight:.3f} (Errors M:{main_error:.2f}, Q:{quarter_error:.2f})", level="DEBUG")
+        self.log(f"Adaptive base weights for Q{quarter}: Main={main_weight:.3f}, Quarter={quarter_weight:.3f} (Errors: Main={main_error:.2f}, Quarter={quarter_error:.2f})", level="DEBUG")
         return main_weight, quarter_weight
 
     def get_base_weights(self, quarter: int, strategy: str = 'adaptive', **kwargs) -> Tuple[float, float]:
-        """ Get base ensemble weights using the specified strategy. """
+        """Retrieves base weights using the specified strategy."""
         strategy_func = self.weighting_strategies.get(strategy, self._adaptive_weights)
         return strategy_func(quarter, **kwargs)
 
     def calculate_ensemble(
         self,
         main_prediction: float,
-        quarter_prediction: float, # This is the quarter model's prediction for the *full game* (current + remaining)
+        quarter_prediction: float,
         current_quarter: int,
         weighting_strategy: str = 'adaptive',
         score_differential: float = 0,
         momentum: float = 0,
-        time_remaining: Optional[float] = None, # Assume minutes
-        main_uncertainty: Optional[float] = None, # Pass through if needed by base strategy
-        quarter_uncertainty: Optional[float] = None # Pass through if needed by base strategy
+        time_remaining: Optional[float] = None,
+        main_uncertainty: Optional[float] = None,
+        quarter_uncertainty: Optional[float] = None
     ) -> Tuple[float, float, float]:
         """
-        Calculates the final ensemble prediction after applying heuristic adjustments
-        to the base weights.
-
-        Args:
-            main_prediction: Prediction from the main full-game model.
-            quarter_prediction: Full-game prediction derived from quarter models (current score + predicted remaining).
-            current_quarter: Current quarter of the game (1-4, assume 0 pre-game handled before calling).
-            weighting_strategy: Strategy for getting base weights ('adaptive', 'standard').
-            score_differential: Current score difference (home - away).
-            momentum: Current game momentum metric.
-            time_remaining: Estimated time remaining in minutes.
-            main_uncertainty: Optional uncertainty measure for main model.
-            quarter_uncertainty: Optional uncertainty measure for quarter model.
+        Calculates the final ensemble prediction based on main and quarter predictions,
+        adjusted by game context factors.
 
         Returns:
-            Tuple: (final_ensemble_prediction, final_main_weight, final_quarter_weight)
+            Tuple of (final_ensemble_prediction, final_main_weight, final_quarter_weight).
         """
         if not (1 <= current_quarter <= 4):
-             self.log(f"calculate_ensemble called with invalid quarter {current_quarter}. Returning main prediction.", level="WARNING")
-             return main_prediction, 1.0, 0.0
+            self.log(f"Invalid quarter {current_quarter} provided to calculate_ensemble. Returning main_prediction.", level="WARNING")
+            return main_prediction, 1.0, 0.0
 
-        # 1. Get Base Weights
         base_main_weight, base_quarter_weight = self.get_base_weights(
             current_quarter,
             weighting_strategy,
             main_uncertainty=main_uncertainty,
             quarter_uncertainty=quarter_uncertainty
         )
-        main_w, quarter_w = base_main_weight, base_quarter_weight # Start with base weights
+        main_w, quarter_w = base_main_weight, base_quarter_weight
 
-        # 2. Apply Heuristic Adjustments (Based on global function logic)
-        self.log(f"Applying heuristics to base weights (M:{main_w:.3f}, Q:{quarter_w:.3f}). Context: Diff={score_differential:.1f}, Mom={momentum:.2f}, TimeRem={time_remaining}", level="DEBUG")
+        self.log(f"Initial base weights for Q{current_quarter}: Main={main_w:.3f}, Quarter={quarter_w:.3f}.", level="DEBUG")
 
-        # Adjust based on time remaining (Increase main weight as game progresses)
+        # Time remaining adjustment: Increase main model weight as game progresses.
         if time_remaining is not None and time_remaining >= 0:
             total_minutes = 48.0
             elapsed = total_minutes - time_remaining
-            progress = min(1.0, max(0.0, elapsed / total_minutes))
-            # Sigmoid function to smoothly increase main model weight as game progresses
-            sigmoid_progress = 1.0 / (1.0 + np.exp(-10 * (progress - 0.5))) # Range [~0, ~1]
-            adjustment = (1.0 - main_w) * sigmoid_progress # How much closer to 1.0 can we get?
-            main_w = main_w + adjustment
+            progress = np.clip(elapsed / total_minutes, 0.0, 1.0)
+            sigmoid_progress = 1.0 / (1.0 + np.exp(-10 * (progress - 0.5)))
+            adjustment = (1.0 - main_w) * sigmoid_progress
+            main_w += adjustment
             quarter_w = 1.0 - main_w
-            self.log(f"  Time Adjustment (Progress {progress:.2f}): Weights -> M={main_w:.3f}, Q={quarter_w:.3f}", level="DEBUG")
+            self.log(f"Time Adjustment (Progress: {progress:.2f}): Weights adjusted to Main={main_w:.3f}, Quarter={quarter_w:.3f}", level="DEBUG")
 
-        # Adjust if game is close (Give quarter model slightly more weight)
+        # Close game adjustment: Increase quarter weight when score differential is small.
         if abs(score_differential) < 8:
-            # Scale adjustment from 0.05 (at diff 0) down to 0 (at diff 8)
-            close_game_adjustment = 0.05 * (1.0 - abs(score_differential) / 8.0)
-            # Apply adjustment but cap quarter weight
-            quarter_w = min(self.HEURISTIC_QUARTER_WEIGHT_MAX, quarter_w + close_game_adjustment)
+            close_adjust = 0.05 * (1.0 - abs(score_differential) / 8.0)
+            quarter_w = min(self.HEURISTIC_QUARTER_WEIGHT_MAX, quarter_w + close_adjust)
             main_w = 1.0 - quarter_w
-            self.log(f"  Close Game Adjustment: Weights -> M={main_w:.3f}, Q={quarter_w:.3f}", level="DEBUG")
+            self.log(f"Close Game Adjustment: Weights adjusted to Main={main_w:.3f}, Quarter={quarter_w:.3f}", level="DEBUG")
 
-        # Adjust if high momentum (Give quarter model slightly more weight)
+        # Momentum adjustment: Increase quarter weight if momentum is high.
         momentum_threshold = 0.3
         if abs(momentum) > momentum_threshold:
-             # Scale adjustment based on momentum magnitude beyond threshold
-             momentum_adjustment = 0.05 * (abs(momentum) - momentum_threshold) / (1.0 - momentum_threshold) # Normalize effect range
-             # Apply adjustment but cap quarter weight
-             quarter_w = min(self.HEURISTIC_QUARTER_WEIGHT_MAX, quarter_w + momentum_adjustment)
-             main_w = 1.0 - quarter_w
-             self.log(f"  Momentum Adjustment: Weights -> M={main_w:.3f}, Q={quarter_w:.3f}", level="DEBUG")
+            momentum_adjust = 0.05 * (abs(momentum) - momentum_threshold) / (1.0 - momentum_threshold)
+            quarter_w = min(self.HEURISTIC_QUARTER_WEIGHT_MAX, quarter_w + momentum_adjust)
+            main_w = 1.0 - quarter_w
+            self.log(f"Momentum Adjustment: Weights adjusted to Main={main_w:.3f}, Quarter={quarter_w:.3f}", level="DEBUG")
 
-        # Adjust if predictions diverge significantly (Trust main model more)
+        # Prediction gap adjustment: Increase main weight if predictions diverge significantly.
         prediction_gap = abs(main_prediction - quarter_prediction)
         gap_threshold = 15.0
         if prediction_gap > gap_threshold:
-            # Scale adjustment based on how large the gap is
-            discrepancy_adjustment = min(0.3, 0.01 * (prediction_gap - gap_threshold)) # Apply adjustment only beyond threshold
-            # Apply adjustment but cap main weight
-            main_w = min(self.HEURISTIC_MAIN_WEIGHT_MAX, main_w + discrepancy_adjustment)
+            gap_adjust = min(0.3, 0.01 * (prediction_gap - gap_threshold))
+            main_w = min(self.HEURISTIC_MAIN_WEIGHT_MAX, main_w + gap_adjust)
             quarter_w = 1.0 - main_w
-            self.log(f"  Prediction Gap Adjustment (Gap {prediction_gap:.1f}): Weights -> M={main_w:.3f}, Q={quarter_w:.3f}", level="DEBUG")
+            self.log(f"Prediction Gap Adjustment (Gap: {prediction_gap:.1f}): Weights adjusted to Main={main_w:.3f}, Quarter={quarter_w:.3f}", level="DEBUG")
 
-        # --- Final Check on Weights ---
-        # Ensure weights sum to 1 and are within reasonable bounds after all adjustments
         main_w = min(max(main_w, 1.0 - self.HEURISTIC_QUARTER_WEIGHT_MAX), self.HEURISTIC_MAIN_WEIGHT_MAX)
         quarter_w = 1.0 - main_w
         self.log(f"Final Adjusted Weights: Main={main_w:.3f}, Quarter={quarter_w:.3f}", level="DEBUG")
 
-        # 3. Calculate Final Weighted Prediction
         final_ensemble_prediction = main_w * main_prediction + quarter_w * quarter_prediction
-
-        # 4. Return prediction and final weights (Confidence calculation removed)
         return final_ensemble_prediction, main_w, quarter_w
 
-
-    def track_weight_usage(
-        self,
-        game_id: str,
-        quarter: int,
-        main_weight: float,
-        quarter_weight: float,
-        prediction_error: Optional[float] = None
-    ) -> None:
-        """ Tracks the weights used and their performance for later analysis. """
-        # (Implementation remains the same as provided in Code Block 1)
-        if not isinstance(game_id, str): game_id = str(game_id) # Ensure string game_id
-        self.weight_history.append({
-            'game_id': game_id,
+    def track_weight_usage(self, game_id: str, quarter: int, main_weight: float, quarter_weight: float,
+                             prediction_error: Optional[float] = None) -> None:
+        """Tracks weight usage and associated prediction error for analysis."""
+        record = {
+            'game_id': str(game_id),
             'quarter': quarter,
             'main_weight': main_weight,
             'quarter_weight': quarter_weight,
             'timestamp': pd.Timestamp.now(),
             'prediction_error': prediction_error
-        })
-        self.log(f"Tracked weights for game {game_id}, Q{quarter}. Error={prediction_error}", level="DEBUG")
+        }
+        self.weight_history.append(record)
+        self.log(f"Tracked weights for game {game_id}, Q{quarter} (Error: {prediction_error}).", level="DEBUG")
 
-
-    def update_weights_from_feedback(
-        self,
-        recent_window: int = 10
-    ) -> Dict[str, Dict[int, float]]:
-        """ Updates error history based on recent prediction performance tracked. """
-        # (Implementation remains the same as provided in Code Block 1)
-        if len(self.weight_history) < recent_window:
-             self.log(f"Not enough history ({len(self.weight_history)}/{recent_window}) to update error metrics.", level="DEBUG")
-             return self.error_history
-
-        recent_data = self.weight_history[-recent_window:]
-        recent_df = pd.DataFrame(recent_data)
-
-        if 'prediction_error' not in recent_df.columns or recent_df['prediction_error'].isna().all():
-            self.log("No valid prediction errors found in recent history. Cannot update.", level="DEBUG")
-            return self.error_history
-
-        # Calculate average *absolute* error by quarter might be more stable for weighting
-        recent_df['abs_error'] = recent_df['prediction_error'].abs()
-        quarter_avg_abs_errors = recent_df.groupby('quarter')['abs_error'].mean().to_dict()
-        self.log(f"Recent avg absolute errors by quarter: {quarter_avg_abs_errors}", level="DEBUG")
-
-        updated = False
-        # Update error history using exponential moving average approach
-        for q, avg_abs_error in quarter_avg_abs_errors.items():
-             if q in self.error_history.get('main_model', {}) and q in self.error_history.get('quarter_model', {}):
-                  # How to update? Assume the 'prediction_error' tracked was for the *ensemble*.
-                  # We need errors for main and quarter models separately to properly update adaptive weights.
-                  # This current update logic assumes the ensemble error reflects 'main_model' error, which is incorrect.
-                  # TODO: Requires tracking separate errors or a different update strategy for adaptive weights.
-                  # Placeholder: Update 'main_model' error history based on ensemble error for now.
-                  current_error = self.error_history['main_model'][q]
-                  new_error = (self.HISTORIC_WEIGHT_SMOOTHING * avg_abs_error +
-                               (1.0 - self.HISTORIC_WEIGHT_SMOOTHING) * current_error)
-                  self.error_history['main_model'][q] = new_error
-                  self.log(f"Updated main_model error history for Q{q}: {current_error:.2f} -> {new_error:.2f}", level="DEBUG")
-                  updated = True
-             else:
-                  self.log(f"Quarter {q} not found in error history structure. Skipping update.", level="WARNING")
-
-        if updated:
-             self.log("Error history updated based on feedback.", level="INFO")
-        else:
-             self.log("Error history not updated.", level="DEBUG")
-
-        return self.error_history
-    
-    # Modify the update function signature to accept processed validation data
-    def update_error_history_from_validation(self, validation_summary: pd.DataFrame):
+    def update_error_history_from_validation(self, validation_summary: pd.DataFrame) -> Dict[str, Dict[int, float]]:
         """
-        Updates error history based on aggregated validation results.
-
-        Args:
-            validation_summary: A DataFrame with columns like
-                                'quarter', 'avg_abs_main_error', 'avg_abs_quarter_error'.
-                                (This needs to be calculated from your validation run)
+        Updates error history based on a validation summary DataFrame.
+        The DataFrame should include columns:
+          - 'quarter'
+          - 'avg_abs_main_error'
+          - 'avg_abs_quarter_error'
         """
-        self.log("Updating error history from validation summary...")
+        self.log("Updating error history from validation summary...", level="INFO")
         updated = False
         for _, row in validation_summary.iterrows():
             q = int(row['quarter'])
-            avg_abs_main_err = row.get('avg_abs_main_error')
-            avg_abs_quarter_err = row.get('avg_abs_quarter_error')
-
-            if q not in self.error_history.get('main_model', {}) or \
-            q not in self.error_history.get('quarter_model', {}):
-                self.log(f"Quarter {q} not found in error history structure. Skipping.", level="WARNING")
+            avg_main_err = row.get('avg_abs_main_error')
+            avg_quarter_err = row.get('avg_abs_quarter_error')
+            if q not in self.error_history.get('main_model', {}) or q not in self.error_history.get('quarter_model', {}):
+                self.log(f"Quarter {q} missing in error history. Skipping update.", level="WARNING")
                 continue
-
-            if pd.notna(avg_abs_main_err):
-                current_main_error = self.error_history['main_model'][q]
-                # Use smoothing (EMA - Exponential Moving Average) or just replace
-                new_main_error = (self.HISTORIC_WEIGHT_SMOOTHING * avg_abs_main_err +
-                                (1.0 - self.HISTORIC_WEIGHT_SMOOTHING) * current_main_error)
-                self.error_history['main_model'][q] = new_main_error
-                self.log(f"Updated main_model error history for Q{q}: {current_main_error:.2f} -> {new_main_error:.2f}", level="DEBUG")
+            if pd.notna(avg_main_err):
+                curr_main = self.error_history['main_model'][q]
+                new_main = self.HISTORIC_WEIGHT_SMOOTHING * avg_main_err + (1 - self.HISTORIC_WEIGHT_SMOOTHING) * curr_main
+                self.error_history['main_model'][q] = new_main
+                self.log(f"Updated main_model error for Q{q}: {curr_main:.2f} -> {new_main:.2f}", level="DEBUG")
                 updated = True
-
-            if pd.notna(avg_abs_quarter_err):
-                current_quarter_error = self.error_history['quarter_model'][q]
-                new_quarter_error = (self.HISTORIC_WEIGHT_SMOOTHING * avg_abs_quarter_err +
-                                    (1.0 - self.HISTORIC_WEIGHT_SMOOTHING) * current_quarter_error)
-                self.error_history['quarter_model'][q] = new_quarter_error
-                self.log(f"Updated quarter_model error history for Q{q}: {current_quarter_error:.2f} -> {new_quarter_error:.2f}", level="DEBUG")
+            if pd.notna(avg_quarter_err):
+                curr_quarter = self.error_history['quarter_model'][q]
+                new_quarter = self.HISTORIC_WEIGHT_SMOOTHING * avg_quarter_err + (1 - self.HISTORIC_WEIGHT_SMOOTHING) * curr_quarter
+                self.error_history['quarter_model'][q] = new_quarter
+                self.log(f"Updated quarter_model error for Q{q}: {curr_quarter:.2f} -> {new_quarter:.2f}", level="DEBUG")
                 updated = True
-
         if updated:
-            self.log("Error history updated based on validation feedback.", level="INFO")
+            self.log("Error history updated from validation summary.", level="INFO")
         else:
-            self.log("Error history not updated (no valid data?).", level="DEBUG")
+            self.log("No updates applied to error history.", level="DEBUG")
         return self.error_history
 
-    # Note: The old 'update_weights_from_feedback' based on live ensemble error
-    # should probably be removed or significantly rethought if you want truly adaptive live weights.
-    # Relying on periodic updates from validation is more robust.
-
+# -------------------- generate_enhanced_predictions Function --------------------
 def generate_enhanced_predictions(
     live_games_df: pd.DataFrame,
-    model_payload_path: str, # Path to the saved model payload
-    feature_generator: Any, # Instance of NBAFeatureEngine
-    quarter_system: Any, # Instance of QuarterSpecificModelSystem
-    uncertainty_estimator: Any, # Instance of PredictionUncertaintyEstimator
-    confidence_viz: Any, # Instance of ConfidenceVisualizer
+    model_payload_path: str,
+    feature_generator: Any,
+    quarter_system: Any,
+    uncertainty_estimator: Any,
+    confidence_viz: Any,
     historical_games_df: Optional[pd.DataFrame] = None,
     team_stats_df: Optional[pd.DataFrame] = None,
     debug: bool = False
 ) -> pd.DataFrame:
     """
-    Generates enhanced predictions for live games using a loaded model payload.
-
-    Args:
-        live_games_df: DataFrame of games to predict.
-        model_payload_path: Path to the file containing the model and required features.
-        feature_generator: Instance of NBAFeatureEngine.
-        quarter_system: Instance of QuarterSpecificModelSystem.
-        uncertainty_estimator: Instance of PredictionUncertaintyEstimator.
-        confidence_viz: Instance of ConfidenceVisualizer.
-        historical_games_df: Optional DataFrame of historical games for feature generation.
-        team_stats_df: Optional DataFrame of team stats for feature generation.
-        debug: Whether to print debug messages.
-
-    Returns:
-        DataFrame with predictions, uncertainty bounds, and confidence SVG.
+    Generates enhanced predictions for live games by combining a main model with quarter-specific predictions.
+    It loads the model payload, generates features, applies the main model, and refines predictions using the quarter system.
+    
+    Returns a DataFrame with predictions, uncertainty bounds, and a confidence SVG indicator.
     """
-    # --- Load Model and Required Features ---
     try:
         model_payload = joblib.load(model_payload_path)
         main_model = model_payload['model']
         required_features = model_payload['features']
-        if debug: print(f"[generate_enhanced_predictions] Loaded model and {len(required_features)} features from {model_payload_path}")
+        logger.info(f"Loaded model payload with {len(required_features)} features from {model_payload_path}")
     except FileNotFoundError:
-        print(f"ERROR: Model payload file not found at {model_payload_path}. Cannot generate predictions.")
-        return pd.DataFrame() # Return empty DataFrame on critical error
+        logger.error(f"Model payload file not found at {model_payload_path}.")
+        return pd.DataFrame()
     except KeyError as e:
-         print(f"ERROR: Model payload at {model_payload_path} is missing key: {e}. Requires 'model' and 'features'.")
-         return pd.DataFrame()
+        logger.error(f"Model payload missing key: {e}. Requires 'model' and 'features'.")
+        return pd.DataFrame()
     except Exception as e:
-        print(f"ERROR: Failed to load model payload from {model_payload_path}: {e}")
-        traceback.print_exc()
+        logger.exception(f"Failed to load model payload from {model_payload_path}: {e}")
         return pd.DataFrame()
 
-    # --- Generate Features ---
-    # Use the generate_all_features wrapper method
-    # Ensure it generates all features needed by both main_model and quarter_system
     try:
         features_df = feature_generator.generate_all_features(
             live_games_df,
@@ -347,116 +251,74 @@ def generate_enhanced_predictions(
             team_stats_df=team_stats_df
         )
         if features_df.empty or features_df.shape[0] != live_games_df.shape[0]:
-             print(f"ERROR: Feature generation failed or returned unexpected shape. Input: {live_games_df.shape}, Output: {features_df.shape}")
-             return pd.DataFrame()
-        if debug: print(f"[generate_enhanced_predictions] Feature generation complete. Shape: {features_df.shape}")
+            logger.error(f"Feature generation returned unexpected shape. Input: {live_games_df.shape}, Output: {features_df.shape}")
+            return pd.DataFrame()
+        logger.info(f"Feature generation complete. Shape: {features_df.shape}")
     except Exception as e:
-        print(f"ERROR: Exception during feature generation: {e}")
-        traceback.print_exc()
+        logger.exception(f"Exception during feature generation: {e}")
         return pd.DataFrame()
 
-
-    # --- Main Model Prediction ---
-    if not required_features: # Should have been caught during loading, but double-check
-         print("ERROR: No required features list available for the main model. Cannot predict.")
-         return pd.DataFrame()
-
-    # Ensure all required features are present in the generated features_df
-    missing_features_check = []
     for f in required_features:
         if f not in features_df.columns:
-            features_df[f] = 0 # Use 0 as default, or implement better default logic
-            missing_features_check.append(f)
-    if missing_features_check:
-        if debug: print(f"[generate_enhanced_predictions] Warning: Added {len(missing_features_check)} missing columns with default 0 for main model: {missing_features_check[:5]}...")
-    else:
-         if debug: print(f"[generate_enhanced_predictions] All {len(required_features)} required features found.")
-
-    # Select ONLY required features IN THE CORRECT ORDER using reindex
+            features_df[f] = 0  # Fill missing with default 0
+            logger.warning(f"Missing required feature '{f}' added with default 0.")
     try:
-        # Use fill_value=0 for any columns that might still be missing after the check (shouldn't happen often)
         X_main = features_df.reindex(columns=required_features, fill_value=0)
         if X_main.isnull().any().any():
-             print("[generate_enhanced_predictions] Warning: Null values detected in feature matrix X_main after reindex. Check defaults/data.")
-             # Optionally fill NaNs again if needed: X_main = X_main.fillna(0)
+            logger.warning("Null values detected in X_main after reindexing.")
     except Exception as e:
-         print(f"[generate_enhanced_predictions] CRITICAL Error selecting/reindexing required features: {e}. Cannot predict.")
-         traceback.print_exc()
-         return pd.DataFrame()
+        logger.exception(f"Error selecting required features: {e}")
+        return pd.DataFrame()
 
-    # --- Predict ---
     try:
         main_predictions = main_model.predict(X_main)
-        if debug: print(f"[generate_enhanced_predictions] Main model predictions generated ({len(main_predictions)}).")
+        logger.info(f"Main model predictions generated for {len(main_predictions)} samples.")
     except Exception as e:
-        print(f"[generate_enhanced_predictions] Error during main model prediction: {e}")
-        traceback.print_exc()
-        # Fallback prediction using feature_generator defaults
+        logger.exception(f"Error during main model prediction: {e}")
         avg_score = feature_generator.defaults.get('avg_pts_for', 110.0)
         main_predictions = np.full(len(features_df), avg_score)
-        if debug: print(f"[generate_enhanced_predictions] Using fallback predictions ({avg_score}).")
+        logger.info(f"Using fallback predictions with average score {avg_score}.")
 
-
-    # --- Process Each Game for Ensemble & Uncertainty ---
     results = []
-    # Placeholder for historical accuracy - load real stats if available for dynamic intervals
-    historic_accuracy = uncertainty_estimator.get_coverage_stats().set_index('quarter').to_dict('index') if hasattr(uncertainty_estimator, 'get_coverage_stats') else None
+    try:
+        # Obtain historical accuracy stats from the uncertainty estimator, if available.
+        if hasattr(uncertainty_estimator, 'get_coverage_stats'):
+            historic_accuracy = uncertainty_estimator.get_coverage_stats().set_index('quarter').to_dict('index')
+        else:
+            historic_accuracy = None
+    except Exception as e:
+        logger.warning(f"Failed to retrieve historical accuracy stats: {e}")
+        historic_accuracy = None
 
-    # Use iterrows carefully on the potentially large features_df. Consider optimization if this loop is slow.
-    # Ensure index aligns with main_predictions
-    features_df = features_df.reset_index() # Ensure index is 0, 1, 2... matching main_predictions array
-
+    features_df = features_df.reset_index(drop=True)
     for i, game_row in features_df.iterrows():
-        game_id_log = game_row.get('game_id', f'index_{i}') # For logging
+        game_id_log = game_row.get('game_id', f'index_{i}')
         try:
-            # Convert row to dict for quarter_system processing
-            # Ensure all necessary columns (like quarter scores, current_quarter) are present
             game_data_dict = game_row.to_dict()
-            main_pred = float(main_predictions[i]) # Ensure float
-
-            # Get ensemble prediction using quarter system
-            # Ensure predict_final_score handles potential missing keys in game_data_dict
+            main_pred = float(main_predictions[i])
+            # Assume quarter_system has a weight_manager attribute
             ensemble_pred, confidence, breakdown = quarter_system.predict_final_score(
                 game_data_dict=game_data_dict,
                 main_model_prediction=main_pred,
-                weight_manager=quarter_system.weight_manager # Assuming weight_manager is accessible like this
+                weight_manager=quarter_system.weight_manager
             )
-
-            # Estimate uncertainty
             current_quarter = int(game_data_dict.get('current_quarter', 0))
-            # Use calculated score_differential if available, else calculate from scores
-            score_diff_feat = game_data_dict.get('score_differential')
             home_score_live = float(game_data_dict.get('home_score', 0))
             away_score_live = float(game_data_dict.get('away_score', 0))
-            score_margin = abs(float(score_diff_feat if pd.notna(score_diff_feat) else (home_score_live - away_score_live)))
-            momentum = float(game_data_dict.get('cumulative_momentum', 0.0)) # Example context feature
-
-            # Use dynamic interval adjustment if historic_accuracy was loaded
+            score_diff = abs(float(game_data_dict.get('score_differential', home_score_live - away_score_live)))
+            momentum = float(game_data_dict.get('cumulative_momentum', 0.0))
             lower_b, upper_b, conf_pct = uncertainty_estimator.dynamically_adjust_interval(
                 prediction=float(ensemble_pred),
                 current_quarter=current_quarter,
-                historic_accuracy=historic_accuracy # Pass loaded historical coverage dict
+                historic_accuracy=historic_accuracy
             )
-            # Fallback if dynamic adjustment isn't used/fails
-            # lower_b, upper_b, _ = uncertainty_estimator.calculate_prediction_interval(
-            #     prediction=float(ensemble_pred),
-            #     current_quarter=current_quarter,
-            #     score_margin=score_margin,
-            #     momentum=momentum
-            # )
-            # conf_pct = max(0.0, min(100.0, 100.0 - ((upper_b-lower_b) / uncertainty_estimator.EXPECTED_RANGES.get(current_quarter, 25.0) * 75.0)))
-
-
-            # Create SVG indicator
             svg_indicator = confidence_viz.create_confidence_svg(
                 prediction=float(ensemble_pred),
                 lower_bound=float(lower_b),
                 upper_bound=float(upper_b),
                 current_quarter=current_quarter,
-                current_home_score=float(home_score_live) # Pass current score if live
+                current_home_score=home_score_live
             )
-
-            # Compile result
             result_row = {
                 'game_id': game_data_dict.get('game_id'),
                 'home_team': game_data_dict.get('home_team'),
@@ -466,30 +328,24 @@ def generate_enhanced_predictions(
                 'home_score': home_score_live,
                 'away_score': away_score_live,
                 'main_model_pred': main_pred,
-                'quarter_model_sum_pred': breakdown.get('quarter_model_sum'), # Changed key for clarity
+                'quarter_model_sum_pred': breakdown.get('quarter_model_sum'),
                 'ensemble_pred': float(ensemble_pred),
                 'lower_bound': float(lower_b),
                 'upper_bound': float(upper_b),
                 'confidence_pct': float(conf_pct),
                 'confidence_svg': svg_indicator,
                 'main_weight': breakdown.get('weights', {}).get('main'),
-                'quarter_weight': breakdown.get('weights', {}).get('quarter'),
-                # Add predicted quarter scores if needed
-                **{f'predicted_{k}': v for k, v in breakdown.get('quarter_predictions', {}).items()}
+                'quarter_weight': breakdown.get('weights', {}).get('quarter')
             }
             results.append(result_row)
-
         except Exception as e:
-            if debug: print(f"Error processing game {game_id_log}: {e}")
-            traceback.print_exc()
-            # Append minimal error info - ensure keys match expected output structure
+            logger.exception(f"Error processing game {game_id_log}: {e}")
             results.append({
                 'game_id': game_id_log,
                 'home_team': game_row.get('home_team'),
                 'away_team': game_row.get('away_team'),
                 'game_date': game_row.get('game_date'),
                 'error': str(e),
-                # Add defaults for other columns to maintain structure
                 'current_quarter': game_row.get('current_quarter', 0),
                 'home_score': game_row.get('home_score', 0),
                 'away_score': game_row.get('away_score', 0),
@@ -505,3 +361,5 @@ def generate_enhanced_predictions(
             })
 
     return pd.DataFrame(results)
+    
+# End of ensemble.py

@@ -1219,25 +1219,31 @@ def run_training_pipeline(args):
             'test_combined_loss', 'feature_count', 'training_duration_final', 'tuning_duration'
         ]
         display_cols = [c for c in display_cols if c in summary_df.columns]  # Show only available cols
-        # Print with adjusted formatting
-        print(summary_df[display_cols].to_string(float_format="%.4f"))
 
-        summary_path = REPORTS_DIR / "training_summary_tuned.csv"
+        # --- Choose ONE of the following options for `report_string` ---
+
+        # Option A: Save only the display columns, formatted like the print statement
+       # report_df_to_save = summary_df[display_cols]
+        #report_string = report_df_to_save.to_string(float_format="%.4f")
+       # # Print this version (optional, if you want console output to match file)
+       # print(report_string)
+
+        # Option B: Save ALL columns from summary_df, but nicely formatted
+        report_string = summary_df.to_string(float_format="%.4f")
+        print(summary_df[display_cols].to_string(float_format="%.4f")) # Keep original print if desired
+
+        # --- Save the chosen string to a TXT file ---
+        summary_path = REPORTS_DIR / "training_summary_tuned.txt"
         try:
-            summary_df.to_csv(summary_path)
-            logger.info(f"Summary saved: {summary_path}")
+            with open(summary_path, 'w') as f:
+                f.write("--- Overall Training Summary ---\n") # Optional header
+                f.write(report_string)
+                f.write("\n") # Optional trailing newline
+            logger.info(f"Formatted summary saved: {summary_path}")
         except Exception as e:
-            logger.error(f"Failed to save summary CSV: {e}")
+            logger.error(f"Failed to save summary TXT: {e}")
     else:
         logger.warning("No models were successfully trained/evaluated.")
-
-    # --- Optional Analysis (Placeholder) ---
-    if args.run_analysis:
-        logger.info("Running analysis (Placeholders)...")
-
-    total_pipeline_time = time.time() - start_pipeline_time
-    logger.info(f"--- NBA Model Training Pipeline Finished in {total_pipeline_time:.2f} seconds ---")
-
 
 if __name__ == "__main__":
     # --- Argument Parsing (Updated) ---
