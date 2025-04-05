@@ -150,9 +150,6 @@ class BaseScorePredictor:
         raise NotImplementedError("Subclasses must implement predict")
 
     def save_model(self, filename: Optional[str] = None) -> str:
-        """
-        Saves the model pipelines along with metadata.
-        """
         if not self.pipeline_home or not self.pipeline_away:
             raise RuntimeError("Models must be trained before saving.")
 
@@ -162,9 +159,13 @@ class BaseScorePredictor:
         else:
             if not filename.endswith(".joblib"):
                 filename += ".joblib"
-        save_path = self.model_dir / filename
+
+        save_path = Path(self.model_dir) / filename
+        # Create the directory if it doesn't exist
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
         if self.feature_names_in_ is None:
-            logger.warning(f"Feature names not set for {self.model_name}. This might cause issues during loading.")
+            logger.warning(f"Attempting to save model {self.model_name} but feature_names_in_ is not set.")
 
         model_data = {
             'pipeline_home': self.pipeline_home,
@@ -175,6 +176,7 @@ class BaseScorePredictor:
             'model_name': self.model_name,
             'model_class': self.__class__.__name__
         }
+
         try:
             joblib.dump(model_data, save_path)
             logger.info(f"{self.__class__.__name__} model saved successfully to {save_path}")

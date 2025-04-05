@@ -97,24 +97,48 @@ def evaluate_predictions(y_true: Union[pd.Series, np.ndarray],
     return metrics
 
 # --- Core Visualization Functions ---
-def plot_actual_vs_predicted(y_true: Union[pd.Series, np.ndarray], y_pred: Union[pd.Series, np.ndarray], title: str = "Actual vs. Predicted Scores", metrics: Optional[Dict[str, float]] = None, figsize: tuple = SMALL_FIG_SIZE, save_path: Optional[Union[str, Path]] = None):
+def plot_actual_vs_predicted(y_true: Union[pd.Series, np.ndarray],
+                               y_pred: Union[pd.Series, np.ndarray],
+                               title: str = "Actual vs. Predicted Scores",
+                               metrics_dict: Optional[Dict[str, float]] = None, # Renamed from 'metrics'
+                               figsize: tuple = SMALL_FIG_SIZE,
+                               save_path: Optional[Union[str, Path]] = None,
+                               show_plot: bool = True): # Added show_plot parameter
     """ Generates a scatter plot of actual vs. predicted values. """
     try:
         y_true = np.asarray(y_true).flatten(); y_pred = np.asarray(y_pred).flatten()
         if len(y_true) != len(y_pred) or len(y_true) == 0: logger.warning("Invalid input for actual vs predicted plot."); return
-        plt.figure(figsize=figsize); plt.scatter(y_true, y_pred, alpha=0.5, label="Predictions")
-        min_val = min(np.min(y_true), np.min(y_pred)) - 5; max_val = max(np.max(y_true), np.max(y_pred)) + 5
-        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Ideal Fit (y=x)')
-        plt.xlabel('Actual Values'); plt.ylabel('Predicted Values'); plt.title(title); plt.xlim(min_val, max_val); plt.ylim(min_val, max_val)
-        plt.grid(True, linestyle='--', alpha=0.7); plt.legend()
-        if metrics and 'r2' in metrics and 'rmse' in metrics:
-             r2 = metrics['r2']; rmse = metrics['rmse']
-             if not (np.isnan(r2) or np.isnan(rmse)): plt.text(0.05, 0.95, f'R² = {r2:.4f}\nRMSE = {rmse:.2f}', transform=plt.gca().transAxes, fontsize=11, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        plt.tight_layout()
-        if save_path: save_path = Path(save_path); save_path.parent.mkdir(parents=True, exist_ok=True); plt.savefig(save_path, bbox_inches='tight'); logger.info(f"Plot saved to {save_path}")
-        plt.show()
-    except Exception as e: logger.error(f"Error generating actual vs predicted plot: {e}")
 
+        plt.figure(figsize=figsize)
+        plt.scatter(y_true, y_pred, alpha=0.5, label="Predictions")
+        min_val = min(np.min(y_true), np.min(y_pred)) - 5
+        max_val = max(np.max(y_true), np.max(y_pred)) + 5
+        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Ideal Fit (y=x)')
+        plt.xlabel('Actual Values'); plt.ylabel('Predicted Values'); plt.title(title)
+        plt.xlim(min_val, max_val); plt.ylim(min_val, max_val)
+        plt.grid(True, linestyle='--', alpha=0.7); plt.legend()
+
+        # Use metrics_dict now
+        if metrics_dict and 'r2' in metrics_dict and 'rmse' in metrics_dict:
+             r2 = metrics_dict['r2']; rmse = metrics_dict['rmse']
+             if not (np.isnan(r2) or np.isnan(rmse)):
+                 plt.text(0.05, 0.95, f'R² = {r2:.4f}\nRMSE = {rmse:.2f}',
+                          transform=plt.gca().transAxes, fontsize=11, verticalalignment='top',
+                          bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        plt.tight_layout()
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, bbox_inches='tight')
+            logger.info(f"Plot saved to {save_path}")
+
+        if show_plot: # Use show_plot condition
+            plt.show()
+        else:
+            plt.close() # Close the figure if not showing interactively
+
+    except Exception as e: logger.error(f"Error generating actual vs predicted plot: {e}")
 
 def plot_residuals_distribution(y_true: Union[pd.Series, np.ndarray], y_pred: Union[pd.Series, np.ndarray], title: str = "Residuals Analysis", figsize: tuple = (15, 6), save_path_prefix: Optional[Union[str, Path]] = None):
     """ Generates plots for residual analysis: histogram and residuals vs. predicted. """
@@ -186,7 +210,8 @@ def plot_residuals_analysis_detailed(y_true: Union[pd.Series, np.ndarray],
                                      y_pred: Union[pd.Series, np.ndarray],
                                      title_prefix: str = "",
                                      figsize: tuple = (12, 10),
-                                     save_dir: Optional[Union[str, Path]] = None):
+                                     save_dir: Optional[Union[str, Path]] = None,
+                                     show_plot: bool = True): # Added show_plot parameter
     """Generates a detailed set of residual analysis plots."""
     logger.info(f"\n--- Generating Detailed Residual Analysis: {title_prefix} ---")
     try:
@@ -248,7 +273,12 @@ def plot_residuals_analysis_detailed(y_true: Union[pd.Series, np.ndarray],
                 logger.info(f"Plot saved to {f_path}")
             except Exception as e:
                 logger.error(f"Error saving detailed residual plot: {e}")
-        plt.show()
+
+        if show_plot: # Use show_plot condition
+            plt.show()
+        else:
+            plt.close() # Close the figure if not showing interactively
+
     except Exception as e:
         logger.error(f"Error generating detailed residual plot: {e}")
 
@@ -417,9 +447,10 @@ def plot_feature_importances(
     models_dict: Dict[str, Any],
     feature_names: List[str],
     top_n: Optional[int] = 20,
-    plot_groups: bool = False, # Note: Group plotting logic is still skipped below
-    feature_group_config: Optional[Dict[str, List[str]]] = None, # Needed if plot_groups=True
-    save_dir: Optional[Union[str, Path]] = None
+    plot_groups: bool = False,
+    feature_group_config: Optional[Dict[str, List[str]]] = None,
+    save_dir: Optional[Union[str, Path]] = None,
+    show_plot: bool = True # Added show_plot parameter
 ):
     """
     Generates and saves feature importance plots for individual models
@@ -526,7 +557,9 @@ def plot_feature_importances(
     # Remove any unused subplots
     for i in range(plot_idx, len(axes_ind)):
         fig_ind.delaxes(axes_ind[i])
+    # <<< End of for loop >>>
 
+    # <<< CORRECTED INDENTATION: This if/else block is now AFTER the loop >>>
     if plot_idx > 0: # Only adjust layout and save if something was plotted
         fig_ind.suptitle('Feature Importance by Model', fontsize=16, y=1.01)
         try:
@@ -541,15 +574,18 @@ def plot_feature_importances(
                 logger.info(f"Plot saved to {f_path}")
             except Exception as e:
                 logger.error(f"Error saving plot {f_path}: {e}")
-        plt.show() # Keep showing plot interactively if needed
+
+        if show_plot: # Use show_plot condition
+            plt.show() # Keep showing plot interactively if needed
+        else:
+            plt.close(fig_ind) # Close the figure if not showing interactively
     else:
         plt.close(fig_ind) # Close the figure if nothing was plotted
 
     # --- Grouped Importance Plotting ---
     if plot_groups:
-        # This part remains unchanged - needs implementation if desired
         logger.info("Skipping group importance plot: Logic needs implementation if desired.")
-        pass # Implement group plotting logic here if needed
+        pass
 
     logger.info("--- Feature Importance Report Complete ---")
 
