@@ -1350,7 +1350,7 @@ def run_training_pipeline(args):
             logger.error(f"Training/Evaluation failed entirely for {model_key}.")
     # <<< END OF MODEL TRAINING LOOP >>>
 
-    # --- Peek & Filter Context Flags (before stacking) ---
+        # --- Peek & Filter Context Flags (before stacking) ---
     possible_flags = [col for col in val_df.columns 
                       if 'back_to_back' in col or 'rest' in col or 'venue' in col]
     logger.info(f"Potential context flags in val_df: {possible_flags}")
@@ -1369,82 +1369,44 @@ def run_training_pipeline(args):
     context_flags_to_try = [f for f in candidate_flags if f in val_df.columns]
     logger.info(f"Using context flags: {context_flags_to_try}")
 
-    # --- Enriched Meta-Model Training Logic ---
+    # --- Enriched Meta-Model Training Logic (COMMENTED OUT) ---
+    """
     logger.info("\n--- Starting Enriched Meta-Model Training (Stacking) ---")
     required_for_stacking = [m for m in ["xgboost", "random_forest", "ridge"] if m in models_to_run]
     meta_model_trained_and_saved = False
 
-    # Check prerequisites
     if not all(key in validation_predictions_collector for key in required_for_stacking):
-        logger.error(f"Missing validation predictions for one or more base models ({required_for_stacking}); cannot train meta-model.")
-    elif not required_for_stacking:
-        logger.error("No base models specified or trained; cannot train meta-model.")
+        logger.error("Missing validation predictions; cannot train meta-model.")
     elif 'val_df' not in locals() or val_df.empty:
-        logger.error("Validation DataFrame ('val_df') unavailable; cannot extract context features.")
+        logger.error("Validation DataFrame unavailable; cannot extract context features.")
     else:
         logger.info(f"Preparing data for enriched meta-model training using base models: {required_for_stacking}...")
         try:
-            # --- 1. Establish reference_index from validation preds ---
+            # 1. Establish reference_index from validation preds
             first_valid_key = next((k for k in required_for_stacking if k in validation_predictions_collector), None)
-            if not first_valid_key:
-                raise ValueError("Cannot find any base model predictions for stacking.")
             pred_series = validation_predictions_collector[first_valid_key]['pred_home']
             reference_index = pred_series.index
-            logger.debug(f"Reference index established (length={len(reference_index)})")
 
-            # --- 2. Build base predictions + residuals ---
-            meta_features_series_list = []
-            y_val_true_home = None
-            y_val_true_away = None
-
-            for model_key in required_for_stacking:
-                preds = validation_predictions_collector[model_key]
-                # Align
-                ph = preds['pred_home'].rename(f"{model_key}_pred_home").reindex(reference_index)
-                pa = preds['pred_away'].rename(f"{model_key}_pred_away").reindex(reference_index)
-                th = preds['true_home'].reindex(reference_index)
-                ta = preds['true_away'].reindex(reference_index)
-                # Targets
-                if y_val_true_home is None:
-                    y_val_true_home = th.copy()
-                    y_val_true_away = ta.copy()
-                # Residuals
-                rh = (th - ph).rename(f"{model_key}_resid_home")
-                ra = (ta - pa).rename(f"{model_key}_resid_away")
-                meta_features_series_list.extend([ph, pa, rh, ra])
-
+            # 2. Build and filter meta-features (predictions only)
             meta_df_full = pd.concat(meta_features_series_list, axis=1)
-            logger.debug(f"Full meta‑features (with residuals) shape: {meta_df_full.shape}")
-
-            # Keep only the prediction columns, drop any residuals
             base_meta_df = meta_df_full[[c for c in meta_df_full.columns if "_resid_" not in c]]
-            logger.debug(f"Base meta‑features (predictions only) shape: {base_meta_df.shape}")
 
-
-
-            # --- 3. Add Context Features (now that reference_index exists) ---
+            # 3. Add context flags
             if not context_flags_to_try:
-                logger.warning("No context flags found; proceeding without context features.")
                 context_df = pd.DataFrame(index=reference_index)
             else:
-                logger.info(f"Adding context features: {context_flags_to_try}")
                 context_df = val_df.loc[reference_index, context_flags_to_try].copy()
-                if context_df.isnull().any().any():
-                    bad = context_df.columns[context_df.isnull().any()].tolist()
-                    logger.warning(f"NaNs found in context flags: {bad}; will fill later.")
 
-            # --- 4. Combine all meta‑features ---
+            # 4. Combine meta-features
             X_meta_train = pd.concat([base_meta_df, context_df], axis=1)
             logger.debug(f"Combined X_meta_train shape: {X_meta_train.shape}")
 
-            # --- 5. Handle NaNs in features & targets ---
+            # 5. Handle NaNs in features & targets
             if X_meta_train.isnull().any().any() or y_val_true_home.isnull().any() or y_val_true_away.isnull().any():
-                # Fill feature NaNs
                 feat_nan = X_meta_train.columns[X_meta_train.isnull().any()].tolist()
                 if feat_nan:
                     logger.warning(f"Filling NaNs in features: {feat_nan}")
                     X_meta_train = X_meta_train.fillna(X_meta_train.mean())
-                # Drop any rows still containing NaNs in features or targets
                 drop_idx = X_meta_train.index[
                     X_meta_train.isnull().any(axis=1) |
                     y_val_true_home.isnull() |
@@ -1462,7 +1424,7 @@ def run_training_pipeline(args):
             y_val_true_home = y_val_true_home.loc[X_meta_train.index]
             y_val_true_away = y_val_true_away.loc[X_meta_train.index]
 
-            # --- 6. Train & Save Meta‑Models ---
+            # 6. Train & Save enriched meta‑models
             meta_feature_names = list(X_meta_train.columns)
             logger.info(f"Enriched meta‑features ({len(meta_feature_names)}): {meta_feature_names}")
             logger.info(f"Training samples: {len(X_meta_train)}")
@@ -1473,7 +1435,6 @@ def run_training_pipeline(args):
             meta_model_away = MetaRidge(alpha=1.0, random_state=SEED)
             meta_model_away.fit(X_meta_train, y_val_true_away)
 
-            # Save payload
             meta_model_save_path = MAIN_MODELS_DIR / "stacking_meta_model_enriched.joblib"
             joblib.dump({
                 'meta_model_home': meta_model_home,
@@ -1485,135 +1446,109 @@ def run_training_pipeline(args):
             logger.info(f"Enriched stacking meta-models saved to {meta_model_save_path}")
             meta_model_trained_and_saved = True
 
-            # --- Evaluate Enriched Stack on Test Set ---
-            logger.info("Evaluating enriched stack on test set...")
-
-            # 1. Collect test‐set predictions for each base model
-            test_predictions_collector = {}
-            for model_key, PredictorClass in {
-                "xgboost": XGBoostScorePredictor,
-                "random_forest": RandomForestScorePredictor,
-                "ridge": RidgeScorePredictor
-            }.items():
-                if model_key == "xgboost" and not XGBOOST_AVAILABLE:
-                    continue
-                # instantiate and load the latest tuned model
-                inst = PredictorClass(model_dir=str(MAIN_MODELS_DIR), model_name=f"{model_key}_score_predictor")
-                inst.load_model()  
-                preds_df = inst.predict(X_test)
-                test_predictions_collector[model_key] = {
-                    "pred_home": preds_df["predicted_home_score"],
-                    "pred_away": preds_df["predicted_away_score"],
-                    "true_home": y_test_home,
-                    "true_away": y_test_away
-                }
-
-            # 2. Establish reference index
-            first_key = next(k for k in required_for_stacking if k in test_predictions_collector)
-            idx_test = test_predictions_collector[first_key]["pred_home"].index
-
-            # 3. Build base preds + residuals for test
-            series_list = []
-            for m in required_for_stacking:
-                p = test_predictions_collector[m]
-                ph = p["pred_home"].reindex(idx_test)
-                pa = p["pred_away"].reindex(idx_test)
-                th = p["true_home"].reindex(idx_test)
-                ta = p["true_away"].reindex(idx_test)
-                series_list += [
-                    ph.rename(f"{m}_pred_home"),
-                    pa.rename(f"{m}_pred_away"),
-                    (th - ph).rename(f"{m}_resid_home"),
-                    (ta - pa).rename(f"{m}_resid_away")
-                ]
-            meta_df_test_full = pd.concat(series_list, axis=1)
-
-            # Drop residuals so we only blend on predictions
-            base_test_df = meta_df_test_full[[c for c in meta_df_test_full.columns if "_resid_" not in c]]
-            logger.debug(f"Base test‑features (predictions only) shape: {base_test_df.shape}")
-
-            # 4. Add context flags from test_df
-            ctx_test = test_df.loc[idx_test, context_flags_to_try] if context_flags_to_try else pd.DataFrame(index=idx_test)
-
-            # 5. Assemble X_meta_test
-            X_meta_test = pd.concat([base_test_df, ctx_test], axis=1)[meta_feature_names]
-
-            # 6. Predict with enriched meta‑models
-            final_home = meta_model_home.predict(X_meta_test)
-            final_away = meta_model_away.predict(X_meta_test)
-
-            # 7. Compute and log metrics
-            from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
-            mae_h = mean_absolute_error(y_test_home.reindex(idx_test), final_home)
-            mae_a = mean_absolute_error(y_test_away.reindex(idx_test), final_away)
-            rmse_h = np.sqrt(mean_squared_error(y_test_home.reindex(idx_test), final_home))
-            rmse_a = np.sqrt(mean_squared_error(y_test_away.reindex(idx_test), final_away))
-            r2_h = r2_score(y_test_home.reindex(idx_test), final_home)
-            r2_a = r2_score(y_test_away.reindex(idx_test), final_away)
-
-            logger.info("Enriched Stack Test‑Set Metrics:")
-            logger.info(f"  MAE Home: {mae_h:.3f}, Away: {mae_a:.3f}, Total: {(mae_h+mae_a):.3f}")
-            logger.info(f"  RMSE Home: {rmse_h:.3f}, Away: {rmse_a:.3f}")
-            logger.info(f"  R² Home: {r2_h:.3f}, Away: {r2_a:.3f}")
-
+            # (Test evaluation code for enriched meta-model would follow here)
         except Exception as e:
             logger.error(f"ERROR during enriched meta-model training: {e}", exc_info=True)
 
     if not meta_model_trained_and_saved:
         logger.warning("Enriched meta-model was not trained or saved due to previous errors.")
+    """
 
-    # --- Overall Training Summary & Exit ---
-    logger.info("\n--- Overall Training Summary ---")
-    if all_metrics:
-        summary_df = pd.DataFrame(all_metrics)
+    # --- Original Meta-Model Training (Stacking) ---
+    logger.info("\n--- Starting Meta-Model Training (Stacking) ---")
+    required_for_stacking = [m for m in ["xgboost", "random_forest", "ridge"] if m in models_to_run]
+    meta_model_trained_and_saved = False
 
-        # Add model_name as index if it exists and is unique
-        if 'model_name' in summary_df.columns and summary_df['model_name'].is_unique:
-            summary_df = summary_df.set_index('model_name')
-
-        # Define columns to display in console output (optional, can be adjusted)
-        display_cols = [
-            'predictor_class', 'best_cv_score',
-            'test_mae_home', 'test_mae_away', 'test_mae_total', 'test_mae_diff',
-            'test_rmse_home', 'test_rmse_away',
-            'test_r2_home', 'test_r2_away',
-            'test_combined_loss', 'feature_count', 'training_duration_final', 'tuning_duration'
-        ]
-        # Filter display_cols to only include columns actually present in summary_df
-        display_cols = [c for c in display_cols if c in summary_df.columns]
-
-        # Prepare the full summary string for the TXT file (using all columns)
-        report_string = summary_df.to_string(float_format="%.4f")
-
-        # Print a potentially subsetted/formatted version to the console
-        logger.info("--- Summary Metrics (Console Output) ---")
-        print(summary_df[display_cols].to_string(float_format="%.4f"))
-        logger.info("----------------------------------------")
-
-        # Save the full summary string (report_string) to a TXT file
-        summary_path = REPORTS_DIR / "training_summary_tuned.txt"
-        try:
-            with open(summary_path, 'w') as f:
-                f.write("--- Overall Training Summary (Full Details) ---\n\n")
-                f.write(report_string)
-                f.write("\n")
-            logger.info(f"Full formatted summary saved to: {summary_path}")
-        except Exception as e:
-            logger.error(f"Failed to save summary TXT file: {e}")
-
+    if not all(key in validation_predictions_collector for key in required_for_stacking):
+        logger.error(f"Missing validation predictions for one or more base models ({required_for_stacking}) needed for stacking. Cannot train meta-model.")
+    elif not required_for_stacking:
+        logger.error("No base models were successfully trained or validation predictions collected. Cannot train meta-model.")
     else:
-        logger.warning("No models were successfully trained/evaluated. Summary file not generated.")
-    # --- <<< NEW CODE BLOCK END >>> ---
+        logger.info(f"Preparing data for meta-model training using base models: {required_for_stacking}...")
+        try:
+            meta_features_list = []
+            y_val_true_home = None
+            y_val_true_away = None
+            reference_index = None
 
+            # Use the index from the first available validation prediction set as reference
+            first_valid_key = next((k for k in required_for_stacking if k in validation_predictions_collector), None)
+            if first_valid_key:
+                reference_index = validation_predictions_collector[first_valid_key]['pred_home'].index
+            else:
+                raise ValueError("Could not get validation predictions for any required base models.")
 
-    if args.run_analysis:
-        logger.info("Running analysis (placeholders)...")
-        # Placeholder for analyze_main_predictors_learning_curves or similar
+            if reference_index is None:
+                raise ValueError("Could not establish a reference index from validation predictions.")
 
+            logger.debug(f"Using reference index (length {len(reference_index)}) for meta-model alignment.")
 
-    total_pipeline_time = time.time() - start_pipeline_time
-    logger.info(f"--- NBA Model Training Pipeline Finished in {total_pipeline_time:.2f} seconds ---")
+            for model_key in required_for_stacking:
+                preds_dict = validation_predictions_collector[model_key]
+                pred_home_col = f"{model_key}_pred_home"
+                pred_away_col = f"{model_key}_pred_away"
+
+                if 'pred_home' not in preds_dict or 'pred_away' not in preds_dict:
+                    raise KeyError(f"Missing 'pred_home' or 'pred_away' in validation predictions for {model_key}")
+
+                df_home = preds_dict['pred_home'].rename(pred_home_col).reindex(reference_index)
+                df_away = preds_dict['pred_away'].rename(pred_away_col).reindex(reference_index)
+                meta_features_list.extend([df_home, df_away])
+
+                if y_val_true_home is None:
+                    if 'true_home' not in preds_dict or 'true_away' not in preds_dict:
+                        raise KeyError(f"Missing 'true_home' or 'true_away' in validation predictions for {model_key}")
+                    y_val_true_home = preds_dict['true_home'].reindex(reference_index)
+                    y_val_true_away = preds_dict['true_away'].reindex(reference_index)
+
+            X_meta_train = pd.concat(meta_features_list, axis=1)
+            logger.debug(f"Shape of X_meta_train before NaN check: {X_meta_train.shape}")
+
+            # Check and handle NaNs
+            if X_meta_train.isnull().any().any() or y_val_true_home.isnull().any() or y_val_true_away.isnull().any():
+                logger.warning("NaNs detected in meta-model training data. Handling NaNs...")
+                X_meta_train = X_meta_train.fillna(X_meta_train.mean())
+                rows_to_drop_idx = X_meta_train.index[X_meta_train.isnull().any(axis=1) | y_val_true_home.isnull() | y_val_true_away.isnull()]
+                if not rows_to_drop_idx.empty:
+                    logger.warning(f"Dropping {len(rows_to_drop_idx)} rows due to NaN values.")
+                    X_meta_train = X_meta_train.drop(index=rows_to_drop_idx)
+                    y_val_true_home = y_val_true_home.drop(index=rows_to_drop_idx)
+                    y_val_true_away = y_val_true_away.drop(index=rows_to_drop_idx)
+                if X_meta_train.empty:
+                    raise ValueError("No valid data remaining after NaN handling for meta-model.")
+
+            meta_feature_names = list(X_meta_train.columns)
+            logger.info(f"Meta-model training features ({len(meta_feature_names)}): {meta_feature_names}")
+            logger.info(f"Meta-model training samples: {len(X_meta_train)}")
+
+            # Train meta-models (Ridge)
+            logger.info("Training Home Score Meta-Model (Ridge)...")
+            meta_model_home = MetaRidge(alpha=1.0, random_state=SEED)
+            meta_model_home.fit(X_meta_train, y_val_true_home)
+
+            logger.info("Training Away Score Meta-Model (Ridge)...")
+            meta_model_away = MetaRidge(alpha=1.0, random_state=SEED)
+            meta_model_away.fit(X_meta_train, y_val_true_away)
+
+            # Save the meta-models
+            meta_model_filename = "stacking_meta_model.joblib"
+            meta_model_save_path = MAIN_MODELS_DIR / meta_model_filename
+            meta_model_payload = {
+                'meta_model_home': meta_model_home,
+                'meta_model_away': meta_model_away,
+                'meta_feature_names': meta_feature_names,
+                'base_models_used': required_for_stacking,
+                'training_timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
+            }
+            joblib.dump(meta_model_payload, meta_model_save_path)
+            logger.info(f"Stacking meta-models saved successfully to {meta_model_save_path}")
+            meta_model_trained_and_saved = True
+
+        except Exception as meta_e:
+            logger.error(f"Failed to train or save meta-model: {meta_e}", exc_info=True)
+
+    if not meta_model_trained_and_saved:
+        logger.warning("Meta-model was not trained or saved due to previous errors.")
 
 
 parser = argparse.ArgumentParser(description="NBA Score Prediction Model Tuning & Training Pipeline")

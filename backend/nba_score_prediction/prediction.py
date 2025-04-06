@@ -84,7 +84,7 @@ DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
 DEFAULT_UPCOMING_DAYS_WINDOW = 2
 
 # --- Meta-Model Configuration ---
-META_MODEL_FILENAME = "stacking_meta_model_enriched.joblib" # Ensure this matches your saved file
+META_MODEL_FILENAME = "stacking_meta_model.joblib" # Ensure this matches your saved file
 FALLBACK_ENSEMBLE_WEIGHTS: Dict[str, float] = {
     "xgboost": 0.30,
     "random_forest": 0.40,
