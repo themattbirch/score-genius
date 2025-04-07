@@ -1,3 +1,5 @@
+# backend/nba_score_prediction/ensemble.py
+
 """
 ensemble.py - Ensemble Weight Management Module
 
@@ -362,4 +364,3 @@ def generate_enhanced_predictions(
 
     return pd.DataFrame(results)
     
-# End of ensemble.py

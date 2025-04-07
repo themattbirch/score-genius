@@ -1,4 +1,5 @@
 # backend/score_prediction/dashboard.py
+
 """
 Module for generating dashboards and summary visualizations related to
 NBA score predictions. Includes a console dashboard and functions for
