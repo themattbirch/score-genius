@@ -1135,72 +1135,56 @@ class NBAFeatureEngine:
             result_df['away_team_norm'] = result_df['away_team'].astype(str).apply(self.normalize_team_name)
             result_df['matchup_key'] = result_df.apply(lambda row: "_vs_".join(sorted([row['home_team_norm'], row['away_team_norm']])), axis=1)
 
-            # --- Calculate H2H Features Row-by-Row ---
+                        # --- Calculate H2H Features Row-by-Row ---
             logger.debug("H2H: Calculating features row by row...")
             h2h_results_list = []
-
-                        # Loop through each target game row
-            for index, row in result_df.iterrows():
+            # Loop through each target game row
+            for index, row in result_df.iterrows(): # Keep using iterrows
                 # --- Define variables for this specific row ---
-                home_norm = row.get('home_team_norm', 'Unknown_Home') # Get normalized home team
-                away_norm = row.get('away_team_norm', 'Unknown_Away') # Get normalized away team
-                matchup_key = row.get('matchup_key', 'Unknown_Key')   # Get the pre-calculated key
-                game_id = row.get('game_id', 'Unknown_ID')           # Get game ID
-                # Get the date for THIS game, used for filtering history
+                home_norm = row.get('home_team_norm', 'Unknown_Home')
+                away_norm = row.get('away_team_norm', 'Unknown_Away')
+                matchup_key = row.get('matchup_key', 'Unknown_Key')
+                game_id = row.get('game_id', 'Unknown_ID') # Keep for context if needed
                 current_game_date = row.get('game_date', pd.NaT)
 
-                # --- Check if this row involves a watched team ---
-                is_watched = home_norm in self._teams_to_watch or away_norm in self._teams_to_watch
+                # --- Find historical games for this specific matchup key ---
+                matchup_hist_subset = hist_lookup.get(matchup_key, pd.DataFrame())
 
-            # --- Logging Block 1: Log basic info for watched teams (COMMENTED OUT) ---
-            # if self.debug and is_watched:
-            #    logger.debug(f"[WATCH_TEAM] H2H Processing Row: GameID={game_id}, Date={current_game_date}, Home={home_norm}, Away={away_norm}, Key={matchup_key}")
+                # --- Calculate H2H stats using the helper function ---
+                # Pass the current loop index to the helper function
+                single_h2h_stats = self._get_matchup_history_single(
+                    home_team_norm=home_norm,
+                    away_team_norm=away_norm,
+                    historical_subset=matchup_hist_subset,
+                    max_games=max_games,
+                    current_game_date=current_game_date,
+                    loop_index=index # <<< PASS THE INDEX HERE
+                )
 
-            # --- Find historical games for this specific matchup key ---
-            matchup_hist_subset = hist_lookup.get(matchup_key, pd.DataFrame())
+                # Remove or keep the old print statement as desired
+                # if index < 20:
+                #      print(f"DEBUG LOOP - Game {game_id} - Index {index}: {single_h2h_stats}")
 
-            # --- Logging Block 2: Log the historical data found for watched teams (COMMENTED OUT) ---
-            # if self.debug and is_watched:  # <<< Comment out this entire conditional block
-            #      if matchup_hist_subset.empty:
-            #          logger.debug(f"[WATCH_TEAM] H2H History Lookup: No historical data found in lookup for key '{matchup_key}'")
-            #      else:
-            #          # Filter history to games strictly BEFORE the current game date
-            #          if pd.notna(current_game_date): # Check if current_game_date is valid
-            #             relevant_hist = matchup_hist_subset[matchup_hist_subset['game_date'] < current_game_date]
-            #             logger.debug(f"[WATCH_TEAM] H2H History Found: Found {len(relevant_hist)} past games for key '{matchup_key}' before {current_game_date}. Sample of most recent {max_games}:\n{relevant_hist.sort_values('game_date', ascending=False).head(max_games)[['game_date', 'home_team_norm', 'away_team_norm', 'home_score', 'away_score']]}")
-            #          else:
-            #             # Log if we cannot filter due to invalid date
-            #             logger.debug(f"[WATCH_TEAM] H2H History Found: Cannot filter history for GameID={game_id} because current_game_date is invalid ({current_game_date}).")
-
-            # --- Calculate H2H stats using the helper function ---
-            # This part remains active and is essential
-            single_h2h_stats = self._get_matchup_history_single(
-                home_team_norm=home_norm,                 # Pass correct home team
-                away_team_norm=away_norm,                 # Pass correct away team
-                historical_subset=matchup_hist_subset,    # Pass the specific history found
-                max_games=max_games,                      # Pass the function's parameter
-                current_game_date=current_game_date     # Pass the date of the current game
-            )
-
-
-            # +++ ADD THIS PRINT STATEMENT (maybe limit iterations) +++
-            if index < 20: # Print for first 20 games only
-                 print(f"DEBUG LOOP - Game {game_id} - Index {index}: {single_h2h_stats}")
-            # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-
-            # --- Logging Block 3: Log the result for watched teams (COMMENTED OUT) ---
-            # if self.debug and is_watched:
-            #      logger.debug(f"[WATCH_TEAM] H2H Calculated Result (GameID={game_id}): {single_h2h_stats}")
-
-            # --- Append result to list ---
-            # This part remains active and is essential
-            h2h_results_list.append(single_h2h_stats)
+                h2h_results_list.append(single_h2h_stats)
 
             # --- End of loop ---
             # --- Combine Results ---
             if h2h_results_list:
                 h2h_results_df = pd.DataFrame(h2h_results_list, index=result_df.index)
+
+                # +++ ADD THIS BLOCK +++
+                if self.debug:
+                    logger.debug("H2H: h2h_results_df Info BEFORE JOIN:")
+                    h2h_results_df.info(verbose=True, show_counts=True)
+                    logger.debug("H2H: h2h_results_df Describe BEFORE JOIN:\n" + h2h_results_df.describe().to_string())
+                    # Check variance specifically
+                    matchup_cols_check = [col for col in placeholder_cols if col in h2h_results_df.columns and col != 'matchup_last_date']
+                    if matchup_cols_check:
+                         variances_before_join = h2h_results_df[matchup_cols_check].var()
+                         logger.debug(f"H2H: Variances BEFORE JOIN:\n{variances_before_join}")
+                    else:
+                         logger.warning("H2H: No matchup columns found BEFORE JOIN to check variance.")
+                # +++ END ADDED BLOCK +++
                 if self.debug:
                     logger.debug("H2H: h2h_results_df Info:")
                     h2h_results_df.info(verbose=True, show_counts=True)
@@ -1531,13 +1515,28 @@ class NBAFeatureEngine:
         return result_df
 
     def _get_matchup_history_single(self, home_team_norm: str, away_team_norm: str, historical_subset: pd.DataFrame,
-                                max_games: int = 5, current_game_date: Optional[pd.Timestamp] = None) -> Dict[str, Any]:
+                                    max_games: int = 5, current_game_date: Optional[pd.Timestamp] = None,
+                                    loop_index: Optional[int] = None) -> Dict[str, Any]: # Added loop_index
         """Calculates H2H stats for a single matchup, perspective of home_team_norm."""
-        # <<< Add Check for Debug Level >>>
-        is_debug = _is_debug_enabled(logger)
+        is_debug = _is_debug_enabled(logger) # Keep this check
 
-        #if is_debug COMMENTED:
-            #logger.debug(f"H2H Helper: Called for Home='{home_team_norm}', Away='{away_team_norm}', Date='{current_game_date}', MaxGames={max_games}. History subset shape: {historical_subset.shape}")
+        # --- START: New Debug Logging Block ---
+        # Log details only if debug mode is on AND loop_index is passed AND index is low (e.g., < 5)
+        should_log_details = is_debug and loop_index is not None and loop_index < 5
+        
+        if should_log_details:
+            logger.debug(f"--- H2H Helper Call (Index: {loop_index}) ---")
+            logger.debug(f"Inputs: Home='{home_team_norm}', Away='{away_team_norm}', Date='{current_game_date}', MaxGames={max_games}")
+            if historical_subset is not None and not historical_subset.empty:
+                logger.debug(f"Received historical_subset shape: {historical_subset.shape}")
+                try:
+                    # Log head to see recent data in the subset for this matchup
+                    logger.debug(f"Received historical_subset head:\n{historical_subset.head().to_string()}")
+                except Exception as e_head:
+                     logger.debug(f"Could not log head of historical_subset: {e_head}")
+            else:
+                logger.debug(f"Received historical_subset is None or empty.")
+        # --- END: New Debug Logging Block ---
 
         default_result = {
             'matchup_num_games': self.defaults['matchup_num_games'],
@@ -1551,24 +1550,56 @@ class NBAFeatureEngine:
         }
 
         if historical_subset.empty or max_games <= 0 or pd.isna(current_game_date):
-            #if is_debug: logger.debug(f"H2H Helper: Returning default due to empty history ({historical_subset.empty}), max_games<=0 ({max_games<=0}), or invalid date ({pd.isna(current_game_date)}).")
+            if should_log_details: logger.debug("H2H Helper: Returning default: Empty history, max_games<=0, or invalid date.")
             return default_result
 
         # Filter for games strictly before the current date
-        past_games_df = historical_subset[historical_subset['game_date'] < current_game_date].copy()
-        #if is_debug: logger.debug(f"H2H Helper: Filtered to {len(past_games_df)} games before {current_game_date}.")
+        try:
+            past_games_df = historical_subset[historical_subset['game_date'] < current_game_date].copy()
+        except TypeError as te:
+             logger.error(f"H2H Helper: TypeError during date comparison. Check 'game_date' dtype and 'current_game_date'. Error: {te}", exc_info=True)
+             return default_result # Cannot proceed if date comparison fails
+        except Exception as e_filter:
+             logger.error(f"H2H Helper: Error during date filtering: {e_filter}", exc_info=True)
+             return default_result
+
+        # --- START: New Debug Logging Block ---
+        if should_log_details:
+            logger.debug(f"Filtered to past_games_df shape: {past_games_df.shape} (Games before {current_game_date.date()})")
+            if not past_games_df.empty:
+                try:
+                    logger.debug(f"past_games_df head (Oldest relevant):\n{past_games_df.head().to_string()}")
+                    logger.debug(f"past_games_df tail (Newest relevant):\n{past_games_df.tail().to_string()}")
+                except Exception as e_past_log:
+                    logger.debug(f"Could not log head/tail of past_games_df: {e_past_log}")
+            else:
+                 logger.debug("past_games_df is empty after date filter.")
+        # --- END: New Debug Logging Block ---
 
         if past_games_df.empty:
-            #if is_debug: logger.debug("H2H Helper: Returning default as no games found before current date.")
+            # No need to log again here if already logged above
             return default_result
 
         try:
             # Get the N most recent games from the filtered past games
             recent_matchups = past_games_df.sort_values('game_date', ascending=False).head(max_games)
-            #if is_debug: logger.debug(f"H2H Helper: Selected {len(recent_matchups)} most recent matchups for calculation.")
 
-            if recent_matchups.empty: # Should not happen if past_games_df wasn't empty, but check
-                #if is_debug: logger.debug("H2H Helper: Returning default as recent_matchups is unexpectedly empty.")
+            # --- START: New Debug Logging Block ---
+            if should_log_details:
+                 logger.debug(f"Selected recent_matchups shape: {recent_matchups.shape} (Max {max_games} games)")
+                 if not recent_matchups.empty:
+                      try:
+                          logger.debug(f"recent_matchups head (Most recent):\n{recent_matchups.head().to_string()}")
+                          logger.debug(f"recent_matchups tail (Oldest of selection):\n{recent_matchups.tail().to_string()}")
+                      except Exception as e_recent_log:
+                          logger.debug(f"Could not log head/tail of recent_matchups: {e_recent_log}")
+
+                 else:
+                      logger.debug("recent_matchups is empty after head(max_games).")
+            # --- END: New Debug Logging Block ---
+
+            if recent_matchups.empty:
+                # No need to log again here if already logged above
                 return default_result
 
             # Ensure scores are numeric (should be pre-processed, but double-check)
@@ -1657,14 +1688,17 @@ class NBAFeatureEngine:
                 if pd.isna(final_stats[k]): final_stats[k] = v # Fill NaNs just in case
 
             
-            if is_debug and num_games > 0: # Only log if we actually calculated something
-                logger.debug(f"H2H Helper: Calculated final stats for {home_team_norm} vs {away_team_norm} on {current_game_date}: {final_stats}")
+            if should_log_details and num_games > 0: # Only log if we actually calculated something
+                 logger.debug(f"H2H Helper: Calculated final stats for Index {loop_index}: {final_stats}")
+                 logger.debug(f"--- End H2H Helper Call (Index: {loop_index}) ---")
+
 
             return final_stats
 
         except Exception as e:
-            logger.error(f"H2H Helper: Error calculating for {home_team_norm} vs {away_team_norm} on {current_game_date}: {e}", exc_info=True)
+            logger.error(f"H2H Helper: Error calculating for Index {loop_index}, {home_team_norm} vs {away_team_norm} on {current_game_date}: {e}", exc_info=True)
             return default_result # Return defaults on error
+
 
     def _extract_form_metrics_single(self, form_string: Optional[str]) -> Dict[str, float]:
         """Extracts metrics (win %, streak, momentum) from a form string like 'WWLWL'."""

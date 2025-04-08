@@ -1159,6 +1159,71 @@ def run_training_pipeline(args):
 
     # <<< --- START FEATURE VALUE DEBUGGING --- >>>
     logger.info("Analyzing generated feature values...")
+    if not features_df.empty:
+        try:
+            # Select only numeric columns for analysis
+            numeric_features_df = features_df.select_dtypes(include=np.number)
+
+            if not numeric_features_df.empty:
+                # 1. Calculate Descriptive Statistics
+                desc_stats = numeric_features_df.describe().transpose()
+
+                # 2. Calculate Percentage of Zeros
+                zero_pct = (numeric_features_df == 0).mean() * 100
+                zero_pct.rename('zero_percentage', inplace=True)
+
+                # 3. Combine Stats
+                feature_summary = pd.concat([desc_stats, zero_pct], axis=1)
+
+                # 4. Define Output Path (Ensure REPORTS_DIR is defined globally/earlier)
+                # Make sure 'datetime' from datetime and 'Path' from pathlib are imported
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                summary_filename = f"feature_value_summary_{timestamp}.txt"
+                summary_path = REPORTS_DIR / summary_filename
+                REPORTS_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+
+                # 5. Save to TXT file
+                with open(summary_path, 'w') as f:
+                    f.write(f"Feature Value Summary ({timestamp})\n")
+                    f.write(f"Total Numeric Features Analyzed: {len(feature_summary)}\n") # Clarified count
+                    f.write("="*50 + "\n\n")
+
+                    # Highlight potentially problematic features
+                    problem_threshold_std = 1e-6 # Very low standard deviation threshold
+                    problem_threshold_zero_pct = 98.0 # High zero percentage threshold
+
+                    # Handle potential NaN std dev for constant columns before comparison
+                    problematic_features = feature_summary[
+                        (feature_summary['std'].fillna(0) < problem_threshold_std) |
+                        (feature_summary['zero_percentage'] > problem_threshold_zero_pct)
+                    ]
+
+                    if not problematic_features.empty:
+                        f.write("--- POTENTIALLY PROBLEMATIC FEATURES ---\n")
+                        f.write(f"(Features with std < {problem_threshold_std} OR zero % > {problem_threshold_zero_pct}%)\n\n")
+                        f.write(problematic_features.to_string(float_format="%.4f"))
+                        f.write("\n\n" + "="*50 + "\n\n")
+                    else:
+                        f.write("--- No obvious problematic features found based on thresholds. ---\n\n")
+
+                    f.write("--- FULL FEATURE SUMMARY ---\n\n")
+                    # Use max_rows display option to print all rows in the text file if needed
+                    with pd.option_context('display.max_rows', None):
+                        f.write(feature_summary.to_string(float_format="%.4f"))
+
+
+                logger.info(f"Feature value summary saved to: {summary_path}")
+                if not problematic_features.empty:
+                    logger.warning(f"Found {len(problematic_features)} potentially problematic features (low variance or high zero %). See {summary_filename}")
+
+            else:
+                logger.warning("No numeric features found in features_df to analyze for summary.")
+
+        except Exception as e_summary:
+            logger.error(f"Error generating feature value summary: {e_summary}", exc_info=True)
+        else:
+            logger.warning("features_df is empty, skipping feature value analysis.")
+            # <<< --- END FEATURE VALUE DEBUGGING --- >>>
 
     # (features_df is generated and initial cleaning is done)
     logger.info(f"Shape of features_df before NaN handling for LASSO: {features_df.shape}")
@@ -1169,9 +1234,64 @@ def run_training_pipeline(args):
     # Define potential features (all numeric columns except targets and IDs/dates)
     potential_feature_cols = features_df.select_dtypes(include=np.number).columns.tolist()
     exclude_cols = TARGET_COLUMNS + ['game_id', 'game_date'] # Add any other non-feature numeric IDs if needed
-    feature_candidates = [col for col in potential_feature_cols if col not in exclude_cols and not features_df[col].isnull().all()]
+    logger.info(f"Initial potential numeric feature count (excluding targets/IDs): {len(potential_feature_cols) - len(exclude_cols)}")
+
+    # Prefixes for groups of safe features known before the game
+    safe_prefixes = (
+        'home_rolling_', 'away_rolling_', 'rolling_',
+        'home_season_', 'away_season_', 'season_',
+        'matchup_', 'rest_days_', 'is_back_to_back_',
+        'games_last_', 'home_form_', 'away_form_'
+    )
+
+    # Exact names for individual safe features known before the game
+    safe_exact_names = {
+        # Core differentials/advantages
+        'rest_advantage',
+        'schedule_advantage',
+        'form_win_pct_diff',
+        'streak_advantage',
+        'momentum_diff',
+
+        # Specific streak/momentum features (not covered by form prefixes)
+        'home_current_streak',
+        'home_momentum_direction',
+        'away_current_streak',
+        'away_momentum_direction',
+
+        # Other specific safe features (from previous recommendation)
+        'game_importance_rank',
+        'home_win_last10',
+        'away_win_last10',
+        'home_trend_rating',
+        'away_trend_rating',
+        'home_rank',
+        'away_rank'
+    }
+
+    feature_candidates = []
+    leaked_or_excluded = []
+    temp_candidates = [col for col in potential_feature_cols if col not in exclude_cols and not features_df[col].isnull().all()]
+
+    for col in temp_candidates:
+        is_safe = False
+        if col.startswith(safe_prefixes):
+            is_safe = True
+        elif col in safe_exact_names:
+            is_safe = True
+
+        if is_safe:
+            feature_candidates.append(col)
+        else:
+            leaked_or_excluded.append(col)
+
+    logger.info(f"Filtered down to {len(feature_candidates)} PRE-GAME feature candidates for LASSO.")
+    if leaked_or_excluded:
+        logger.debug(f"Excluded {len(leaked_or_excluded)} potential leaky/post-game features: {leaked_or_excluded}")
+    # --- End Filter ---
 
     # Separate features (X) and targets (y_home, y_away) for LASSO
+    # Now uses the filtered 'feature_candidates' list
     X_lasso_raw = features_df[feature_candidates].copy()
     y_home_lasso = features_df[TARGET_COLUMNS[0]].copy()
     y_away_lasso = features_df[TARGET_COLUMNS[1]].copy()
@@ -1315,28 +1435,49 @@ def run_training_pipeline(args):
     logger.info(f"Using {len(final_feature_list_for_models)} features selected by LASSO for model training.")
 
 
-    # --- Define Parameter Distributions for RandomizedSearchCV ---
+    # --- Hyperparameter Search Space for XGBoostScorePredictor --- #
+    # Expanded to include tree depth, learning rate, gamma (minimum loss reduction), and min_child_weight.
     XGB_PARAM_DIST = {
-        # ... (keep existing definitions) ...
-       'xgb__n_estimators': randint(100, 701),
-       'xgb__subsample': uniform(0.6, 0.4),
-       'xgb__colsample_bytree': uniform(0.6, 0.4)
+        'xgb__n_estimators': randint(100, 1001),             # Number of trees between 100 and 1000
+        'xgb__max_depth': randint(3, 11),                      # Tree depth between 3 and 10
+        'xgb__learning_rate': uniform(0.01, 0.14),             # Learning rate between 0.01 and 0.15
+        'xgb__subsample': uniform(0.5, 0.5),                   # Subsample ratio between 0.5 and 1.0 (0.5 + U(0, 0.5))
+        'xgb__colsample_bytree': uniform(0.5, 0.5),            # Column subsample ratio between 0.5 and 1.0
+        'xgb__gamma': uniform(0.0, 0.5),                       # Minimum loss reduction to make a split (between 0 and 0.5)
+        'xgb__min_child_weight': randint(1, 11)                # Minimum sum of instance weight needed in a child (between 1 and 10)
     }
+
+    # --- Hyperparameter Search Space for RandomForestScorePredictor ---
+    # Expanded to include not only the maximum features but also number of trees, depth, and minimum sample splits/leaves.
     RF_PARAM_DIST = {
-        # ... (keep existing definitions) ...
-       'rf__max_features': ['sqrt', 'log2', 0.5, 0.7, 0.9]
+        'rf__n_estimators': randint(100, 1001),              # Number of trees between 100 and 1000
+        'rf__max_depth': [None] + list(range(5, 31, 5)),       # Depth: either no limit or between 5 and 30 (steps of 5)
+        'rf__min_samples_split': randint(2, 11),               # Minimum samples required to split an internal node (between 2 and 10)
+        'rf__min_samples_leaf': randint(1, 5),                 # Minimum samples required at a leaf node (between 1 and 4)
+        'rf__max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7, 0.9]  # Try categorical options or fixed fractions
     }
+
+    # --- Hyperparameter Search Space for RidgeScorePredictor ---
+    # Here you can also experiment with the solver and intercept fitting options.
     RIDGE_PARAM_DIST = {
-        # ... (keep existing definitions) ...
-       'ridge__alpha': [0.01, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0]
+        'ridge__alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],  # Regularization strength on a log-scale
+        'ridge__fit_intercept': [True, False],                            # Whether to calculate the intercept
+        'ridge__solver': ['auto', 'svd', 'cholesky']                      # Different solvers to see if computation can be optimized or performance improves
     }
-    param_dist_map = {"xgboost": XGB_PARAM_DIST, "random_forest": RF_PARAM_DIST, "ridge": RIDGE_PARAM_DIST}
+
+    # Mapping from model key to its parameter distribution:
+    param_dist_map = {
+        "xgboost": XGB_PARAM_DIST,
+        "random_forest": RF_PARAM_DIST,
+        "ridge": RIDGE_PARAM_DIST
+    }
+
+    # Mapping from model key to the predictor class:
     predictor_map = {
         "xgboost": XGBoostScorePredictor if XGBOOST_AVAILABLE else None,
         "random_forest": RandomForestScorePredictor,
         "ridge": RidgeScorePredictor
     }
-
     # --- Model Tuning & Training Loop (MODIFIED to collect validation preds) ---
     models_to_run = [m.strip().lower() for m in args.models.split(',')]
     logger.info(f"Starting tuning & training for models: {models_to_run}")
@@ -1745,7 +1886,7 @@ parser.add_argument("--weight-method", type=str, default="exponential", choices=
 parser.add_argument("--weight-half-life", type=int, default=90, help="Half-life in days for weights")
 # Tuning Args
 parser.add_argument("--skip-tuning", action="store_true", help="Skip hyperparameter tuning")
-parser.add_argument("--tune-iterations", type=int, default=30, help="Iterations for RandomizedSearchCV")
+parser.add_argument("--tune-iterations", type=int, default=50, help="Iterations for RandomizedSearchCV")
 parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS, help="CV splits for TimeSeriesSplit")
 parser.add_argument("--scoring-metric", type=str, default='neg_mean_absolute_error', help="Scoring metric for tuning")
 # Analysis Args
