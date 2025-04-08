@@ -187,7 +187,7 @@ class BaseScorePredictor:
             logger.error(f"Error saving model to {save_path}: {e}", exc_info=True)
             raise
 
-    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> None:
+    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "BaseScorePredictor":
         """
         Loads the model pipelines and metadata from a file.
         """
@@ -243,9 +243,11 @@ class BaseScorePredictor:
             self.training_duration = model_data.get('training_duration')
             self.model_name = model_data.get('model_name', self.model_name)
             logger.info(f"{self.__class__.__name__} model loaded successfully from {load_path}")
+            return self  
         except Exception as e:
             logger.error(f"Error loading model from {load_path}: {e}", exc_info=True)
             raise
+
 
     def _common_train_logic(self, X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
                               hyperparams_home: Optional[Dict[str, Any]],
@@ -451,9 +453,10 @@ class XGBoostScorePredictor(BaseScorePredictor):
         pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
         return pd.DataFrame({'predicted_home_score': pred_home_processed, 'predicted_away_score': pred_away_processed}, index=X.index)
 
-    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> None:
-        super().load_model(filepath, model_name)
+    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "XGBoostScorePredictor":
+        loaded_instance = super().load_model(filepath, model_name)
         self._validate_loaded_model_type()
+        return loaded_instance
 
     def _validate_loaded_model_type(self) -> None:
         if not XGBOOST_AVAILABLE:
@@ -510,9 +513,10 @@ class RandomForestScorePredictor(BaseScorePredictor):
         pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
         return pd.DataFrame({'predicted_home_score': pred_home_processed, 'predicted_away_score': pred_away_processed}, index=X.index)
 
-    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> None:
-        super().load_model(filepath, model_name)
+    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "RandomForestScorePredictor":
+        loaded_instance = super().load_model(filepath, model_name)
         self._validate_loaded_model_type()
+        return loaded_instance
 
     def _validate_loaded_model_type(self) -> None:
         try:
@@ -565,9 +569,10 @@ class RidgeScorePredictor(BaseScorePredictor):
         pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
         return pd.DataFrame({'predicted_home_score': pred_home_processed, 'predicted_away_score': pred_away_processed}, index=X.index)
 
-    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> None:
-        super().load_model(filepath, model_name)
+    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "RidgeScorePredictor":
+        loaded_instance = super().load_model(filepath, model_name)
         self._validate_loaded_model_type()
+        return loaded_instance
 
     def _validate_loaded_model_type(self) -> None:
         try:
@@ -971,5 +976,3 @@ class QuarterSpecificModelSystem:
             self.log(f"Error finalizing ensemble prediction: {final_e}. Using fallback.", level="ERROR")
             main_total = main_model_prediction * 2
             return main_total, 0.0, {'error': 'Non-numeric ensemble result'}
-
-# End of models.py

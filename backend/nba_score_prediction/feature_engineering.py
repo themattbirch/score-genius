@@ -517,14 +517,14 @@ class NBAFeatureEngine:
             local_df['home_team_norm'] = local_df['home_team'].astype(str).apply(self.normalize_team_name)
             local_df['away_team_norm'] = local_df['away_team'].astype(str).apply(self.normalize_team_name)
 
-            # <<< START INSERT (Team View Logging) >>>
-            if self.debug:
-                watched_home_rows = local_df[local_df['home_team_norm'].isin(self._teams_to_watch)]
-                if not watched_home_rows.empty:
-                     logger.debug(f"[WATCH_TEAM] Rolling (Pre-TeamView): Found {len(watched_home_rows)} watched home teams. Sample:\n{watched_home_rows[['game_id', 'game_date', 'home_team_norm', 'away_team_norm']].head()}")
-                watched_away_rows = local_df[local_df['away_team_norm'].isin(self._teams_to_watch)]
-                if not watched_away_rows.empty:
-                     logger.debug(f"[WATCH_TEAM] Rolling (Pre-TeamView): Found {len(watched_away_rows)} watched away teams. Sample:\n{watched_away_rows[['game_id', 'game_date', 'home_team_norm', 'away_team_norm']].head()}")
+            # <<< START INSERT (Team View Logging) -- COMMENTED OUT ATM >>>
+            #if self.debug:
+                #watched_home_rows = local_df[local_df['home_team_norm'].isin(self._teams_to_watch)]
+                #if not watched_home_rows.empty:
+                     #logger.debug(f"[WATCH_TEAM] Rolling (Pre-TeamView): Found {len(watched_home_rows)} watched home teams. Sample:\n{watched_home_rows[['game_id', 'game_date', 'home_team_norm', 'away_team_norm']].head()}")
+                #watched_away_rows = local_df[local_df['away_team_norm'].isin(self._teams_to_watch)]
+                #if not watched_away_rows.empty:
+                     #logger.debug(f"[WATCH_TEAM] Rolling (Pre-TeamView): Found {len(watched_away_rows)} watched away teams. Sample:\n{watched_away_rows[['game_id', 'game_date', 'home_team_norm', 'away_team_norm']].head()}")
             # <<< END INSERT >>>
 
             home_data_list = []
@@ -564,13 +564,13 @@ class NBAFeatureEngine:
             # Ensure game_id is string in team_view for merge key consistency
             team_view['game_id'] = team_view['game_id'].astype(str)
 
-            # <<< START INSERT (Team View Logging - After Creation) >>>
-            if self.debug:
-                watched_team_view_rows = team_view[team_view['team_norm'].isin(self._teams_to_watch)]
-                if not watched_team_view_rows.empty:
-                    logger.debug(f"[WATCH_TEAM] Rolling: Team view created. Watched teams sample rows:\n{watched_team_view_rows.head()}")
-                else:
-                     logger.debug(f"[WATCH_TEAM] Rolling: No watched teams found in the combined team_view.")
+            # <<< START INSERT (Team View Logging - After Creation -- COMMENTED OUT ATM) >>>
+            #if self.debug:
+               #watched_team_view_rows = team_view[team_view['team_norm'].isin(self._teams_to_watch)]
+                #if not watched_team_view_rows.empty:
+                    #logger.debug(f"[WATCH_TEAM] Rolling: Team view created. Watched teams sample rows:\n{watched_team_view_rows.head()}")
+                #else:
+                     #logger.debug(f"[WATCH_TEAM] Rolling: No watched teams found in the combined team_view.")
             # <<< END INSERT >>>
 
         except Exception as e:
@@ -670,17 +670,17 @@ class NBAFeatureEngine:
 
              # --- Proceed with Merge only if merge_data is valid ---
              if merge_data is not None and not merge_data.empty:
-                 # <<< START INSERT - Before Home Merge >>>
-                 if self.debug:
-                     logger.debug(f"Rolling Merge (Home): Left DF shape: {local_df.shape}, Right DF (merge_data) shape: {merge_data.shape}")
-                     watched_left_home = local_df[local_df['home_team_norm'].isin(self._teams_to_watch)]
-                     if not watched_left_home.empty:
-                         logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Left DF sample (watched teams):\n{watched_left_home[['game_id', 'game_date', 'home_team_norm', 'merge_key_home']].head()}")
-                         watched_keys_home = watched_left_home['merge_key_home'].unique()
-                         watched_right_home = merge_data[merge_data['merge_key_rolling'].isin(watched_keys_home)]
-                         if not watched_right_home.empty: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Right DF sample (matching watched keys):\n{watched_right_home.head()}")
-                         else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Right DF: No matching keys found for watched teams.")
-                     else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home): No watched teams found in Left DF.")
+                 # <<< START INSERT - Before Home Merge-- COMMENTED OUT ATM>>>
+                 #if self.debug:
+                     #logger.debug(f"Rolling Merge (Home): Left DF shape: {local_df.shape}, Right DF (merge_data) shape: {merge_data.shape}")
+                     #watched_left_home = local_df[local_df['home_team_norm'].isin(self._teams_to_watch)]
+                     #if not watched_left_home.empty:
+                         #logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Left DF sample (watched teams):\n{watched_left_home[['game_id', 'game_date', 'home_team_norm', 'merge_key_home']].head()}")
+                         #watched_keys_home = watched_left_home['merge_key_home'].unique()
+                         #watched_right_home = merge_data[merge_data['merge_key_rolling'].isin(watched_keys_home)]
+                         #if not watched_right_home.empty: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Right DF sample (matching watched keys):\n{watched_right_home.head()}")
+                         #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Right DF: No matching keys found for watched teams.")
+                     #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home): No watched teams found in Left DF.")
                  # <<< END INSERT >>>
 
                  # --- Dictionary Comprehensions for Renaming ---
@@ -709,18 +709,18 @@ class NBAFeatureEngine:
                                     ).rename(columns=home_rename_dict)
                  if 'merge_key_rolling' in local_df.columns: local_df = local_df.drop(columns=['merge_key_rolling'])
 
-                 # <<< START INSERT - Before Away Merge >>>
-                 if self.debug:
+                 # <<< START INSERT - Before Away Merge-- COMMENTED OUT ATM>>>
+                 #if self.debug:
                      # Log shapes and watched teams again before away merge
-                     logger.debug(f"Rolling Merge (Away): Left DF shape: {local_df.shape}, Right DF (merge_data) shape: {merge_data.shape}")
-                     watched_left_away = local_df[local_df['away_team_norm'].isin(self._teams_to_watch)]
-                     if not watched_left_away.empty:
-                         logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Left DF sample (watched teams):\n{watched_left_away[['game_id', 'game_date', 'away_team_norm', 'merge_key_away']].head()}")
-                         watched_keys_away = watched_left_away['merge_key_away'].unique()
-                         watched_right_away = merge_data[merge_data['merge_key_rolling'].isin(watched_keys_away)]
-                         if not watched_right_away.empty: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Right DF sample (matching watched keys):\n{watched_right_away.head()}")
-                         else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Right DF: No matching keys found.")
-                     else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away): No watched teams found in Left DF.")
+                     #logger.debug(f"Rolling Merge (Away): Left DF shape: {local_df.shape}, Right DF (merge_data) shape: {merge_data.shape}")
+                     #watched_left_away = local_df[local_df['away_team_norm'].isin(self._teams_to_watch)]
+                     #if not watched_left_away.empty:
+                         #logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Left DF sample (watched teams):\n{watched_left_away[['game_id', 'game_date', 'away_team_norm', 'merge_key_away']].head()}")
+                         #watched_keys_away = watched_left_away['merge_key_away'].unique()
+                         #watched_right_away = merge_data[merge_data['merge_key_rolling'].isin(watched_keys_away)]
+                         #if not watched_right_away.empty: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Right DF sample (matching watched keys):\n{watched_right_away.head()}")
+                         #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Right DF: No matching keys found.")
+                     #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away): No watched teams found in Left DF.")
                  # <<< END INSERT >>>
 
                  local_df = pd.merge(local_df, merge_data, how='left', # Use same merge_data
@@ -880,20 +880,20 @@ class NBAFeatureEngine:
         temp_rest = team_log[['team', 'game_date', 'prev_game_date']].drop_duplicates(subset=['team', 'game_date'])
         # Merge for home team with merge validation to catch unexpected duplicates
         
-        # <<< START INSERT - Before Home Rest Merge >>>
-        if self.debug:
-            logger.debug(f"Rest Merge (Home Prev Date): Left DF shape: {df_copy.shape}, Right DF (temp_rest) shape: {temp_rest.shape}")
-            watched_left_rest_h = df_copy[df_copy['home_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
-            if not watched_left_rest_h.empty:
-                 logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date) - Left DF sample (watched teams):\n{watched_left_rest_h[['game_id', 'game_date', 'home_team']].head()}")
-                 watched_teams_rest = self._teams_to_watch # Re-evaluate normalization if needed here
-                 watched_right_rest_h = temp_rest[temp_rest['team'].apply(self.normalize_team_name).isin(watched_teams_rest)]
-                 if not watched_right_rest_h.empty:
-                     logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date) - Right DF sample (watched teams):\n{watched_right_rest_h.head()}")
-                 else:
-                     logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date) - Right DF: No watched teams found.")
-            else:
-                 logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date): No watched teams found in Left DF.")
+        # <<< START INSERT - Before Home Rest Merge -- COMMENTED OUT ATM >>>
+        #if self.debug:
+            #logger.debug(f"Rest Merge (Home Prev Date): Left DF shape: {df_copy.shape}, Right DF (temp_rest) shape: {temp_rest.shape}")
+            #watched_left_rest_h = df_copy[df_copy['home_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
+            #if not watched_left_rest_h.empty:
+                 #logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date) - Left DF sample (watched teams):\n{watched_left_rest_h[['game_id', 'game_date', 'home_team']].head()}")
+                 #watched_teams_rest = self._teams_to_watch # Re-evaluate normalization if needed here
+                # watched_right_rest_h = temp_rest[temp_rest['team'].apply(self.normalize_team_name).isin(watched_teams_rest)]
+                 #if not watched_right_rest_h.empty:
+                     #logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date) - Right DF sample (watched teams):\n{watched_right_rest_h.head()}")
+                 #else:
+                     #logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date) - Right DF: No watched teams found.")
+            #else:
+                 #logger.debug(f"[WATCH_TEAM] Rest Merge (Home Prev Date): No watched teams found in Left DF.")
         # <<< END INSERT >>>
         
         df_copy = pd.merge(
@@ -905,20 +905,20 @@ class NBAFeatureEngine:
             validate='many_to_one'  # Expect each home_team/game_date to match at most one row
         ).rename(columns={'prev_game_date': 'prev_home_game_date'}).drop(columns='team', errors='ignore')
 
-        # <<< START INSERT - Before Away Rest Merge >>>
-        if self.debug:
-            logger.debug(f"Rest Merge (Away Prev Date): Left DF shape: {df_copy.shape}, Right DF (temp_rest) shape: {temp_rest.shape}")
-            watched_left_rest_a = df_copy[df_copy['away_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
-            if not watched_left_rest_a.empty:
-                 logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date) - Left DF sample (watched teams):\n{watched_left_rest_a[['game_id', 'game_date', 'away_team']].head()}")
-                 watched_teams_rest = self._teams_to_watch # Re-evaluate normalization if needed here
-                 watched_right_rest_a = temp_rest[temp_rest['team'].apply(self.normalize_team_name).isin(watched_teams_rest)]
-                 if not watched_right_rest_a.empty:
-                     logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date) - Right DF sample (watched teams):\n{watched_right_rest_a.head()}")
-                 else:
-                     logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date) - Right DF: No watched teams found.")
-            else:
-                 logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date): No watched teams found in Left DF.")
+        # <<< START INSERT - Before Away Rest Merg -- COMMENTED OUT ATMe >>>
+        #if self.debug:
+            #logger.debug(f"Rest Merge (Away Prev Date): Left DF shape: {df_copy.shape}, Right DF (temp_rest) shape: {temp_rest.shape}")
+            #watched_left_rest_a = df_copy[df_copy['away_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
+            #if not watched_left_rest_a.empty:
+                 #logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date) - Left DF sample (watched teams):\n{watched_left_rest_a[['game_id', 'game_date', 'away_team']].head()}")
+                 #watched_teams_rest = self._teams_to_watch # Re-evaluate normalization if needed here
+                 #watched_right_rest_a = temp_rest[temp_rest['team'].apply(self.normalize_team_name).isin(watched_teams_rest)]
+                 #if not watched_right_rest_a.empty:
+                     #logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date) - Right DF sample (watched teams):\n{watched_right_rest_a.head()}")
+                 #else:
+                     #logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date) - Right DF: No watched teams found.")
+            #else:
+                 #logger.debug(f"[WATCH_TEAM] Rest Merge (Away Prev Date): No watched teams found in Left DF.")
         # <<< END INSERT >>>
 
         # Merge for away team with similar safeguards
@@ -936,14 +936,14 @@ class NBAFeatureEngine:
 
         logger.debug("Calculating games in last 7/14 days...")
 
-        # <<< START INSERT - After Rest Days Calc >>>
-        if self.debug:
-            watched_rows_after_rest = df_copy[
-                df_copy['home_team'].apply(self.normalize_team_name).isin(self._teams_to_watch) |
-                df_copy['away_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)
-            ]
-            if not watched_rows_after_rest.empty:
-                logger.debug(f"[WATCH_TEAM] Calculated Rest Days (watched teams sample): \n{watched_rows_after_rest[['game_id', 'game_date', 'home_team', 'away_team', 'prev_home_game_date', 'prev_away_game_date', 'rest_days_home', 'rest_days_away']].head()}")
+        # <<< START INSERT - After Rest Days Calc -- COMMENTED OUT ATM >>>
+        #if self.debug:
+            #watched_rows_after_rest = df_copy[
+                #df_copy['home_team'].apply(self.normalize_team_name).isin(self._teams_to_watch) |
+                #df_copy['away_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)
+            #]
+            #if not watched_rows_after_rest.empty:
+                #logger.debug(f"[WATCH_TEAM] Calculated Rest Days (watched teams sample): \n{watched_rows_after_rest[['game_id', 'game_date', 'home_team', 'away_team', 'prev_home_game_date', 'prev_away_game_date', 'rest_days_home', 'rest_days_away']].head()}")
         # <<< END INSERT >>>
 
         try:
@@ -985,20 +985,20 @@ class NBAFeatureEngine:
             team_log_with_counts = team_log_with_counts.drop_duplicates(subset=['team', 'game_date'])
 
 
-             # <<< START INSERT - Before Home Schedule Merge >>>
-            if self.debug:
-                 logger.debug(f"Schedule Merge (Home): Left DF shape: {df_copy.shape}, Right DF (temp_sched) shape: {temp_sched.shape}")
-                 watched_left_sched_h = df_copy[df_copy['home_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
-                 if not watched_left_sched_h.empty:
-                     logger.debug(f"[WATCH_TEAM] Schedule Merge (Home) - Left DF sample (watched teams):\n{watched_left_sched_h[['game_id', 'game_date', 'home_team']].head()}")
-                     watched_teams_sched = self._teams_to_watch # Re-evaluate normalization if needed
-                     watched_right_sched_h = temp_sched[temp_sched['team'].apply(self.normalize_team_name).isin(watched_teams_sched)]
-                     if not watched_right_sched_h.empty:
-                         logger.debug(f"[WATCH_TEAM] Schedule Merge (Home) - Right DF sample (watched teams):\n{watched_right_sched_h.head()}")
-                     else:
-                         logger.debug(f"[WATCH_TEAM] Schedule Merge (Home) - Right DF: No watched teams found.")
-                 else:
-                      logger.debug(f"[WATCH_TEAM] Schedule Merge (Home): No watched teams found in Left DF.")
+             # <<< START INSERT - Before Home Schedule Merge -- COMMENTED OUT ATM >>>
+            #if self.debug:
+                 #logger.debug(f"Schedule Merge (Home): Left DF shape: {df_copy.shape}, Right DF (temp_sched) shape: {temp_sched.shape}")
+                 #watched_left_sched_h = df_copy[df_copy['home_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
+                 #if not watched_left_sched_h.empty:
+                     #logger.debug(f"[WATCH_TEAM] Schedule Merge (Home) - Left DF sample (watched teams):\n{watched_left_sched_h[['game_id', 'game_date', 'home_team']].head()}")
+                     #watched_teams_sched = self._teams_to_watch # Re-evaluate normalization if needed
+                     #watched_right_sched_h = temp_sched[temp_sched['team'].apply(self.normalize_team_name).isin(watched_teams_sched)]
+                     #if not watched_right_sched_h.empty:
+                         #logger.debug(f"[WATCH_TEAM] Schedule Merge (Home) - Right DF sample (watched teams):\n{watched_right_sched_h.head()}")
+                     #else:
+                         #logger.debug(f"[WATCH_TEAM] Schedule Merge (Home) - Right DF: No watched teams found.")
+                 #else:
+                      #logger.debug(f"[WATCH_TEAM] Schedule Merge (Home): No watched teams found in Left DF.")
              # <<< END INSERT >>>
 
             # Prepare a deduplicated temp for schedule counts merges
@@ -1012,20 +1012,20 @@ class NBAFeatureEngine:
                 validate='many_to_one'
             ).rename(columns={'count_7d': 'games_last_7_days_home', 'count_14d': 'games_last_14_days_home'}).drop(columns='team', errors='ignore')
             
-                     # <<< START INSERT - Before Away Schedule Merge >>>
-            if self.debug:
-                 logger.debug(f"Schedule Merge (Away): Left DF shape: {df_copy.shape}, Right DF (temp_sched) shape: {temp_sched.shape}")
-                 watched_left_sched_a = df_copy[df_copy['away_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
-                 if not watched_left_sched_a.empty:
-                     logger.debug(f"[WATCH_TEAM] Schedule Merge (Away) - Left DF sample (watched teams):\n{watched_left_sched_a[['game_id', 'game_date', 'away_team']].head()}")
-                     watched_teams_sched = self._teams_to_watch # Re-evaluate normalization if needed
-                     watched_right_sched_a = temp_sched[temp_sched['team'].apply(self.normalize_team_name).isin(watched_teams_sched)]
-                     if not watched_right_sched_a.empty:
-                         logger.debug(f"[WATCH_TEAM] Schedule Merge (Away) - Right DF sample (watched teams):\n{watched_right_sched_a.head()}")
-                     else:
-                         logger.debug(f"[WATCH_TEAM] Schedule Merge (Away) - Right DF: No watched teams found.")
-                 else:
-                      logger.debug(f"[WATCH_TEAM] Schedule Merge (Away): No watched teams found in Left DF.")
+            # <<< START INSERT - Before Away Schedule Merge -- COMMENTED OUT ATM >>>
+            #if self.debug:
+                 #logger.debug(f"Schedule Merge (Away): Left DF shape: {df_copy.shape}, Right DF (temp_sched) shape: {temp_sched.shape}")
+                 #watched_left_sched_a = df_copy[df_copy['away_team'].apply(self.normalize_team_name).isin(self._teams_to_watch)]
+                 #if not watched_left_sched_a.empty:
+                     #logger.debug(f"[WATCH_TEAM] Schedule Merge (Away) - Left DF sample (watched teams):\n{watched_left_sched_a[['game_id', 'game_date', 'away_team']].head()}")
+                     #watched_teams_sched = self._teams_to_watch # Re-evaluate normalization if needed
+                     #watched_right_sched_a = temp_sched[temp_sched['team'].apply(self.normalize_team_name).isin(watched_teams_sched)]
+                     #if not watched_right_sched_a.empty:
+                         #logger.debug(f"[WATCH_TEAM] Schedule Merge (Away) - Right DF sample (watched teams):\n{watched_right_sched_a.head()}")
+                     #else:
+                         #logger.debug(f"[WATCH_TEAM] Schedule Merge (Away) - Right DF: No watched teams found.")
+                 #else:
+                      #logger.debug(f"[WATCH_TEAM] Schedule Merge (Away): No watched teams found in Left DF.")
              # <<< END INSERT >>>
 
             df_copy = pd.merge(
@@ -1072,8 +1072,11 @@ class NBAFeatureEngine:
 
         # Define placeholder columns based on the helper function's expected output keys
         # Ensure _get_matchup_history_single returns expected structure even with empty input for this setup
-        placeholder_cols = list(self._get_matchup_history_single("", "", pd.DataFrame(), 0, pd.NaT).keys())
-
+        placeholder_cols = [
+            'matchup_num_games', 'matchup_avg_point_diff', 'matchup_home_win_pct',
+            'matchup_avg_total_score', 'matchup_avg_home_score', 'matchup_avg_away_score',
+            'matchup_last_date', 'matchup_streak'
+        ]
         if historical_df is None or historical_df.empty:
             logger.warning("H2H: Historical DataFrame empty or None. Adding H2H placeholders with defaults.")
             for col in placeholder_cols:
@@ -1109,9 +1112,9 @@ class NBAFeatureEngine:
             hist_df = hist_df.sort_values('game_date') # Sort for correct history lookup
 
             # Create a lookup dictionary for faster access
-            logger.debug("H2H: Grouping historical data by matchup key...")
+            #logger.debug("H2H: Grouping historical data by matchup key...")
             hist_lookup = {key: group for key, group in hist_df.groupby('matchup_key', observed=True)}
-            logger.debug(f"H2H: Created lookup for {len(hist_lookup)} unique matchup keys.")
+            #logger.debug(f"H2H: Created lookup for {len(hist_lookup)} unique matchup keys.")
 
             # --- Prepare Target Data ---
             result_df['game_date'] = pd.to_datetime(result_df['game_date'], errors='coerce').dt.tz_localize(None)
@@ -1149,55 +1152,67 @@ class NBAFeatureEngine:
                 # --- Check if this row involves a watched team ---
                 is_watched = home_norm in self._teams_to_watch or away_norm in self._teams_to_watch
 
-                # --- Logging Block 1: Log basic info for watched teams ---
-                if self.debug and is_watched:
-                    logger.debug(f"[WATCH_TEAM] H2H Processing Row: GameID={game_id}, Date={current_game_date}, Home={home_norm}, Away={away_norm}, Key={matchup_key}")
+            # --- Logging Block 1: Log basic info for watched teams (COMMENTED OUT) ---
+            # if self.debug and is_watched:
+            #    logger.debug(f"[WATCH_TEAM] H2H Processing Row: GameID={game_id}, Date={current_game_date}, Home={home_norm}, Away={away_norm}, Key={matchup_key}")
 
-                # --- Find historical games for this specific matchup key ---
-                matchup_hist_subset = hist_lookup.get(matchup_key, pd.DataFrame())
+            # --- Find historical games for this specific matchup key ---
+            matchup_hist_subset = hist_lookup.get(matchup_key, pd.DataFrame())
 
-                # --- Logging Block 2: Log the historical data found for watched teams ---
-                if self.debug and is_watched:
-                     if matchup_hist_subset.empty:
-                         logger.debug(f"[WATCH_TEAM] H2H History Lookup: No historical data found in lookup for key '{matchup_key}'")
-                     else:
-                         # Filter history to games strictly BEFORE the current game date
-                         if pd.notna(current_game_date): # Check if current_game_date is valid
-                            relevant_hist = matchup_hist_subset[matchup_hist_subset['game_date'] < current_game_date]
-                            logger.debug(f"[WATCH_TEAM] H2H History Found: Found {len(relevant_hist)} past games for key '{matchup_key}' before {current_game_date}. Sample of most recent {max_games}:\n{relevant_hist.sort_values('game_date', ascending=False).head(max_games)[['game_date', 'home_team_norm', 'away_team_norm', 'home_score', 'away_score']]}")
-                         else:
-                            # Log if we cannot filter due to invalid date
-                            logger.debug(f"[WATCH_TEAM] H2H History Found: Cannot filter history for GameID={game_id} because current_game_date is invalid ({current_game_date}).")
+            # --- Logging Block 2: Log the historical data found for watched teams (COMMENTED OUT) ---
+            # if self.debug and is_watched:  # <<< Comment out this entire conditional block
+            #      if matchup_hist_subset.empty:
+            #          logger.debug(f"[WATCH_TEAM] H2H History Lookup: No historical data found in lookup for key '{matchup_key}'")
+            #      else:
+            #          # Filter history to games strictly BEFORE the current game date
+            #          if pd.notna(current_game_date): # Check if current_game_date is valid
+            #             relevant_hist = matchup_hist_subset[matchup_hist_subset['game_date'] < current_game_date]
+            #             logger.debug(f"[WATCH_TEAM] H2H History Found: Found {len(relevant_hist)} past games for key '{matchup_key}' before {current_game_date}. Sample of most recent {max_games}:\n{relevant_hist.sort_values('game_date', ascending=False).head(max_games)[['game_date', 'home_team_norm', 'away_team_norm', 'home_score', 'away_score']]}")
+            #          else:
+            #             # Log if we cannot filter due to invalid date
+            #             logger.debug(f"[WATCH_TEAM] H2H History Found: Cannot filter history for GameID={game_id} because current_game_date is invalid ({current_game_date}).")
 
-                # --- Calculate H2H stats using the helper function ---
-                single_h2h_stats = self._get_matchup_history_single(
-                    home_team_norm=home_norm,                 # Pass correct home team
-                    away_team_norm=away_norm,                 # Pass correct away team
-                    historical_subset=matchup_hist_subset,    # Pass the specific history found
-                    max_games=max_games,                      # Pass the function's parameter
-                    current_game_date=current_game_date     # Pass the date of the current game
-                )
+            # --- Calculate H2H stats using the helper function ---
+            # This part remains active and is essential
+            single_h2h_stats = self._get_matchup_history_single(
+                home_team_norm=home_norm,                 # Pass correct home team
+                away_team_norm=away_norm,                 # Pass correct away team
+                historical_subset=matchup_hist_subset,    # Pass the specific history found
+                max_games=max_games,                      # Pass the function's parameter
+                current_game_date=current_game_date     # Pass the date of the current game
+            )
 
-                # --- Logging Block 3: Log the result for watched teams ---
-                if self.debug and is_watched:
-                     logger.debug(f"[WATCH_TEAM] H2H Calculated Result (GameID={game_id}): {single_h2h_stats}")
 
-                # --- Append result to list ---
-                h2h_results_list.append(single_h2h_stats)
+            # +++ ADD THIS PRINT STATEMENT (maybe limit iterations) +++
+            if index < 20: # Print for first 20 games only
+                 print(f"DEBUG LOOP - Game {game_id} - Index {index}: {single_h2h_stats}")
+            # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+            # --- Logging Block 3: Log the result for watched teams (COMMENTED OUT) ---
+            # if self.debug and is_watched:
+            #      logger.debug(f"[WATCH_TEAM] H2H Calculated Result (GameID={game_id}): {single_h2h_stats}")
+
+            # --- Append result to list ---
+            # This part remains active and is essential
+            h2h_results_list.append(single_h2h_stats)
+
             # --- End of loop ---
-
             # --- Combine Results ---
             if h2h_results_list:
-                # Create a DataFrame from the list of dictionaries, ensuring index matches result_df
                 h2h_results_df = pd.DataFrame(h2h_results_list, index=result_df.index)
-                # Join the results back to the main dataframe
+                if self.debug:
+                    logger.debug("H2H: h2h_results_df Info:")
+                    h2h_results_df.info(verbose=True, show_counts=True)
+                    logger.debug("H2H: h2h_results_df Describe:\n" + h2h_results_df.describe().to_string())
                 result_df = result_df.join(h2h_results_df, how='left')
-                logger.debug(f"H2H: Joined {len(h2h_results_df)} rows of H2H results.")
+        #logger.debug(f"H2H: Joined {len(h2h_results_df)} rows of H2H results.")
             else:
                 logger.warning("H2H: No head-to-head results were generated (list was empty).")
                 # Ensure placeholder columns exist even if no results generated
                 for col in placeholder_cols:
                      if col not in result_df.columns: result_df[col] = np.nan # Add as NaN first
+
 
 
             # --- Finalize and Fill Defaults ---
@@ -1245,8 +1260,12 @@ class NBAFeatureEngine:
                     else: result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0.0)
 
 
-        # --- Clean Up Intermediate Columns ---
-        result_df = result_df.drop(columns=['home_team_norm', 'away_team_norm', 'matchup_key'], errors='ignore')
+        if self.debug and not result_df.empty:
+                matchup_cols_in_final = [col for col in placeholder_cols if col in result_df.columns and col != 'matchup_last_date']
+                if matchup_cols_in_final:
+                    variances_final = result_df[matchup_cols_in_final].var()
+                    logger.debug(f"H2H: Final Variances before return:\n{variances_final}")
+
         logger.debug("H2H: Finished adding head-to-head features.")
         return result_df
 
@@ -1323,41 +1342,41 @@ class NBAFeatureEngine:
                            'points_against_avg_all': 'away_season_avg_pts_against', 'current_form': 'away_current_form'}
             logger.debug("Attempting to merge season stats using keys...")
             
-            # <<< START INSERT - Before Home Season Merge >>>
-            if self.debug:
-                logger.debug(f"Season Merge (Home): Left DF shape: {result_df.shape}, Right DF (ts_merge) shape: {ts_merge.shape}")
-                watched_left_season_h = result_df[result_df['home_team_norm'].isin(self._teams_to_watch)]
-                if not watched_left_season_h.empty:
-                    logger.debug(f"[WATCH_TEAM] Season Merge (Home) - Left DF sample (watched teams):\n{watched_left_season_h[['game_id', 'game_date', 'home_team_norm', 'season', 'merge_key_home']].head()}")
-                    watched_keys_season_h = watched_left_season_h['merge_key_home'].unique()
+            # <<< START INSERT - Before Home Season Merge -- COMMENTED OUT ATM>>>
+            #if self.debug:
+                #logger.debug(f"Season Merge (Home): Left DF shape: {result_df.shape}, Right DF (ts_merge) shape: {ts_merge.shape}")
+                #watched_left_season_h = result_df[result_df['home_team_norm'].isin(self._teams_to_watch)]
+                #if not watched_left_season_h.empty:
+                    #logger.debug(f"[WATCH_TEAM] Season Merge (Home) - Left DF sample (watched teams):\n{watched_left_season_h[['game_id', 'game_date', 'home_team_norm', 'season', 'merge_key_home']].head()}")
+                    #watched_keys_season_h = watched_left_season_h['merge_key_home'].unique()
                     # Need to recreate keys for ts_merge if not present or join based on components
-                    ts_merge_watched_h = ts_merge[ts_merge['merge_key'].isin(watched_keys_season_h)]
-                    if not ts_merge_watched_h.empty:
-                         logger.debug(f"[WATCH_TEAM] Season Merge (Home) - Right DF sample (matching watched keys):\n{ts_merge_watched_h.head()}")
-                    else:
-                         logger.debug(f"[WATCH_TEAM] Season Merge (Home) - Right DF: No matching keys found for watched teams.")
-                else:
-                     logger.debug(f"[WATCH_TEAM] Season Merge (Home): No watched teams found in Left DF.")
+                    #ts_merge_watched_h = ts_merge[ts_merge['merge_key'].isin(watched_keys_season_h)]
+                    #if not ts_merge_watched_h.empty:
+                         #logger.debug(f"[WATCH_TEAM] Season Merge (Home) - Right DF sample (matching watched keys):\n{ts_merge_watched_h.head()}")
+                    #else:
+                         #logger.debug(f"[WATCH_TEAM] Season Merge (Home) - Right DF: No matching keys found for watched teams.")
+                #else:
+                     #logger.debug(f"[WATCH_TEAM] Season Merge (Home): No watched teams found in Left DF.")
             # <<< END INSERT >>>
             
             result_df = pd.merge(result_df, ts_merge.rename(columns=home_rename), how='left',
                                  left_on='merge_key_home', right_on='merge_key', indicator='_merge_home')
             result_df = result_df.drop(columns=['merge_key'], errors='ignore')
             
-            # <<< START INSERT - Before Away Season Merge >>>
-            if self.debug:
-                logger.debug(f"Season Merge (Away): Left DF shape: {result_df.shape}, Right DF (ts_merge) shape: {ts_merge.shape}") # Shape might have changed
-                watched_left_season_a = result_df[result_df['away_team_norm'].isin(self._teams_to_watch)]
-                if not watched_left_season_a.empty:
-                    logger.debug(f"[WATCH_TEAM] Season Merge (Away) - Left DF sample (watched teams):\n{watched_left_season_a[['game_id', 'game_date', 'away_team_norm', 'season', 'merge_key_away']].head()}")
-                    watched_keys_season_a = watched_left_season_a['merge_key_away'].unique()
-                    ts_merge_watched_a = ts_merge[ts_merge['merge_key'].isin(watched_keys_season_a)]
-                    if not ts_merge_watched_a.empty:
-                         logger.debug(f"[WATCH_TEAM] Season Merge (Away) - Right DF sample (matching watched keys):\n{ts_merge_watched_a.head()}")
-                    else:
-                         logger.debug(f"[WATCH_TEAM] Season Merge (Away) - Right DF: No matching keys found for watched teams.")
-                else:
-                     logger.debug(f"[WATCH_TEAM] Season Merge (Away): No watched teams found in Left DF.")
+            # <<< START INSERT - Before Away Season Merge -- COMMENTED OUT ATM >>>
+            #if self.debug:
+                #logger.debug(f"Season Merge (Away): Left DF shape: {result_df.shape}, Right DF (ts_merge) shape: {ts_merge.shape}") # Shape might have changed
+                #watched_left_season_a = result_df[result_df['away_team_norm'].isin(self._teams_to_watch)]
+                #if not watched_left_season_a.empty:
+                    #logger.debug(f"[WATCH_TEAM] Season Merge (Away) - Left DF sample (watched teams):\n{watched_left_season_a[['game_id', 'game_date', 'away_team_norm', 'season', 'merge_key_away']].head()}")
+                    #watched_keys_season_a = watched_left_season_a['merge_key_away'].unique()
+                    #ts_merge_watched_a = ts_merge[ts_merge['merge_key'].isin(watched_keys_season_a)]
+                    #if not ts_merge_watched_a.empty:
+                         #logger.debug(f"[WATCH_TEAM] Season Merge (Away) - Right DF sample (matching watched keys):\n{ts_merge_watched_a.head()}")
+                    #else:
+                         #logger.debug(f"[WATCH_TEAM] Season Merge (Away) - Right DF: No matching keys found for watched teams.")
+                #else:
+                     #logger.debug(f"[WATCH_TEAM] Season Merge (Away): No watched teams found in Left DF.")
             # <<< END INSERT >>>
             
             result_df = pd.merge(result_df, ts_merge.rename(columns=away_rename), how='left',
@@ -1408,18 +1427,18 @@ class NBAFeatureEngine:
         result_df['away_season_net_rating'] = result_df['away_season_avg_pts_for'] - result_df['away_season_avg_pts_against']
         result_df['season_net_rating_diff'] = result_df['home_season_net_rating'] - result_df['away_season_net_rating']
         result_df = result_df.drop(columns=['season', 'home_team_norm', 'away_team_norm', 'merge_key_home', 'merge_key_away'], errors='ignore')
-        # <<< FINAL LOGGING BLOCK (Using original 'df' input) >>>
+        
+        # <<< FINAL LOGGING BLOCK (Using original 'df' input -- COMMENTED OUT ATM) >>>
         if self.debug:
             try:
+                """  # Start block comment
                 # Define the final seasonal columns created/populated by this function
                 final_season_cols_to_log = ['game_id', 'game_date'] + [c for c in placeholder_cols if c in result_df.columns]
-
                 # Check if necessary columns exist for linking and filtering
                 if ('game_id' in result_df.columns and
                     'game_id' in df.columns and
                     'home_team' in df.columns and
                     'away_team' in df.columns):
-
                     # Merge final results with original team names for filtering watched teams
                     # Select only essential columns to minimize merge overhead
                     log_check_df = pd.merge(
@@ -1428,13 +1447,11 @@ class NBAFeatureEngine:
                         on='game_id',
                         how='inner' # Keep only rows present in both (should be all target rows)
                     )
-
                     # Filter for watched teams using original team names
                     watched_rows_after_season = log_check_df[
                         log_check_df['home_team'].astype(str).apply(self.normalize_team_name).isin(self._teams_to_watch) |
                         log_check_df['away_team'].astype(str).apply(self.normalize_team_name).isin(self._teams_to_watch)
                     ]
-
                     if not watched_rows_after_season.empty:
                         # Log the final seasonal feature values for the watched teams
                         logger.debug(f"[WATCH_TEAM] Final Season Context Values (watched teams sample): \n{watched_rows_after_season[final_season_cols_to_log].head()}")
@@ -1442,12 +1459,11 @@ class NBAFeatureEngine:
                         logger.debug("[WATCH_TEAM] No watched teams found in final result_df for season context logging.")
                 else:
                     logger.warning("[WATCH_TEAM] Could not perform final season context logging: Key columns missing in result_df or original df (game_id, home_team, away_team).")
-
+                """ # End block comment
             except Exception as log_err:
-                 logger.warning(f"[WATCH_TEAM] Error during final season context logging: {log_err}", exc_info=True) # Added exc_info
+                 logger.warning(f"[WATCH_TEAM] Error during final season context logging: {log_err}", exc_info=True) # Keep this active maybe?
         # <<< END OF CORRECTED FINAL LOGGING BLOCK >>>
 
-        
         logger.info("Finished adding season context features.")
         return result_df
 
@@ -1483,20 +1499,20 @@ class NBAFeatureEngine:
             except Exception as e:
                 logger.error(f"Error processing form strings: {e}", exc_info=True)
 
-         # <<< START INSERT - After Form Calcs >>>
+         # <<< START INSERT - After Form Calc -- COMMENTED OUT ATM >>>
         if self.debug:
             # Check original team names before they might be dropped if needed
             # Assuming 'home_team', 'away_team' still exist or use normalized names if available
             home_team_col_check = 'home_team' if 'home_team' in result_df.columns else 'home_team_norm' # Adjust if names change
             away_team_col_check = 'away_team' if 'away_team' in result_df.columns else 'away_team_norm'
 
-            watched_rows_after_form = result_df[
-                 result_df[home_team_col_check].apply(self.normalize_team_name).isin(self._teams_to_watch) |
-                 result_df[away_team_col_check].apply(self.normalize_team_name).isin(self._teams_to_watch)
-             ]
-            form_cols_to_log = ['game_id', 'game_date'] + [c for c in placeholder_cols if c in result_df.columns]
-            if not watched_rows_after_form.empty:
-                  logger.debug(f"[WATCH_TEAM] Final Form String Values (watched teams sample): \n{watched_rows_after_form[form_cols_to_log].head()}")
+            #watched_rows_after_form = result_df[
+                # result_df[home_team_col_check].apply(self.normalize_team_name).isin(self._teams_to_watch) |
+                 #result_df[away_team_col_check].apply(self.normalize_team_name).isin(self._teams_to_watch)
+            # ]
+            #form_cols_to_log = ['game_id', 'game_date'] + [c for c in placeholder_cols if c in result_df.columns]
+            #if not watched_rows_after_form.empty:
+                 # logger.debug(f"[WATCH_TEAM] Final Form String Values (watched teams sample): \n{watched_rows_after_form[form_cols_to_log].head()}")
         # <<< END INSERT >>>
         logger.debug("Finalizing form string features (filling defaults/types)...")
         for col in placeholder_cols:
@@ -1520,8 +1536,8 @@ class NBAFeatureEngine:
         # <<< Add Check for Debug Level >>>
         is_debug = _is_debug_enabled(logger)
 
-        if is_debug:
-            logger.debug(f"H2H Helper: Called for Home='{home_team_norm}', Away='{away_team_norm}', Date='{current_game_date}', MaxGames={max_games}. History subset shape: {historical_subset.shape}")
+        #if is_debug COMMENTED:
+            #logger.debug(f"H2H Helper: Called for Home='{home_team_norm}', Away='{away_team_norm}', Date='{current_game_date}', MaxGames={max_games}. History subset shape: {historical_subset.shape}")
 
         default_result = {
             'matchup_num_games': self.defaults['matchup_num_games'],
@@ -1535,24 +1551,24 @@ class NBAFeatureEngine:
         }
 
         if historical_subset.empty or max_games <= 0 or pd.isna(current_game_date):
-            if is_debug: logger.debug(f"H2H Helper: Returning default due to empty history ({historical_subset.empty}), max_games<=0 ({max_games<=0}), or invalid date ({pd.isna(current_game_date)}).")
+            #if is_debug: logger.debug(f"H2H Helper: Returning default due to empty history ({historical_subset.empty}), max_games<=0 ({max_games<=0}), or invalid date ({pd.isna(current_game_date)}).")
             return default_result
 
         # Filter for games strictly before the current date
         past_games_df = historical_subset[historical_subset['game_date'] < current_game_date].copy()
-        if is_debug: logger.debug(f"H2H Helper: Filtered to {len(past_games_df)} games before {current_game_date}.")
+        #if is_debug: logger.debug(f"H2H Helper: Filtered to {len(past_games_df)} games before {current_game_date}.")
 
         if past_games_df.empty:
-            if is_debug: logger.debug("H2H Helper: Returning default as no games found before current date.")
+            #if is_debug: logger.debug("H2H Helper: Returning default as no games found before current date.")
             return default_result
 
         try:
             # Get the N most recent games from the filtered past games
             recent_matchups = past_games_df.sort_values('game_date', ascending=False).head(max_games)
-            if is_debug: logger.debug(f"H2H Helper: Selected {len(recent_matchups)} most recent matchups for calculation.")
+            #if is_debug: logger.debug(f"H2H Helper: Selected {len(recent_matchups)} most recent matchups for calculation.")
 
             if recent_matchups.empty: # Should not happen if past_games_df wasn't empty, but check
-                if is_debug: logger.debug("H2H Helper: Returning default as recent_matchups is unexpectedly empty.")
+                #if is_debug: logger.debug("H2H Helper: Returning default as recent_matchups is unexpectedly empty.")
                 return default_result
 
             # Ensure scores are numeric (should be pre-processed, but double-check)
@@ -1561,7 +1577,7 @@ class NBAFeatureEngine:
             recent_matchups = recent_matchups.dropna(subset=['home_score', 'away_score'])
 
             if recent_matchups.empty:
-                if is_debug: logger.debug("H2H Helper: Returning default as no valid scores found in recent matchups.")
+                #if is_debug: logger.debug("H2H Helper: Returning default as no valid scores found in recent matchups.")
                 return default_result
 
             # Calculate stats - loop through the selected recent games *chronologically* for streak
@@ -1577,7 +1593,7 @@ class NBAFeatureEngine:
                 g_home_norm = game.get('home_team_norm', 'Hist_Unknown_Home')
                 g_away_norm = game.get('away_team_norm', 'Hist_Unknown_Away')
 
-                if is_debug: logger.debug(f"H2H Helper Iter: Date={game['game_date'].date()}, GameHome={g_home_norm}, GameAway={g_away_norm}, HScore={h_score}, AScore={a_score}")
+                #if is_debug: logger.debug(f"H2H Helper Iter: Date={game['game_date'].date()}, GameHome={g_home_norm}, GameAway={g_away_norm}, HScore={h_score}, AScore={a_score}")
 
                 # Determine diff and winner from perspective of the *target* home_team_norm
                 if g_home_norm == home_team_norm: # Target home team played at home in this historical game
@@ -1601,7 +1617,7 @@ class NBAFeatureEngine:
                 away_persp_scores.append(a_persp_score)
 
                 game_winner_norm = home_team_norm if won else away_team_norm
-                if is_debug: logger.debug(f"H2H Helper Iter: Perspective={home_team_norm}, Diff={diff:.1f}, Won={won}, Winner={game_winner_norm}")
+                #if is_debug: logger.debug(f"H2H Helper Iter: Perspective={home_team_norm}, Diff={diff:.1f}, Won={won}, Winner={game_winner_norm}")
 
                 if won: home_persp_wins += 1
 
@@ -1614,12 +1630,12 @@ class NBAFeatureEngine:
                     current_streak = 1 if won else -1
                 last_winner_norm = game_winner_norm # Update for next iteration
 
-                if is_debug: logger.debug(f"H2H Helper Iter: Streak after game: {current_streak}")
+                #if is_debug: logger.debug(f"H2H Helper Iter: Streak after game: {current_streak}")
 
 
             num_games = len(diffs)
             if num_games == 0:
-                if is_debug: logger.debug("H2H Helper: Returning default as no valid games processed in loop.")
+                #if is_debug: logger.debug("H2H Helper: Returning default as no valid games processed in loop.")
                 return default_result
 
             # Assemble final results
@@ -1633,12 +1649,16 @@ class NBAFeatureEngine:
                 'matchup_last_date': recent_matchups['game_date'].max(), # Date of most recent game in H2H history
                 'matchup_streak': int(current_streak) # Final streak value
             }
-            if is_debug: logger.debug(f"H2H Helper: Calculated final stats: {final_stats}")
+            #if is_debug: logger.debug(f"H2H Helper: Calculated final stats: {final_stats}")
 
             # Ensure all keys from default_result are present
             for k, v in default_result.items():
                 final_stats.setdefault(k, v)
                 if pd.isna(final_stats[k]): final_stats[k] = v # Fill NaNs just in case
+
+            
+            if is_debug and num_games > 0: # Only log if we actually calculated something
+                logger.debug(f"H2H Helper: Calculated final stats for {home_team_norm} vs {away_team_norm} on {current_game_date}: {final_stats}")
 
             return final_stats
 
@@ -1651,7 +1671,7 @@ class NBAFeatureEngine:
         # <<< Add Check for Debug Level >>>
         is_debug = _is_debug_enabled(logger)
 
-        if is_debug: logger.debug(f"Form Helper: Called with string='{form_string}'")
+        #if is_debug: logger.debug(f"Form Helper: Called with string='{form_string}'")
 
         defaults = {
             'form_win_pct': self.defaults['form_win_pct'],
@@ -1660,7 +1680,7 @@ class NBAFeatureEngine:
         }
 
         if not form_string or pd.isna(form_string) or not isinstance(form_string, str):
-            if is_debug: logger.debug("Form Helper: Returning default due to invalid/empty input string.")
+            #if is_debug: logger.debug("Form Helper: Returning default due to invalid/empty input string.")
             return defaults
 
         # Clean the string
@@ -1668,13 +1688,13 @@ class NBAFeatureEngine:
         form_len = len(form_string)
 
         if form_len == 0 or form_string == 'N/A':
-            if is_debug: logger.debug("Form Helper: Returning default due to empty/NA string after cleaning.")
+            #if is_debug: logger.debug("Form Helper: Returning default due to empty/NA string after cleaning.")
             return defaults
 
         # Calculate Win Percentage
         wins = form_string.count('W')
         form_win_pct = wins / form_len
-        if is_debug: logger.debug(f"Form Helper: Wins={wins}, Len={form_len}, WinPct={form_win_pct:.3f}")
+        #if is_debug: logger.debug(f"Form Helper: Wins={wins}, Len={form_len}, WinPct={form_win_pct:.3f}")
 
         # Calculate Current Streak
         current_streak = 0
@@ -1687,7 +1707,7 @@ class NBAFeatureEngine:
                 else:
                     break
             current_streak = streak_count if streak_char == 'W' else -streak_count
-        if is_debug: logger.debug(f"Form Helper: Calculated Streak={current_streak}")
+        #if is_debug: logger.debug(f"Form Helper: Calculated Streak={current_streak}")
 
 
         # Calculate Momentum Direction (comparing recent half vs older half)
@@ -1699,18 +1719,18 @@ class NBAFeatureEngine:
             older_half_str = form_string[:form_len - split_point] # Handles odd lengths correctly
             len_r, len_o = len(recent_half_str), len(older_half_str)
 
-            if is_debug: logger.debug(f"Form Helper: Momentum check - Older='{older_half_str}' (len={len_o}), Recent='{recent_half_str}' (len={len_r})")
+            #if is_debug: logger.debug(f"Form Helper: Momentum check - Older='{older_half_str}' (len={len_o}), Recent='{recent_half_str}' (len={len_r})")
 
             if len_r > 0 and len_o > 0: # Ensure both halves exist
                 wins_r = recent_half_str.count('W')
                 wins_o = older_half_str.count('W')
                 pct_r = wins_r / len_r
                 pct_o = wins_o / len_o
-                if is_debug: logger.debug(f"Form Helper: Momentum check - OlderPct={pct_o:.3f}, RecentPct={pct_r:.3f}")
+                #if is_debug: logger.debug(f"Form Helper: Momentum check - OlderPct={pct_o:.3f}, RecentPct={pct_r:.3f}")
 
                 if pct_r > pct_o: momentum_direction = 1.0 # Improving form
                 elif pct_r < pct_o: momentum_direction = -1.0 # Declining form
-        if is_debug: logger.debug(f"Form Helper: Calculated MomentumDir={momentum_direction}")
+        #if is_debug: logger.debug(f"Form Helper: Calculated MomentumDir={momentum_direction}")
 
 
         final_metrics = {
@@ -1718,7 +1738,7 @@ class NBAFeatureEngine:
             'current_streak': int(current_streak),
             'momentum_direction': momentum_direction
         }
-        if is_debug: logger.debug(f"Form Helper: Returning metrics: {final_metrics}")
+        #if is_debug: logger.debug(f"Form Helper: Returning metrics: {final_metrics}")
 
         return final_metrics
 
@@ -1727,7 +1747,6 @@ class NBAFeatureEngine:
                               df: pd.DataFrame,
                               historical_games_df: Optional[pd.DataFrame] = None,
                               team_stats_df: Optional[pd.DataFrame] = None,
-                              betting_odds_data: Optional[Union[pd.DataFrame, Dict[Any, Dict]]] = None,
                               rolling_windows: List[int] = [5, 10, 20],
                               h2h_window: int = 7
                               ) -> pd.DataFrame:

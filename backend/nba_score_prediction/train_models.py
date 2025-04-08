@@ -3,6 +3,9 @@
 from __future__ import annotations  # Keep this at the top
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 from sklearn.linear_model import Ridge as MetaRidge
+from sklearn.linear_model import LassoCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import SelectFromModel
 
 if TYPE_CHECKING:  # Keep TYPE_CHECKING block if needed for linters
     from supabase import Client
@@ -72,7 +75,6 @@ except ImportError:
 try:
     from .feature_engineering import NBAFeatureEngine
     from .models import (RandomForestScorePredictor, RidgeScorePredictor, compute_recency_weights)
-    from .prediction import fetch_and_parse_betting_odds # Import the function
     from . import utils
     if XGBOOST_AVAILABLE:
         from .models import XGBoostScorePredictor
@@ -765,10 +767,15 @@ def tune_and_evaluate_predictor(
 
     # --- Ensure Feature List is Unique ---
     # Use this unique list consistently throughout the function
-    feature_list_unique = list(pd.Index(feature_list).unique())
+    # Use the passed feature_list directly
+    feature_list_unique = list(pd.Index(feature_list).unique()) # Keep this check
+    logger.info(f"tune_and_evaluate_predictor received feature_list with {len(feature_list_unique)} features.")
+
     if len(feature_list_unique) != len(feature_list):
         logger.warning(f"Duplicate features found. Using {len(feature_list_unique)} unique features.")
     logger.debug(f"Using unique feature list ({len(feature_list_unique)} features).")
+
+    # IS THIS WHAT I'M SUPPOSED TO REMOVE BELOW?
 
     # --- Combine Train and Validation Data for Final Fit ---
     # Include 'game_date' if needed for weights later
@@ -793,20 +800,22 @@ def tune_and_evaluate_predictor(
     logger.debug(f"Preparing data for hyperparameter tuning using X_train.")
     try:
         # Select unique features from X_train
-        X_tune_features = X_train[feature_list_unique].copy()
-        # Align y_train using the index of the selected features
-        y_tune_home = y_train_home.loc[X_tune_features.index].copy()
-        # Away target usually not needed directly for tuning single-output MAE/RMSE
-        # y_tune_away = y_train_away.loc[X_tune_features.index].copy()
-        logger.debug(f"Tuning data shapes: X={X_tune_features.shape}, y={y_tune_home.shape}")
+        X_tune_features = X_train[feature_list_unique].copy() # Select from input X_train
+        # ...
+        X_train_full_for_fit = X_train_full[feature_list_unique].copy() # Select from combined Train+Val
+        # ...
+        X_test_final = X_test[feature_list_unique].copy() # Select from input X_test
+        y_tune_home = y_train_home.loc[X_tune_features.index].copy() # <<< RESTORE/ADD THIS LINE
+    # y_tune_away = y_train_away.loc[X_tune_features.index].copy() # If needed for a different scorer
+
+        logger.debug(f"Tuning data shapes: X={X_tune_features.shape}, y_home={y_tune_home.shape}")
     except KeyError as ke:
-        logger.error(f"KeyError preparing tuning data. Missing features? {ke}", exc_info=True)
-        missing = set(feature_list_unique) - set(X_train.columns)
-        if missing: logger.error(f"Features missing in X_train: {missing}")
+        logger.error(f"KeyError preparing tuning data targets: {ke}", exc_info=True)
+        # Handle error appropriately, maybe return None, None
         return None, None
     except Exception as prep_err:
-         logger.error(f"Error preparing tuning data: {prep_err}", exc_info=True)
-         return None, None
+        logger.error(f"Error preparing tuning data targets: {prep_err}", exc_info=True)
+        return None, None
 
     # --- Calculate Sample Weights for Tuning (if enabled) ---
     tune_fit_params = {}
@@ -1017,7 +1026,7 @@ def tune_and_evaluate_predictor(
                 plot_residuals_analysis_detailed(y_true=y_test_away_aligned, y_pred=pred_away_test, title_prefix=f"Tuned {model_full_name} (Away) - Test Set", save_dir=plot_dir if save_plots else None, show_plot=visualize)
                 logger.info(f"Attempting feature importance for {model_full_name}...")
                 pipeline_home = getattr(final_predictor, 'pipeline_home', None); pipeline_away = getattr(final_predictor, 'pipeline_away', None)
-                features_in = getattr(final_predictor, 'feature_names_in_', feature_list_unique)
+                features_in = getattr(final_predictor, 'feature_names_in_', feature_list_unique) # Use the list
                 if pipeline_home and pipeline_away and features_in:
                     plot_feature_importances(models_dict={f"{model_full_name}_Home": pipeline_home, f"{model_full_name}_Away": pipeline_away},
                          feature_names=features_in, top_n=30, plot_groups=True, save_dir=plot_dir / "feature_importance" if save_plots else None, show_plot=visualize)
@@ -1117,32 +1126,23 @@ def run_training_pipeline(args):
     # if both inputs are the same initially. The filtering step at the end becomes
     # slightly redundant but harmless in this case.
     logger.info(f"Processing {len(historical_df)} games for feature generation...")
-    # --- Fetch Odds ---
-    # Get relevant game IDs (e.g., from historical_df)
-    all_game_ids = historical_df['game_id'].astype(str).unique().tolist()
-    logger.info("Fetching betting odds data...")
-    # Make sure fetch_and_parse_betting_odds is imported or defined
-    live_odds_dict = fetch_and_parse_betting_odds(supabase_client, all_game_ids)
-    if not live_odds_dict:
-        logger.warning("No betting odds were fetched or parsed.")
-
+    
     # --- Generate Features ---
     logger.info("Generating features...")
     features_df = feature_engine.generate_all_features(
         df=historical_df.copy(),
         historical_games_df=historical_df.copy(),
         team_stats_df=team_stats_df.copy() if not team_stats_df.empty else None,
-        betting_odds_data=live_odds_dict, # <--- PASS THE FETCHED DICTIONARY HERE
         rolling_windows=rolling_windows_list,
         h2h_window=args.h2h_window
     )
-        # --- MODIFICATION END ---
 
     if features_df.empty:
         logger.error("Feature generation failed. Exiting.")
         sys.exit(1)
 
-    logger.info(f"Shape of features_df before duplicate removal: {features_df.shape}")
+    # --- Initial Checks & Feature Value Debugging on Full features_df ---
+
     if features_df.columns.duplicated().any():
         logger.warning("Duplicate column names found in features_df! Removing duplicates, keeping first occurrence.")
         features_df = features_df.loc[:, ~features_df.columns.duplicated(keep='first')]
@@ -1150,95 +1150,150 @@ def run_training_pipeline(args):
     else:
         logger.info("No duplicate column names found in features_df.")
 
-    initial_rows = len(features_df)
+        initial_rows = len(features_df)
     features_df = features_df.dropna(subset=TARGET_COLUMNS)
+    logger.info(f"Dropped {initial_rows - len(features_df)} rows due to missing target values.")
+    if features_df.empty:
+         logger.error("No rows remaining after dropping missing targets. Exiting.")
+         sys.exit(1)
 
     # <<< --- START FEATURE VALUE DEBUGGING --- >>>
     logger.info("Analyzing generated feature values...")
-    if not features_df.empty:
-        try:
-            # Select only numeric columns for analysis
-            numeric_features_df = features_df.select_dtypes(include=np.number)
 
-            if not numeric_features_df.empty:
-                # 1. Calculate Descriptive Statistics
-                desc_stats = numeric_features_df.describe().transpose()
+    # (features_df is generated and initial cleaning is done)
+    logger.info(f"Shape of features_df before NaN handling for LASSO: {features_df.shape}")
 
-                # 2. Calculate Percentage of Zeros
-                zero_pct = (numeric_features_df == 0).mean() * 100
-                zero_pct.rename('zero_percentage', inplace=True)
+    # --- LASSO Feature Selection ---
+    logger.info("--- Starting LASSO Feature Selection ---")
 
-                # 3. Combine Stats
-                feature_summary = pd.concat([desc_stats, zero_pct], axis=1)
+    # Define potential features (all numeric columns except targets and IDs/dates)
+    potential_feature_cols = features_df.select_dtypes(include=np.number).columns.tolist()
+    exclude_cols = TARGET_COLUMNS + ['game_id', 'game_date'] # Add any other non-feature numeric IDs if needed
+    feature_candidates = [col for col in potential_feature_cols if col not in exclude_cols and not features_df[col].isnull().all()]
 
-                # 4. Define Output Path
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                summary_filename = f"feature_value_summary_{timestamp}.txt"
-                summary_path = REPORTS_DIR / summary_filename
+    # Separate features (X) and targets (y_home, y_away) for LASSO
+    X_lasso_raw = features_df[feature_candidates].copy()
+    y_home_lasso = features_df[TARGET_COLUMNS[0]].copy()
+    y_away_lasso = features_df[TARGET_COLUMNS[1]].copy()
 
-                # 5. Save to TXT file
-                with open(summary_path, 'w') as f:
-                    f.write(f"Feature Value Summary ({timestamp})\n")
-                    f.write(f"Total Features Analyzed: {len(feature_summary)}\n")
-                    f.write("="*50 + "\n\n")
-
-                    # Highlight potentially problematic features
-                    problem_threshold_std = 1e-6 # Very low standard deviation threshold
-                    problem_threshold_zero_pct = 98.0 # High zero percentage threshold
-
-                    problematic_features = feature_summary[
-                        (feature_summary['std'] < problem_threshold_std) |
-                        (feature_summary['zero_percentage'] > problem_threshold_zero_pct)
-                    ]
-
-                    if not problematic_features.empty:
-                        f.write("--- POTENTIALLY PROBLEMATIC FEATURES ---\n")
-                        f.write(f"(Features with std < {problem_threshold_std} OR zero % > {problem_threshold_zero_pct}%)\n\n")
-                        f.write(problematic_features.to_string(float_format="%.4f"))
-                        f.write("\n\n" + "="*50 + "\n\n")
-                    else:
-                        f.write("--- No obvious problematic features found based on thresholds. ---\n\n")
-
-
-                    f.write("--- FULL FEATURE SUMMARY ---\n\n")
-                    f.write(feature_summary.to_string(float_format="%.4f"))
-
-                logger.info(f"Feature value summary saved to: {summary_path}")
-                if not problematic_features.empty:
-                    logger.warning(f"Found {len(problematic_features)} potentially problematic features (low variance or high zero %). See {summary_filename}")
-
-            else:
-                logger.warning("No numeric features found in features_df to analyze.")
-
-        except Exception as e_summary:
-            logger.error(f"Error generating feature value summary: {e_summary}", exc_info=True)
+    # --- Handle NaNs (Verification Step) ---
+    logger.info("Checking for NaNs before LASSO scaling...")
+    nan_counts = X_lasso_raw.isnull().sum()
+    cols_with_nan = nan_counts[nan_counts > 0]
+    if not cols_with_nan.empty:
+        # This should ideally not happen based on the summary, but good to have the check
+        logger.error(f"UNEXPECTED NaNs found before LASSO in columns: {cols_with_nan.index.tolist()}. Fix upstream feature engineering or implement robust NaN handling here.")
+        # sys.exit(1) # Or implement mean/median fill if absolutely necessary as a fallback
     else:
-        logger.warning("features_df is empty, skipping feature value analysis.")
-    # <<< --- END FEATURE VALUE DEBUGGING --- >>>
+        logger.info("Confirmed: No NaNs found in feature candidates before LASSO.")
 
+    # --- Remove Zero-Variance Features ---
+    logger.info("Checking for and removing zero-variance features...")
+    variances = X_lasso_raw.var()
+    zero_var_cols = variances[variances < 1e-8].index.tolist() # Use a small threshold for floating point precision
+    if zero_var_cols:
+        logger.warning(f"Removing {len(zero_var_cols)} zero-variance columns: {zero_var_cols}")
+        # Keep only columns with variance > threshold
+        feature_candidates_final = variances[variances >= 1e-8].index.tolist()
+        X_lasso_final = X_lasso_raw[feature_candidates_final].copy()
+        logger.info(f"Proceeding with {X_lasso_final.shape[1]} non-zero-variance features.")
+    else:
+        logger.info("No zero-variance features found.")
+        X_lasso_final = X_lasso_raw # Use the original if none removed
 
-    logger.info("Splitting data (time-based)...")
-    rows_dropped = initial_rows - len(features_df)
-    if rows_dropped > 0:
-        logger.warning(f"Dropped {rows_dropped} rows due to missing target values.")
-    if features_df.empty:
-        logger.error("No rows remaining after dropping missing targets. Exiting.")
+    if X_lasso_final.empty:
+        logger.error("LASSO: No features remaining after removing zero-variance columns.")
         sys.exit(1)
-    logger.info(f"Feature generation complete. Final shape: {features_df.shape}")
 
-    logger.info("Splitting data (time-based)...")
-    features_df = features_df.sort_values('game_date').reset_index(drop=True)
-    n = len(features_df)
+    # --- Scale Features for LASSO ---
+    logger.info("Scaling features for LASSO...")
+    scaler = StandardScaler()
+    X_lasso_scaled = scaler.fit_transform(X_lasso_final) # Scale the potentially reduced set
+
+    # Save the scaler if you need to inverse transform later, or apply to new data
+    # scaler_filename = MAIN_MODELS_DIR / "lasso_scaler.joblib"
+    # joblib.dump(scaler, scaler_filename)
+    # logger.info(f"LASSO Scaler saved to {scaler_filename}")
+
+
+    # --- Run LassoCV for Home Score ---
+    logger.info("Running LassoCV for Home Score...")
+    lasso_cv_home = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000) # Increased max_iter
+    lasso_cv_home.fit(X_lasso_scaled, y_home_lasso)
+    logger.info(f"LassoCV (Home) completed. Optimal alpha: {lasso_cv_home.alpha_:.6f}")
+
+    # --- Run LassoCV for Away Score ---
+    logger.info("Running LassoCV for Away Score...")
+    lasso_cv_away = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000) # Increased max_iter
+    lasso_cv_away.fit(X_lasso_scaled, y_away_lasso)
+    logger.info(f"LassoCV (Away) completed. Optimal alpha: {lasso_cv_away.alpha_:.6f}")
+
+    # --- Get Selected Features (Union) ---
+    # Use SelectFromModel or check coefficients directly
+    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=1e-5) # Use a small threshold to avoid near-zero coefs
+    selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=1e-5)
+
+    selected_mask_home = selector_home.get_support()
+    selected_mask_away = selector_away.get_support()
+
+    # Combine masks (Union: keep if selected by EITHER model)
+    combined_mask = selected_mask_home | selected_mask_away
+
+    # Get the names of the selected features
+    selected_features_lasso = X_lasso_final.columns[combined_mask].tolist()
+
+
+    num_selected = len(selected_features_lasso)
+    logger.info(f"LASSO selected {num_selected} features (union of home/away selections).")
+
+    if num_selected == 0:
+        logger.error("LASSO selected 0 features. Check data, scaling, or LassoCV parameters (e.g., alpha range, cv). Exiting.")
+        # Potentially fall back to using all features or a default set?
+        # For now, exit is safer.
+        sys.exit(1)
+    elif num_selected < 10: # Arbitrary low number warning
+        logger.warning(f"LASSO selected a very small number of features ({num_selected}). Model performance might be affected.")
+
+    logger.debug(f"Selected features: {selected_features_lasso}")
+
+    # --- Create DataFrame with only selected features ---
+    # Keep essential non-feature columns for splitting and potential weighting
+    essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
+    final_cols_for_split = essential_non_feature_cols + selected_features_lasso
+
+    # Ensure all these columns exist in the original features_df before subsetting
+    missing_final_cols = [col for col in final_cols_for_split if col not in features_df.columns]
+    if missing_final_cols:
+        logger.error(f"Columns required for final split DataFrame are missing from features_df: {missing_final_cols}. Exiting.")
+        sys.exit(1)
+
+    # Subset the original features_df
+    features_df_selected = features_df[final_cols_for_split].copy()
+    logger.info(f"Created features_df_selected with shape: {features_df_selected.shape}")
+
+    # --- END LASSO Feature Selection ---
+
+    # --- Train/Val/Test Split (Now use features_df_selected) ---
+    logger.info("Splitting data (time-based) using LASSO-selected features...")
+    # Sort by date (important!)
+    features_df_selected = features_df_selected.sort_values('game_date').reset_index(drop=True)
+
+    n = len(features_df_selected)
     test_split_idx = int(n * (1 - args.test_size))
-    val_split_frac = min(args.val_size, 1.0 - args.test_size - 0.01)
+    val_split_frac = min(args.val_size, 1.0 - args.test_size - 0.01) # Ensure val doesn't overlap test
     val_split_idx = int(n * (1 - args.test_size - val_split_frac))
 
-    # --- Split the data into train, validation, and test sets ---
-    train_df = features_df.iloc[:val_split_idx].copy()
-    val_df   = features_df.iloc[val_split_idx:test_split_idx].copy()
-    test_df  = features_df.iloc[test_split_idx:].copy()
+    # Perform the split on features_df_selected
+    train_df = features_df_selected.iloc[:val_split_idx].copy()
+    val_df   = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
+    test_df  = features_df_selected.iloc[test_split_idx:].copy()
 
-    # Extract target values from each split (row order remains intact)
+    # --- Prepare X and y for Base Model Training ---
+    # Use the selected_features_lasso list
+    X_train = train_df[selected_features_lasso + (['game_date'] if args.use_weights else [])].copy()
+    X_val   = val_df[selected_features_lasso + (['game_date'] if args.use_weights else [])].copy()
+    X_test  = test_df[selected_features_lasso].copy() # No date needed for final test prediction typically
+
     y_train_home = train_df[TARGET_COLUMNS[0]].copy()
     y_train_away = train_df[TARGET_COLUMNS[1]].copy()
     y_val_home   = val_df[TARGET_COLUMNS[0]].copy()
@@ -1246,41 +1301,19 @@ def run_training_pipeline(args):
     y_test_home  = test_df[TARGET_COLUMNS[0]].copy()
     y_test_away  = test_df[TARGET_COLUMNS[1]].copy()
 
-    # Reindex each split to force exactly the REFINED_TOP_100_FEATURES columns
-    X_train = train_df.reindex(columns=REFINED_TOP_100_FEATURES, fill_value=0.0)
-    X_val   = val_df.reindex(columns=REFINED_TOP_100_FEATURES, fill_value=0.0)
-    X_test  = test_df.reindex(columns=REFINED_TOP_100_FEATURES, fill_value=0.0)
+    logger.info(f"Data Split: Train={len(X_train)}, Validation={len(X_val)}, Test={len(X_test)}")
+    logger.debug(f"X_train shape: {X_train.shape}")
+    logger.debug(f"X_val shape: {X_val.shape}")
+    logger.debug(f"X_test shape: {X_test.shape}")
 
-    logger.info(f"Data Split: Train={len(X_train)} samples, Validation={len(X_val)} samples, Test={len(X_test)} samples.")
-    logger.debug(f"X_train shape: {X_train.shape}, unique cols: {len(X_train.columns.unique())}")
-    logger.debug(f"X_val shape: {X_val.shape}, unique cols: {len(X_val.columns.unique())}")
-    logger.debug(f"X_test shape: {X_test.shape}, unique cols: {len(X_test.columns.unique())}")
+    # --- Feature list to pass to the training function ---
+    # This now dynamically comes from LASSO
+    final_feature_list_for_models = selected_features_lasso # Use this list directly
 
-    # Use these reindexed DataFrames for feature selection and subsequent modeling.
-    selected_features = select_features(feature_engine, X_train)
-    logger.info(f"Selected {len(selected_features)} features for model training.")
+    # (Remove the old `select_features` function call and REFINED_TOP_100_FEATURES logic)
+    # selected_features = select_features(feature_engine, X_train) # << REMOVE THIS LINE
+    logger.info(f"Using {len(final_feature_list_for_models)} features selected by LASSO for model training.")
 
-    # If sample weights are used, append 'game_date' to the feature set.
-    train_cols = selected_features[:]
-    if args.use_weights and 'game_date' in X_train.columns:
-        train_cols.append('game_date')
-    val_cols = selected_features[:]
-    if args.use_weights and 'game_date' in X_val.columns:
-        val_cols.append('game_date')
-    selected_features_unique = list(pd.Index(selected_features).unique())
-
-    logger.debug(f"Unique columns in X_train: {len(list(pd.Index(train_cols).unique()))}")
-    logger.debug(f"Unique columns in X_val: {len(list(pd.Index(val_cols).unique()))}")
-    logger.debug(f"Unique columns in X_test: {len(selected_features_unique)}")
-
-    # Reassign X_train, X_val, X_test using the reindexed DataFrames (do not revert to original train_df, etc.)
-    X_train = X_train[list(pd.Index(train_cols).unique())].copy()
-    X_val   = X_val[list(pd.Index(val_cols).unique())].copy()
-    X_test  = X_test[selected_features_unique].copy()
-
-    logger.debug(f"Final X_train shape: {X_train.shape}, unique cols: {len(X_train.columns.unique())}")
-    logger.debug(f"Final X_val shape: {X_val.shape}, unique cols: {len(X_val.columns.unique())}")
-    logger.debug(f"Final X_test shape: {X_test.shape}, unique cols: {len(X_test.columns.unique())}")
 
     # --- Define Parameter Distributions for RandomizedSearchCV ---
     XGB_PARAM_DIST = {
@@ -1325,7 +1358,8 @@ def run_training_pipeline(args):
             X_val=X_val.copy(), y_val_home=y_val_home.copy(), y_val_away=y_val_away.copy(),
             X_test=X_test.copy(), y_test_home=y_test_home.copy(), y_test_away=y_test_away.copy(),
             model_name_prefix=model_key,
-            feature_list=selected_features_unique, # Pass the unique list
+            # ---> Pass the LASSO selected features <---
+            feature_list=final_feature_list_for_models,
             param_dist=param_dist_current,
             n_iter=args.tune_iterations,
             n_splits=args.cv_splits,
@@ -1549,9 +1583,148 @@ def run_training_pipeline(args):
         except Exception as meta_e:
             logger.error(f"Failed to train or save meta-model: {meta_e}", exc_info=True)
 
-    if not meta_model_trained_and_saved:
-        logger.warning("Meta-model was not trained or saved due to previous errors.")
+        if not meta_model_trained_and_saved:
+            logger.warning("Meta-model was not trained or saved due to previous errors.")
 
+        # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        # +++ START: ADDED BLOCK FOR FINAL ENSEMBLE TEST EVALUATION +++
+        # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        if meta_model_trained_and_saved:  # Only evaluate if meta-model was successfully trained/saved
+            logger.info("\n--- Evaluating Final Stacked Ensemble on Test Set ---")
+            loaded_base_models = {}
+            # Use predictor_map (defined earlier) to reload each model via its own load_model method.
+            for model_key in required_for_stacking:
+                predictor_cls = predictor_map.get(model_key)
+                if predictor_cls is None:
+                    logger.warning(f"No predictor class available for model {model_key}. Skipping.")
+                    continue
+                # Find the saved path for this model from the collected metrics in all_metrics.
+                saved_path = None
+                for m in all_metrics:
+                    full_model_name = m.get('model_name')
+                    if full_model_name and full_model_name.split('_score_predictor')[0] == model_key:
+                        saved_path = m.get('save_path')
+                        break
+                if not saved_path or not os.path.exists(saved_path):
+                    logger.warning(f"Saved path missing or invalid for {model_key}: '{saved_path}'. Skipping.")
+                    continue
+
+                logger.info(f"Loading base model {model_key} from {saved_path} for test prediction using load_model...")
+                try:
+                    # Here we assume that load_model is available.
+                    # If load_model is an instance method, you may need to instantiate first:
+                    predictor_instance = predictor_cls().load_model(saved_path)
+                    # Alternatively, if load_model is a class method, you could do:
+                    # predictor_instance = predictor_cls.load_model(saved_path)
+                    if predictor_instance is None:
+                        logger.error(f"Loaded instance for {model_key} is None. Skipping.")
+                        continue
+                    if not hasattr(predictor_instance, 'predict'):
+                        logger.error(f"Loaded instance for {model_key} does not have a predict method. Skipping.")
+                        continue
+                    loaded_base_models[model_key] = predictor_instance
+                    logger.info(f"Successfully loaded predictor instance for {model_key}.")
+                except Exception as load_err:
+                    logger.error(f"Failed to load base model {model_key} using load_model: {load_err}", exc_info=True)
+
+            if len(loaded_base_models) != len(required_for_stacking):
+                logger.error(f"Failed to load all required base models ({required_for_stacking}). Loaded: {list(loaded_base_models.keys())}. Skipping final ensemble evaluation.")
+            else:
+                # --- Generate predictions using loaded base models on X_test ---
+                meta_predictions_list = []
+                for model_name in required_for_stacking:
+                    base_model_predictor = loaded_base_models.get(model_name)
+                    if base_model_predictor is None:
+                        logger.error(f"Predictor for {model_name} is missing. Skipping its prediction.")
+                        continue
+
+                    logger.info(f"Generating test set predictions using loaded base model: {model_name}...")
+                    try:
+                        predictions_df_test = base_model_predictor.predict(X_test)
+                        # Verify that the returned predictions have expected columns:
+                        if predictions_df_test is None or 'predicted_home_score' not in predictions_df_test.columns:
+                            raise ValueError(f"Test prediction failed or invalid format for {model_name}.")
+                        # Wrap predictions into a DataFrame with distinct column names
+                        pred_df = pd.DataFrame({
+                            f'{model_name}_pred_home': predictions_df_test['predicted_home_score'],
+                            f'{model_name}_pred_away': predictions_df_test['predicted_away_score']
+                        }, index=X_test.index)
+                        meta_predictions_list.append(pred_df)
+                    except Exception as pred_err:
+                        logger.error(f"Error generating predictions with {model_name}: {pred_err}", exc_info=True)
+
+                # Only proceed if predictions were obtained from at least one required base model.
+                if not meta_predictions_list:
+                    logger.error("No valid base model predictions obtained. Skipping final ensemble evaluation.")
+                else:
+                    try:
+                        # Concatenate predictions to form meta-model input features
+                        X_meta_test = pd.concat(meta_predictions_list, axis=1)
+                        logger.info(f"Created meta-model test input features with shape: {X_meta_test.shape}")
+                        logger.debug(f"Meta-model test features: {X_meta_test.columns.tolist()}")
+
+                        # Load the saved meta-model (assumed to be saved at meta_model_save_path)
+                        meta_model_payload = joblib.load(meta_model_save_path)
+                        meta_model_home = meta_model_payload['meta_model_home']
+                        meta_model_away = meta_model_payload['meta_model_away']
+                        logger.info(f"Loaded saved stacking meta-model from {meta_model_save_path}.")
+
+                        # Generate final ensemble predictions
+                        final_preds_home = meta_model_home.predict(X_meta_test)
+                        final_preds_away = meta_model_away.predict(X_meta_test)
+                        # Wrap predictions in Series to maintain index alignment
+                        final_preds_home_s = pd.Series(final_preds_home, index=X_meta_test.index)
+                        final_preds_away_s = pd.Series(final_preds_away, index=X_meta_test.index)
+                        logger.info("Generated final predictions from stacked ensemble.")
+
+                        # --- Evaluate the final predictions ---
+                        logger.info("--- Final Stacked Ensemble Test Set Metrics ---")
+                        # Align true test targets using the prediction index
+                        y_test_home_aligned = y_test_home.loc[final_preds_home_s.index]
+                        y_test_away_aligned = y_test_away.loc[final_preds_away_s.index]
+
+                        # Basic Metrics
+                        test_metrics_home = calculate_regression_metrics(y_test_home_aligned, final_preds_home_s)
+                        test_metrics_away = calculate_regression_metrics(y_test_away_aligned, final_preds_away_s)
+                        logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Home={test_metrics_home.get('mae', np.nan):.3f}, Away={test_metrics_away.get('mae', np.nan):.3f}")
+                        logger.info(f"FINAL STACKED ENSEMBLE Test RMSE: Home={test_metrics_home.get('rmse', np.nan):.3f}, Away={test_metrics_away.get('rmse', np.nan):.3f}")
+                        logger.info(f"FINAL STACKED ENSEMBLE Test R2  : Home={test_metrics_home.get('r2', np.nan):.3f}, Away={test_metrics_away.get('r2', np.nan):.3f}")
+
+                        try:
+                            test_mae_total = mean_absolute_error(y_test_home_aligned + y_test_away_aligned,
+                                                                final_preds_home_s + final_preds_away_s)
+                            test_mae_diff = mean_absolute_error(y_test_home_aligned - y_test_away_aligned,
+                                                                final_preds_home_s - final_preds_away_s)
+                            logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Total={test_mae_total:.3f}, Diff={test_mae_diff:.3f}")
+                        except Exception:
+                            logger.warning("Could not calculate Total/Diff MAE for ensemble.")
+
+                        # Custom Losses
+                        try:
+                            y_true_comb = np.vstack((y_test_home_aligned.values, y_test_away_aligned.values)).T
+                            y_pred_comb = np.vstack((final_preds_home_s.values, final_preds_away_s.values)).T
+                            final_score_loss = nba_score_loss(y_true_comb, y_pred_comb)
+                            final_dist_loss = nba_distribution_loss(y_true_comb, y_pred_comb)
+                            final_combined_loss = combined_nba_loss(y_true_comb, y_pred_comb)
+                            logger.info(f"FINAL STACKED ENSEMBLE Custom Losses: Score={final_score_loss:.3f}, Dist={final_dist_loss:.3f}, Combined={final_combined_loss:.3f}")
+                        except Exception as loss_err:
+                            logger.warning(f"Could not calculate custom losses for ensemble: {loss_err}")
+
+                        # Betting Accuracy
+                        try:
+                            final_betting_metrics = calculate_betting_metrics(y_true_comb, y_pred_comb, vegas_lines=None)
+                            logger.info(f"FINAL STACKED ENSEMBLE Betting Metrics: {final_betting_metrics}")
+                        except Exception as bet_err:
+                            logger.warning(f"Could not calculate betting metrics for ensemble: {bet_err}")
+
+                    except Exception as e:
+                        logger.error("Error during final ensemble evaluation: " + str(e), exc_info=True)
+            # End of ensemble evaluation block.
+        else:
+            logger.warning("Skipping final ensemble evaluation because meta-model was not trained/saved.")
+
+        end_time_pipeline = time.time()
+        logger.info(f"--- NBA Model Tuning & Training Pipeline Finished in {end_time_pipeline - start_pipeline_time:.2f} seconds ---")
 
 parser = argparse.ArgumentParser(description="NBA Score Prediction Model Tuning & Training Pipeline")
 
