@@ -74,7 +74,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 # --- Paths and Constants ---
-MODELS_DIR = Path(getattr(config, 'MAIN_MODELS_DIR', BACKEND_DIR / 'models' / 'saved'))
+MODELS_DIR = Path(getattr(config, 'MAIN_MODELS_DIR', PROJECT_ROOT / 'models' / 'saved'))
 REPORTS_DIR = PROJECT_ROOT / 'reports'
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -85,7 +85,7 @@ DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
 DEFAULT_UPCOMING_DAYS_WINDOW = 2
 
 # --- Meta-Model Configuration ---
-META_MODEL_FILENAME = "stacking_meta_model.joblib" # Ensure this matches your saved file
+META_MODEL_FILENAME = "stacking_meta_model_xgb_hs.joblib" # Ensure this matches your saved file
 FALLBACK_ENSEMBLE_WEIGHTS: Dict[str, float] = {
     "xgboost": 0.30,
     "random_forest": 0.40,

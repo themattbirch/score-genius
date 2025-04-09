@@ -966,7 +966,7 @@ def analyze_main_predictors_learning_curves(*args, **kwargs): pass
 # SECTION 7: MAIN EXECUTION BLOCK
 # ==============================================================================
 def run_training_pipeline(args):
-    start_pipeline_time = time.time() # Make sure time is imported
+    start_pipeline_time = time.time()  # Make sure time is imported
     if args.debug:
         logger.setLevel(logging.DEBUG)
         logger.debug("DEBUG logging enabled.")
@@ -990,18 +990,13 @@ def run_training_pipeline(args):
 
     logger.info("Initializing Feature Engine...")
     feature_engine = NBAFeatureEngine(debug=args.debug)
-    logger.info("Generating features for ALL historical data...") # Message is okay
+    logger.info("Generating features for ALL historical data...")
     rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10]
     logger.info(f"Using rolling windows: {rolling_windows_list}")
 
     # --- MODIFICATION START ---
-    # Pass the *same* historical_df to both 'df' and 'historical_games_df'.
-    # This ensures generate_all_features works on the full dataset first.
-    # The internal logic of generate_all_features will handle the combination correctly
-    # if both inputs are the same initially. The filtering step at the end becomes
-    # slightly redundant but harmless in this case.
     logger.info(f"Processing {len(historical_df)} games for feature generation...")
-    
+
     # --- Generate Features ---
     logger.info("Generating features...")
     features_df = feature_engine.generate_all_features(
@@ -1017,20 +1012,18 @@ def run_training_pipeline(args):
         sys.exit(1)
 
     # --- Initial Checks & Feature Value Debugging on Full features_df ---
-
     if features_df.columns.duplicated().any():
         logger.warning("Duplicate column names found in features_df! Removing duplicates, keeping first occurrence.")
         features_df = features_df.loc[:, ~features_df.columns.duplicated(keep='first')]
         logger.info(f"Shape after duplicate removal: {features_df.shape}")
     else:
         logger.info("No duplicate column names found in features_df.")
-
         initial_rows = len(features_df)
     features_df = features_df.dropna(subset=TARGET_COLUMNS)
     logger.info(f"Dropped {initial_rows - len(features_df)} rows due to missing target values.")
     if features_df.empty:
-         logger.error("No rows remaining after dropping missing targets. Exiting.")
-         sys.exit(1)
+        logger.error("No rows remaining after dropping missing targets. Exiting.")
+        sys.exit(1)
 
     # <<< --- START FEATURE VALUE DEBUGGING --- >>>
     logger.info("Analyzing generated feature values...")
@@ -1038,103 +1031,75 @@ def run_training_pipeline(args):
         try:
             # Select only numeric columns for analysis
             numeric_features_df = features_df.select_dtypes(include=np.number)
-
             if not numeric_features_df.empty:
                 # 1. Calculate Descriptive Statistics
                 desc_stats = numeric_features_df.describe().transpose()
-
                 # 2. Calculate Percentage of Zeros
                 zero_pct = (numeric_features_df == 0).mean() * 100
                 zero_pct.rename('zero_percentage', inplace=True)
-
                 # 3. Combine Stats
                 feature_summary = pd.concat([desc_stats, zero_pct], axis=1)
-
-                # 4. Define Output Path (Ensure REPORTS_DIR is defined globally/earlier)
-                # Make sure 'datetime' from datetime and 'Path' from pathlib are imported
+                # 4. Define Output Path
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 summary_filename = f"feature_value_summary_{timestamp}.txt"
                 summary_path = REPORTS_DIR / summary_filename
-                REPORTS_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
-
+                REPORTS_DIR.mkdir(parents=True, exist_ok=True)
                 # 5. Save to TXT file
                 with open(summary_path, 'w') as f:
                     f.write(f"Feature Value Summary ({timestamp})\n")
-                    f.write(f"Total Numeric Features Analyzed: {len(feature_summary)}\n") # Clarified count
-                    f.write("="*50 + "\n\n")
-
+                    f.write(f"Total Numeric Features Analyzed: {len(feature_summary)}\n")
+                    f.write("=" * 50 + "\n\n")
                     # Highlight potentially problematic features
-                    problem_threshold_std = 1e-6 # Very low standard deviation threshold
-                    problem_threshold_zero_pct = 98.0 # High zero percentage threshold
-
-                    # Handle potential NaN std dev for constant columns before comparison
+                    problem_threshold_std = 1e-6
+                    problem_threshold_zero_pct = 98.0
                     problematic_features = feature_summary[
                         (feature_summary['std'].fillna(0) < problem_threshold_std) |
                         (feature_summary['zero_percentage'] > problem_threshold_zero_pct)
                     ]
-
                     if not problematic_features.empty:
                         f.write("--- POTENTIALLY PROBLEMATIC FEATURES ---\n")
                         f.write(f"(Features with std < {problem_threshold_std} OR zero % > {problem_threshold_zero_pct}%)\n\n")
                         f.write(problematic_features.to_string(float_format="%.4f"))
-                        f.write("\n\n" + "="*50 + "\n\n")
+                        f.write("\n\n" + "=" * 50 + "\n\n")
                     else:
                         f.write("--- No obvious problematic features found based on thresholds. ---\n\n")
-
                     f.write("--- FULL FEATURE SUMMARY ---\n\n")
-                    # Use max_rows display option to print all rows in the text file if needed
                     with pd.option_context('display.max_rows', None):
                         f.write(feature_summary.to_string(float_format="%.4f"))
-
-
                 logger.info(f"Feature value summary saved to: {summary_path}")
                 if not problematic_features.empty:
                     logger.warning(f"Found {len(problematic_features)} potentially problematic features (low variance or high zero %). See {summary_filename}")
-
             else:
                 logger.warning("No numeric features found in features_df to analyze for summary.")
-
         except Exception as e_summary:
             logger.error(f"Error generating feature value summary: {e_summary}", exc_info=True)
     else:
         logger.warning("features_df is empty, skipping feature value analysis.")
-            # <<< --- END FEATURE VALUE DEBUGGING --- >>>
+    # <<< --- END FEATURE VALUE DEBUGGING --- >>>
 
-    # (features_df is generated and initial cleaning is done)
     logger.info(f"Shape of features_df before NaN handling for LASSO: {features_df.shape}")
 
     # --- LASSO Feature Selection ---
     logger.info("--- Starting LASSO Feature Selection ---")
-
-    # Define potential features (all numeric columns except targets and IDs/dates)
     potential_feature_cols = features_df.select_dtypes(include=np.number).columns.tolist()
-    exclude_cols = TARGET_COLUMNS + ['game_id', 'game_date'] # Add any other non-feature numeric IDs if needed
+    exclude_cols = TARGET_COLUMNS + ['game_id', 'game_date']
     logger.info(f"Initial potential numeric feature count (excluding targets/IDs): {len(potential_feature_cols) - len(exclude_cols)}")
-
-    # Prefixes for groups of safe features known before the game
     safe_prefixes = (
         'home_rolling_', 'away_rolling_', 'rolling_',
         'home_season_', 'away_season_', 'season_',
         'matchup_', 'rest_days_', 'is_back_to_back_',
         'games_last_', 'home_form_', 'away_form_'
     )
-
-    # Exact names for individual safe features known before the game
     safe_exact_names = {
-        # Core differentials/advantages
         'rest_advantage',
         'schedule_advantage',
         'form_win_pct_diff',
         'streak_advantage',
         'momentum_diff',
-
-        # Specific streak/momentum features (not covered by form prefixes)
         'home_current_streak',
         'home_momentum_direction',
         'away_current_streak',
         'away_momentum_direction',
-
-        # Other specific safe features (from previous recommendation)
         'game_importance_rank',
         'home_win_last10',
         'away_win_last10',
@@ -1143,244 +1108,153 @@ def run_training_pipeline(args):
         'home_rank',
         'away_rank'
     }
-
     feature_candidates = []
     leaked_or_excluded = []
     temp_candidates = [col for col in potential_feature_cols if col not in exclude_cols and not features_df[col].isnull().all()]
-
     for col in temp_candidates:
         is_safe = False
         if col.startswith(safe_prefixes):
             is_safe = True
         elif col in safe_exact_names:
             is_safe = True
-
         if is_safe:
             feature_candidates.append(col)
         else:
             leaked_or_excluded.append(col)
-
     logger.info(f"Filtered down to {len(feature_candidates)} PRE-GAME feature candidates for LASSO.")
     if leaked_or_excluded:
         logger.debug(f"Excluded {len(leaked_or_excluded)} potential leaky/post-game features: {leaked_or_excluded}")
     # --- End Filter ---
-
-    # Separate features (X) and targets (y_home, y_away) for LASSO
-    # Now uses the filtered 'feature_candidates' list
     X_lasso_raw = features_df[feature_candidates].copy()
     y_home_lasso = features_df[TARGET_COLUMNS[0]].copy()
     y_away_lasso = features_df[TARGET_COLUMNS[1]].copy()
-
-    # --- Handle NaNs (Verification Step) ---
     logger.info("Checking for NaNs before LASSO scaling...")
     nan_counts = X_lasso_raw.isnull().sum()
     cols_with_nan = nan_counts[nan_counts > 0]
     if not cols_with_nan.empty:
-        # This should ideally not happen based on the summary, but good to have the check
         logger.error(f"UNEXPECTED NaNs found before LASSO in columns: {cols_with_nan.index.tolist()}. Fix upstream feature engineering or implement robust NaN handling here.")
-        # sys.exit(1) # Or implement mean/median fill if absolutely necessary as a fallback
     else:
         logger.info("Confirmed: No NaNs found in feature candidates before LASSO.")
-
-    # --- Remove Zero-Variance Features ---
     logger.info("Checking for and removing zero-variance features...")
     variances = X_lasso_raw.var()
-    zero_var_cols = variances[variances < 1e-8].index.tolist() # Use a small threshold for floating point precision
+    zero_var_cols = variances[variances < 1e-8].index.tolist()
     if zero_var_cols:
         logger.warning(f"Removing {len(zero_var_cols)} zero-variance columns: {zero_var_cols}")
-        # Keep only columns with variance > threshold
         feature_candidates_final = variances[variances >= 1e-8].index.tolist()
         X_lasso_final = X_lasso_raw[feature_candidates_final].copy()
         logger.info(f"Proceeding with {X_lasso_final.shape[1]} non-zero-variance features.")
     else:
         logger.info("No zero-variance features found.")
-        X_lasso_final = X_lasso_raw # Use the original if none removed
-
+        X_lasso_final = X_lasso_raw
     if X_lasso_final.empty:
         logger.error("LASSO: No features remaining after removing zero-variance columns.")
         sys.exit(1)
-
-    # --- Scale Features for LASSO ---
     logger.info("Scaling features for LASSO...")
     scaler = StandardScaler()
-    X_lasso_scaled = scaler.fit_transform(X_lasso_final) # Scale the potentially reduced set
-
-    # Save the scaler if you need to inverse transform later, or apply to new data
-    # scaler_filename = MAIN_MODELS_DIR / "lasso_scaler.joblib"
-    # joblib.dump(scaler, scaler_filename)
-    # logger.info(f"LASSO Scaler saved to {scaler_filename}")
-
-
-    # --- Run LassoCV for Home Score ---
+    X_lasso_scaled = scaler.fit_transform(X_lasso_final)
     logger.info("Running LassoCV for Home Score...")
-    lasso_cv_home = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000) # Increased max_iter
+    lasso_cv_home = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000)
     lasso_cv_home.fit(X_lasso_scaled, y_home_lasso)
     logger.info(f"LassoCV (Home) completed. Optimal alpha: {lasso_cv_home.alpha_:.6f}")
-
-    # --- Run LassoCV for Away Score ---
     logger.info("Running LassoCV for Away Score...")
-    lasso_cv_away = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000) # Increased max_iter
+    lasso_cv_away = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000)
     lasso_cv_away.fit(X_lasso_scaled, y_away_lasso)
     logger.info(f"LassoCV (Away) completed. Optimal alpha: {lasso_cv_away.alpha_:.6f}")
-
-    # --- Get Selected Features (Union) ---
-    # Use SelectFromModel or check coefficients directly
-    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=1e-5) # Use a small threshold to avoid near-zero coefs
+    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=1e-5)
     selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=1e-5)
-
     selected_mask_home = selector_home.get_support()
     selected_mask_away = selector_away.get_support()
-
-    # Combine masks (Union: keep if selected by EITHER model)
     combined_mask = selected_mask_home | selected_mask_away
-
-    # Get the names of the selected features
     selected_features_lasso = X_lasso_final.columns[combined_mask].tolist()
-
-
     num_selected = len(selected_features_lasso)
     logger.info(f"LASSO selected {num_selected} features (union of home/away selections).")
-
     if num_selected == 0:
         logger.error("LASSO selected 0 features. Check data, scaling, or LassoCV parameters (e.g., alpha range, cv). Exiting.")
-        # Potentially fall back to using all features or a default set?
-        # For now, exit is safer.
         sys.exit(1)
-    elif num_selected < 10: # Arbitrary low number warning
+    elif num_selected < 10:
         logger.warning(f"LASSO selected a very small number of features ({num_selected}). Model performance might be affected.")
-
     logger.debug(f"Selected features: {selected_features_lasso}")
-
-    # --- Create DataFrame with only selected features ---
-    # Keep essential non-feature columns for splitting and potential weighting
     essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
     final_cols_for_split = essential_non_feature_cols + selected_features_lasso
-
-    # Ensure all these columns exist in the original features_df before subsetting
     missing_final_cols = [col for col in final_cols_for_split if col not in features_df.columns]
     if missing_final_cols:
         logger.error(f"Columns required for final split DataFrame are missing from features_df: {missing_final_cols}. Exiting.")
         sys.exit(1)
-
-    # Subset the original features_df
     features_df_selected = features_df[final_cols_for_split].copy()
     logger.info(f"Created features_df_selected with shape: {features_df_selected.shape}")
-
-    # --- END LASSO Feature Selection ---
-
-    # --- Train/Val/Test Split (Now use features_df_selected) ---
     logger.info("Splitting data (time-based) using LASSO-selected features...")
-    # Sort by date (important!)
     features_df_selected = features_df_selected.sort_values('game_date').reset_index(drop=True)
-
     n = len(features_df_selected)
     test_split_idx = int(n * (1 - args.test_size))
-    val_split_frac = min(args.val_size, 1.0 - args.test_size - 0.01) # Ensure val doesn't overlap test
+    val_split_frac = min(args.val_size, 1.0 - args.test_size - 0.01)
     val_split_idx = int(n * (1 - args.test_size - val_split_frac))
-
-    # Perform the split on features_df_selected
     train_df = features_df_selected.iloc[:val_split_idx].copy()
-    val_df   = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
-    test_df  = features_df_selected.iloc[test_split_idx:].copy()
-
-    # --- Prepare X and y for Base Model Training ---
-    # Use the selected_features_lasso list
+    val_df = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
+    test_df = features_df_selected.iloc[test_split_idx:].copy()
     X_train = train_df[selected_features_lasso + (['game_date'] if args.use_weights else [])].copy()
-    X_val   = val_df[selected_features_lasso + (['game_date'] if args.use_weights else [])].copy()
-    X_test  = test_df[selected_features_lasso].copy() # No date needed for final test prediction typically
-
+    X_val = val_df[selected_features_lasso + (['game_date'] if args.use_weights else [])].copy()
+    X_test = test_df[selected_features_lasso].copy()
     y_train_home = train_df[TARGET_COLUMNS[0]].copy()
     y_train_away = train_df[TARGET_COLUMNS[1]].copy()
-    y_val_home   = val_df[TARGET_COLUMNS[0]].copy()
-    y_val_away   = val_df[TARGET_COLUMNS[1]].copy()
-    y_test_home  = test_df[TARGET_COLUMNS[0]].copy()
-    y_test_away  = test_df[TARGET_COLUMNS[1]].copy()
-
+    y_val_home = val_df[TARGET_COLUMNS[0]].copy()
+    y_val_away = val_df[TARGET_COLUMNS[1]].copy()
+    y_test_home = test_df[TARGET_COLUMNS[0]].copy()
+    y_test_away = test_df[TARGET_COLUMNS[1]].copy()
     logger.info(f"Data Split: Train={len(X_train)}, Validation={len(X_val)}, Test={len(X_test)}")
     logger.debug(f"X_train shape: {X_train.shape}")
     logger.debug(f"X_val shape: {X_val.shape}")
     logger.debug(f"X_test shape: {X_test.shape}")
-
-    # --- Feature list to pass to the training function ---
-    # This now dynamically comes from LASSO
-    final_feature_list_for_models = selected_features_lasso # Use this list directly
-
-    # (Remove the old `select_features` function call and REFINED_TOP_100_FEATURES logic)
-    # selected_features = select_features(feature_engine, X_train) # << REMOVE THIS LINE
+    final_feature_list_for_models = selected_features_lasso
     logger.info(f"Using {len(final_feature_list_for_models)} features selected by LASSO for model training.")
 
-
-    # --- Hyperparameter Search Space for XGBoostScorePredictor --- #
-    # Expanded to include tree depth, learning rate, gamma (minimum loss reduction), and min_child_weight.
+    # --- Hyperparameter Search Spaces ---
     XGB_PARAM_DIST = {
-        'xgb__n_estimators': randint(100, 1001),             # Number of trees between 100 and 1000
-        'xgb__max_depth': randint(3, 11),                      # Tree depth between 3 and 10
-        'xgb__learning_rate': uniform(0.01, 0.14),             # Learning rate between 0.01 and 0.15
-        'xgb__subsample': uniform(0.5, 0.5),                   # Subsample ratio between 0.5 and 1.0 (0.5 + U(0, 0.5))
-        'xgb__colsample_bytree': uniform(0.5, 0.5),            # Column subsample ratio between 0.5 and 1.0
-        'xgb__gamma': uniform(0.0, 0.5),                       # Minimum loss reduction to make a split (between 0 and 0.5)
-        'xgb__min_child_weight': randint(1, 11)                # Minimum sum of instance weight needed in a child (between 1 and 10)
+        'xgb__n_estimators': randint(100, 1001),
+        'xgb__max_depth': randint(3, 11),
+        'xgb__learning_rate': uniform(0.01, 0.14),
+        'xgb__subsample': uniform(0.5, 0.5),
+        'xgb__colsample_bytree': uniform(0.5, 0.5),
+        'xgb__gamma': uniform(0.0, 0.5),
+        'xgb__min_child_weight': randint(1, 11)
     }
-
-    # --- Hyperparameter Search Space for RandomForestScorePredictor ---
-    # Expanded to include not only the maximum features but also number of trees, depth, and minimum sample splits/leaves.
     RF_PARAM_DIST = {
-
-    'rf__n_estimators': randint(100, 801),
-
-    'rf__max_depth': randint(5, 21), # Focus on limited depth
-
-    'rf__min_samples_split': randint(5, 21), # Increase min samples for split
-
-    'rf__min_samples_leaf': randint(3, 11), # Increase min samples for leaf
-
-    'rf__max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7] # Maybe remove 0.9?
-
+        'rf__n_estimators': randint(100, 801),
+        'rf__max_depth': randint(5, 21),
+        'rf__min_samples_split': randint(5, 21),
+        'rf__min_samples_leaf': randint(3, 11),
+        'rf__max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7]
     }
-
-    # --- Hyperparameter Search Space for RidgeScorePredictor ---
-    # Here you can also experiment with the solver and intercept fitting options.
     RIDGE_PARAM_DIST = {
-        'ridge__alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],  # Regularization strength on a log-scale
-        'ridge__fit_intercept': [True, False],                            # Whether to calculate the intercept
-        'ridge__solver': ['auto', 'svd', 'cholesky']                      # Different solvers to see if computation can be optimized or performance improves
+        'ridge__alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],
+        'ridge__fit_intercept': [True, False],
+        'ridge__solver': ['auto', 'svd', 'cholesky']
     }
-
-    # Mapping from model key to its parameter distribution:
     param_dist_map = {
         "xgboost": XGB_PARAM_DIST,
         "random_forest": RF_PARAM_DIST,
         "ridge": RIDGE_PARAM_DIST
     }
-
-    # Mapping from model key to the predictor class:
     predictor_map = {
         "xgboost": XGBoostScorePredictor if XGBOOST_AVAILABLE else None,
         "random_forest": RandomForestScorePredictor,
         "ridge": RidgeScorePredictor
     }
-    # --- Model Tuning & Training Loop (MODIFIED to collect validation preds) ---
     models_to_run = [m.strip().lower() for m in args.models.split(',')]
     logger.info(f"Starting tuning & training for models: {models_to_run}")
     all_metrics = []
-    validation_predictions_collector = {} # ADDED: Dictionary to collect validation preds
-
+    validation_predictions_collector = {}
     for model_key in models_to_run:
         PredictorClass = predictor_map.get(model_key)
         if PredictorClass is None or (model_key == 'xgboost' and not XGBOOST_AVAILABLE):
             logger.warning(f"Model class for '{model_key}' unavailable. Skipping.")
             continue
-
         param_dist_current = param_dist_map.get(model_key) if not args.skip_tuning else None
-
-        # --- MODIFIED CALL ---
         results_tuple = tune_and_evaluate_predictor(
             predictor_class=PredictorClass,
             X_train=X_train.copy(), y_train_home=y_train_home.copy(), y_train_away=y_train_away.copy(),
             X_val=X_val.copy(), y_val_home=y_val_home.copy(), y_val_away=y_val_away.copy(),
             X_test=X_test.copy(), y_test_home=y_test_home.copy(), y_test_away=y_test_away.copy(),
             model_name_prefix=model_key,
-            # ---> Pass the LASSO selected features <---
             feature_list=final_feature_list_for_models,
             param_dist=param_dist_current,
             n_iter=args.tune_iterations,
@@ -1392,27 +1266,22 @@ def run_training_pipeline(args):
             visualize=args.visualize,
             save_plots=args.save_plots
         )
-
-        # --- Collect Results ---
         if results_tuple:
-            metrics, val_preds = results_tuple # Unpack the tuple
+            metrics, val_preds = results_tuple
             if metrics:
                 all_metrics.append(metrics)
             if val_preds:
-                # Store validation preds using model_key as the key
                 validation_predictions_collector[model_key] = val_preds
                 logger.info(f"Collected validation predictions for {model_key}.")
             else:
-                 logger.warning(f"Did not receive validation predictions for {model_key}.")
+                logger.warning(f"Did not receive validation predictions for {model_key}.")
         else:
             logger.error(f"Training/Evaluation failed entirely for {model_key}.")
     # <<< END OF MODEL TRAINING LOOP >>>
 
-        # --- Peek & Filter Context Flags (before stacking) ---
-    possible_flags = [col for col in val_df.columns 
-                      if 'back_to_back' in col or 'rest' in col or 'venue' in col]
+    # --- Peek & Filter Context Flags (before stacking) ---
+    possible_flags = [col for col in val_df.columns if 'back_to_back' in col or 'rest' in col or 'venue' in col]
     logger.info(f"Potential context flags in val_df: {possible_flags}")
-
     candidate_flags = [
         'is_back_to_back',
         'is_back_to_back_home',
@@ -1427,102 +1296,15 @@ def run_training_pipeline(args):
     context_flags_to_try = [f for f in candidate_flags if f in val_df.columns]
     logger.info(f"Using context flags: {context_flags_to_try}")
 
-    # --- Enriched Meta-Model Training Logic (COMMENTED OUT) ---
-    """
-    logger.info("\n--- Starting Enriched Meta-Model Training (Stacking) ---")
-    required_for_stacking = [m for m in ["xgboost", "random_forest", "ridge"] if m in models_to_run]
-    meta_model_trained_and_saved = False
-
-    if not all(key in validation_predictions_collector for key in required_for_stacking):
-        logger.error("Missing validation predictions; cannot train meta-model.")
-    elif 'val_df' not in locals() or val_df.empty:
-        logger.error("Validation DataFrame unavailable; cannot extract context features.")
-    else:
-        logger.info(f"Preparing data for enriched meta-model training using base models: {required_for_stacking}...")
-        try:
-            # 1. Establish reference_index from validation preds
-            first_valid_key = next((k for k in required_for_stacking if k in validation_predictions_collector), None)
-            pred_series = validation_predictions_collector[first_valid_key]['pred_home']
-            reference_index = pred_series.index
-
-            # 2. Build and filter meta-features (predictions only)
-            meta_df_full = pd.concat(meta_features_series_list, axis=1)
-            base_meta_df = meta_df_full[[c for c in meta_df_full.columns if "_resid_" not in c]]
-
-            # 3. Add context flags
-            if not context_flags_to_try:
-                context_df = pd.DataFrame(index=reference_index)
-            else:
-                context_df = val_df.loc[reference_index, context_flags_to_try].copy()
-
-            # 4. Combine meta-features
-            X_meta_train = pd.concat([base_meta_df, context_df], axis=1)
-            logger.debug(f"Combined X_meta_train shape: {X_meta_train.shape}")
-
-            # 5. Handle NaNs in features & targets
-            if X_meta_train.isnull().any().any() or y_val_true_home.isnull().any() or y_val_true_away.isnull().any():
-                feat_nan = X_meta_train.columns[X_meta_train.isnull().any()].tolist()
-                if feat_nan:
-                    logger.warning(f"Filling NaNs in features: {feat_nan}")
-                    X_meta_train = X_meta_train.fillna(X_meta_train.mean())
-                drop_idx = X_meta_train.index[
-                    X_meta_train.isnull().any(axis=1) |
-                    y_val_true_home.isnull() |
-                    y_val_true_away.isnull()
-                ]
-                if not drop_idx.empty:
-                    logger.warning(f"Dropping {len(drop_idx)} rows with NaN in features/targets")
-                    X_meta_train = X_meta_train.drop(index=drop_idx)
-                    y_val_true_home = y_val_true_home.drop(index=drop_idx)
-                    y_val_true_away = y_val_true_away.drop(index=drop_idx)
-                if X_meta_train.empty:
-                    raise ValueError("No data left after NaN handling for meta-model.")
-
-            # Align targets
-            y_val_true_home = y_val_true_home.loc[X_meta_train.index]
-            y_val_true_away = y_val_true_away.loc[X_meta_train.index]
-
-            # 6. Train & Save enriched meta‑models
-            meta_feature_names = list(X_meta_train.columns)
-            logger.info(f"Enriched meta‑features ({len(meta_feature_names)}): {meta_feature_names}")
-            logger.info(f"Training samples: {len(X_meta_train)}")
-
-            meta_model_home = MetaRidge(alpha=1.0, random_state=SEED)
-            meta_model_home.fit(X_meta_train, y_val_true_home)
-
-            meta_model_away = MetaRidge(alpha=1.0, random_state=SEED)
-            meta_model_away.fit(X_meta_train, y_val_true_away)
-
-            meta_model_save_path = MAIN_MODELS_DIR / "stacking_meta_model_enriched.joblib"
-            joblib.dump({
-                'meta_model_home': meta_model_home,
-                'meta_model_away': meta_model_away,
-                'meta_feature_names': meta_feature_names,
-                'base_models_used': required_for_stacking,
-                'training_timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
-            }, meta_model_save_path)
-            logger.info(f"Enriched stacking meta-models saved to {meta_model_save_path}")
-            meta_model_trained_and_saved = True
-
-            # (Test evaluation code for enriched meta-model would follow here)
-        except Exception as e:
-            logger.error(f"ERROR during enriched meta-model training: {e}", exc_info=True)
-
-    if not meta_model_trained_and_saved:
-        logger.warning("Enriched meta-model was not trained or saved due to previous errors.")
-    """
-
-    # Meta-Model Training (XGBoost Stacking with Halving Search & Early Stopping) 
+    # --- Enriched Meta-Model Training (XGBoost Halving Stacking) ---
     logger.info("\n--- Starting Meta-Model Training (XGBoost Halving Stacking) ---")
     required_for_stacking = [m for m in ["xgboost", "random_forest", "ridge"] if m in models_to_run]
     meta_model_trained_and_saved = False
-
     if not required_for_stacking:
         logger.error("No base models were successfully trained or validation predictions collected. Cannot train meta-model.")
     elif not all(key in validation_predictions_collector for key in required_for_stacking):
         logger.error(f"Missing validation predictions for one or more base models ({required_for_stacking}) needed for stacking. Cannot train meta-model.")
     else:
-        # --- Phase 1: Prepare Meta-Training Data ---
         try:
             meta_features_list = []
             y_val_true_home = None
@@ -1533,29 +1315,23 @@ def run_training_pipeline(args):
                 reference_index = validation_predictions_collector[first_valid_key]['pred_home'].index
             else:
                 raise ValueError("Could not get validation predictions for any required base models.")
-
             for model_key in required_for_stacking:
                 preds_dict = validation_predictions_collector[model_key]
                 if 'pred_home' not in preds_dict or 'pred_away' not in preds_dict:
                     raise KeyError(f"Missing 'pred_home' or 'pred_away' in validation predictions for {model_key}")
-                # Rename and reindex predictions:
                 df_home = preds_dict['pred_home'].rename(f"{model_key}_pred_home").reindex(reference_index)
                 df_away = preds_dict['pred_away'].rename(f"{model_key}_pred_away").reindex(reference_index)
                 meta_features_list.extend([df_home, df_away])
-                # For the first model, set target values:
                 if y_val_true_home is None:
                     if 'true_home' not in preds_dict or 'true_away' not in preds_dict:
                         raise KeyError(f"Missing 'true_home' or 'true_away' in validation predictions for {model_key}")
                     y_val_true_home = preds_dict['true_home'].reindex(reference_index)
                     y_val_true_away = preds_dict['true_away'].reindex(reference_index)
-
             X_meta_train = pd.concat(meta_features_list, axis=1)
             logger.info(f"Constructed meta-training feature matrix with shape: {X_meta_train.shape}")
-
-            # Drop rows where any feature or target is NaN
             rows_to_drop_idx = X_meta_train.index[
-                X_meta_train.isnull().any(axis=1) | 
-                y_val_true_home.isnull() | 
+                X_meta_train.isnull().any(axis=1) |
+                y_val_true_home.isnull() |
                 y_val_true_away.isnull()
             ]
             if len(rows_to_drop_idx) > 0:
@@ -1563,25 +1339,44 @@ def run_training_pipeline(args):
                 X_meta_train = X_meta_train.drop(index=rows_to_drop_idx)
                 y_val_true_home = y_val_true_home.drop(index=rows_to_drop_idx)
                 y_val_true_away = y_val_true_away.drop(index=rows_to_drop_idx)
-
             if X_meta_train.empty:
                 raise ValueError("No valid data remaining after NaN handling for meta-model.")
-
-            # Ensure target alignment:
             y_val_true_home = y_val_true_home.loc[X_meta_train.index]
             y_val_true_away = y_val_true_away.loc[X_meta_train.index]
-
+            logger.info("Calculating correlations between base model validation predictions (X_meta_train)...")
+            try:
+                correlation_matrix = X_meta_train.corr()
+                logger.info("\nCorrelation Matrix:\n" + correlation_matrix.to_string())
+                if args.save_plots or args.visualize:
+                    try:
+                        import seaborn as sns
+                        import matplotlib.pyplot as plt
+                        plt.figure(figsize=(8, 6))
+                        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
+                        plt.title("Correlation Matrix of Base Model Validation Predictions")
+                        plt.tight_layout()
+                        if args.save_plots:
+                            plot_path = REPORTS_DIR / f"meta_feature_correlation_heatmap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                            REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+                            plt.savefig(plot_path)
+                            logger.info(f"Correlation heatmap saved to {plot_path}")
+                        if args.visualize:
+                            plt.show()
+                        plt.close()
+                    except ImportError:
+                        logger.warning("Seaborn/Matplotlib not found, cannot generate heatmap plot.")
+                    except Exception as plot_err:
+                        logger.error(f"Error generating correlation heatmap: {plot_err}")
+            except Exception as corr_err:
+                logger.error(f"Failed to calculate correlations: {corr_err}")
         except Exception as prep_e:
             logger.error(f"Error preparing meta-model training data: {prep_e}", exc_info=True)
         else:
-            # --- Phase 2: Tune and Train Meta-Models Using Halving Search ---
             logger.info("\n--- Starting Meta-Model Tuning (XGBoost Halving Stacking) ---")
             try:
                 meta_feature_names = list(X_meta_train.columns)
                 logger.info(f"Meta-model training features ({len(meta_feature_names)}): {meta_feature_names}")
                 logger.info(f"Meta-model training samples: {len(X_meta_train)}")
-
-                # Define parameter search space
                 XGB_META_PARAM_DIST = {
                     'n_estimators': randint(50, 301),
                     'max_depth': randint(2, 6),
@@ -1589,15 +1384,12 @@ def run_training_pipeline(args):
                     'subsample': uniform(0.7, 0.3),
                     'colsample_bytree': uniform(0.7, 0.3)
                 }
-
-                # Create base estimator for Home meta-model with early stopping.
                 xgb_meta_base = xgb.XGBRegressor(
                     random_state=SEED,
                     objective='reg:squarederror',
                     early_stopping_rounds=10,
                     n_jobs=1
                 )
-
                 logger.info("Tuning Home Score Meta-Model (XGBoost Halving Search)...")
                 hs_meta_home = HalvingRandomSearchCV(
                     estimator=xgb_meta_base,
@@ -1610,12 +1402,10 @@ def run_training_pipeline(args):
                     random_state=SEED
                 )
                 fit_params_home = {'eval_set': [(X_meta_train, y_val_true_home)], 'verbose': False}
-                hs_meta_home.fit(X_meta_train, y_val_true_home, **fit_params_home) 
+                hs_meta_home.fit(X_meta_train, y_val_true_home, **fit_params_home)
                 meta_model_home = hs_meta_home.best_estimator_
                 logger.info(f"Home Meta-Model Tuning Complete. Best Score: {hs_meta_home.best_score_:.4f}")
                 logger.info(f"Home Meta-Model Best Params: {hs_meta_home.best_params_}")
-
-                # Create separate estimator instance for Away meta-model.
                 xgb_meta_away_base = xgb.XGBRegressor(
                     random_state=SEED + 1,
                     objective='reg:squarederror',
@@ -1623,9 +1413,7 @@ def run_training_pipeline(args):
                     n_jobs=1
                 )
                 logger.info("Tuning Away Score Meta-Model (XGBoost Halving Search)...")
-                # Define fit params
                 fit_params_away = {'eval_set': [(X_meta_train, y_val_true_away)], 'verbose': False}
-                # Instantiate Halving Search
                 hs_meta_away = HalvingRandomSearchCV(
                     estimator=xgb_meta_away_base,
                     param_distributions=XGB_META_PARAM_DIST,
@@ -1636,84 +1424,36 @@ def run_training_pipeline(args):
                     verbose=1,
                     random_state=SEED + 1
                 )
-                # Fit using the fit params
-                hs_meta_away.fit(X_meta_train, y_val_true_away, **fit_params_away) # <<< ADDED **fit_params_away
-
+                hs_meta_away.fit(X_meta_train, y_val_true_away, **fit_params_away)
                 meta_model_away = hs_meta_away.best_estimator_
-                logger.info(f"Away Meta-Model Tuning Complete. Best Score: {hs_meta_away.best_score_:.4f}")
-                logger.info(f"Away Meta-Model Best Params: {hs_meta_away.best_params_}")
-
-
-                # Save the tuned meta-models as payload.
                 meta_model_filename = "stacking_meta_model_xgb_hs.joblib"
                 meta_model_save_path = MAIN_MODELS_DIR / meta_model_filename
+                if meta_model_save_path.exists():
+                    try:
+                        meta_model_save_path.unlink()  # Delete the file
+                        logger.info(f"Existing meta-model file {meta_model_save_path} removed.")
+                    except Exception as e:
+                        logger.error(f"Error removing the existing meta-model file: {e}", exc_info=True)
                 meta_model_payload = {
                     'meta_model_home': meta_model_home,
                     'meta_model_away': meta_model_away,
-                    'meta_feature_names': meta_feature_names,
+                    'meta_feature_names': list(X_meta_train.columns),
                     'base_models_used': required_for_stacking,
                     'training_timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
                 }
                 joblib.dump(meta_model_payload, meta_model_save_path)
-                logger.info(f"Stacking XGBoost (HS) meta-models saved successfully to {meta_model_save_path}")
+                logger.info(f"Stacking meta-models saved successfully to {meta_model_save_path}")
                 meta_model_trained_and_saved = True
             except Exception as meta_e:
                 logger.error(f"Failed to train or save XGBoost meta-model: {meta_e}", exc_info=True)
-
             if not meta_model_trained_and_saved:
                 logger.warning("XGBoost meta-model was not trained or saved due to previous errors.")
 
-
-    # --- END Meta-Model Training (XGBoost) ---
-
-    def load_base_model(model_key: str, all_metrics: list, default_key: str = 'model') -> Optional[Any]:
-        """
-        Retrieve and load a base model using its saved path from the metrics dictionary.
-        
-        Args:
-            model_key (str): The key (e.g., 'xgboost') to search for in the metrics.
-            all_metrics (list): A list of dictionaries from which to find the saved model path.
-            default_key (str): The key in the saved payload dictionary that holds the predictor instance.
-                            Adjust this to match how you save the model (e.g., 'model', 'predictor', 'pipeline').
-        
-        Returns:
-            The loaded predictor object if found and valid, or None otherwise.
-        """
-        # Loop over each metrics dict and find one that matches the model_key
-        for m in all_metrics:
-            full_model_name = m.get('model_name', '')
-            if full_model_name.split('_score_predictor')[0].lower() == model_key.lower():
-                saved_path = m.get('save_path')
-                if not saved_path or not os.path.exists(saved_path):
-                    logger.warning(f"Saved path missing or invalid for {model_key}: '{saved_path}'.")
-                    continue
-                try:
-                    loaded_data = joblib.load(saved_path)
-                    # If our payload is a dict with our chosen key, extract it.
-                    if isinstance(loaded_data, dict) and default_key in loaded_data:
-                        logger.info(f"Loaded predictor for {model_key} using key '{default_key}'.")
-                        return loaded_data[default_key]
-                    # Otherwise, if the loaded object itself has a predict() method, assume it's our predictor.
-                    elif hasattr(loaded_data, 'predict'):
-                        logger.info(f"Loaded predictor for {model_key} as a standalone object.")
-                        return loaded_data
-                    else:
-                        logger.error(f"Loaded object for {model_key} from {saved_path} does not contain key '{default_key}' or a predict method.")
-                except Exception as e:
-                    logger.error(f"Failed to load base model {model_key} from {saved_path}: {e}", exc_info=True)
-        # If we finish the loop without returning, log and return None.
-        logger.warning(f"Could not load base model for {model_key}.")
-        return None
-    
-    # --- FINAL ENSEMBLE TEST SET EVALUATION BLOCK  ---
-    if meta_model_trained_and_saved:  # Only evaluate if meta-model was successfully trained/saved
+    if meta_model_trained_and_saved:
         logger.info("\n--- Evaluating Final Stacked Ensemble on Test Set ---")
         try:
-            # Prepare meta-features from Test Set using saved base models
             X_meta_test_list = []
-            loaded_base_model_payloads = {}  # Store the loaded payload dictionaries
-
-            # --- Load the saved base model PAYLOADS (dictionaries) ---
+            loaded_base_model_payloads = {}
             if not all_metrics:
                 logger.error("No base model metrics found in 'all_metrics'. Cannot load models for final evaluation.")
             else:
@@ -1724,53 +1464,38 @@ def run_training_pipeline(args):
                     else:
                         logger.warning(f"Key 'model_name' not found in metrics dict: {metrics_dict}. Skipping.")
                         continue
-
                     saved_path = metrics_dict.get('save_path')
-                    if not saved_path or not os.path.exists(saved_path):  # Ensure os is imported
+                    if not saved_path or not os.path.exists(saved_path):
                         logger.warning(f"Saved path missing or invalid for {model_name}: '{saved_path}'. Skipping.")
                         continue
-
                     logger.info(f"Loading base model payload {model_name} from {saved_path}...")
                     try:
-                        # Load the dictionary saved by save_model
-                        loaded_payload = joblib.load(saved_path)  # Ensure joblib is imported
+                        loaded_payload = joblib.load(saved_path)
                         if isinstance(loaded_payload, dict) and 'pipeline_home' in loaded_payload and 'pipeline_away' in loaded_payload:
                             loaded_base_model_payloads[model_name] = loaded_payload
                             logger.info(f"Successfully loaded payload dictionary for {model_name}.")
                         else:
-                            logger.error(
-                                f"Loaded object for {model_name} from {saved_path} is not a dictionary with expected pipeline keys. Skipping.")
+                            logger.error(f"Loaded object for {model_name} from {saved_path} is not a dictionary with expected pipeline keys. Skipping.")
                             continue
                     except Exception as load_err:
                         logger.error(f"Failed to load base model payload {model_name} from {saved_path}: {load_err}", exc_info=True)
-
-            # --- Proceed only if all required payloads were loaded ---
             if len(loaded_base_model_payloads) != len(required_for_stacking):
                 logger.error(f"Failed to load all required base model payloads ({required_for_stacking}). "
-                            f"Loaded: {list(loaded_base_model_payloads.keys())}. Skipping final ensemble evaluation.")
+                             f"Loaded: {list(loaded_base_model_payloads.keys())}. Skipping final ensemble evaluation.")
             else:
-                # --- Generate predictions using loaded base model PIPELINES on X_test ---
                 for model_name in required_for_stacking:
                     payload = loaded_base_model_payloads.get(model_name)
-                    if payload is None:  # Should not happen if the above check passed
+                    if payload is None:
                         logger.error(f"Payload for {model_name} is missing unexpectedly. Skipping.")
                         continue
-
                     logger.info(f"Generating test set predictions using loaded pipelines for base model: {model_name}...")
                     try:
-                        # Extract the specific pipelines
                         pipeline_home = payload['pipeline_home']
                         pipeline_away = payload['pipeline_away']
-
-                        # Predict using each pipeline
                         test_preds_home = pipeline_home.predict(X_test)
                         test_preds_away = pipeline_away.predict(X_test)
-
-                        # Check if predictions are valid (basic shape check)
                         if test_preds_home is None or test_preds_away is None or len(test_preds_home) != len(X_test):
                             raise ValueError(f"Prediction shapes invalid for {model_name}.")
-
-                        # Create a DataFrame for meta-features, renaming columns accordingly
                         pred_df = pd.DataFrame({
                             f'{model_name}_pred_home': test_preds_home,
                             f'{model_name}_pred_away': test_preds_away
@@ -1778,8 +1503,6 @@ def run_training_pipeline(args):
                         X_meta_test_list.append(pred_df)
                     except Exception as pred_err:
                         logger.error(f"Error generating predictions with {model_name}'s pipelines: {pred_err}", exc_info=True)
-
-                # --- Proceed only if predictions were generated for all required base models ---
                 if len(X_meta_test_list) != len(required_for_stacking):
                     logger.error("Could not generate predictions from all required base models. Skipping final ensemble evaluation.")
                 else:
@@ -1787,26 +1510,19 @@ def run_training_pipeline(args):
                         X_meta_test = pd.concat(X_meta_test_list, axis=1)
                         logger.info(f"Created meta-model test input features with shape: {X_meta_test.shape}")
                         logger.debug(f"Meta-model test features: {X_meta_test.columns.tolist()}")
-
-                        # --- Load the saved XGBoost meta-model ---
-                        meta_model_load_path = MAIN_MODELS_DIR / "stacking_meta_model_xgb_hs.joblib"  # Use the correct filename
+                        meta_model_load_path = MAIN_MODELS_DIR / "stacking_meta_model_xgb_hs.joblib"
                         meta_model_payload = joblib.load(meta_model_load_path)
                         meta_model_home = meta_model_payload['meta_model_home']
                         meta_model_away = meta_model_payload['meta_model_away']
                         logger.info(f"Loaded saved stacking XGBoost meta-model from {meta_model_load_path}.")
-
-                        # --- Generate final ensemble predictions ---
                         final_preds_home = meta_model_home.predict(X_meta_test)
                         final_preds_away = meta_model_away.predict(X_meta_test)
                         final_preds_home_s = pd.Series(final_preds_home, index=X_meta_test.index)
                         final_preds_away_s = pd.Series(final_preds_away, index=X_meta_test.index)
                         logger.info("Generated final predictions from the stacked ensemble.")
-
-                        # --- Evaluate the final predictions ---
                         logger.info("--- Final Stacked Ensemble Test Set Metrics ---")
                         y_test_home_aligned = y_test_home.loc[final_preds_home_s.index]
                         y_test_away_aligned = y_test_away.loc[final_preds_away_s.index]
-
                         test_metrics_home = calculate_regression_metrics(y_test_home_aligned, final_preds_home_s)
                         test_metrics_away = calculate_regression_metrics(y_test_away_aligned, final_preds_away_s)
                         logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Home={test_metrics_home.get('mae', np.nan):.3f}, "
@@ -1815,17 +1531,14 @@ def run_training_pipeline(args):
                                     f"Away={test_metrics_away.get('rmse', np.nan):.3f}")
                         logger.info(f"FINAL STACKED ENSEMBLE Test R2  : Home={test_metrics_home.get('r2', np.nan):.3f}, "
                                     f"Away={test_metrics_away.get('r2', np.nan):.3f}")
-
                         try:
                             total_mae = mean_absolute_error(y_test_home_aligned + y_test_away_aligned,
                                                             final_preds_home_s + final_preds_away_s)
                             diff_mae = mean_absolute_error(y_test_home_aligned - y_test_away_aligned,
-                                                        final_preds_home_s - final_preds_away_s)
+                                                           final_preds_home_s - final_preds_away_s)
                             logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Total={total_mae:.3f}, Diff={diff_mae:.3f}")
                         except Exception:
                             logger.warning("Could not compute Total/Diff MAE for ensemble.")
-
-                        # Calculate custom losses and betting metrics, if available.
                         try:
                             y_true_comb = np.vstack((y_test_home_aligned.values, y_test_away_aligned.values)).T
                             y_pred_comb = np.vstack((final_preds_home_s.values, final_preds_away_s.values)).T
@@ -1836,13 +1549,11 @@ def run_training_pipeline(args):
                                         f"Dist={final_dist_loss:.3f}, Combined={final_combined_loss:.3f}")
                         except Exception as loss_err:
                             logger.warning(f"Could not compute custom losses for ensemble: {loss_err}")
-
                         try:
                             final_betting_metrics = calculate_betting_metrics(y_true_comb, y_pred_comb, vegas_lines=None)
                             logger.info(f"FINAL STACKED ENSEMBLE Betting Metrics: {final_betting_metrics}")
                         except Exception as bet_err:
                             logger.warning(f"Could not compute betting metrics for ensemble: {bet_err}")
-
                     except Exception as eval_err:
                         logger.error("Error during final ensemble prediction or evaluation: " + str(eval_err), exc_info=True)
         except FileNotFoundError as e:
@@ -1853,46 +1564,68 @@ def run_training_pipeline(args):
             logger.error(f"An unexpected error occurred during final stacked ensemble evaluation setup: {e}", exc_info=True)
     else:
         logger.warning("Skipping final ensemble evaluation because meta-model was not trained/saved.")
-    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # +++ END: FINAL ENSEMBLE TEST SET EVALUATION BLOCK +++
+
+    end_time_pipeline = time.time()
+    logger.info(f"--- NBA Model Tuning & Training Pipeline Finished in {end_time_pipeline - start_pipeline_time:.2f} seconds ---")
 
 
-        end_time_pipeline = time.time()
-        logger.info(f"--- NBA Model Tuning & Training Pipeline Finished in {end_time_pipeline - start_pipeline_time:.2f} seconds ---")
+def load_base_model(model_key: str, all_metrics: list, default_key: str = 'model') -> Optional[Any]:
+    """
+    Retrieve and load a base model using its saved path from the metrics dictionary.
+    
+    Args:
+        model_key (str): The key (e.g., 'xgboost') to search for in the metrics.
+        all_metrics (list): A list of dictionaries from which to find the saved model path.
+        default_key (str): The key in the saved payload dictionary that holds the predictor instance.
+    
+    Returns:
+        The loaded predictor object if found and valid, or None otherwise.
+    """
+    for m in all_metrics:
+        full_model_name = m.get('model_name', '')
+        if full_model_name.split('_score_predictor')[0].lower() == model_key.lower():
+            saved_path = m.get('save_path')
+            if not saved_path or not os.path.exists(saved_path):
+                logger.warning(f"Saved path missing or invalid for {model_key}: '{saved_path}'.")
+                continue
+            try:
+                loaded_data = joblib.load(saved_path)
+                if isinstance(loaded_data, dict) and default_key in loaded_data:
+                    logger.info(f"Loaded predictor for {model_key} using key '{default_key}'.")
+                    return loaded_data[default_key]
+                elif hasattr(loaded_data, 'predict'):
+                    logger.info(f"Loaded predictor for {model_key} as a standalone object.")
+                    return loaded_data
+                else:
+                    logger.error(f"Loaded object for {model_key} from {saved_path} does not contain key '{default_key}' or a predict method.")
+            except Exception as e:
+                logger.error(f"Failed to load base model {model_key} from {saved_path}: {e}", exc_info=True)
+    logger.warning(f"Could not load base model for {model_key}.")
+    return None
+
 
 parser = argparse.ArgumentParser(description="NBA Score Prediction Model Tuning & Training Pipeline")
-
-# Data Args
 parser.add_argument("--data-source", type=str, default="supabase", choices=["csv", "supabase", "database", "dummy"], help="Data source type")
 parser.add_argument("--historical-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_game_stats.csv'), help="Path to historical games CSV")
 parser.add_argument("--team-stats-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_team_stats.csv'), help="Path to team stats CSV")
 parser.add_argument("--lookback-days", type=int, default=1095, help="Days of historical data to load")
-# Model Args
 parser.add_argument("--models", type=str, default="xgboost,random_forest,ridge", help="Comma-separated models to train")
 parser.add_argument("--rolling-windows", type=str, default="5,10,20", help="Comma-separated rolling window sizes")
 parser.add_argument("--h2h-window", type=int, default=5, help="Number of games for H2H features")
-# Training Args
 parser.add_argument("--test-size", type=float, default=0.15, help="Fraction for test set")
 parser.add_argument("--val-size", type=float, default=0.15, help="Fraction for validation set")
 parser.add_argument("--use-weights", action="store_true", help="Use recency weighting during training")
 parser.add_argument("--weight-method", type=str, default="exponential", choices=["exponential", "half_life"], help="Recency weighting method")
 parser.add_argument("--weight-half-life", type=int, default=90, help="Half-life in days for weights")
-# Tuning Args
 parser.add_argument("--skip-tuning", action="store_true", help="Skip hyperparameter tuning")
 parser.add_argument("--tune-iterations", type=int, default=30, help="Iterations for RandomizedSearchCV")
 parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS, help="CV splits for TimeSeriesSplit")
 parser.add_argument("--scoring-metric", type=str, default='neg_mean_absolute_error', help="Scoring metric for tuning")
-# Analysis Args
 parser.add_argument("--run-analysis", action="store_true", help="Run optional analysis functions")
-# Output Args
 parser.add_argument("--visualize", action="store_true", help="Show plots interactively")
 parser.add_argument("--save-plots", action="store_true", help="Save generated plots to reports directory")
-# Misc Args
 parser.add_argument("--allow-dummy", action="store_true", help="Allow script to run using dummy classes if imports fail")
 parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-
-# Parse arguments
 cli_args = parser.parse_args()
 
-# Run the main pipeline function
 run_training_pipeline(cli_args)
