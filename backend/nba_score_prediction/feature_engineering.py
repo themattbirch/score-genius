@@ -1820,9 +1820,10 @@ class NBAFeatureEngine:
                 hist_df_processed = historical_games_df.copy()
                 hist_df_processed['game_date'] = pd.to_datetime(hist_df_processed['game_date'], errors='coerce').dt.tz_localize(None)
                 hist_df_processed = hist_df_processed.dropna(subset=['game_date'])
-                # Ensure game_id is string early
+                # Ensure game_id is string early and remove duplicates
                 if 'game_id' in hist_df_processed.columns:
                     hist_df_processed['game_id'] = hist_df_processed['game_id'].astype(str)
+                    hist_df_processed = hist_df_processed.drop_duplicates(subset=['game_id'], keep='last')
                 logger.debug(f"{len(hist_df_processed)} historical games remaining after date processing.")
             except Exception as e:
                 logger.error(f"Error processing 'game_date' or 'game_id' in historical_games_df: {e}. Proceeding without historical.")

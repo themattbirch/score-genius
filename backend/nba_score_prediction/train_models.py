@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 import traceback
@@ -14,7 +15,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import xgboost as xgb
 
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 from supabase import Client
@@ -526,6 +526,44 @@ def calculate_betting_metrics(y_true, y_pred, vegas_lines: Optional[pd.DataFrame
         logger.error(f"Error calculating betting metrics: {e}")
     return metrics
 
+    # +++ ADDED +++
+def compute_weights(validation_metrics: Dict[str, float]) -> Dict[str, float]:
+    """
+    Compute weights for ensemble blending based on validation MAE (or similar error metric).
+    Parameters:
+        validation_metrics (dict): Dictionary where keys are model names and values
+                                   are the corresponding validation errors (e.g., MAE).
+    Returns:
+        weights (dict): Dictionary where keys are model names and values are the normalized weights.
+    """
+    inv_errors = {}
+    # <<< FIX: Use logger >>>
+    logger.info(f"Computing weights based on validation metrics: {validation_metrics}")
+    for model, error in validation_metrics.items():
+        if pd.isna(error) or error <= 0: # Handle potential NaN or zero error
+             # <<< FIX: Use logger >>>
+             logger.warning(f"Invalid error ({error}) for model '{model}'. Excluding from weighting.")
+             inv_errors[model] = 0.0 # Assign 0 weight if error is invalid
+        else:
+            # Add a small constant to avoid division by zero.
+            inv_errors[model] = 1.0 / (error + 1e-8) # Use 1e-8 from user example
+
+    # Normalize the inverse errors so that sum(weights) == 1
+    total = sum(inv_errors.values())
+    weights = {}
+    if total <= 1e-8: # Check if total is near zero
+        # <<< FIX: Use logger >>>
+        logger.warning("Total inverse error is near zero. Assigning equal weights to models with valid errors.")
+        num_valid_models = sum(1 for err in validation_metrics.values() if pd.notna(err) and err > 0)
+        equal_weight = 1.0 / num_valid_models if num_valid_models > 0 else 0.0
+        weights = {model: equal_weight if pd.notna(error) and error > 0 else 0.0
+                   for model, error in validation_metrics.items()}
+    else:
+        weights = {model: inv_error / total for model, inv_error in inv_errors.items()}
+    # <<< FIX: Use logger >>>
+    logger.info(f"Calculated normalized weights: {weights}")
+    return weights
+
 # ==============================================================================
 # SECTION 4: QUARTERLY MODEL TRAINING UTILITIES (Placeholders)
 # ==============================================================================
@@ -574,17 +612,14 @@ SEED = 42
 TARGET_COLUMNS = ['home_score', 'away_score']
 # --- END Constants ---
 
-
-# ==============================================================================
-# SECTION 5: HYPERPARAMETER TUNING & MAIN PREDICTOR TRAINING (REWRITTEN)
-# ==============================================================================
+# --- tune_and_evaluate_predictor Function ---
 def tune_and_evaluate_predictor(
     predictor_class,
     X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
     X_val: pd.DataFrame, y_val_home: pd.Series, y_val_away: pd.Series,
     X_test: pd.DataFrame, y_test_home: pd.Series, y_test_away: pd.Series,
     model_name_prefix: str,
-    feature_list: List[str], # Takes the already selected feature list as input
+    feature_list: List[str],
     param_dist: Optional[Dict[str, Any]],
     n_iter: int = 10,
     n_splits: int = 5,
@@ -594,42 +629,12 @@ def tune_and_evaluate_predictor(
     weight_half_life: int = 90,
     visualize: bool = True,
     save_plots: bool = False
-) -> Tuple[Optional[Dict], Optional[Dict]]: # MODIFIED Return type hint
+) -> Tuple[Optional[Dict], Optional[Dict]]:
     """
-    Tunes hyperparameters using RandomizedSearchCV on the training set,
-    trains the final model on the combined training and validation sets using
-    the best parameters (or defaults if tuning skipped/failed), evaluates
-    on the test set, and generates predictions on the validation set.
-
-    Args:
-        # ... (Arguments remain the same) ...
-        predictor_class: The class of the predictor model to use (e.g., XGBoostScorePredictor).
-        X_train, y_train_home, y_train_away: Training data and targets.
-        X_val, y_val_home, y_val_away: Validation data and targets.
-        X_test, y_test_home, y_test_away: Test data and targets.
-        model_name_prefix: Base name for the model (e.g., 'xgboost').
-        feature_list: List of feature names selected *before* calling this function.
-        param_dist: Parameter distribution for RandomizedSearchCV. If None, tuning is skipped.
-        n_iter: Number of iterations for RandomizedSearchCV.
-        n_splits: Number of splits for TimeSeriesSplit cross-validation.
-        scoring: Scoring metric string for RandomizedSearchCV.
-        use_recency_weights: Whether to apply sample weights based on game date.
-        weight_method: Method for calculating recency weights ('exponential' or 'half_life').
-        weight_half_life: Half-life in days for weight calculation.
-        visualize: Whether to display plots interactively.
-        save_plots: Whether to save generated plots.
-
-
-    Returns:
-        A tuple containing:
-            - A dictionary with evaluation metrics and model info (or None if failed).
-            - A dictionary with validation set predictions (pred_home, pred_away,
-              true_home, true_away) keyed by index (or None if failed).
+    Tunes hyperparameters, trains final model, evaluates, and generates validation predictions.
+    (Docstring details omitted for brevity)
     """
-    # Assuming metric/utility functions are globally available as per OLD code structure
-    # (e.g., calculate_regression_metrics, compute_recency_weights, plotting functions)
-
-    logger.info(f"tune_and_evaluate_predictor received feature_list with {len(feature_list)} features.")
+    logger.debug(f"tune_and_evaluate_predictor received feature_list with {len(feature_list)} features.") # Changed to debug
     model_full_name = f"{model_name_prefix}_score_predictor"
 
     # --- Initial Checks ---
@@ -643,64 +648,46 @@ def tune_and_evaluate_predictor(
     best_params_final = {}
 
     # --- Ensure Feature List is Unique ---
-    # Use this unique list consistently throughout the function
-    # Use the passed feature_list directly
-    feature_list_unique = list(pd.Index(feature_list).unique()) # Keep this check
-    logger.info(f"tune_and_evaluate_predictor received feature_list with {len(feature_list_unique)} features.")
-
+    feature_list_unique = list(pd.Index(feature_list).unique())
     if len(feature_list_unique) != len(feature_list):
         logger.warning(f"Duplicate features found. Using {len(feature_list_unique)} unique features.")
-    logger.debug(f"Using unique feature list ({len(feature_list_unique)} features).")
+    # logger.debug(f"Using unique feature list ({len(feature_list_unique)} features).") # Keep if needed
 
     # --- Combine Train and Validation Data for Final Fit ---
-    # Include 'game_date' if needed for weights later
-    train_val_date_cols = []
-    if use_recency_weights and 'game_date' in X_train.columns and 'game_date' in X_val.columns:
-        train_val_date_cols = ['game_date']
-    # Select only the unique features + date column if needed
+    train_val_date_cols = ['game_date'] if use_recency_weights and 'game_date' in X_train.columns and 'game_date' in X_val.columns else []
     cols_train = [col for col in feature_list_unique + train_val_date_cols if col in X_train.columns]
     cols_val = [col for col in feature_list_unique + train_val_date_cols if col in X_val.columns]
     try:
-      
         X_train_full = pd.concat([X_train[cols_train], X_val[cols_val]], ignore_index=True)
         y_train_home_full = pd.concat([y_train_home, y_val_home], ignore_index=True)
         y_train_away_full = pd.concat([y_train_away, y_val_away], ignore_index=True)
-        # (No need to re-align using .loc[X_train_full.index] anymore.)
         logger.info(f"Combined Train+Val size for final fit: {len(X_train_full)} samples.")
     except Exception as concat_err:
         logger.error(f"Error combining Train and Val sets: {concat_err}", exc_info=True)
-        return None, None # Return None for both if setup fails
+        return None, None
 
     # --- Prepare Data Specifically for Tuning (Using only Train set features) ---
-    logger.debug(f"Preparing data for hyperparameter tuning using X_train.")
+    # logger.debug(f"Preparing data for hyperparameter tuning using X_train.") # Keep if needed
     try:
-        # Select unique features from X_train
-        X_tune_features = X_train[feature_list_unique].copy() # Select from input X_train
-        # ...
-        X_train_full_for_fit = X_train_full[feature_list_unique].copy() # Select from combined Train+Val
-        # ...
-        X_test_final = X_test[feature_list_unique].copy() # Select from input X_test
-        y_tune_home = y_train_home.loc[X_tune_features.index].copy() # <<< RESTORE/ADD THIS LINE
-    # y_tune_away = y_train_away.loc[X_tune_features.index].copy() # If needed for a different scorer
-
-        logger.debug(f"Tuning data shapes: X={X_tune_features.shape}, y_home={y_tune_home.shape}")
+        X_tune_features = X_train[feature_list_unique].copy()
+        y_tune_home = y_train_home.loc[X_tune_features.index].copy()
+        # logger.debug(f"Tuning data shapes: X={X_tune_features.shape}, y_home={y_tune_home.shape}") # Keep if needed
     except KeyError as ke:
         logger.error(f"KeyError preparing tuning data targets: {ke}", exc_info=True)
-        # Handle error appropriately, maybe return None, None
         return None, None
     except Exception as prep_err:
         logger.error(f"Error preparing tuning data targets: {prep_err}", exc_info=True)
         return None, None
 
-    # --- Calculate Sample Weights for Tuning (if enabled) ---
+    # --- Calculate Sample Weights for Tuning ---
     tune_fit_params = {}
     if use_recency_weights:
         if 'game_date' in X_train.columns:
-            logger.info("Calculating recency weights for tuning dataset (X_train)...")
+            # logger.info("Calculating recency weights for tuning dataset (X_train)...") # Keep if needed
             dates_for_weights_tune = X_train.loc[X_tune_features.index, 'game_date']
             sample_weights_tune = compute_recency_weights(dates_for_weights_tune, method=weight_method, half_life=weight_half_life)
             if sample_weights_tune is not None and len(sample_weights_tune) == len(X_tune_features):
-                try: # Determine the correct parameter name (e.g., 'model__sample_weight')
+                try:
                     temp_predictor = predictor_class(); temp_pipeline = temp_predictor._build_pipeline({})
                     model_step_name = temp_pipeline.steps[-1][0]
                     weight_param_name = f"{model_step_name}__sample_weight"
@@ -710,7 +697,7 @@ def tune_and_evaluate_predictor(
             else: logger.warning(f"Failed tuning sample weights computation/alignment.")
         else: logger.warning("'use_recency_weights' enabled but 'game_date' missing in X_train.")
 
-    # --- Hyperparameter Tuning (RandomizedSearchCV) ---
+    # --- Hyperparameter Tuning ---
     if param_dist:
         logger.info(f"Starting RandomizedSearchCV (n_iter={n_iter}, cv={n_splits}, scoring='{scoring}')...")
         tscv = TimeSeriesSplit(n_splits=n_splits)
@@ -719,18 +706,15 @@ def tune_and_evaluate_predictor(
             if search_pipeline is None: raise RuntimeError(f"Could not build pipeline for {predictor_class.__name__}")
             rs = RandomizedSearchCV(
                 estimator=search_pipeline, param_distributions=param_dist, n_iter=n_iter, scoring=scoring,
-                cv=tscv, n_jobs=-1, verbose=1, random_state=SEED, error_score='raise', refit=False # verbose=1 less noisy
+                cv=tscv, n_jobs=-1, verbose=0, random_state=SEED, error_score='raise', refit=False # Changed verbose to 0
             )
-            # Fit using home target (or adjust if scorer needs both/different target)
             rs.fit(X_tune_features, y_tune_home, **tune_fit_params)
-            # Log results...
             try:
                 cv_results_df = pd.DataFrame(rs.cv_results_).sort_values(by='rank_test_score')
                 logger.info("--- Top CV Results ---"); logger.info("\n" + cv_results_df[['rank_test_score', 'mean_test_score', 'std_test_score', 'params']].head().to_string())
             except Exception as report_e: logger.warning(f"Could not print CV results: {report_e}")
             best_params_raw = rs.best_params_; metrics['best_cv_score'] = rs.best_score_
             logger.info(f"Tuning complete. Best CV Score ({scoring}): {metrics['best_cv_score']:.4f}")
-            # Strip pipeline prefix (e.g., 'model__n_estimators' -> 'n_estimators')
             best_params_final = {k.split('__', 1)[1]: v for k, v in best_params_raw.items()}
             metrics['best_params'] = best_params_final; logger.info(f"Best Final Params: {best_params_final}")
         except Exception as search_e:
@@ -740,33 +724,31 @@ def tune_and_evaluate_predictor(
     else:
         logger.info("Skipping hyperparameter tuning."); metrics['best_params'] = 'default (tuning skipped)'; metrics['tuning_duration'] = 0.0
 
-    # --- Train Final Model on Combined Train+Val Data ---
+    # --- Train Final Model ---
     logger.info("Training final model on combined Train+Val data...")
-    # Instantiate the predictor, it will handle pipeline creation internally
+    # <<< FIX: Use global MAIN_MODELS_DIR >>>
     final_predictor = predictor_class(model_dir=str(MAIN_MODELS_DIR), model_name=model_full_name)
     try:
-        # Select the unique features from the combined Train+Val set
         X_train_full_for_fit = X_train_full[feature_list_unique].copy()
-        # y targets are already aligned from the concat step
         y_train_home_full_aligned = y_train_home_full
         y_train_away_full_aligned = y_train_away_full
-        logger.info(f"Shape of final training features X_train_full_for_fit: {X_train_full_for_fit.shape}")
+        # logger.info(f"Shape of final training features X_train_full_for_fit: {X_train_full_for_fit.shape}") # Keep if needed
     except KeyError as ke: logger.error(f"KeyError preparing final train data: {ke}", exc_info=True); return None, None
     except Exception as final_prep_err: logger.error(f"Error preparing final train data: {final_prep_err}", exc_info=True); return None, None
 
-    # --- Calculate Sample Weights for Final Training (if enabled) ---
+    # --- Calculate Sample Weights for Final Training ---
     final_sample_weights = None
     if use_recency_weights:
         if 'game_date' in X_train_full.columns:
             dates_for_weights_full = X_train_full.loc[X_train_full_for_fit.index, 'game_date']
-            logger.info("Calculating recency weights for final training (Train+Val)...")
+            # logger.info("Calculating recency weights for final training (Train+Val)...") # Keep if needed
             final_sample_weights = compute_recency_weights(dates_for_weights_full, method=weight_method, half_life=weight_half_life)
             if final_sample_weights is None or len(final_sample_weights) != len(X_train_full_for_fit):
                 logger.warning(f"Final sample weights failed/mismatched. Training without weights."); final_sample_weights = None
             else:
                 logger.info(f"Final sample weights computed. Min: {np.min(final_sample_weights):.4f}, Max: {np.max(final_sample_weights):.4f}")
                 if visualize:
-                    try: # Visualize final weights
+                    try:
                         save_path_w = REPORTS_DIR / f"{model_full_name}_final_weights.png" if save_plots else None
                         visualize_recency_weights(dates_for_weights_full, final_sample_weights, title=f"Final Training Weights - {model_full_name}", save_path=save_path_w)
                     except NameError: logger.error("visualize_recency_weights function not found.")
@@ -776,30 +758,28 @@ def tune_and_evaluate_predictor(
     # --- Fit the Final Model ---
     try:
         train_start_time = time.time()
-        # Pass final weights directly to train method
         final_predictor.train(
             X_train=X_train_full_for_fit,
             y_train_home=y_train_home_full_aligned,
             y_train_away=y_train_away_full_aligned,
-            hyperparams_home=best_params_final, # Use tuned params for both for now
+            hyperparams_home=best_params_final,
             hyperparams_away=best_params_final,
-            sample_weights=final_sample_weights # Pass computed weights (or None)
+            sample_weights=final_sample_weights
         )
         metrics['training_duration_final'] = getattr(final_predictor, 'training_duration', time.time() - train_start_time)
         logger.info(f"Final model training completed in {metrics['training_duration_final']:.2f} seconds.")
-        # Store final feature count used by the model
         metrics['feature_count'] = len(getattr(final_predictor, 'feature_names_in_', feature_list_unique))
         if not getattr(final_predictor, 'feature_names_in_', None): logger.warning("feature_names_in_ not found on model.")
     except Exception as train_e:
         logger.error(f"Training final model failed: {train_e}", exc_info=True)
         metrics['training_duration_final'] = None; metrics['feature_count'] = len(feature_list_unique)
-        return metrics, None # Return partial metrics, None for val preds
+        return metrics, None
 
     # --- Save the Final Model ---
     try:
         timestamp = getattr(final_predictor, 'training_timestamp', datetime.now().strftime("%Y%m%d_%H%M%S"))
-        save_filename = f"{model_full_name}.joblib"
-        save_path = final_predictor.save_model(filename=save_filename)
+        save_filename = f"{model_full_name}.joblib" # Use consistent naming convention
+        save_path = final_predictor.save_model(filename=save_filename) # Pass only filename
         if save_path: logger.info(f"Final tuned model saved to {save_path}"); metrics['save_path'] = str(save_path)
         else: logger.error(f"Model saving returned no path."); metrics['save_path'] = "Save failed"
     except Exception as save_e: logger.error(f"Error saving final model: {save_e}", exc_info=True); metrics['save_path'] = f"Save failed ({type(save_e).__name__})"
@@ -807,18 +787,15 @@ def tune_and_evaluate_predictor(
     # --- Evaluate Final Model on Test Set ---
     logger.info(f"Evaluating final {model_full_name} on test set ({len(X_test)})...")
     try:
-        # Use unique feature list for test set prediction
         X_test_final = X_test[feature_list_unique].copy()
-        logger.debug(f"Shape of test features X_test_final: {X_test_final.shape}")
+        # logger.debug(f"Shape of test features X_test_final: {X_test_final.shape}") # Keep if needed
         predictions_df_test = final_predictor.predict(X_test_final)
         if predictions_df_test is None or 'predicted_home_score' not in predictions_df_test.columns: raise ValueError("Test prediction failed/invalid format.")
         pred_home_test = predictions_df_test['predicted_home_score']
         pred_away_test = predictions_df_test['predicted_away_score']
-        # Align y_test using the prediction index
         y_test_home_aligned = y_test_home.loc[pred_home_test.index]
         y_test_away_aligned = y_test_away.loc[pred_away_test.index]
 
-        # Calculate metrics (assuming functions are globally available)
         test_metrics_home = calculate_regression_metrics(y_test_home_aligned, pred_home_test)
         test_metrics_away = calculate_regression_metrics(y_test_away_aligned, pred_away_test)
         metrics['test_mae_home'] = test_metrics_home.get('mae', np.nan)
@@ -829,14 +806,14 @@ def tune_and_evaluate_predictor(
         metrics['test_r2_away'] = test_metrics_away.get('r2', np.nan)
         metrics['test_mae_total'] = mean_absolute_error(y_test_home_aligned + y_test_away_aligned, pred_home_test + pred_away_test)
         metrics['test_mae_diff'] = mean_absolute_error(y_test_home_aligned - y_test_away_aligned, pred_home_test - pred_away_test)
-        # Assuming custom loss functions are available
+
         try:
             y_true_comb_test = np.vstack((y_test_home_aligned.values, y_test_away_aligned.values)).T
             y_pred_comb_test = np.vstack((pred_home_test.values, pred_away_test.values)).T
             metrics['test_nba_score_loss'] = nba_score_loss(y_true_comb_test, y_pred_comb_test)
             metrics['test_nba_dist_loss'] = nba_distribution_loss(y_true_comb_test, y_pred_comb_test)
             metrics['test_combined_loss'] = combined_nba_loss(y_true_comb_test, y_pred_comb_test)
-            metrics['betting_metrics'] = calculate_betting_metrics(y_true_comb_test, y_pred_comb_test, vegas_lines=None) # Pass lines if available
+            metrics['betting_metrics'] = calculate_betting_metrics(y_true_comb_test, y_pred_comb_test, vegas_lines=None)
         except NameError as ne: logger.warning(f"Custom loss/betting function not found: {ne}")
         except Exception as custom_loss_e: logger.error(f"Error calculating custom losses: {custom_loss_e}")
 
@@ -846,21 +823,16 @@ def tune_and_evaluate_predictor(
         logger.info(f"FINAL Custom Losses: Score={metrics.get('test_nba_score_loss',np.nan):.3f}, Dist={metrics.get('test_nba_dist_loss',np.nan):.3f}, Combined={metrics.get('test_combined_loss',np.nan):.3f}")
         logger.info(f"FINAL Betting Metrics: {metrics.get('betting_metrics', {})}")
 
-    except KeyError as ke: logger.error(f"KeyError evaluating test set: {ke}", exc_info=True); [metrics.setdefault(k, np.nan) for k in ['test_mae_home','test_mae_away', 'test_mae_total','test_mae_diff']] # etc.
-    except Exception as test_eval_e: logger.error(f"Failed evaluating test set: {test_eval_e}", exc_info=True); [metrics.setdefault(k, np.nan) for k in ['test_mae_home','test_mae_away', 'test_mae_total','test_mae_diff']] # etc.
+    except KeyError as ke: logger.error(f"KeyError evaluating test set: {ke}", exc_info=True); [metrics.setdefault(k, np.nan) for k in ['test_mae_home','test_mae_away', 'test_mae_total','test_mae_diff']]
+    except Exception as test_eval_e: logger.error(f"Failed evaluating test set: {test_eval_e}", exc_info=True); [metrics.setdefault(k, np.nan) for k in ['test_mae_home','test_mae_away', 'test_mae_total','test_mae_diff']]
 
-
-    # --- (Optional) Evaluate Final Model on Training Set ---
-    # This evaluates on the same data the model was trained on (Train+Val)
-    # Useful for checking over/underfitting
-    logger.info(f"Evaluating final {model_full_name} on training set (Train+Val)...")
+    # --- Evaluate Final Model on Training Set (Train+Val) ---
+    # logger.info(f"Evaluating final {model_full_name} on training set (Train+Val)...") # Keep if needed
     try:
-        # Predict on the same data used for final fitting
         predictions_df_train = final_predictor.predict(X_train_full_for_fit)
         if predictions_df_train is None or 'predicted_home_score' not in predictions_df_train.columns: raise ValueError("Train prediction failed.")
         pred_home_train = predictions_df_train['predicted_home_score']
         pred_away_train = predictions_df_train['predicted_away_score']
-        # Use the already aligned y_train_..._full_aligned targets
         train_metrics_home = calculate_regression_metrics(y_train_home_full_aligned, pred_home_train)
         train_metrics_away = calculate_regression_metrics(y_train_away_full_aligned, pred_away_train)
         metrics['train_mae_home'] = train_metrics_home.get('mae', np.nan)
@@ -871,22 +843,29 @@ def tune_and_evaluate_predictor(
         metrics['train_r2_away'] = train_metrics_away.get('r2', np.nan)
         metrics['train_mae_total'] = mean_absolute_error(y_train_home_full_aligned + y_train_away_full_aligned, pred_home_train + pred_away_train)
         metrics['train_mae_diff'] = mean_absolute_error(y_train_home_full_aligned - y_train_away_full_aligned, pred_home_train - pred_away_train)
-        logger.info(f"FINAL Train MAE : Home={metrics.get('train_mae_home',np.nan):.3f}, Away={metrics.get('train_mae_away',np.nan):.3f}, Total={metrics.get('train_mae_total',np.nan):.3f}, Diff={metrics.get('train_mae_diff',np.nan):.3f}")
-    except Exception as train_eval_e: logger.error(f"Failed evaluating on training set: {train_eval_e}", exc_info=True); [metrics.setdefault(k, np.nan) for k in ['train_mae_home','train_mae_away', 'train_mae_total','train_mae_diff']] # etc.
-
+        # logger.info(f"FINAL Train MAE : Home={metrics.get('train_mae_home',np.nan):.3f}, Away={metrics.get('train_mae_away',np.nan):.3f}, Total={metrics.get('train_mae_total',np.nan):.3f}, Diff={metrics.get('train_mae_diff',np.nan):.3f}") # Keep if needed
+    except Exception as train_eval_e: logger.error(f"Failed evaluating on training set: {train_eval_e}", exc_info=True); [metrics.setdefault(k, np.nan) for k in ['train_mae_home','train_mae_away', 'train_mae_total','train_mae_diff']]
 
     # --- Store Sample Sizes ---
     metrics['samples_train_final'] = len(X_train_full_for_fit)
-    metrics['samples_test'] = len(X_test_final) if 'X_test_final' in locals() else len(X_test) # Use len(X_test) as fallback
+    metrics['samples_test'] = len(X_test_final) if 'X_test_final' in locals() else len(X_test)
 
-    # --- Generate Performance Plots (if enabled) ---
+    # --- Generate Performance Plots ---
     if visualize or save_plots:
-        timestamp_str = metrics.get('save_path') # Use saved model timestamp if available
+        timestamp_str = metrics.get('save_path')
+        # Use safer timestamp extraction
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") # Default timestamp
         if timestamp_str and isinstance(timestamp_str, str):
-             filename_part = Path(timestamp_str).name; ts_parts = filename_part.split('_')
-             potential_ts = [p.split('.')[0] for p in ts_parts if p.replace('.','').isdigit() and len(p.split('.')[0])==15]
-             timestamp = potential_ts[0] if potential_ts else datetime.now().strftime("%Y%m%d_%H%M%S")
-        else: timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            try:
+                # Extract timestamp assumed to be YYYYMMDD_HHMMSS before .joblib
+                ts_match = re.search(r'(\d{8}_\d{6})\.joblib$', Path(timestamp_str).name)
+                if ts_match:
+                    timestamp = ts_match.group(1)
+                else: # Fallback if specific pattern not found
+                     timestamp = getattr(final_predictor, 'training_timestamp', timestamp) # Use model timestamp if available
+            except Exception:
+                 timestamp = getattr(final_predictor, 'training_timestamp', timestamp) # Fallback on error
+
         plot_dir = REPORTS_DIR / f"{model_full_name}_tuned_performance_{timestamp}"; plot_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Generating performance plots in {plot_dir}")
         if 'pred_home_test' in locals() and 'y_test_home_aligned' in locals():
@@ -894,69 +873,55 @@ def tune_and_evaluate_predictor(
                 plot_actual_vs_predicted(y_true=y_test_home_aligned, y_pred=pred_home_test, title=f"Tuned {model_full_name} - Test Actual vs Pred (Home)",
                     metrics_dict={'rmse': metrics.get('test_rmse_home'), 'r2': metrics.get('test_r2_home'), 'mae': metrics.get('test_mae_home')},
                     save_path=plot_dir / "test_actual_vs_pred_home.png" if save_plots else None, show_plot=visualize)
+                # ... (Keep other plotting calls: away, residuals, feature importance) ...
                 plot_actual_vs_predicted(y_true=y_test_away_aligned, y_pred=pred_away_test, title=f"Tuned {model_full_name} - Test Actual vs Pred (Away)",
                     metrics_dict={'rmse': metrics.get('test_rmse_away'), 'r2': metrics.get('test_r2_away'), 'mae': metrics.get('test_mae_away')},
                     save_path=plot_dir / "test_actual_vs_pred_away.png" if save_plots else None, show_plot=visualize)
                 plot_residuals_analysis_detailed(y_true=y_test_home_aligned, y_pred=pred_home_test, title_prefix=f"Tuned {model_full_name} (Home) - Test Set", save_dir=plot_dir if save_plots else None, show_plot=visualize)
                 plot_residuals_analysis_detailed(y_true=y_test_away_aligned, y_pred=pred_away_test, title_prefix=f"Tuned {model_full_name} (Away) - Test Set", save_dir=plot_dir if save_plots else None, show_plot=visualize)
-                logger.info(f"Attempting feature importance for {model_full_name}...")
+                # logger.info(f"Attempting feature importance for {model_full_name}...") # Keep if needed
                 pipeline_home = getattr(final_predictor, 'pipeline_home', None); pipeline_away = getattr(final_predictor, 'pipeline_away', None)
-                features_in = getattr(final_predictor, 'feature_names_in_', feature_list_unique) # Use the list
+                features_in = getattr(final_predictor, 'feature_names_in_', feature_list_unique)
                 if pipeline_home and pipeline_away and features_in:
                     plot_feature_importances(models_dict={f"{model_full_name}_Home": pipeline_home, f"{model_full_name}_Away": pipeline_away},
-                         feature_names=features_in, top_n=30, plot_groups=True, save_dir=plot_dir / "feature_importance" if save_plots else None, show_plot=visualize)
+                        feature_names=features_in, top_n=30, plot_groups=True, save_dir=plot_dir / "feature_importance" if save_plots else None, show_plot=visualize)
                 else: logger.warning("Cannot generate feature importance plots (missing pipeline/features).")
+
             except NameError as ne: logger.error(f"Plotting function not found: {ne}.")
             except Exception as plot_e: logger.error(f"Failed generating plots: {plot_e}", exc_info=True)
         else: logger.warning("Skipping plots (test predictions unavailable).")
 
-
-    # --- <<< ADDED: Generate and Return Validation Set Predictions >>> ---
-    val_predictions_dict = None # Initialize as None
-    logger.info(f"Generating validation set predictions for {model_full_name} ({len(X_val)} samples)...")
+    # --- Generate and Return Validation Set Predictions ---
+    val_predictions_dict = None
+    # logger.info(f"Generating validation set predictions for {model_full_name} ({len(X_val)} samples)...") # Keep if needed
     try:
-        # Ensure X_val uses the same unique feature list used for training
-        # This assumes X_val was passed in containing these columns
         X_val_final = X_val[feature_list_unique].copy()
-
-        # Predict using the final trained model
         predictions_df_val = final_predictor.predict(X_val_final)
         if predictions_df_val is None or 'predicted_home_score' not in predictions_df_val.columns:
             raise ValueError(f"Prediction on validation set failed or returned invalid format for {model_full_name}.")
-
-        # Align indices for safety before combining
-        # Use index from X_val_final as the reference
         y_val_home_aligned = y_val_home.loc[X_val_final.index]
         y_val_away_aligned = y_val_away.loc[X_val_final.index]
         pred_home_val = predictions_df_val['predicted_home_score'].loc[X_val_final.index]
         pred_away_val = predictions_df_val['predicted_away_score'].loc[X_val_final.index]
-
-        # Store predictions and true values indexed by the validation set's original index
         val_predictions_dict = {
-            'pred_home': pred_home_val, # Already a Series with correct index
-            'pred_away': pred_away_val, # Already a Series with correct index
-            'true_home': y_val_home_aligned, # Already a Series with correct index
-            'true_away': y_val_away_aligned  # Already a Series with correct index
+            'pred_home': pred_home_val, 'pred_away': pred_away_val,
+            'true_home': y_val_home_aligned, 'true_away': y_val_away_aligned
         }
-        logger.info(f"Successfully generated validation predictions for {model_full_name}.")
-
+        # logger.info(f"Successfully generated validation predictions for {model_full_name}.") # Keep if needed
     except KeyError as ke_val:
         logger.error(f"FAILED generating validation predictions: KeyError. Features missing in X_val? {ke_val}", exc_info=True)
         missing_val = set(feature_list_unique) - set(X_val.columns)
         if missing_val: logger.error(f"Features missing in X_val: {missing_val}")
-        val_predictions_dict = None # Ensure it's None on failure
+        val_predictions_dict = None
     except Exception as val_pred_e:
         logger.error(f"FAILED generating validation set predictions for {model_full_name}: {val_pred_e}", exc_info=True)
-        val_predictions_dict = None # Ensure it's None on failure
-    # --- <<< END ADDED BLOCK >>> ---
+        val_predictions_dict = None
 
     # --- Finalize and Return ---
     metrics['total_duration'] = time.time() - start_tune_time
     logger.info(f"--- Finished Tuning & Training {model_full_name} in {metrics['total_duration']:.2f}s ---")
-
-    # --- MODIFIED RETURN ---
-    # Return both metrics and validation predictions dictionary
     return metrics, val_predictions_dict
+
 # ==============================================================================
 # SECTION 6: EVALUATION & ANALYSIS FUNCTIONS (Placeholders)
 # ==============================================================================
@@ -967,36 +932,47 @@ def analyze_main_predictors_learning_curves(*args, **kwargs): pass
 # ==============================================================================
 def run_training_pipeline(args):
     start_pipeline_time = time.time()  # Make sure time is imported
+
     if args.debug:
         logger.setLevel(logging.DEBUG)
         logger.debug("DEBUG logging enabled.")
+
     logger.info("--- Starting NBA Model Tuning & Training Pipeline ---")
     logger.info(f"Arguments: {vars(args)}")
+
     if not LOCAL_MODULES_IMPORTED and not args.allow_dummy:
         logger.critical("Required local modules not found and dummy run not allowed. Exiting.")
         sys.exit(1)
+
     if not config:
         logger.critical("Config module missing. Exiting.")
         sys.exit(1)
 
     db_engine = get_db_engine()
     supabase_client = get_supabase_client()
-    historical_df, team_stats_df = load_data_source(args.data_source, args.lookback_days, args, db_engine, supabase_client)
+
+    historical_df, team_stats_df = load_data_source(
+        args.data_source, args.lookback_days, args, db_engine, supabase_client
+    )
+
     if historical_df.empty:
         logger.error("Failed to load historical data. Exiting.")
         sys.exit(1)
+
     if team_stats_df.empty:
         logger.warning("Team stats data is empty. Season context features will use defaults.")
 
     logger.info("Initializing Feature Engine...")
     feature_engine = NBAFeatureEngine(debug=args.debug)
+
     logger.info("Generating features for ALL historical data...")
-    rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10]
+    rolling_windows_list = (
+        [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10]
+    )
     logger.info(f"Using rolling windows: {rolling_windows_list}")
 
     # --- MODIFICATION START ---
     logger.info(f"Processing {len(historical_df)} games for feature generation...")
-
     # --- Generate Features ---
     logger.info("Generating features...")
     features_df = feature_engine.generate_all_features(
@@ -1004,7 +980,7 @@ def run_training_pipeline(args):
         historical_games_df=historical_df.copy(),
         team_stats_df=team_stats_df.copy() if not team_stats_df.empty else None,
         rolling_windows=rolling_windows_list,
-        h2h_window=args.h2h_window
+        h2h_window=args.h2h_window,
     )
 
     if features_df.empty:
@@ -1018,15 +994,18 @@ def run_training_pipeline(args):
         logger.info(f"Shape after duplicate removal: {features_df.shape}")
     else:
         logger.info("No duplicate column names found in features_df.")
-        initial_rows = len(features_df)
+
+    initial_rows = len(features_df)
     features_df = features_df.dropna(subset=TARGET_COLUMNS)
     logger.info(f"Dropped {initial_rows - len(features_df)} rows due to missing target values.")
+
     if features_df.empty:
         logger.error("No rows remaining after dropping missing targets. Exiting.")
         sys.exit(1)
 
     # <<< --- START FEATURE VALUE DEBUGGING --- >>>
     logger.info("Analyzing generated feature values...")
+
     if not features_df.empty:
         try:
             # Select only numeric columns for analysis
@@ -1058,7 +1037,9 @@ def run_training_pipeline(args):
                     ]
                     if not problematic_features.empty:
                         f.write("--- POTENTIALLY PROBLEMATIC FEATURES ---\n")
-                        f.write(f"(Features with std < {problem_threshold_std} OR zero % > {problem_threshold_zero_pct}%)\n\n")
+                        f.write(
+                            f"(Features with std < {problem_threshold_std} OR zero % > {problem_threshold_zero_pct}%)\n\n"
+                        )
                         f.write(problematic_features.to_string(float_format="%.4f"))
                         f.write("\n\n" + "=" * 50 + "\n\n")
                     else:
@@ -1068,7 +1049,9 @@ def run_training_pipeline(args):
                         f.write(feature_summary.to_string(float_format="%.4f"))
                 logger.info(f"Feature value summary saved to: {summary_path}")
                 if not problematic_features.empty:
-                    logger.warning(f"Found {len(problematic_features)} potentially problematic features (low variance or high zero %). See {summary_filename}")
+                    logger.warning(
+                        f"Found {len(problematic_features)} potentially problematic features (low variance or high zero %). See {summary_filename}"
+                    )
             else:
                 logger.warning("No numeric features found in features_df to analyze for summary.")
         except Exception as e_summary:
@@ -1077,13 +1060,12 @@ def run_training_pipeline(args):
         logger.warning("features_df is empty, skipping feature value analysis.")
     # <<< --- END FEATURE VALUE DEBUGGING --- >>>
 
-    logger.info(f"Shape of features_df before NaN handling for LASSO: {features_df.shape}")
-
     # --- LASSO Feature Selection ---
     logger.info("--- Starting LASSO Feature Selection ---")
     potential_feature_cols = features_df.select_dtypes(include=np.number).columns.tolist()
     exclude_cols = TARGET_COLUMNS + ['game_id', 'game_date']
     logger.info(f"Initial potential numeric feature count (excluding targets/IDs): {len(potential_feature_cols) - len(exclude_cols)}")
+
     safe_prefixes = (
         'home_rolling_', 'away_rolling_', 'rolling_',
         'home_season_', 'away_season_', 'season_',
@@ -1091,26 +1073,17 @@ def run_training_pipeline(args):
         'games_last_', 'home_form_', 'away_form_'
     )
     safe_exact_names = {
-        'rest_advantage',
-        'schedule_advantage',
-        'form_win_pct_diff',
-        'streak_advantage',
-        'momentum_diff',
-        'home_current_streak',
-        'home_momentum_direction',
-        'away_current_streak',
-        'away_momentum_direction',
-        'game_importance_rank',
-        'home_win_last10',
-        'away_win_last10',
-        'home_trend_rating',
-        'away_trend_rating',
-        'home_rank',
-        'away_rank'
+        'rest_advantage', 'schedule_advantage', 'form_win_pct_diff',
+        'streak_advantage', 'momentum_diff', 'home_current_streak',
+        'home_momentum_direction', 'away_current_streak', 'away_momentum_direction',
+        'game_importance_rank', 'home_win_last10', 'away_win_last10',
+        'home_trend_rating', 'away_trend_rating', 'home_rank', 'away_rank'
     }
+
     feature_candidates = []
     leaked_or_excluded = []
     temp_candidates = [col for col in potential_feature_cols if col not in exclude_cols and not features_df[col].isnull().all()]
+
     for col in temp_candidates:
         is_safe = False
         if col.startswith(safe_prefixes):
@@ -1121,13 +1094,16 @@ def run_training_pipeline(args):
             feature_candidates.append(col)
         else:
             leaked_or_excluded.append(col)
+
     logger.info(f"Filtered down to {len(feature_candidates)} PRE-GAME feature candidates for LASSO.")
     if leaked_or_excluded:
         logger.debug(f"Excluded {len(leaked_or_excluded)} potential leaky/post-game features: {leaked_or_excluded}")
+
     # --- End Filter ---
     X_lasso_raw = features_df[feature_candidates].copy()
     y_home_lasso = features_df[TARGET_COLUMNS[0]].copy()
     y_away_lasso = features_df[TARGET_COLUMNS[1]].copy()
+
     logger.info("Checking for NaNs before LASSO scaling...")
     nan_counts = X_lasso_raw.isnull().sum()
     cols_with_nan = nan_counts[nan_counts > 0]
@@ -1135,6 +1111,7 @@ def run_training_pipeline(args):
         logger.error(f"UNEXPECTED NaNs found before LASSO in columns: {cols_with_nan.index.tolist()}. Fix upstream feature engineering or implement robust NaN handling here.")
     else:
         logger.info("Confirmed: No NaNs found in feature candidates before LASSO.")
+
     logger.info("Checking for and removing zero-variance features...")
     variances = X_lasso_raw.var()
     zero_var_cols = variances[variances < 1e-8].index.tolist()
@@ -1146,20 +1123,25 @@ def run_training_pipeline(args):
     else:
         logger.info("No zero-variance features found.")
         X_lasso_final = X_lasso_raw
+
     if X_lasso_final.empty:
         logger.error("LASSO: No features remaining after removing zero-variance columns.")
         sys.exit(1)
+
     logger.info("Scaling features for LASSO...")
     scaler = StandardScaler()
     X_lasso_scaled = scaler.fit_transform(X_lasso_final)
+
     logger.info("Running LassoCV for Home Score...")
     lasso_cv_home = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000)
     lasso_cv_home.fit(X_lasso_scaled, y_home_lasso)
     logger.info(f"LassoCV (Home) completed. Optimal alpha: {lasso_cv_home.alpha_:.6f}")
+
     logger.info("Running LassoCV for Away Score...")
     lasso_cv_away = LassoCV(cv=5, random_state=SEED, n_jobs=-1, max_iter=2000)
     lasso_cv_away.fit(X_lasso_scaled, y_away_lasso)
     logger.info(f"LassoCV (Away) completed. Optimal alpha: {lasso_cv_away.alpha_:.6f}")
+
     selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=1e-5)
     selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=1e-5)
     selected_mask_home = selector_home.get_support()
@@ -1167,21 +1149,26 @@ def run_training_pipeline(args):
     combined_mask = selected_mask_home | selected_mask_away
     selected_features_lasso = X_lasso_final.columns[combined_mask].tolist()
     num_selected = len(selected_features_lasso)
+
     logger.info(f"LASSO selected {num_selected} features (union of home/away selections).")
     if num_selected == 0:
         logger.error("LASSO selected 0 features. Check data, scaling, or LassoCV parameters (e.g., alpha range, cv). Exiting.")
         sys.exit(1)
     elif num_selected < 10:
         logger.warning(f"LASSO selected a very small number of features ({num_selected}). Model performance might be affected.")
+
     logger.debug(f"Selected features: {selected_features_lasso}")
+
     essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
     final_cols_for_split = essential_non_feature_cols + selected_features_lasso
     missing_final_cols = [col for col in final_cols_for_split if col not in features_df.columns]
     if missing_final_cols:
         logger.error(f"Columns required for final split DataFrame are missing from features_df: {missing_final_cols}. Exiting.")
         sys.exit(1)
+
     features_df_selected = features_df[final_cols_for_split].copy()
     logger.info(f"Created features_df_selected with shape: {features_df_selected.shape}")
+
     logger.info("Splitting data (time-based) using LASSO-selected features...")
     features_df_selected = features_df_selected.sort_values('game_date').reset_index(drop=True)
     n = len(features_df_selected)
@@ -1191,6 +1178,7 @@ def run_training_pipeline(args):
     train_df = features_df_selected.iloc[:val_split_idx].copy()
     val_df = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
     test_df = features_df_selected.iloc[test_split_idx:].copy()
+
     X_train = train_df[selected_features_lasso + (['game_date'] if args.use_weights else [])].copy()
     X_val = val_df[selected_features_lasso + (['game_date'] if args.use_weights else [])].copy()
     X_test = test_df[selected_features_lasso].copy()
@@ -1200,10 +1188,12 @@ def run_training_pipeline(args):
     y_val_away = val_df[TARGET_COLUMNS[1]].copy()
     y_test_home = test_df[TARGET_COLUMNS[0]].copy()
     y_test_away = test_df[TARGET_COLUMNS[1]].copy()
+
     logger.info(f"Data Split: Train={len(X_train)}, Validation={len(X_val)}, Test={len(X_test)}")
     logger.debug(f"X_train shape: {X_train.shape}")
     logger.debug(f"X_val shape: {X_val.shape}")
     logger.debug(f"X_test shape: {X_test.shape}")
+
     final_feature_list_for_models = selected_features_lasso
     logger.info(f"Using {len(final_feature_list_for_models)} features selected by LASSO for model training.")
 
@@ -1229,33 +1219,41 @@ def run_training_pipeline(args):
         'ridge__fit_intercept': [True, False],
         'ridge__solver': ['auto', 'svd', 'cholesky']
     }
+
     param_dist_map = {
         "xgboost": XGB_PARAM_DIST,
         "random_forest": RF_PARAM_DIST,
-        "ridge": RIDGE_PARAM_DIST
+        "ridge": RIDGE_PARAM_DIST,
     }
+
     predictor_map = {
         "xgboost": XGBoostScorePredictor if XGBOOST_AVAILABLE else None,
         "random_forest": RandomForestScorePredictor,
-        "ridge": RidgeScorePredictor
+        "ridge": RidgeScorePredictor,
     }
+
+    # --- Base Model Training Loop ---
     models_to_run = [m.strip().lower() for m in args.models.split(',')]
-    logger.info(f"Starting tuning & training for models: {models_to_run}")
+    logger.info(f"Starting tuning & training for base models: {models_to_run}")
     all_metrics = []
-    validation_predictions_collector = {}
+    validation_predictions_collector = {}  # This dict will store {'model_key': {'pred_home': Series, 'true_home': Series, ...}}
+
     for model_key in models_to_run:
         PredictorClass = predictor_map.get(model_key)
         if PredictorClass is None or (model_key == 'xgboost' and not XGBOOST_AVAILABLE):
             logger.warning(f"Model class for '{model_key}' unavailable. Skipping.")
             continue
+
         param_dist_current = param_dist_map.get(model_key) if not args.skip_tuning else None
+
+        # Call the tuning/evaluation function which now returns metrics AND validation predictions
         results_tuple = tune_and_evaluate_predictor(
             predictor_class=PredictorClass,
             X_train=X_train.copy(), y_train_home=y_train_home.copy(), y_train_away=y_train_away.copy(),
             X_val=X_val.copy(), y_val_home=y_val_home.copy(), y_val_away=y_val_away.copy(),
             X_test=X_test.copy(), y_test_home=y_test_home.copy(), y_test_away=y_test_away.copy(),
             model_name_prefix=model_key,
-            feature_list=final_feature_list_for_models,
+            feature_list=final_feature_list_for_models,  # Use LASSO selected features
             param_dist=param_dist_current,
             n_iter=args.tune_iterations,
             n_splits=args.cv_splits,
@@ -1264,311 +1262,385 @@ def run_training_pipeline(args):
             weight_method=args.weight_method,
             weight_half_life=args.weight_half_life,
             visualize=args.visualize,
-            save_plots=args.save_plots
+            save_plots=args.save_plots,
         )
+
         if results_tuple:
-            metrics, val_preds = results_tuple
+            metrics, val_preds = results_tuple  # Unpack the tuple
             if metrics:
                 all_metrics.append(metrics)
             if val_preds:
-                validation_predictions_collector[model_key] = val_preds
-                logger.info(f"Collected validation predictions for {model_key}.")
+                # Check if predictions seem valid before storing
+                if (
+                    pd.notna(val_preds.get('pred_home')).any() and
+                    pd.notna(val_preds.get('pred_away')).any() and
+                    len(val_preds.get('pred_home', pd.Series(dtype=float))) == len(X_val)
+                ):
+                    validation_predictions_collector[model_key] = val_preds
+                    logger.info(f"Collected validation predictions for {model_key}.")
+                else:
+                    logger.warning(f"Validation predictions for {model_key} appear invalid or empty. Skipping collection.")
             else:
                 logger.warning(f"Did not receive validation predictions for {model_key}.")
         else:
             logger.error(f"Training/Evaluation failed entirely for {model_key}.")
+
     # <<< END OF MODEL TRAINING LOOP >>>
+    # --- Check if Base Models Succeeded ---
+    successful_base_models = list(validation_predictions_collector.keys())
+    if not successful_base_models:
+        logger.error("No base models produced valid validation predictions. Cannot proceed to calculate weights.")
+        sys.exit(1)
+    logger.info(f"Base models with validation predictions: {successful_base_models}")
 
-    # --- Peek & Filter Context Flags (before stacking) ---
-    possible_flags = [col for col in val_df.columns if 'back_to_back' in col or 'rest' in col or 'venue' in col]
-    logger.info(f"Potential context flags in val_df: {possible_flags}")
-    candidate_flags = [
-        'is_back_to_back',
-        'is_back_to_back_home',
-        'is_back_to_back_away',
-        'rest_days_home',
-        'rest_days_away',
-        'rest_advantage',
-        'venue_home_flag',
-        'home_venue',
-        'away_venue'
-    ]
-    context_flags_to_try = [f for f in candidate_flags if f in val_df.columns]
-    logger.info(f"Using context flags: {context_flags_to_try}")
-
-    # --- Enriched Meta-Model Training (XGBoost Halving Stacking) ---
-    logger.info("\n--- Starting Meta-Model Training (XGBoost Halving Stacking) ---")
-    required_for_stacking = [m for m in ["xgboost", "random_forest", "ridge"] if m in models_to_run]
-    meta_model_trained_and_saved = False
-    if not required_for_stacking:
-        logger.error("No base models were successfully trained or validation predictions collected. Cannot train meta-model.")
-    elif not all(key in validation_predictions_collector for key in required_for_stacking):
-        logger.error(f"Missing validation predictions for one or more base models ({required_for_stacking}) needed for stacking. Cannot train meta-model.")
-    else:
-        try:
-            meta_features_list = []
-            y_val_true_home = None
-            y_val_true_away = None
-            reference_index = None
-            first_valid_key = next((k for k in required_for_stacking if k in validation_predictions_collector), None)
-            if first_valid_key:
-                reference_index = validation_predictions_collector[first_valid_key]['pred_home'].index
-            else:
-                raise ValueError("Could not get validation predictions for any required base models.")
-            for model_key in required_for_stacking:
-                preds_dict = validation_predictions_collector[model_key]
-                if 'pred_home' not in preds_dict or 'pred_away' not in preds_dict:
-                    raise KeyError(f"Missing 'pred_home' or 'pred_away' in validation predictions for {model_key}")
-                df_home = preds_dict['pred_home'].rename(f"{model_key}_pred_home").reindex(reference_index)
-                df_away = preds_dict['pred_away'].rename(f"{model_key}_pred_away").reindex(reference_index)
-                meta_features_list.extend([df_home, df_away])
-                if y_val_true_home is None:
-                    if 'true_home' not in preds_dict or 'true_away' not in preds_dict:
-                        raise KeyError(f"Missing 'true_home' or 'true_away' in validation predictions for {model_key}")
-                    y_val_true_home = preds_dict['true_home'].reindex(reference_index)
-                    y_val_true_away = preds_dict['true_away'].reindex(reference_index)
-            X_meta_train = pd.concat(meta_features_list, axis=1)
-            logger.info(f"Constructed meta-training feature matrix with shape: {X_meta_train.shape}")
-            rows_to_drop_idx = X_meta_train.index[
-                X_meta_train.isnull().any(axis=1) |
-                y_val_true_home.isnull() |
-                y_val_true_away.isnull()
-            ]
-            if len(rows_to_drop_idx) > 0:
-                logger.warning(f"Dropping {len(rows_to_drop_idx)} rows from meta-training data due to NaNs.")
-                X_meta_train = X_meta_train.drop(index=rows_to_drop_idx)
-                y_val_true_home = y_val_true_home.drop(index=rows_to_drop_idx)
-                y_val_true_away = y_val_true_away.drop(index=rows_to_drop_idx)
-            if X_meta_train.empty:
-                raise ValueError("No valid data remaining after NaN handling for meta-model.")
-            y_val_true_home = y_val_true_home.loc[X_meta_train.index]
-            y_val_true_away = y_val_true_away.loc[X_meta_train.index]
-            logger.info("Calculating correlations between base model validation predictions (X_meta_train)...")
-            try:
-                correlation_matrix = X_meta_train.corr()
-                logger.info("\nCorrelation Matrix:\n" + correlation_matrix.to_string())
-                if args.save_plots or args.visualize:
-                    try:
-                        import seaborn as sns
-                        import matplotlib.pyplot as plt
-                        plt.figure(figsize=(8, 6))
-                        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
-                        plt.title("Correlation Matrix of Base Model Validation Predictions")
-                        plt.tight_layout()
-                        if args.save_plots:
-                            plot_path = REPORTS_DIR / f"meta_feature_correlation_heatmap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                            REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-                            plt.savefig(plot_path)
-                            logger.info(f"Correlation heatmap saved to {plot_path}")
-                        if args.visualize:
-                            plt.show()
-                        plt.close()
-                    except ImportError:
-                        logger.warning("Seaborn/Matplotlib not found, cannot generate heatmap plot.")
-                    except Exception as plot_err:
-                        logger.error(f"Error generating correlation heatmap: {plot_err}")
-            except Exception as corr_err:
-                logger.error(f"Failed to calculate correlations: {corr_err}")
-        except Exception as prep_e:
-            logger.error(f"Error preparing meta-model training data: {prep_e}", exc_info=True)
+    # --- Validation Prediction Correlation Analysis (Moved Here, Before Weight Calc) ---
+    logger.info("\n--- Analyzing Base Model Validation Prediction Correlations ---")
+    try:
+        meta_features_list_corr = []
+        reference_index_corr = None
+        first_valid_key_corr = next((k for k in successful_base_models if k in validation_predictions_collector), None)
+        if first_valid_key_corr:
+            reference_index_corr = validation_predictions_collector[first_valid_key_corr]['pred_home'].index
         else:
-            logger.info("\n--- Starting Meta-Model Tuning (XGBoost Halving Stacking) ---")
-            try:
-                meta_feature_names = list(X_meta_train.columns)
-                logger.info(f"Meta-model training features ({len(meta_feature_names)}): {meta_feature_names}")
-                logger.info(f"Meta-model training samples: {len(X_meta_train)}")
-                XGB_META_PARAM_DIST = {
-                    'n_estimators': randint(50, 301),
-                    'max_depth': randint(2, 6),
-                    'learning_rate': reciprocal(0.01, 0.3),  # Log-uniform sampling
-                    'subsample': uniform(0.7, 0.3),
-                    'colsample_bytree': uniform(0.7, 0.3)
-                }
-                xgb_meta_base = xgb.XGBRegressor(
-                    random_state=SEED,
-                    objective='reg:squarederror',
-                    early_stopping_rounds=10,
-                    n_jobs=1
-                )
-                logger.info("Tuning Home Score Meta-Model (XGBoost Halving Search)...")
-                hs_meta_home = HalvingRandomSearchCV(
-                    estimator=xgb_meta_base,
-                    param_distributions=XGB_META_PARAM_DIST,
-                    factor=3,
-                    scoring='neg_mean_absolute_error',
-                    cv=5,
-                    n_jobs=-1,
-                    verbose=1,
-                    random_state=SEED
-                )
-                fit_params_home = {'eval_set': [(X_meta_train, y_val_true_home)], 'verbose': False}
-                hs_meta_home.fit(X_meta_train, y_val_true_home, **fit_params_home)
-                meta_model_home = hs_meta_home.best_estimator_
-                logger.info(f"Home Meta-Model Tuning Complete. Best Score: {hs_meta_home.best_score_:.4f}")
-                logger.info(f"Home Meta-Model Best Params: {hs_meta_home.best_params_}")
-                xgb_meta_away_base = xgb.XGBRegressor(
-                    random_state=SEED + 1,
-                    objective='reg:squarederror',
-                    early_stopping_rounds=10,
-                    n_jobs=1
-                )
-                logger.info("Tuning Away Score Meta-Model (XGBoost Halving Search)...")
-                fit_params_away = {'eval_set': [(X_meta_train, y_val_true_away)], 'verbose': False}
-                hs_meta_away = HalvingRandomSearchCV(
-                    estimator=xgb_meta_away_base,
-                    param_distributions=XGB_META_PARAM_DIST,
-                    factor=3,
-                    scoring='neg_mean_absolute_error',
-                    cv=5,
-                    n_jobs=-1,
-                    verbose=1,
-                    random_state=SEED + 1
-                )
-                hs_meta_away.fit(X_meta_train, y_val_true_away, **fit_params_away)
-                meta_model_away = hs_meta_away.best_estimator_
-                meta_model_filename = "stacking_meta_model_xgb_hs.joblib"
-                meta_model_save_path = MAIN_MODELS_DIR / meta_model_filename
-                if meta_model_save_path.exists():
-                    try:
-                        meta_model_save_path.unlink()  # Delete the file
-                        logger.info(f"Existing meta-model file {meta_model_save_path} removed.")
-                    except Exception as e:
-                        logger.error(f"Error removing the existing meta-model file: {e}", exc_info=True)
-                meta_model_payload = {
-                    'meta_model_home': meta_model_home,
-                    'meta_model_away': meta_model_away,
-                    'meta_feature_names': list(X_meta_train.columns),
-                    'base_models_used': required_for_stacking,
-                    'training_timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
-                }
-                joblib.dump(meta_model_payload, meta_model_save_path)
-                logger.info(f"Stacking meta-models saved successfully to {meta_model_save_path}")
-                meta_model_trained_and_saved = True
-            except Exception as meta_e:
-                logger.error(f"Failed to train or save XGBoost meta-model: {meta_e}", exc_info=True)
-            if not meta_model_trained_and_saved:
-                logger.warning("XGBoost meta-model was not trained or saved due to previous errors.")
+            raise ValueError("Could not get validation predictions for correlation analysis.")
 
-    if meta_model_trained_and_saved:
-        logger.info("\n--- Evaluating Final Stacked Ensemble on Test Set ---")
+        for model_key in successful_base_models:  # Only use successful models
+            preds_dict = validation_predictions_collector[model_key]
+            df_home = preds_dict['pred_home'].rename(f"{model_key}_pred_home").reindex(reference_index_corr)
+            df_away = preds_dict['pred_away'].rename(f"{model_key}_pred_away").reindex(reference_index_corr)
+            meta_features_list_corr.extend([df_home, df_away])
+
+        X_meta_train_corr = pd.concat(meta_features_list_corr, axis=1).dropna()  # Drop rows with any NaNs for corr calc
+        if not X_meta_train_corr.empty:
+            logger.info(f"Constructed meta-feature matrix for correlation with shape: {X_meta_train_corr.shape}")
+            logger.info("Calculating correlations between base model validation predictions...")
+            correlation_matrix = X_meta_train_corr.corr()
+            logger.info("\nCorrelation Matrix:\n" + correlation_matrix.to_string())
+            # Optional: Save heatmap (Keep this logic if desired)
+            if args.save_plots or args.visualize:
+                try:
+                    import seaborn as sns
+                    import matplotlib.pyplot as plt
+                    plt.figure(figsize=(8, 6))
+                    sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
+                    plt.title("Correlation Matrix of Base Model Validation Predictions")
+                    plt.tight_layout()
+                    if args.save_plots:
+                        plot_path = REPORTS_DIR / f"validation_pred_correlation_heatmap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+                        plt.savefig(plot_path)
+                        logger.info(f"Correlation heatmap saved to {plot_path}")
+                    if args.visualize:
+                        plt.show()
+                    plt.close()
+                except ImportError:
+                    logger.warning("Seaborn/Matplotlib not found, cannot generate heatmap plot.")
+                except Exception as plot_err:
+                    logger.error(f"Error generating correlation heatmap: {plot_err}")
+        else:
+            logger.warning("No valid data remaining for correlation calculation after dropna.")
+    except Exception as prep_corr_e:
+        logger.error(f"Error preparing data for correlation analysis: {prep_corr_e}", exc_info=True)
+
+    # --- Calculate Validation MAEs & Ensemble Weights ---
+    logger.info("\n--- Calculating Validation MAEs and Ensemble Weights ---")
+    validation_mae_dict = {}
+    for model_key, val_preds_dict in validation_predictions_collector.items():
         try:
-            X_meta_test_list = []
-            loaded_base_model_payloads = {}
-            if not all_metrics:
-                logger.error("No base model metrics found in 'all_metrics'. Cannot load models for final evaluation.")
-            else:
-                for metrics_dict in all_metrics:
-                    full_model_name = metrics_dict.get('model_name')
-                    if full_model_name:
-                        model_name = full_model_name.split('_score_predictor')[0]
-                    else:
-                        logger.warning(f"Key 'model_name' not found in metrics dict: {metrics_dict}. Skipping.")
-                        continue
-                    saved_path = metrics_dict.get('save_path')
-                    if not saved_path or not os.path.exists(saved_path):
-                        logger.warning(f"Saved path missing or invalid for {model_name}: '{saved_path}'. Skipping.")
-                        continue
-                    logger.info(f"Loading base model payload {model_name} from {saved_path}...")
-                    try:
-                        loaded_payload = joblib.load(saved_path)
-                        if isinstance(loaded_payload, dict) and 'pipeline_home' in loaded_payload and 'pipeline_away' in loaded_payload:
-                            loaded_base_model_payloads[model_name] = loaded_payload
-                            logger.info(f"Successfully loaded payload dictionary for {model_name}.")
-                        else:
-                            logger.error(f"Loaded object for {model_name} from {saved_path} is not a dictionary with expected pipeline keys. Skipping.")
-                            continue
-                    except Exception as load_err:
-                        logger.error(f"Failed to load base model payload {model_name} from {saved_path}: {load_err}", exc_info=True)
-            if len(loaded_base_model_payloads) != len(required_for_stacking):
-                logger.error(f"Failed to load all required base model payloads ({required_for_stacking}). "
-                             f"Loaded: {list(loaded_base_model_payloads.keys())}. Skipping final ensemble evaluation.")
-            else:
-                for model_name in required_for_stacking:
-                    payload = loaded_base_model_payloads.get(model_name)
-                    if payload is None:
-                        logger.error(f"Payload for {model_name} is missing unexpectedly. Skipping.")
-                        continue
-                    logger.info(f"Generating test set predictions using loaded pipelines for base model: {model_name}...")
-                    try:
-                        pipeline_home = payload['pipeline_home']
-                        pipeline_away = payload['pipeline_away']
-                        test_preds_home = pipeline_home.predict(X_test)
-                        test_preds_away = pipeline_away.predict(X_test)
-                        if test_preds_home is None or test_preds_away is None or len(test_preds_home) != len(X_test):
-                            raise ValueError(f"Prediction shapes invalid for {model_name}.")
-                        pred_df = pd.DataFrame({
-                            f'{model_name}_pred_home': test_preds_home,
-                            f'{model_name}_pred_away': test_preds_away
-                        }, index=X_test.index)
-                        X_meta_test_list.append(pred_df)
-                    except Exception as pred_err:
-                        logger.error(f"Error generating predictions with {model_name}'s pipelines: {pred_err}", exc_info=True)
-                if len(X_meta_test_list) != len(required_for_stacking):
-                    logger.error("Could not generate predictions from all required base models. Skipping final ensemble evaluation.")
-                else:
-                    try:
-                        X_meta_test = pd.concat(X_meta_test_list, axis=1)
-                        logger.info(f"Created meta-model test input features with shape: {X_meta_test.shape}")
-                        logger.debug(f"Meta-model test features: {X_meta_test.columns.tolist()}")
-                        meta_model_load_path = MAIN_MODELS_DIR / "stacking_meta_model_xgb_hs.joblib"
-                        meta_model_payload = joblib.load(meta_model_load_path)
-                        meta_model_home = meta_model_payload['meta_model_home']
-                        meta_model_away = meta_model_payload['meta_model_away']
-                        logger.info(f"Loaded saved stacking XGBoost meta-model from {meta_model_load_path}.")
-                        final_preds_home = meta_model_home.predict(X_meta_test)
-                        final_preds_away = meta_model_away.predict(X_meta_test)
-                        final_preds_home_s = pd.Series(final_preds_home, index=X_meta_test.index)
-                        final_preds_away_s = pd.Series(final_preds_away, index=X_meta_test.index)
-                        logger.info("Generated final predictions from the stacked ensemble.")
-                        logger.info("--- Final Stacked Ensemble Test Set Metrics ---")
-                        y_test_home_aligned = y_test_home.loc[final_preds_home_s.index]
-                        y_test_away_aligned = y_test_away.loc[final_preds_away_s.index]
-                        test_metrics_home = calculate_regression_metrics(y_test_home_aligned, final_preds_home_s)
-                        test_metrics_away = calculate_regression_metrics(y_test_away_aligned, final_preds_away_s)
-                        logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Home={test_metrics_home.get('mae', np.nan):.3f}, "
-                                    f"Away={test_metrics_away.get('mae', np.nan):.3f}")
-                        logger.info(f"FINAL STACKED ENSEMBLE Test RMSE: Home={test_metrics_home.get('rmse', np.nan):.3f}, "
-                                    f"Away={test_metrics_away.get('rmse', np.nan):.3f}")
-                        logger.info(f"FINAL STACKED ENSEMBLE Test R2  : Home={test_metrics_home.get('r2', np.nan):.3f}, "
-                                    f"Away={test_metrics_away.get('r2', np.nan):.3f}")
-                        try:
-                            total_mae = mean_absolute_error(y_test_home_aligned + y_test_away_aligned,
-                                                            final_preds_home_s + final_preds_away_s)
-                            diff_mae = mean_absolute_error(y_test_home_aligned - y_test_away_aligned,
-                                                           final_preds_home_s - final_preds_away_s)
-                            logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Total={total_mae:.3f}, Diff={diff_mae:.3f}")
-                        except Exception:
-                            logger.warning("Could not compute Total/Diff MAE for ensemble.")
-                        try:
-                            y_true_comb = np.vstack((y_test_home_aligned.values, y_test_away_aligned.values)).T
-                            y_pred_comb = np.vstack((final_preds_home_s.values, final_preds_away_s.values)).T
-                            final_score_loss = nba_score_loss(y_true_comb, y_pred_comb)
-                            final_dist_loss = nba_distribution_loss(y_true_comb, y_pred_comb)
-                            final_combined_loss = combined_nba_loss(y_true_comb, y_pred_comb)
-                            logger.info(f"FINAL STACKED ENSEMBLE Custom Losses: Score={final_score_loss:.3f}, "
-                                        f"Dist={final_dist_loss:.3f}, Combined={final_combined_loss:.3f}")
-                        except Exception as loss_err:
-                            logger.warning(f"Could not compute custom losses for ensemble: {loss_err}")
-                        try:
-                            final_betting_metrics = calculate_betting_metrics(y_true_comb, y_pred_comb, vegas_lines=None)
-                            logger.info(f"FINAL STACKED ENSEMBLE Betting Metrics: {final_betting_metrics}")
-                        except Exception as bet_err:
-                            logger.warning(f"Could not compute betting metrics for ensemble: {bet_err}")
-                    except Exception as eval_err:
-                        logger.error("Error during final ensemble prediction or evaluation: " + str(eval_err), exc_info=True)
-        except FileNotFoundError as e:
-            logger.error(f"Could not load a required model file for final ensemble evaluation: {e}", exc_info=True)
-        except KeyError as e:
-            logger.error(f"Missing expected key when accessing model results/paths: {e}", exc_info=True)
+            # Ensure data is valid before calculating MAE
+            true_home = val_preds_dict['true_home']
+            pred_home = val_preds_dict['pred_home']
+            true_away = val_preds_dict['true_away']
+            pred_away = val_preds_dict['pred_away']
+            # Simple check for NaN before MAE calculation
+            if (
+                true_home.isnull().any() or pred_home.isnull().any() or
+                true_away.isnull().any() or pred_away.isnull().any()
+            ):
+                logger.warning(f"NaNs detected in validation predictions/targets for {model_key}. Skipping MAE calculation for this model.")
+                validation_mae_dict[model_key] = np.nan  # Mark as invalid
+                continue
+            mae_home = mean_absolute_error(true_home, pred_home)
+            mae_away = mean_absolute_error(true_away, pred_away)
+            avg_mae = (mae_home + mae_away) / 2.0
+            validation_mae_dict[model_key] = avg_mae
+            logger.info(f"Validation MAE for {model_key}: Home={mae_home:.4f}, Away={mae_away:.4f}, Avg={avg_mae:.4f}")
+        except KeyError as ke:
+            logger.error(f"Missing expected keys in validation predictions for {model_key}: {ke}. Cannot calculate MAE.")
+            validation_mae_dict[model_key] = np.nan  # Mark as invalid
+        except Exception as mae_err:
+            logger.error(f"Error calculating validation MAE for {model_key}: {mae_err}")
+            validation_mae_dict[model_key] = np.nan  # Mark as invalid
+
+    # Compute weights using the function
+    ensemble_weights = compute_weights(validation_mae_dict)
+    # Save the weights
+    if ensemble_weights:  # Only save if weights were successfully computed
+        weights_path = MAIN_MODELS_DIR / "ensemble_weights.json"
+        try:
+            with open(weights_path, 'w') as f:
+                json.dump(ensemble_weights, f, indent=4)
+            logger.info(f"Saved ensemble weights (based on validation MAE) to {weights_path}")
         except Exception as e:
-            logger.error(f"An unexpected error occurred during final stacked ensemble evaluation setup: {e}", exc_info=True)
+            logger.error(f"Failed to save ensemble weights: {e}", exc_info=True)
     else:
-        logger.warning("Skipping final ensemble evaluation because meta-model was not trained/saved.")
+        logger.error("Ensemble weights could not be computed. Weights file not saved.")
+
+    # --- Evaluate Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---
+    logger.info("\n--- Evaluating Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---")
+    base_model_test_preds = {} # Initialize dict to store test predictions
+    models_loaded_for_eval = {} # Initialize dict to store loaded models
+
+    if not ensemble_weights:
+        logger.error("Ensemble weights were not calculated or loaded. Cannot evaluate weighted ensemble.")
+    else:
+        base_model_test_preds = {}
+        models_loaded_for_eval = {}
+            # 1. Load necessary saved base models (Do this regardless of ensemble_weights IF manual eval is needed)
+    logger.info("Loading saved base models for ensemble evaluation...")
+    models_to_reload = list(predictor_map.keys()) # Attempt to load all potential base models
+    if ensemble_weights:
+        models_to_reload = list(ensemble_weights.keys()) # Prioritize keys from valid weights if available
+
+    for model_key in models_to_reload:
+        model_loaded = False
+        # ... (Keep the model loading loop using 'all_metrics' and 'predictor_map' as before) ...
+        for m in all_metrics:
+            full_model_name = m.get('model_name', '')
+            save_path = m.get('save_path')
+            if full_model_name.split('_score_predictor')[0].lower() == model_key.lower() and save_path and Path(save_path).is_file():
+                 try:
+                     PredictorClass = predictor_map.get(model_key)
+                     if PredictorClass:
+                          predictor = PredictorClass(model_dir=str(MAIN_MODELS_DIR), model_name=f"{model_key}_score_predictor")
+                          predictor.load_model(filepath=save_path)
+                          if predictor.pipeline_home and predictor.pipeline_away:
+                              models_loaded_for_eval[model_key] = predictor
+                              model_loaded = True
+                              logger.info(f"Successfully loaded model {model_key} from {save_path}")
+                              break
+                          else: logger.error(f"Loaded model {model_key} from {save_path} but pipelines missing.")
+                     else: logger.error(f"Predictor class not found for {model_key} during reload.")
+                 except Exception as load_err:
+                     logger.error(f"Failed to reload model {model_key} from {save_path}: {load_err}")
+        if not model_loaded:
+            logger.error(f"Could not reload model {model_key}. It cannot be used in evaluation.")
+
+
+    # 2. Generate Test Set Predictions from loaded models
+    logger.info("Generating test set predictions from reloaded base models...")
+    if not models_loaded_for_eval:
+         logger.error("No base models successfully reloaded. Cannot evaluate any weighted ensemble.")
+         # Skip the rest of the evaluation if no models loaded
+         # Ensure the script can continue to the final summary if desired
+    else:
+        try:
+            X_test_eval = X_test[final_feature_list_for_models].copy()
+            for model_key, predictor in models_loaded_for_eval.items():
+                logger.debug(f"Predicting test set with reloaded {model_key}...")
+                preds_df = predictor.predict(X_test_eval)
+                if preds_df is not None and not preds_df.empty and all(c in preds_df for c in ['predicted_home_score', 'predicted_away_score']):
+                    base_model_test_preds[model_key] = preds_df.loc[X_test_eval.index, ['predicted_home_score', 'predicted_away_score']]
+                    logger.debug(f"Stored test predictions for {model_key}")
+                else:
+                     logger.warning(f"Failed to get valid test predictions from reloaded {model_key}.")
+                     base_model_test_preds[model_key] = None
+        except Exception as repred_err:
+            logger.error(f"Error during re-prediction for ensemble evaluation: {repred_err}", exc_info=True)
+            base_model_test_preds = {} # Clear predictions if error
+
+        # --- >>> START Evaluation using INVERSE VALIDATION MAE weights <<< ---
+        if not ensemble_weights:
+            logger.info("Skipping evaluation using inverse validation MAE weights (weights unavailable).")
+        elif not base_model_test_preds:
+            logger.error("Skipping evaluation using inverse validation MAE weights (base predictions missing).")
+        else:
+            logger.info("Calculating weighted average predictions for test set (using Inv Val MAE weights)...")
+            # ... (Weighted average calculation logic using 'ensemble_weights') ...
+            weighted_home_sum = pd.Series(0.0, index=X_test.index)
+            weighted_away_sum = pd.Series(0.0, index=X_test.index)
+            total_weight_applied_series = pd.Series(0.0, index=X_test.index)
+            successful_models_for_inv_mae_avg = [k for k, v in base_model_test_preds.items() if v is not None]
+
+            for model_key in successful_models_for_inv_mae_avg:
+                 weight = ensemble_weights.get(model_key, 0.0) # Get calculated weight
+                 preds_df = base_model_test_preds.get(model_key)
+                 if weight > 1e-6 and preds_df is not None:
+                    preds_df = preds_df.reindex(X_test.index)
+                    valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
+                    weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
+                    weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
+                    total_weight_applied_series.loc[valid_idx] += weight
+
+            # Normalize, handle fallback...
+            final_pred_home_inv_mae = pd.Series(np.nan, index=X_test.index)
+            final_pred_away_inv_mae = pd.Series(np.nan, index=X_test.index)
+            valid_weight_idx = total_weight_applied_series > 1e-6
+            final_pred_home_inv_mae.loc[valid_weight_idx] = weighted_home_sum.loc[valid_weight_idx] / total_weight_applied_series.loc[valid_weight_idx]
+            final_pred_away_inv_mae.loc[valid_weight_idx] = weighted_away_sum.loc[valid_weight_idx] / total_weight_applied_series.loc[valid_weight_idx]
+            fallback_idx = ~valid_weight_idx
+            if fallback_idx.any(): # Apply fallback if needed
+                logger.warning(f"Applying simple average fallback for {fallback_idx.sum()} test samples (Inv Val MAE weights).")
+                valid_dfs_for_avg = [df for df in base_model_test_preds.values() if df is not None]
+                if valid_dfs_for_avg:
+                     simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                     simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                     final_pred_home_inv_mae.loc[fallback_idx] = simple_avg_home.loc[fallback_idx]
+                     final_pred_away_inv_mae.loc[fallback_idx] = simple_avg_away.loc[fallback_idx]
+                final_pred_home_inv_mae = final_pred_home_inv_mae.fillna(115.0)
+                final_pred_away_inv_mae = final_pred_away_inv_mae.fillna(115.0)
+
+            logger.info("Evaluating weighted ensemble predictions (Inv Val MAE weights)...")
+            try:
+                 # Align true values
+                 y_test_home_aligned_w = y_test_home.reindex(final_pred_home_inv_mae.index)
+                 y_test_away_aligned_w = y_test_away.reindex(final_pred_away_inv_mae.index)
+                 # Drop NaNs
+                 valid_final_idx = final_pred_home_inv_mae.notna() & final_pred_away_inv_mae.notna() & y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
+                 if not valid_final_idx.all(): logger.warning(f"Dropping {(~valid_final_idx).sum()} samples with NaNs before Inv Val MAE weighted evaluation.")
+                 final_pred_home_inv_mae = final_pred_home_inv_mae[valid_final_idx]
+                 final_pred_away_inv_mae = final_pred_away_inv_mae[valid_final_idx]
+                 y_test_home_aligned_w = y_test_home_aligned_w[valid_final_idx]
+                 y_test_away_aligned_w = y_test_away_aligned_w[valid_final_idx]
+
+                 if final_pred_home_inv_mae.empty: logger.error("No valid predictions remaining for Inv Val MAE weighted evaluation.")
+                 else:
+                    # Calculate and log metrics...
+                    ens_metrics_home = calculate_regression_metrics(y_test_home_aligned_w, final_pred_home_inv_mae)
+                    ens_metrics_away = calculate_regression_metrics(y_test_away_aligned_w, final_pred_away_inv_mae)
+                    ens_mae_total = mean_absolute_error(y_test_home_aligned_w + y_test_away_aligned_w, final_pred_home_inv_mae + final_pred_away_inv_mae)
+                    ens_mae_diff = mean_absolute_error(y_test_home_aligned_w - y_test_away_aligned_w, final_pred_home_inv_mae - final_pred_away_inv_mae)
+                    y_true_comb_ens = np.vstack((y_test_home_aligned_w.values, y_test_away_aligned_w.values)).T
+                    y_pred_comb_ens = np.vstack((final_pred_home_inv_mae.values, final_pred_away_inv_mae.values)).T
+                    ens_betting = calculate_betting_metrics(y_true_comb_ens, y_pred_comb_ens)
+                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test MAE : Home={ens_metrics_home.get('mae', np.nan):.3f}, Away={ens_metrics_away.get('mae', np.nan):.3f}, Total={ens_mae_total:.3f}, Diff={ens_mae_diff:.3f}")
+                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test RMSE: Home={ens_metrics_home.get('rmse', np.nan):.3f}, Away={ens_metrics_away.get('rmse', np.nan):.3f}")
+                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test R2  : Home={ens_metrics_home.get('r2', np.nan):.3f}, Away={ens_metrics_away.get('r2', np.nan):.3f}")
+                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Betting Metrics: {ens_betting}")
+            except Exception as ens_eval_err: logger.error(f"Error evaluating Inv Val MAE weighted ensemble: {ens_eval_err}", exc_info=True)
+        # --- >>> END Evaluation using INVERSE VALIDATION MAE weights <<< ---
+
+
+        # --- >>> START Evaluation using MANUAL weights <<< ---
+        logger.info("\n--- Evaluating MANUALLY Weighted Ensemble on Test Set ---")
+        manual_weights = {'ridge': 0.55, 'random_forest': 0.25, 'xgboost': 0.20}
+        logger.info(f"Using Manual Weights: {manual_weights}")
+
+        if not base_model_test_preds:
+            logger.error("Missing base model test predictions. Cannot calculate manually weighted ensemble performance.")
+        else:
+            logger.info("Calculating MANUALLY weighted average predictions for test set...")
+            # ... (Weighted average calculation logic using 'manual_weights') ...
+            manual_weighted_home_sum = pd.Series(0.0, index=X_test.index)
+            manual_weighted_away_sum = pd.Series(0.0, index=X_test.index)
+            manual_total_weight_applied_series = pd.Series(0.0, index=X_test.index)
+            models_in_manual_weights = list(manual_weights.keys())
+
+            for model_key in models_in_manual_weights:
+                 weight = manual_weights.get(model_key, 0.0)
+                 preds_df = base_model_test_preds.get(model_key)
+                 if weight > 1e-6 and preds_df is not None:
+                     preds_df = preds_df.reindex(X_test.index)
+                     valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
+                     manual_weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
+                     manual_weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
+                     manual_total_weight_applied_series.loc[valid_idx] += weight
+                 elif weight > 1e-6 and preds_df is None:
+                      logger.warning(f"Model {model_key} needed for manual weights but test predictions missing. Skipping.")
+
+            # Normalize, handle fallback...
+            manual_final_pred_home = pd.Series(np.nan, index=X_test.index)
+            manual_final_pred_away = pd.Series(np.nan, index=X_test.index)
+            manual_valid_weight_idx = manual_total_weight_applied_series > 1e-6
+            manual_final_pred_home.loc[manual_valid_weight_idx] = manual_weighted_home_sum.loc[manual_valid_weight_idx] / manual_total_weight_applied_series.loc[manual_valid_weight_idx]
+            manual_final_pred_away.loc[manual_valid_weight_idx] = manual_weighted_away_sum.loc[manual_valid_weight_idx] / manual_total_weight_applied_series.loc[manual_valid_weight_idx]
+            manual_fallback_idx = ~manual_valid_weight_idx
+            if manual_fallback_idx.any(): # Apply fallback if needed
+                logger.warning(f"Applying simple average fallback for {manual_fallback_idx.sum()} test samples (manual weights).")
+                valid_dfs_for_avg = [df for df in base_model_test_preds.values() if df is not None]
+                if valid_dfs_for_avg:
+                     simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                     simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                     manual_final_pred_home.loc[manual_fallback_idx] = simple_avg_home.loc[manual_fallback_idx]
+                     manual_final_pred_away.loc[manual_fallback_idx] = simple_avg_away.loc[manual_fallback_idx]
+                manual_final_pred_home = manual_final_pred_home.fillna(115.0)
+                manual_final_pred_away = manual_final_pred_away.fillna(115.0)
+
+
+            logger.info("Evaluating MANUALLY weighted ensemble predictions...")
+            try:
+                # Align true values
+                 y_test_home_aligned_w = y_test_home.reindex(manual_final_pred_home.index)
+                 y_test_away_aligned_w = y_test_away.reindex(manual_final_pred_away.index)
+                 # Drop NaNs
+                 valid_final_idx_man = manual_final_pred_home.notna() & manual_final_pred_away.notna() & y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
+                 if not valid_final_idx_man.all(): logger.warning(f"Dropping {(~valid_final_idx_man).sum()} samples with NaNs before final manual weighted evaluation.")
+                 manual_final_pred_home = manual_final_pred_home[valid_final_idx_man]
+                 manual_final_pred_away = manual_final_pred_away[valid_final_idx_man]
+                 y_test_home_aligned_w = y_test_home_aligned_w[valid_final_idx_man]
+                 y_test_away_aligned_w = y_test_away_aligned_w[valid_final_idx_man]
+
+                 if manual_final_pred_home.empty:
+                     logger.error("No valid predictions remaining for manual weighted ensemble evaluation.")
+                 else:
+                    # Calculate and log metrics...
+                    man_ens_metrics_home = calculate_regression_metrics(y_test_home_aligned_w, manual_final_pred_home)
+                    man_ens_metrics_away = calculate_regression_metrics(y_test_away_aligned_w, manual_final_pred_away)
+                    man_ens_mae_total = mean_absolute_error(y_test_home_aligned_w + y_test_away_aligned_w, manual_final_pred_home + manual_final_pred_away)
+                    man_ens_mae_diff = mean_absolute_error(y_test_home_aligned_w - y_test_away_aligned_w, manual_final_pred_home - manual_final_pred_away)
+                    y_true_comb_ens_man = np.vstack((y_test_home_aligned_w.values, y_test_away_aligned_w.values)).T
+                    y_pred_comb_ens_man = np.vstack((manual_final_pred_home.values, manual_final_pred_away.values)).T
+                    man_ens_betting = calculate_betting_metrics(y_true_comb_ens_man, y_pred_comb_ens_man)
+                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Test MAE : Home={man_ens_metrics_home.get('mae', np.nan):.3f}, Away={man_ens_metrics_away.get('mae', np.nan):.3f}, Total={man_ens_mae_total:.3f}, Diff={man_ens_mae_diff:.3f}")
+                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Test RMSE: Home={man_ens_metrics_home.get('rmse', np.nan):.3f}, Away={man_ens_metrics_away.get('rmse', np.nan):.3f}")
+                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Test R2  : Home={man_ens_metrics_home.get('r2', np.nan):.3f}, Away={man_ens_metrics_away.get('r2', np.nan):.3f}")
+                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Betting Metrics: {man_ens_betting}")
+            except Exception as man_ens_eval_err:
+                 logger.error(f"Error evaluating manually weighted ensemble performance: {man_ens_eval_err}", exc_info=True)
+        # --- End Manual Weighted Ensemble Evaluation ---
+
+        # --- Final Summary Logging ---
+    logger.info("\n--- Training Pipeline Summary ---")
+    if all_metrics:
+         metrics_df = pd.DataFrame(all_metrics)
+         cols_to_show = [
+             'model_name', 'feature_count', 'training_duration_final',
+             'test_mae_home', 'test_mae_away', 'test_r2_home', 'test_r2_away',
+             'test_mae_total', 'test_mae_diff'
+         ]
+         if 'test_combined_loss' in metrics_df.columns:
+             cols_to_show.append('test_combined_loss')
+         if 'betting_metrics' in metrics_df.columns:
+             cols_to_show.append('betting_metrics')
+         cols_to_show_present = [col for col in cols_to_show if col in metrics_df.columns]
+         logger.info("Base Model Performance (Test Set):")
+         try:
+             # Prepare DataFrame for display
+             metrics_df_display = metrics_df[cols_to_show_present].copy() # Work on a copy
+             if 'betting_metrics' in metrics_df_display.columns:
+                  # Convert the dict/object column to string representation BEFORE printing
+                  metrics_df_display['betting_metrics'] = metrics_df_display['betting_metrics'].astype(str)
+
+             # Call to_string WITHOUT formatters after preparing the DataFrame
+             logger.info("\n" + metrics_df_display.to_string(index=False))
+
+         except Exception as e:
+              logger.warning(f"Could not format summary table: {e}")
+              # Fallback still uses default formatting on the original df
+              logger.info("\n" + metrics_df[cols_to_show_present].to_string(index=False))
+
+    if ensemble_weights:
+        logger.info("\nCalculated Ensemble Weights (Inverse Validation MAE):") # Clarified label
+        logger.info(json.dumps(ensemble_weights, indent=4))
+    else:
+         logger.warning("\nEnsemble weights (Inv Val MAE) were not calculated successfully.")
+
+    # Log Manual Weights Used (for clarity in logs)
+    logger.info(f"\nManual Ensemble Weights Used for Evaluation: {manual_weights}") # Added log for manual weights
 
     end_time_pipeline = time.time()
-    logger.info(f"--- NBA Model Tuning & Training Pipeline Finished in {end_time_pipeline - start_pipeline_time:.2f} seconds ---")
-
-
+    logger.info(f"\n--- NBA Model Training Pipeline Finished in {end_time_pipeline - start_pipeline_time:.2f} seconds ---")
+ 
 def load_base_model(model_key: str, all_metrics: list, default_key: str = 'model') -> Optional[Any]:
     """
     Retrieve and load a base model using its saved path from the metrics dictionary.
@@ -1626,6 +1698,7 @@ parser.add_argument("--visualize", action="store_true", help="Show plots interac
 parser.add_argument("--save-plots", action="store_true", help="Save generated plots to reports directory")
 parser.add_argument("--allow-dummy", action="store_true", help="Allow script to run using dummy classes if imports fail")
 parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-cli_args = parser.parse_args()
 
-run_training_pipeline(cli_args)
+if __name__ == '__main__':
+    cli_args = parser.parse_args()
+    run_training_pipeline(cli_args)

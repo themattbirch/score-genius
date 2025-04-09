@@ -84,14 +84,16 @@ PACIFIC_TZ = pytz.timezone("America/Los_Angeles")
 DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
 DEFAULT_UPCOMING_DAYS_WINDOW = 2
 
-# --- Meta-Model Configuration ---
-META_MODEL_FILENAME = "stacking_meta_model_xgb_hs.joblib" # Ensure this matches your saved file
+# --- Ensemble Configuration --- # <<< RENAMED SECTION
+# META_MODEL_FILENAME = "stacking_meta_model_xgb_hs.joblib" # <<< REMOVE or COMMENT OUT
+ENSEMBLE_WEIGHTS_FILENAME = "ensemble_weights.json" # <<< ADD Filename for weights
+
+# Fallback weights if the JSON file cannot be loaded
 FALLBACK_ENSEMBLE_WEIGHTS: Dict[str, float] = {
     "xgboost": 0.30,
     "random_forest": 0.40,
     "ridge": 0.30
 }
-
 # --- Data Column Requirements (Restored from Old Script) ---
 REQUIRED_HISTORICAL_COLS = [
     'game_id', 'game_date', 'home_team', 'away_team', 'home_score', 'away_score',
@@ -655,13 +657,13 @@ def generate_predictions(
 ) -> Tuple[List[Dict], List[Dict]]:
     """
     Orchestrates the prediction process using on-the-fly feature generation
-    and a stacking ensemble (meta-model) if available, otherwise fallback weights.
+    and a weighted ensemble based on validation performance.
     Returns a tuple: (final prediction list, raw prediction list).
     """
-    logger.info("--- Starting NBA Prediction Pipeline (Stacking Ensemble Attempt) ---")
+    logger.info("--- Starting NBA Prediction Pipeline (Weighted Ensemble) ---") # <<< UPDATED Log
     start_time = time.time()
     final_predictions: List[Dict] = []
-    raw_predictions_list: List[Dict] = [] # Keep raw ensemble preds before calibration
+    raw_predictions_list: List[Dict] = []
 
     # --- Initial Setup (Client, Engines) ---
     if not PROJECT_MODULES_IMPORTED:
@@ -714,54 +716,54 @@ def generate_predictions(
     if historical_data.empty: logger.warning("Historical data empty; feature quality reduced.")
     if team_stats_data.empty: logger.warning("Team stats data empty; context features reduced.")
 
-    # --- Load Models (Base + Meta) (Step 2) ---
-    logger.info("Step 2: Loading trained models (Base + Meta)...")
+        # --- Load Models & Weights (Step 2) --- # <<< UPDATED Step Name
+    logger.info("Step 2: Loading trained base models & ensemble weights...")
     prediction_models: Optional[Dict[str, Any]] = None
     required_features: Optional[List[str]] = None
-    meta_model_home: Optional[Any] = None
-    meta_model_away: Optional[Any] = None
-    meta_feature_names: Optional[List[str]] = None
-    base_models_expected_by_meta: List[str] = []
-    use_fallback_weights = True # Default
+    ensemble_weights: Dict[str, float] = {} # <<< Initialize weights dict
 
     try:
-        # Load base models first using the restored function
+        # Load base models using the existing function
         prediction_models, required_features = load_trained_models(model_dir)
         if not prediction_models or not required_features:
             raise RuntimeError("Failed to load base models or required feature list.")
         logger.info(f"Loaded base models: {list(prediction_models.keys())} (requires {len(required_features)} features).")
 
-        # Attempt to Load Meta-Model
-        meta_model_path = model_dir / META_MODEL_FILENAME
-        if not meta_model_path.is_file():
-             logger.warning(f"Stacking meta-model '{META_MODEL_FILENAME}' not found at {meta_model_path}. Using fallback static weights.")
+        # --- Load Ensemble Weights from JSON --- # <<< NEW Block
+        weights_path = model_dir / ENSEMBLE_WEIGHTS_FILENAME
+        if not weights_path.is_file():
+             logger.warning(f"Ensemble weights file '{ENSEMBLE_WEIGHTS_FILENAME}' not found at {weights_path}.")
+             logger.warning(f"Using FALLBACK static weights: {FALLBACK_ENSEMBLE_WEIGHTS}")
+             ensemble_weights = FALLBACK_ENSEMBLE_WEIGHTS.copy() # Use fallback
         else:
-            logger.info(f"Attempting to load meta-model from {meta_model_path}...")
-            try:
-                meta_payload = joblib.load(meta_model_path)
-                meta_model_home = meta_payload.get('meta_model_home')
-                meta_model_away = meta_payload.get('meta_model_away')
-                meta_feature_names = meta_payload.get('meta_feature_names')
-                base_models_expected_by_meta = meta_payload.get('base_models_used', [])
+             logger.info(f"Attempting to load ensemble weights from {weights_path}...")
+             try:
+                 with open(weights_path, 'r') as f:
+                     loaded_weights = json.load(f)
+                 # Basic validation
+                 if isinstance(loaded_weights, dict) and all(isinstance(k, str) and isinstance(v, (float, int)) for k, v in loaded_weights.items()):
+                     # Ensure weights approximately sum to 1 (allow for float precision)
+                     if abs(sum(loaded_weights.values()) - 1.0) > 1e-5:
+                          logger.warning(f"Loaded weights sum to {sum(loaded_weights.values()):.4f}, not 1.0. Check calculation/file.")
+                          # Option: Renormalize here, or use as is, or use fallback? Let's use as is for now.
+                     ensemble_weights = {k: float(v) for k, v in loaded_weights.items()} # Ensure float
+                     logger.info(f"Ensemble weights loaded successfully: {ensemble_weights}")
+                 else:
+                      raise ValueError("Invalid format in ensemble weights JSON file.")
+             except Exception as weights_load_e:
+                  logger.error(f"Error loading or validating ensemble weights from {weights_path}: {weights_load_e}.")
+                  logger.warning(f"Using FALLBACK static weights: {FALLBACK_ENSEMBLE_WEIGHTS}")
+                  ensemble_weights = FALLBACK_ENSEMBLE_WEIGHTS.copy() # Use fallback on error
 
-                # Validate meta-model components
-                if not meta_model_home or not meta_model_away or not meta_feature_names or not base_models_expected_by_meta:
-                     raise ValueError("Meta-model payload missing required components (models, feature names, or base model list).")
-                if not all(bm_name in prediction_models for bm_name in base_models_expected_by_meta):
-                    missing_req_base = set(base_models_expected_by_meta) - set(prediction_models.keys())
-                    raise ValueError(f"Meta-model expects base models not loaded: {missing_req_base}.")
-
-                logger.info(f"Stacking meta-models loaded successfully. Trained on: {base_models_expected_by_meta}. Expects features: {meta_feature_names}")
-                use_fallback_weights = False # OK to use meta-model
-
-            except Exception as meta_load_e:
-                 logger.error(f"Error loading or validating meta-model payload from {meta_model_path}: {meta_load_e}. Using fallback.", exc_info=False) # Reduced noise
-                 meta_model_home = meta_model_away = meta_feature_names = None
-                 base_models_expected_by_meta = []
-                 use_fallback_weights = True
+        # Check if loaded weights cover the loaded models
+        missing_weights = set(prediction_models.keys()) - set(ensemble_weights.keys())
+        if missing_weights:
+             logger.warning(f"Loaded weights missing for models: {missing_weights}. These models will have zero weight.")
+             for model_key in missing_weights:
+                  ensemble_weights[model_key] = 0.0 # Assign zero weight explicitly
 
     except Exception as load_e:
-        logger.error(f"Model loading failed (Base or Meta): {load_e}", exc_info=True)
+        logger.error(f"Model/Weight loading failed: {load_e}", exc_info=True)
         return [], []
 
     # --- Feature Generation (Step 3) ---
@@ -817,22 +819,22 @@ def generate_predictions(
         logger.error(f"Error during feature selection/validation: {e}", exc_info=True)
         return [], []
 
-    # --- Generate Predictions (Step 5: Stacking/Fallback) ---
-    logger.info("Step 5: Generating predictions (Stacking/Fallback)...")
+        # --- Generate Predictions (Step 5: Weighted Ensemble) --- # <<< UPDATED Step Name
+    logger.info("Step 5: Generating predictions (Weighted Ensemble)...")
     model_preds_dfs: Dict[str, Optional[pd.DataFrame]] = {} # Store base model predictions
     logger.info("Generating predictions from base models...")
     base_models_to_predict_with = list(prediction_models.keys())
     for name in base_models_to_predict_with:
          try:
               logger.debug(f"Predicting with base model: {name}")
-              preds_df = prediction_models[name].predict(X_predict) # Pass selected X_predict
+              preds_df = prediction_models[name].predict(X_predict)
               if preds_df is None or preds_df.empty or not all(c in preds_df.columns for c in ['predicted_home_score', 'predicted_away_score']):
                    raise ValueError(f"Invalid/empty prediction output DataFrame from {name}")
               preds_df.index = X_predict.index # Align index
               model_preds_dfs[name] = preds_df[['predicted_home_score', 'predicted_away_score']]
               logger.debug(f"Base model {name} prediction successful. Shape: {preds_df.shape}")
          except Exception as e:
-              logger.error(f"Error predicting with base model {name}: {e}", exc_info=False) # Reduced noise
+              logger.error(f"Error predicting with base model {name}: {e}", exc_info=False)
               model_preds_dfs[name] = None # Mark as failed
 
     successful_base_models = [name for name, df in model_preds_dfs.items() if df is not None]
@@ -842,7 +844,7 @@ def generate_predictions(
 
     logger.info(f"Assembling final predictions for {len(predict_features_df)} games...")
     processed_game_count = 0
-    for idx in predict_features_df.index: # Iterate using index of features df
+    for idx in predict_features_df.index:
         game_id = 'unknown_idx_' + str(idx)
         try:
             game_info = predict_features_df.loc[idx]
@@ -851,13 +853,9 @@ def generate_predictions(
             away_team = game_info.get('away_team', 'N/A')
             game_date = pd.to_datetime(game_info.get('game_date'))
 
-            # --- Prepare Input for Meta-Model or Fallback ---
+            # --- Get Component Predictions for this Game ---
             component_predictions_this_game = {}
-            meta_input_data_dict = {}
-            attempt_meta = not use_fallback_weights and meta_model_home and meta_model_away and meta_feature_names
             valid_base_preds_for_game = True
-
-            # 1. Get base predictions for this game
             for name in base_models_to_predict_with:
                 home_pred_game, away_pred_game = np.nan, np.nan
                 preds_df = model_preds_dfs.get(name)
@@ -867,99 +865,76 @@ def generate_predictions(
                     if pd.isna(home_pred_game) or pd.isna(away_pred_game):
                          logger.warning(f"NaN prediction value from base model {name} game {game_id}.")
                          valid_base_preds_for_game = False
-                else: # Model failed or prediction missing for index
+                else:
                      logger.warning(f"Prediction missing/failed for base model {name} game {game_id}.")
                      valid_base_preds_for_game = False
-
                 component_predictions_this_game[name] = {'home': home_pred_game, 'away': away_pred_game}
-                # Add to meta_input_data if expected by meta AND model succeeded
-                if name in base_models_expected_by_meta and preds_df is not None and idx in preds_df.index:
-                     meta_input_data_dict[f"{name}_pred_home"] = home_pred_game
-                     meta_input_data_dict[f"{name}_pred_away"] = away_pred_game
 
-            # 2. Get required context flags for this game (if using meta)
-            if attempt_meta:
-                context_flags_needed = [f for f in meta_feature_names if not f.endswith(('_pred_home', '_pred_away'))]
-                if context_flags_needed:
-                    logger.debug(f"Getting context flags for meta: {context_flags_needed}")
-                    try:
-                        for flag in context_flags_needed:
-                            if flag not in game_info or pd.isna(game_info[flag]): # Check for NaNs here
-                                raise KeyError(f"Required context flag '{flag}' missing or NaN in features for game {game_id}")
-                            meta_input_data_dict[flag] = game_info[flag]
-                    except KeyError as ke:
-                         logger.error(f"Missing required context flag for meta-model: {ke}. Cannot use meta for game {game_id}.")
-                         attempt_meta = False # Force fallback
+            # --- REMOVED Meta-Model Prediction Logic ---
 
-            # --- Decide Prediction Method ---
-            ensemble_home_score, ensemble_away_score = np.nan, np.nan
-            ensemble_method_used = "unknown"
+            # --- Implement Weighted Average Logic --- # <<< NEW Block
+            logger.debug(f"Calculating weighted average for game {game_id} using weights: {ensemble_weights}")
+            ensemble_home_score, ensemble_away_score = 0.0, 0.0
+            total_weight_applied = 0.0
+            ensemble_method_used = "weighted_avg" # Default type
 
-            # Try using Meta-Model
-            if attempt_meta and valid_base_preds_for_game:
-                logger.debug(f"Attempting meta-model prediction for game {game_id}")
-                try:
-                    missing_meta_features = set(meta_feature_names) - set(meta_input_data_dict.keys())
-                    if missing_meta_features:
-                        raise ValueError(f"Missing input features for meta-model: {missing_meta_features}")
+            for name, preds in component_predictions_this_game.items():
+                weight = ensemble_weights.get(name, 0.0) # Get weight from loaded dict
+                h_pred, a_pred = preds.get('home'), preds.get('away')
 
-                    X_meta_predict_game = pd.DataFrame([meta_input_data_dict], columns=meta_feature_names)
-                    # Meta model should ideally handle NaN filling if trained appropriately
-                    # If not, apply same strategy as training (e.g., fillna(0))
-                    if X_meta_predict_game.isnull().any().any():
-                         logger.warning(f"NaNs in meta input for game {game_id}. Filling with 0 before predict.")
-                         X_meta_predict_game = X_meta_predict_game.fillna(0.0)
+                if weight > 1e-6 and pd.notna(h_pred) and pd.notna(a_pred): # Use small threshold for weight check
+                    ensemble_home_score += h_pred * weight
+                    ensemble_away_score += a_pred * weight
+                    total_weight_applied += weight
+                elif weight > 1e-6:
+                     logger.warning(f"Skipping {name} (weight={weight:.3f}) in weighted avg due to NaN prediction for game {game_id}.")
 
-                    ensemble_home_score = meta_model_home.predict(X_meta_predict_game)[0]
-                    ensemble_away_score = meta_model_away.predict(X_meta_predict_game)[0]
-                    ensemble_method_used = f"stacking_{META_MODEL_FILENAME}"
-                    logger.debug(f"Used stacking meta-model for game {game_id}.")
+            if total_weight_applied > 1e-6: # Normalize if weights were applied
+                ensemble_home_score /= total_weight_applied
+                ensemble_away_score /= total_weight_applied
+                # Add detail if fallback weights were potentially used
+                if ensemble_weights == FALLBACK_ENSEMBLE_WEIGHTS:
+                     ensemble_method_used = "weighted_avg_fallback_static"
+                else:
+                     ensemble_method_used = "weighted_avg_inv_mae" # Assume loaded from file based on MAE
+                logger.debug(f"Weighted avg calculated game {game_id} (Total Weight Applied: {total_weight_applied:.3f})")
+            else: # Ultimate fallback: simple average of available preds
+                logger.warning(f"No valid weighted predictions for game {game_id} (Total Weight Applied: {total_weight_applied:.3f}). Using simple average.")
+                hs = [p['home'] for p in component_predictions_this_game.values() if pd.notna(p.get('home'))]
+                aws = [p['away'] for p in component_predictions_this_game.values() if pd.notna(p.get('away'))]
+                avg_score = feature_engine.defaults.get('avg_pts_for', 115.0)
+                ensemble_home_score = np.mean(hs) if hs else avg_score
+                ensemble_away_score = np.mean(aws) if aws else avg_score
+                ensemble_method_used = "simple_average_fallback"
+                if pd.isna(ensemble_home_score) or pd.isna(ensemble_away_score): # Final safety net
+                     logger.error(f"Simple average fallback also resulted in NaN for game {game_id}. Assigning default score.")
+                     ensemble_home_score = avg_score
+                     ensemble_away_score = avg_score
+                     ensemble_method_used = "default_score_fallback"
+            # --- End Weighted Average Logic ---
 
-                except Exception as meta_pred_e:
-                    logger.error(f"Error predicting with meta-model for game {game_id}: {meta_pred_e}. Using fallback.", exc_info=False) # Reduced noise
-                    ensemble_home_score, ensemble_away_score = np.nan, np.nan
-                    ensemble_method_used = "meta_predict_error"
-            else:
-                 if not attempt_meta: logger.debug(f"Meta use skipped: use_fallback={use_fallback_weights}, valid_load={bool(meta_model_home and meta_feature_names)}")
-                 elif not valid_base_preds_for_game: logger.debug(f"Meta use skipped: Invalid base predictions.")
-
-            # Fallback Logic (if meta failed or wasn't attempted/valid)
-            if pd.isna(ensemble_home_score) or pd.isna(ensemble_away_score):
-                logger.debug(f"Using fallback weights for game {game_id}.")
-                current_h, current_a, total_w = 0.0, 0.0, 0.0
-                for name, preds in component_predictions_this_game.items():
-                    weight = FALLBACK_ENSEMBLE_WEIGHTS.get(name, 0)
-                    h_pred, a_pred = preds.get('home'), preds.get('away')
-                    if weight > 0 and pd.notna(h_pred) and pd.notna(a_pred):
-                        current_h += h_pred * weight
-                        current_a += a_pred * weight
-                        total_w += weight
-                    elif weight > 0: logger.warning(f"Skipping {name} in fallback (NaN) game {game_id}.")
-
-                if total_w > 1e-6:
-                    ensemble_home_score = current_h / total_w
-                    ensemble_away_score = current_a / total_w
-                    ensemble_method_used = "fallback_static_weights"
-                else: # Ultimate fallback: simple average
-                    logger.warning(f"Fallback weights failed (total_w={total_w}) game {game_id}. Using simple avg.")
-                    hs = [p['home'] for p in component_predictions_this_game.values() if pd.notna(p.get('home'))]
-                    aws = [p['away'] for p in component_predictions_this_game.values() if pd.notna(p.get('away'))]
-                    avg_score = feature_engine.defaults.get('avg_pts_for', 115.0)
-                    ensemble_home_score = np.mean(hs) if hs else avg_score
-                    ensemble_away_score = np.mean(aws) if aws else avg_score
-                    ensemble_method_used = "fallback_simple_avg"
-
-            # --- Calculate derived values + uncertainty ---
+            # --- Calculate derived values + uncertainty (Keep this logic) ---
             point_diff = ensemble_home_score - ensemble_away_score if pd.notna(ensemble_home_score) and pd.notna(ensemble_away_score) else np.nan
             total_score = ensemble_home_score + ensemble_away_score if pd.notna(ensemble_home_score) and pd.notna(ensemble_away_score) else np.nan
             win_prob = 1 / (1 + math.exp(-0.15 * point_diff)) if pd.notna(point_diff) else np.nan
             lower_b, upper_b, conf_pct = np.nan, np.nan, np.nan
             if pd.notna(total_score):
                 try:
-                    hist_acc_dict = None # Placeholder
-                    lower_b, upper_b, conf_pct = uncertainty_estimator.dynamically_adjust_interval(prediction=total_score, current_quarter=0, historic_accuracy=hist_acc_dict)
+                    hist_acc_dict = None # Reset/Ensure not using stale data
+                    if uncertainty_estimator is not None:
+                         # Get historical stats if available from the estimator
+                         if hasattr(uncertainty_estimator, 'get_coverage_stats'):
+                              stats_df = uncertainty_estimator.get_coverage_stats()
+                              if stats_df is not None and not stats_df.empty:
+                                   hist_acc_dict = stats_df.set_index('quarter').to_dict('index')
+                         # Calculate bounds
+                         lower_b, upper_b, conf_pct = uncertainty_estimator.dynamically_adjust_interval(
+                             prediction=total_score, current_quarter=0, historic_accuracy=hist_acc_dict
+                         )
+                    else: logger.warning("Uncertainty estimator not available.")
                 except Exception as unc_e: logger.error(f"Error calculating uncertainty game {game_id}: {unc_e}")
             else: logger.warning(f"Cannot calc uncertainty game {game_id}: total score NaN.")
+
 
             # Assemble raw prediction dictionary
             raw_pred_dict = {
@@ -974,7 +949,7 @@ def generate_predictions(
                 'upper_bound': round(upper_b, 1) if pd.notna(upper_b) else None,
                 'confidence_pct': round(conf_pct, 1) if pd.notna(conf_pct) else None,
                 'component_predictions': { name: {'home': round(preds.get('home', np.nan), 1), 'away': round(preds.get('away', np.nan), 1)} for name, preds in component_predictions_this_game.items() },
-                'ensemble_method': ensemble_method_used,
+                'ensemble_method': ensemble_method_used, # <<< UPDATED Method Name
                 'is_calibrated': False
             }
             raw_predictions_list.append(raw_pred_dict)
@@ -982,15 +957,13 @@ def generate_predictions(
 
         except Exception as game_proc_e:
             logger.error(f"FATAL: Failed processing game index {idx} (GameID: {game_id}): {game_proc_e}", exc_info=True)
-            continue # Continue processing next game
+            continue
 
     # --- Post-prediction Processing ---
     if processed_game_count == 0:
          logger.error("No games successfully processed for predictions."); return [], []
     logger.info(f"Successfully assembled raw predictions for {processed_game_count} games.")
 
-    # Log Raw Component Predictions & Method (Keep existing detailed log)
-    # ... (logging loop) ...
 
     # --- Fetch Odds & Calibrate (Step 6) ---
     logger.info("Step 6: Fetching odds & calibrating...")
