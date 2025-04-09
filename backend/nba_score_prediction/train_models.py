@@ -1,17 +1,6 @@
 # backend/nba_score_prediction/train_models.py
 
-from __future__ import annotations  # Keep this at the top
-from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
-from sklearn.linear_model import Ridge as MetaRidge
-from sklearn.linear_model import LassoCV
-from sklearn.preprocessing import StandardScaler
-from sklearn.feature_selection import SelectFromModel
-
-if TYPE_CHECKING:  # Keep TYPE_CHECKING block if needed for linters
-    from supabase import Client
-    # Define Pipeline type hint for type checkers
-    from sklearn.pipeline import Pipeline
-
+from __future__ import annotations
 import argparse
 import json
 import logging
@@ -20,22 +9,31 @@ import sys
 import time
 import traceback
 import warnings
-from datetime import datetime, timedelta
-from pathlib import Path
-
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import xgboost as xgb
+
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+from supabase import Client
+from datetime import datetime, timedelta
+from pathlib import Path
 
 # --- Scikit-learn Imports ---
+from sklearn.linear_model import Ridge as MetaRidge
+from sklearn.linear_model import LassoCV
+from sklearn.linear_model import RidgeCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import SelectFromModel
 from sklearn.base import clone
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.experimental import enable_halving_search_cv 
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Ridge as MetaRidge
-from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
-from scipy.stats import randint, uniform  # For defining parameter distributions
+from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit, HalvingRandomSearchCV
+from scipy.stats import randint, uniform, reciprocal  
 from sklearn.metrics import (make_scorer, mean_absolute_error,
                              mean_squared_error, r2_score)
 
@@ -923,7 +921,7 @@ def tune_and_evaluate_predictor(
     # --- Save the Final Model ---
     try:
         timestamp = getattr(final_predictor, 'training_timestamp', datetime.now().strftime("%Y%m%d_%H%M%S"))
-        save_filename = f"{model_full_name}_tuned_{timestamp}.joblib"
+        save_filename = f"{model_full_name}.joblib"
         save_path = final_predictor.save_model(filename=save_filename)
         if save_path: logger.info(f"Final tuned model saved to {save_path}"); metrics['save_path'] = str(save_path)
         else: logger.error(f"Model saving returned no path."); metrics['save_path'] = "Save failed"
@@ -1450,11 +1448,17 @@ def run_training_pipeline(args):
     # --- Hyperparameter Search Space for RandomForestScorePredictor ---
     # Expanded to include not only the maximum features but also number of trees, depth, and minimum sample splits/leaves.
     RF_PARAM_DIST = {
-        'rf__n_estimators': randint(100, 1001),              # Number of trees between 100 and 1000
-        'rf__max_depth': [None] + list(range(5, 31, 5)),       # Depth: either no limit or between 5 and 30 (steps of 5)
-        'rf__min_samples_split': randint(2, 11),               # Minimum samples required to split an internal node (between 2 and 10)
-        'rf__min_samples_leaf': randint(1, 5),                 # Minimum samples required at a leaf node (between 1 and 4)
-        'rf__max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7, 0.9]  # Try categorical options or fixed fractions
+
+    'rf__n_estimators': randint(100, 801),
+
+    'rf__max_depth': randint(5, 21), # Focus on limited depth
+
+    'rf__min_samples_split': randint(5, 21), # Increase min samples for split
+
+    'rf__min_samples_leaf': randint(3, 11), # Increase min samples for leaf
+
+    'rf__max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7] # Maybe remove 0.9?
+
     }
 
     # --- Hyperparameter Search Space for RidgeScorePredictor ---
@@ -1631,47 +1635,37 @@ def run_training_pipeline(args):
         logger.warning("Enriched meta-model was not trained or saved due to previous errors.")
     """
 
-    # --- Original Meta-Model Training (Stacking) ---
-    logger.info("\n--- Starting Meta-Model Training (Stacking) ---")
+    # Meta-Model Training (XGBoost Stacking with Halving Search & Early Stopping) 
+    logger.info("\n--- Starting Meta-Model Training (XGBoost Halving Stacking) ---")
     required_for_stacking = [m for m in ["xgboost", "random_forest", "ridge"] if m in models_to_run]
     meta_model_trained_and_saved = False
 
-    if not all(key in validation_predictions_collector for key in required_for_stacking):
-        logger.error(f"Missing validation predictions for one or more base models ({required_for_stacking}) needed for stacking. Cannot train meta-model.")
-    elif not required_for_stacking:
+    if not required_for_stacking:
         logger.error("No base models were successfully trained or validation predictions collected. Cannot train meta-model.")
+    elif not all(key in validation_predictions_collector for key in required_for_stacking):
+        logger.error(f"Missing validation predictions for one or more base models ({required_for_stacking}) needed for stacking. Cannot train meta-model.")
     else:
-        logger.info(f"Preparing data for meta-model training using base models: {required_for_stacking}...")
+        # --- Phase 1: Prepare Meta-Training Data ---
         try:
             meta_features_list = []
             y_val_true_home = None
             y_val_true_away = None
             reference_index = None
-
-            # Use the index from the first available validation prediction set as reference
             first_valid_key = next((k for k in required_for_stacking if k in validation_predictions_collector), None)
             if first_valid_key:
                 reference_index = validation_predictions_collector[first_valid_key]['pred_home'].index
             else:
                 raise ValueError("Could not get validation predictions for any required base models.")
 
-            if reference_index is None:
-                raise ValueError("Could not establish a reference index from validation predictions.")
-
-            logger.debug(f"Using reference index (length {len(reference_index)}) for meta-model alignment.")
-
             for model_key in required_for_stacking:
                 preds_dict = validation_predictions_collector[model_key]
-                pred_home_col = f"{model_key}_pred_home"
-                pred_away_col = f"{model_key}_pred_away"
-
                 if 'pred_home' not in preds_dict or 'pred_away' not in preds_dict:
                     raise KeyError(f"Missing 'pred_home' or 'pred_away' in validation predictions for {model_key}")
-
-                df_home = preds_dict['pred_home'].rename(pred_home_col).reindex(reference_index)
-                df_away = preds_dict['pred_away'].rename(pred_away_col).reindex(reference_index)
+                # Rename and reindex predictions:
+                df_home = preds_dict['pred_home'].rename(f"{model_key}_pred_home").reindex(reference_index)
+                df_away = preds_dict['pred_away'].rename(f"{model_key}_pred_away").reindex(reference_index)
                 meta_features_list.extend([df_home, df_away])
-
+                # For the first model, set target values:
                 if y_val_true_home is None:
                     if 'true_home' not in preds_dict or 'true_away' not in preds_dict:
                         raise KeyError(f"Missing 'true_home' or 'true_away' in validation predictions for {model_key}")
@@ -1679,53 +1673,121 @@ def run_training_pipeline(args):
                     y_val_true_away = preds_dict['true_away'].reindex(reference_index)
 
             X_meta_train = pd.concat(meta_features_list, axis=1)
-            logger.debug(f"Shape of X_meta_train before NaN check: {X_meta_train.shape}")
+            logger.info(f"Constructed meta-training feature matrix with shape: {X_meta_train.shape}")
 
-            # Check and handle NaNs
-            if X_meta_train.isnull().any().any() or y_val_true_home.isnull().any() or y_val_true_away.isnull().any():
-                logger.warning("NaNs detected in meta-model training data. Handling NaNs...")
-                X_meta_train = X_meta_train.fillna(X_meta_train.mean())
-                rows_to_drop_idx = X_meta_train.index[X_meta_train.isnull().any(axis=1) | y_val_true_home.isnull() | y_val_true_away.isnull()]
-                if not rows_to_drop_idx.empty:
-                    logger.warning(f"Dropping {len(rows_to_drop_idx)} rows due to NaN values.")
-                    X_meta_train = X_meta_train.drop(index=rows_to_drop_idx)
-                    y_val_true_home = y_val_true_home.drop(index=rows_to_drop_idx)
-                    y_val_true_away = y_val_true_away.drop(index=rows_to_drop_idx)
-                if X_meta_train.empty:
-                    raise ValueError("No valid data remaining after NaN handling for meta-model.")
+            # Drop rows where any feature or target is NaN
+            rows_to_drop_idx = X_meta_train.index[
+                X_meta_train.isnull().any(axis=1) | 
+                y_val_true_home.isnull() | 
+                y_val_true_away.isnull()
+            ]
+            if len(rows_to_drop_idx) > 0:
+                logger.warning(f"Dropping {len(rows_to_drop_idx)} rows from meta-training data due to NaNs.")
+                X_meta_train = X_meta_train.drop(index=rows_to_drop_idx)
+                y_val_true_home = y_val_true_home.drop(index=rows_to_drop_idx)
+                y_val_true_away = y_val_true_away.drop(index=rows_to_drop_idx)
 
-            meta_feature_names = list(X_meta_train.columns)
-            logger.info(f"Meta-model training features ({len(meta_feature_names)}): {meta_feature_names}")
-            logger.info(f"Meta-model training samples: {len(X_meta_train)}")
+            if X_meta_train.empty:
+                raise ValueError("No valid data remaining after NaN handling for meta-model.")
 
-            # Train meta-models (Ridge)
-            logger.info("Training Home Score Meta-Model (Ridge)...")
-            meta_model_home = MetaRidge(alpha=1.0, random_state=SEED)
-            meta_model_home.fit(X_meta_train, y_val_true_home)
+            # Ensure target alignment:
+            y_val_true_home = y_val_true_home.loc[X_meta_train.index]
+            y_val_true_away = y_val_true_away.loc[X_meta_train.index]
 
-            logger.info("Training Away Score Meta-Model (Ridge)...")
-            meta_model_away = MetaRidge(alpha=1.0, random_state=SEED)
-            meta_model_away.fit(X_meta_train, y_val_true_away)
+        except Exception as prep_e:
+            logger.error(f"Error preparing meta-model training data: {prep_e}", exc_info=True)
+        else:
+            # --- Phase 2: Tune and Train Meta-Models Using Halving Search ---
+            logger.info("\n--- Starting Meta-Model Tuning (XGBoost Halving Stacking) ---")
+            try:
+                meta_feature_names = list(X_meta_train.columns)
+                logger.info(f"Meta-model training features ({len(meta_feature_names)}): {meta_feature_names}")
+                logger.info(f"Meta-model training samples: {len(X_meta_train)}")
 
-            # Save the meta-models
-            meta_model_filename = "stacking_meta_model.joblib"
-            meta_model_save_path = MAIN_MODELS_DIR / meta_model_filename
-            meta_model_payload = {
-                'meta_model_home': meta_model_home,
-                'meta_model_away': meta_model_away,
-                'meta_feature_names': meta_feature_names,
-                'base_models_used': required_for_stacking,
-                'training_timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
-            }
-            joblib.dump(meta_model_payload, meta_model_save_path)
-            logger.info(f"Stacking meta-models saved successfully to {meta_model_save_path}")
-            meta_model_trained_and_saved = True
+                # Define parameter search space
+                XGB_META_PARAM_DIST = {
+                    'n_estimators': randint(50, 301),
+                    'max_depth': randint(2, 6),
+                    'learning_rate': reciprocal(0.01, 0.3),  # Log-uniform sampling
+                    'subsample': uniform(0.7, 0.3),
+                    'colsample_bytree': uniform(0.7, 0.3)
+                }
 
-        except Exception as meta_e:
-            logger.error(f"Failed to train or save meta-model: {meta_e}", exc_info=True)
+                # Create base estimator for Home meta-model with early stopping.
+                xgb_meta_base = xgb.XGBRegressor(
+                    random_state=SEED,
+                    objective='reg:squarederror',
+                    early_stopping_rounds=10,
+                    n_jobs=1
+                )
 
-        if not meta_model_trained_and_saved:
-            logger.warning("Meta-model was not trained or saved due to previous errors.")
+                logger.info("Tuning Home Score Meta-Model (XGBoost Halving Search)...")
+                hs_meta_home = HalvingRandomSearchCV(
+                    estimator=xgb_meta_base,
+                    param_distributions=XGB_META_PARAM_DIST,
+                    factor=3,
+                    scoring='neg_mean_absolute_error',
+                    cv=5,
+                    n_jobs=-1,
+                    verbose=1,
+                    random_state=SEED
+                )
+                fit_params_home = {'eval_set': [(X_meta_train, y_val_true_home)], 'verbose': False}
+                hs_meta_home.fit(X_meta_train, y_val_true_home, **fit_params_home) 
+                meta_model_home = hs_meta_home.best_estimator_
+                logger.info(f"Home Meta-Model Tuning Complete. Best Score: {hs_meta_home.best_score_:.4f}")
+                logger.info(f"Home Meta-Model Best Params: {hs_meta_home.best_params_}")
+
+                # Create separate estimator instance for Away meta-model.
+                xgb_meta_away_base = xgb.XGBRegressor(
+                    random_state=SEED + 1,
+                    objective='reg:squarederror',
+                    early_stopping_rounds=10,
+                    n_jobs=1
+                )
+                logger.info("Tuning Away Score Meta-Model (XGBoost Halving Search)...")
+                # Define fit params
+                fit_params_away = {'eval_set': [(X_meta_train, y_val_true_away)], 'verbose': False}
+                # Instantiate Halving Search
+                hs_meta_away = HalvingRandomSearchCV(
+                    estimator=xgb_meta_away_base,
+                    param_distributions=XGB_META_PARAM_DIST,
+                    factor=3,
+                    scoring='neg_mean_absolute_error',
+                    cv=5,
+                    n_jobs=-1,
+                    verbose=1,
+                    random_state=SEED + 1
+                )
+                # Fit using the fit params
+                hs_meta_away.fit(X_meta_train, y_val_true_away, **fit_params_away) # <<< ADDED **fit_params_away
+
+                meta_model_away = hs_meta_away.best_estimator_
+                logger.info(f"Away Meta-Model Tuning Complete. Best Score: {hs_meta_away.best_score_:.4f}")
+                logger.info(f"Away Meta-Model Best Params: {hs_meta_away.best_params_}")
+
+
+                # Save the tuned meta-models as payload.
+                meta_model_filename = "stacking_meta_model_xgb_hs.joblib"
+                meta_model_save_path = MAIN_MODELS_DIR / meta_model_filename
+                meta_model_payload = {
+                    'meta_model_home': meta_model_home,
+                    'meta_model_away': meta_model_away,
+                    'meta_feature_names': meta_feature_names,
+                    'base_models_used': required_for_stacking,
+                    'training_timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
+                }
+                joblib.dump(meta_model_payload, meta_model_save_path)
+                logger.info(f"Stacking XGBoost (HS) meta-models saved successfully to {meta_model_save_path}")
+                meta_model_trained_and_saved = True
+            except Exception as meta_e:
+                logger.error(f"Failed to train or save XGBoost meta-model: {meta_e}", exc_info=True)
+
+            if not meta_model_trained_and_saved:
+                logger.warning("XGBoost meta-model was not trained or saved due to previous errors.")
+
+
+    # --- END Meta-Model Training (XGBoost) ---
 
         # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         # +++ START: ADDED BLOCK FOR FINAL ENSEMBLE TEST EVALUATION +++
@@ -1805,7 +1867,7 @@ def run_training_pipeline(args):
                         logger.debug(f"Meta-model test features: {X_meta_test.columns.tolist()}")
 
                         # Load the saved meta-model (assumed to be saved at meta_model_save_path)
-                        meta_model_payload = joblib.load(meta_model_save_path)
+                        meta_model_payload = joblib.load(MAIN_MODELS_DIR / "stacking_meta_model_xgb.joblib")
                         meta_model_home = meta_model_payload['meta_model_home']
                         meta_model_away = meta_model_payload['meta_model_away']
                         logger.info(f"Loaded saved stacking meta-model from {meta_model_save_path}.")
@@ -1886,7 +1948,7 @@ parser.add_argument("--weight-method", type=str, default="exponential", choices=
 parser.add_argument("--weight-half-life", type=int, default=90, help="Half-life in days for weights")
 # Tuning Args
 parser.add_argument("--skip-tuning", action="store_true", help="Skip hyperparameter tuning")
-parser.add_argument("--tune-iterations", type=int, default=50, help="Iterations for RandomizedSearchCV")
+parser.add_argument("--tune-iterations", type=int, default=200, help="Iterations for RandomizedSearchCV")
 parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS, help="CV splits for TimeSeriesSplit")
 parser.add_argument("--scoring-metric", type=str, default='neg_mean_absolute_error', help="Scoring metric for tuning")
 # Analysis Args
