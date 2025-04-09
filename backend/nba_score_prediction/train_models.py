@@ -140,11 +140,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = BACKEND_DIR.parent
 MODELS_BASE_DIR = BACKEND_DIR / 'models'
-MAIN_MODELS_DIR = MODELS_BASE_DIR / 'saved'
-QUARTERLY_MODELS_DIR = MODELS_BASE_DIR / 'quarterly'
+MAIN_MODELS_DIR = PROJECT_ROOT / 'models' / 'saved' 
 REPORTS_DIR = PROJECT_ROOT / 'reports'
 MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-QUARTERLY_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 TARGET_COLUMNS = ['home_score', 'away_score']
 SEED = 42
@@ -426,124 +424,6 @@ def visualize_recency_weights(dates, weights, title="Recency Weights Distributio
          logger.error(f"Error visualizing recency weights: {e}", exc_info=True)
 
 # ==============================================================================
-# SECTION 2.1: FEATURE SELECTION UTILITY FUNCTIONS
-# ==============================================================================
-REFINED_TOP_100_FEATURES = [
-    'home_season_avg_pts_against',
-    'away_season_avg_pts_for',
-    'away_rolling_score_for_mean_10',
-    'home_rolling_score_against_mean_20',
-    'season_net_rating_diff',
-    'season_win_pct_diff',
-    'home_rolling_score_against_mean_10',
-    'away_season_avg_pts_against',
-    'home_season_avg_pts_for',
-    'home_rolling_score_for_mean_5',
-    'away_rolling_score_against_mean_10',
-    'away_season_net_rating',
-    'home_rolling_pace_mean_20',
-    'away_rolling_pace_mean_10',
-    'away_form_win_pct',
-    'home_season_win_pct',
-    'home_momentum_direction',
-    'matchup_avg_away_score',
-    'season_pts_for_diff',
-    'home_rolling_dreb_pct_mean_20',
-    'away_rolling_efg_pct_mean_10',
-    'season_pts_against_diff',
-    'home_season_net_rating',
-    'rolling_margin_diff_mean',
-    'away_rolling_pace_std_20',
-    'games_last_14_days_away',
-    'away_rolling_off_rating_mean_20',
-    'home_rolling_def_rating_mean_20',
-    'home_rolling_tov_rate_mean_20',
-    'matchup_home_win_pct',
-    'away_rolling_dreb_pct_std_5',
-    'matchup_avg_total_score',
-    'away_season_win_pct',
-    'home_rolling_ft_rate_std_20',
-    'home_rolling_net_rating_mean_20',
-    'home_rolling_trb_pct_std_10',
-    'home_rolling_tov_rate_std_10',
-    'rolling_efg_diff_std',
-    'away_rolling_dreb_pct_std_10',
-    'home_rolling_ft_rate_std_10',
-    'home_rolling_tov_rate_std_5',
-    'home_rolling_ft_rate_std_5',
-    'home_rolling_dreb_pct_std_10',
-    'rolling_eff_diff_std',
-    'away_rolling_net_rating_std_20',
-    'home_rolling_oreb_pct_std_20',
-    'home_rolling_ft_rate_mean_20',
-    'away_rolling_ft_rate_std_20',
-    'home_rolling_trb_pct_mean_20',
-    'away_rolling_tov_rate_std_20',
-    'matchup_streak',
-    'away_rolling_score_against_std_20',
-    'away_rolling_trb_pct_std_20',
-    'home_rolling_dreb_pct_std_20',
-    'is_back_to_back_away',
-    'away_rolling_net_rating_mean_5',
-    'home_rolling_net_rating_std_20',
-    'rolling_eff_diff_mean',
-    'away_rolling_off_rating_std_10',
-    'away_rolling_oreb_pct_std_20',
-    'away_rolling_momentum_ewma_mean_20',
-    'away_rolling_def_rating_std_10',
-    'home_rolling_net_rating_std_10',
-    'home_rolling_pace_std_10',
-    'away_rolling_dreb_pct_std_20',
-    'matchup_avg_home_score',
-    'home_rolling_efg_pct_std_5',
-    'away_rolling_trb_pct_std_10',
-    'home_rolling_pace_std_20',
-    'away_rolling_def_rating_std_20',
-    'home_rolling_off_rating_std_20',
-    'rolling_momentum_diff_mean',
-    'away_rolling_score_for_std_5',
-    'rolling_trb_diff_mean',
-    'home_rolling_momentum_ewma_mean_20',
-    'home_rolling_score_for_std_20',
-    'home_rolling_ft_rate_mean_10',
-    'games_last_14_days_home',
-    'matchup_avg_point_diff',
-    'away_rolling_dreb_pct_mean_10',
-    'away_rolling_efg_pct_mean_20',
-    'rest_days_away',
-    'away_rolling_ft_rate_std_5',
-    'away_rolling_tov_rate_std_5',
-    'rest_advantage',
-    'home_rolling_oreb_pct_std_5',
-    'home_rolling_momentum_ewma_std_20',
-    'home_rolling_trb_pct_mean_10',
-    'away_rolling_def_rating_mean_5',
-    'away_rolling_momentum_ewma_std_20',
-    'rolling_ft_rate_diff_std',
-    'away_rolling_efg_pct_std_5',
-    'away_rolling_oreb_pct_std_5',
-    'home_rolling_def_rating_std_10',
-    'away_rolling_efg_pct_std_20',
-    'away_rolling_dreb_pct_mean_5',
-    'rolling_dreb_diff_std',
-    'away_rolling_net_rating_std_5',
-    'away_rolling_tov_rate_mean_10',
-    'rolling_trb_diff_std'
-]
-
-def select_features(feature_engine: Optional[Any], data_df: pd.DataFrame, target_context: str = 'pregame_score') -> List[str]:
-    """
-    Ensures that the data_df has exactly the columns in REFINED_TOP_100_FEATURES.
-    Missing features are added with a default value of 0.0.
-    Returns the full list of predefined features.
-    """
-    logger.info(f"Selecting features based on predefined REFINED_TOP_100_FEATURES for context: {target_context}")
-    # At this point, data_df is assumed to have been reindexed.
-    logger.info(f"DataFrame now has {len(data_df.columns)} columns after reindexing.")
-    return REFINED_TOP_100_FEATURES
-
-
-# ==============================================================================
 # SECTION 3: CORE METRIC & CUSTOM LOSS FUNCTIONS
 # ==============================================================================
 def calculate_regression_metrics(y_true: Union[pd.Series, np.ndarray],
@@ -688,7 +568,6 @@ except ImportError:
     XGBOOST_AVAILABLE = False
 
 # --- Constants (assuming these are defined elsewhere) ---
-logger = logging.getLogger(__name__) # Assume logger is configured
 MAIN_MODELS_DIR = Path("./models/saved") # Example path
 REPORTS_DIR = Path("./reports") # Example path
 SEED = 42
@@ -772,8 +651,6 @@ def tune_and_evaluate_predictor(
     if len(feature_list_unique) != len(feature_list):
         logger.warning(f"Duplicate features found. Using {len(feature_list_unique)} unique features.")
     logger.debug(f"Using unique feature list ({len(feature_list_unique)} features).")
-
-    # IS THIS WHAT I'M SUPPOSED TO REMOVE BELOW?
 
     # --- Combine Train and Validation Data for Final Fit ---
     # Include 'game_date' if needed for weights later
@@ -1219,8 +1096,8 @@ def run_training_pipeline(args):
 
         except Exception as e_summary:
             logger.error(f"Error generating feature value summary: {e_summary}", exc_info=True)
-        else:
-            logger.warning("features_df is empty, skipping feature value analysis.")
+    else:
+        logger.warning("features_df is empty, skipping feature value analysis.")
             # <<< --- END FEATURE VALUE DEBUGGING --- >>>
 
     # (features_df is generated and initial cleaning is done)
@@ -1789,142 +1666,196 @@ def run_training_pipeline(args):
 
     # --- END Meta-Model Training (XGBoost) ---
 
-        # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        # +++ START: ADDED BLOCK FOR FINAL ENSEMBLE TEST EVALUATION +++
-        # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        if meta_model_trained_and_saved:  # Only evaluate if meta-model was successfully trained/saved
-            logger.info("\n--- Evaluating Final Stacked Ensemble on Test Set ---")
-            loaded_base_models = {}
-            # Use predictor_map (defined earlier) to reload each model via its own load_model method.
-            for model_key in required_for_stacking:
-                predictor_cls = predictor_map.get(model_key)
-                if predictor_cls is None:
-                    logger.warning(f"No predictor class available for model {model_key}. Skipping.")
-                    continue
-                # Find the saved path for this model from the collected metrics in all_metrics.
-                saved_path = None
-                for m in all_metrics:
-                    full_model_name = m.get('model_name')
-                    if full_model_name and full_model_name.split('_score_predictor')[0] == model_key:
-                        saved_path = m.get('save_path')
-                        break
+    def load_base_model(model_key: str, all_metrics: list, default_key: str = 'model') -> Optional[Any]:
+        """
+        Retrieve and load a base model using its saved path from the metrics dictionary.
+        
+        Args:
+            model_key (str): The key (e.g., 'xgboost') to search for in the metrics.
+            all_metrics (list): A list of dictionaries from which to find the saved model path.
+            default_key (str): The key in the saved payload dictionary that holds the predictor instance.
+                            Adjust this to match how you save the model (e.g., 'model', 'predictor', 'pipeline').
+        
+        Returns:
+            The loaded predictor object if found and valid, or None otherwise.
+        """
+        # Loop over each metrics dict and find one that matches the model_key
+        for m in all_metrics:
+            full_model_name = m.get('model_name', '')
+            if full_model_name.split('_score_predictor')[0].lower() == model_key.lower():
+                saved_path = m.get('save_path')
                 if not saved_path or not os.path.exists(saved_path):
-                    logger.warning(f"Saved path missing or invalid for {model_key}: '{saved_path}'. Skipping.")
+                    logger.warning(f"Saved path missing or invalid for {model_key}: '{saved_path}'.")
                     continue
-
-                logger.info(f"Loading base model {model_key} from {saved_path} for test prediction using load_model...")
                 try:
-                    # Here we assume that load_model is available.
-                    # If load_model is an instance method, you may need to instantiate first:
-                    predictor_instance = predictor_cls().load_model(saved_path)
-                    # Alternatively, if load_model is a class method, you could do:
-                    # predictor_instance = predictor_cls.load_model(saved_path)
-                    if predictor_instance is None:
-                        logger.error(f"Loaded instance for {model_key} is None. Skipping.")
-                        continue
-                    if not hasattr(predictor_instance, 'predict'):
-                        logger.error(f"Loaded instance for {model_key} does not have a predict method. Skipping.")
-                        continue
-                    loaded_base_models[model_key] = predictor_instance
-                    logger.info(f"Successfully loaded predictor instance for {model_key}.")
-                except Exception as load_err:
-                    logger.error(f"Failed to load base model {model_key} using load_model: {load_err}", exc_info=True)
+                    loaded_data = joblib.load(saved_path)
+                    # If our payload is a dict with our chosen key, extract it.
+                    if isinstance(loaded_data, dict) and default_key in loaded_data:
+                        logger.info(f"Loaded predictor for {model_key} using key '{default_key}'.")
+                        return loaded_data[default_key]
+                    # Otherwise, if the loaded object itself has a predict() method, assume it's our predictor.
+                    elif hasattr(loaded_data, 'predict'):
+                        logger.info(f"Loaded predictor for {model_key} as a standalone object.")
+                        return loaded_data
+                    else:
+                        logger.error(f"Loaded object for {model_key} from {saved_path} does not contain key '{default_key}' or a predict method.")
+                except Exception as e:
+                    logger.error(f"Failed to load base model {model_key} from {saved_path}: {e}", exc_info=True)
+        # If we finish the loop without returning, log and return None.
+        logger.warning(f"Could not load base model for {model_key}.")
+        return None
+    
+    # --- FINAL ENSEMBLE TEST SET EVALUATION BLOCK  ---
+    if meta_model_trained_and_saved:  # Only evaluate if meta-model was successfully trained/saved
+        logger.info("\n--- Evaluating Final Stacked Ensemble on Test Set ---")
+        try:
+            # Prepare meta-features from Test Set using saved base models
+            X_meta_test_list = []
+            loaded_base_model_payloads = {}  # Store the loaded payload dictionaries
 
-            if len(loaded_base_models) != len(required_for_stacking):
-                logger.error(f"Failed to load all required base models ({required_for_stacking}). Loaded: {list(loaded_base_models.keys())}. Skipping final ensemble evaluation.")
+            # --- Load the saved base model PAYLOADS (dictionaries) ---
+            if not all_metrics:
+                logger.error("No base model metrics found in 'all_metrics'. Cannot load models for final evaluation.")
             else:
-                # --- Generate predictions using loaded base models on X_test ---
-                meta_predictions_list = []
-                for model_name in required_for_stacking:
-                    base_model_predictor = loaded_base_models.get(model_name)
-                    if base_model_predictor is None:
-                        logger.error(f"Predictor for {model_name} is missing. Skipping its prediction.")
+                for metrics_dict in all_metrics:
+                    full_model_name = metrics_dict.get('model_name')
+                    if full_model_name:
+                        model_name = full_model_name.split('_score_predictor')[0]
+                    else:
+                        logger.warning(f"Key 'model_name' not found in metrics dict: {metrics_dict}. Skipping.")
                         continue
 
-                    logger.info(f"Generating test set predictions using loaded base model: {model_name}...")
-                    try:
-                        predictions_df_test = base_model_predictor.predict(X_test)
-                        # Verify that the returned predictions have expected columns:
-                        if predictions_df_test is None or 'predicted_home_score' not in predictions_df_test.columns:
-                            raise ValueError(f"Test prediction failed or invalid format for {model_name}.")
-                        # Wrap predictions into a DataFrame with distinct column names
-                        pred_df = pd.DataFrame({
-                            f'{model_name}_pred_home': predictions_df_test['predicted_home_score'],
-                            f'{model_name}_pred_away': predictions_df_test['predicted_away_score']
-                        }, index=X_test.index)
-                        meta_predictions_list.append(pred_df)
-                    except Exception as pred_err:
-                        logger.error(f"Error generating predictions with {model_name}: {pred_err}", exc_info=True)
+                    saved_path = metrics_dict.get('save_path')
+                    if not saved_path or not os.path.exists(saved_path):  # Ensure os is imported
+                        logger.warning(f"Saved path missing or invalid for {model_name}: '{saved_path}'. Skipping.")
+                        continue
 
-                # Only proceed if predictions were obtained from at least one required base model.
-                if not meta_predictions_list:
-                    logger.error("No valid base model predictions obtained. Skipping final ensemble evaluation.")
+                    logger.info(f"Loading base model payload {model_name} from {saved_path}...")
+                    try:
+                        # Load the dictionary saved by save_model
+                        loaded_payload = joblib.load(saved_path)  # Ensure joblib is imported
+                        if isinstance(loaded_payload, dict) and 'pipeline_home' in loaded_payload and 'pipeline_away' in loaded_payload:
+                            loaded_base_model_payloads[model_name] = loaded_payload
+                            logger.info(f"Successfully loaded payload dictionary for {model_name}.")
+                        else:
+                            logger.error(
+                                f"Loaded object for {model_name} from {saved_path} is not a dictionary with expected pipeline keys. Skipping.")
+                            continue
+                    except Exception as load_err:
+                        logger.error(f"Failed to load base model payload {model_name} from {saved_path}: {load_err}", exc_info=True)
+
+            # --- Proceed only if all required payloads were loaded ---
+            if len(loaded_base_model_payloads) != len(required_for_stacking):
+                logger.error(f"Failed to load all required base model payloads ({required_for_stacking}). "
+                            f"Loaded: {list(loaded_base_model_payloads.keys())}. Skipping final ensemble evaluation.")
+            else:
+                # --- Generate predictions using loaded base model PIPELINES on X_test ---
+                for model_name in required_for_stacking:
+                    payload = loaded_base_model_payloads.get(model_name)
+                    if payload is None:  # Should not happen if the above check passed
+                        logger.error(f"Payload for {model_name} is missing unexpectedly. Skipping.")
+                        continue
+
+                    logger.info(f"Generating test set predictions using loaded pipelines for base model: {model_name}...")
+                    try:
+                        # Extract the specific pipelines
+                        pipeline_home = payload['pipeline_home']
+                        pipeline_away = payload['pipeline_away']
+
+                        # Predict using each pipeline
+                        test_preds_home = pipeline_home.predict(X_test)
+                        test_preds_away = pipeline_away.predict(X_test)
+
+                        # Check if predictions are valid (basic shape check)
+                        if test_preds_home is None or test_preds_away is None or len(test_preds_home) != len(X_test):
+                            raise ValueError(f"Prediction shapes invalid for {model_name}.")
+
+                        # Create a DataFrame for meta-features, renaming columns accordingly
+                        pred_df = pd.DataFrame({
+                            f'{model_name}_pred_home': test_preds_home,
+                            f'{model_name}_pred_away': test_preds_away
+                        }, index=X_test.index)
+                        X_meta_test_list.append(pred_df)
+                    except Exception as pred_err:
+                        logger.error(f"Error generating predictions with {model_name}'s pipelines: {pred_err}", exc_info=True)
+
+                # --- Proceed only if predictions were generated for all required base models ---
+                if len(X_meta_test_list) != len(required_for_stacking):
+                    logger.error("Could not generate predictions from all required base models. Skipping final ensemble evaluation.")
                 else:
                     try:
-                        # Concatenate predictions to form meta-model input features
-                        X_meta_test = pd.concat(meta_predictions_list, axis=1)
+                        X_meta_test = pd.concat(X_meta_test_list, axis=1)
                         logger.info(f"Created meta-model test input features with shape: {X_meta_test.shape}")
                         logger.debug(f"Meta-model test features: {X_meta_test.columns.tolist()}")
 
-                        # Load the saved meta-model (assumed to be saved at meta_model_save_path)
-                        meta_model_payload = joblib.load(MAIN_MODELS_DIR / "stacking_meta_model_xgb.joblib")
+                        # --- Load the saved XGBoost meta-model ---
+                        meta_model_load_path = MAIN_MODELS_DIR / "stacking_meta_model_xgb_hs.joblib"  # Use the correct filename
+                        meta_model_payload = joblib.load(meta_model_load_path)
                         meta_model_home = meta_model_payload['meta_model_home']
                         meta_model_away = meta_model_payload['meta_model_away']
-                        logger.info(f"Loaded saved stacking meta-model from {meta_model_save_path}.")
+                        logger.info(f"Loaded saved stacking XGBoost meta-model from {meta_model_load_path}.")
 
-                        # Generate final ensemble predictions
+                        # --- Generate final ensemble predictions ---
                         final_preds_home = meta_model_home.predict(X_meta_test)
                         final_preds_away = meta_model_away.predict(X_meta_test)
-                        # Wrap predictions in Series to maintain index alignment
                         final_preds_home_s = pd.Series(final_preds_home, index=X_meta_test.index)
                         final_preds_away_s = pd.Series(final_preds_away, index=X_meta_test.index)
-                        logger.info("Generated final predictions from stacked ensemble.")
+                        logger.info("Generated final predictions from the stacked ensemble.")
 
                         # --- Evaluate the final predictions ---
                         logger.info("--- Final Stacked Ensemble Test Set Metrics ---")
-                        # Align true test targets using the prediction index
                         y_test_home_aligned = y_test_home.loc[final_preds_home_s.index]
                         y_test_away_aligned = y_test_away.loc[final_preds_away_s.index]
 
-                        # Basic Metrics
                         test_metrics_home = calculate_regression_metrics(y_test_home_aligned, final_preds_home_s)
                         test_metrics_away = calculate_regression_metrics(y_test_away_aligned, final_preds_away_s)
-                        logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Home={test_metrics_home.get('mae', np.nan):.3f}, Away={test_metrics_away.get('mae', np.nan):.3f}")
-                        logger.info(f"FINAL STACKED ENSEMBLE Test RMSE: Home={test_metrics_home.get('rmse', np.nan):.3f}, Away={test_metrics_away.get('rmse', np.nan):.3f}")
-                        logger.info(f"FINAL STACKED ENSEMBLE Test R2  : Home={test_metrics_home.get('r2', np.nan):.3f}, Away={test_metrics_away.get('r2', np.nan):.3f}")
+                        logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Home={test_metrics_home.get('mae', np.nan):.3f}, "
+                                    f"Away={test_metrics_away.get('mae', np.nan):.3f}")
+                        logger.info(f"FINAL STACKED ENSEMBLE Test RMSE: Home={test_metrics_home.get('rmse', np.nan):.3f}, "
+                                    f"Away={test_metrics_away.get('rmse', np.nan):.3f}")
+                        logger.info(f"FINAL STACKED ENSEMBLE Test R2  : Home={test_metrics_home.get('r2', np.nan):.3f}, "
+                                    f"Away={test_metrics_away.get('r2', np.nan):.3f}")
 
                         try:
-                            test_mae_total = mean_absolute_error(y_test_home_aligned + y_test_away_aligned,
-                                                                final_preds_home_s + final_preds_away_s)
-                            test_mae_diff = mean_absolute_error(y_test_home_aligned - y_test_away_aligned,
-                                                                final_preds_home_s - final_preds_away_s)
-                            logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Total={test_mae_total:.3f}, Diff={test_mae_diff:.3f}")
+                            total_mae = mean_absolute_error(y_test_home_aligned + y_test_away_aligned,
+                                                            final_preds_home_s + final_preds_away_s)
+                            diff_mae = mean_absolute_error(y_test_home_aligned - y_test_away_aligned,
+                                                        final_preds_home_s - final_preds_away_s)
+                            logger.info(f"FINAL STACKED ENSEMBLE Test MAE : Total={total_mae:.3f}, Diff={diff_mae:.3f}")
                         except Exception:
-                            logger.warning("Could not calculate Total/Diff MAE for ensemble.")
+                            logger.warning("Could not compute Total/Diff MAE for ensemble.")
 
-                        # Custom Losses
+                        # Calculate custom losses and betting metrics, if available.
                         try:
                             y_true_comb = np.vstack((y_test_home_aligned.values, y_test_away_aligned.values)).T
                             y_pred_comb = np.vstack((final_preds_home_s.values, final_preds_away_s.values)).T
                             final_score_loss = nba_score_loss(y_true_comb, y_pred_comb)
                             final_dist_loss = nba_distribution_loss(y_true_comb, y_pred_comb)
                             final_combined_loss = combined_nba_loss(y_true_comb, y_pred_comb)
-                            logger.info(f"FINAL STACKED ENSEMBLE Custom Losses: Score={final_score_loss:.3f}, Dist={final_dist_loss:.3f}, Combined={final_combined_loss:.3f}")
+                            logger.info(f"FINAL STACKED ENSEMBLE Custom Losses: Score={final_score_loss:.3f}, "
+                                        f"Dist={final_dist_loss:.3f}, Combined={final_combined_loss:.3f}")
                         except Exception as loss_err:
-                            logger.warning(f"Could not calculate custom losses for ensemble: {loss_err}")
+                            logger.warning(f"Could not compute custom losses for ensemble: {loss_err}")
 
-                        # Betting Accuracy
                         try:
                             final_betting_metrics = calculate_betting_metrics(y_true_comb, y_pred_comb, vegas_lines=None)
                             logger.info(f"FINAL STACKED ENSEMBLE Betting Metrics: {final_betting_metrics}")
                         except Exception as bet_err:
-                            logger.warning(f"Could not calculate betting metrics for ensemble: {bet_err}")
+                            logger.warning(f"Could not compute betting metrics for ensemble: {bet_err}")
 
-                    except Exception as e:
-                        logger.error("Error during final ensemble evaluation: " + str(e), exc_info=True)
-            # End of ensemble evaluation block.
-        else:
-            logger.warning("Skipping final ensemble evaluation because meta-model was not trained/saved.")
+                    except Exception as eval_err:
+                        logger.error("Error during final ensemble prediction or evaluation: " + str(eval_err), exc_info=True)
+        except FileNotFoundError as e:
+            logger.error(f"Could not load a required model file for final ensemble evaluation: {e}", exc_info=True)
+        except KeyError as e:
+            logger.error(f"Missing expected key when accessing model results/paths: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during final stacked ensemble evaluation setup: {e}", exc_info=True)
+    else:
+        logger.warning("Skipping final ensemble evaluation because meta-model was not trained/saved.")
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # +++ END: FINAL ENSEMBLE TEST SET EVALUATION BLOCK +++
+
 
         end_time_pipeline = time.time()
         logger.info(f"--- NBA Model Tuning & Training Pipeline Finished in {end_time_pipeline - start_pipeline_time:.2f} seconds ---")
@@ -1939,7 +1870,7 @@ parser.add_argument("--lookback-days", type=int, default=1095, help="Days of his
 # Model Args
 parser.add_argument("--models", type=str, default="xgboost,random_forest,ridge", help="Comma-separated models to train")
 parser.add_argument("--rolling-windows", type=str, default="5,10,20", help="Comma-separated rolling window sizes")
-parser.add_argument("--h2h-window", type=int, default=7, help="Number of games for H2H features")
+parser.add_argument("--h2h-window", type=int, default=5, help="Number of games for H2H features")
 # Training Args
 parser.add_argument("--test-size", type=float, default=0.15, help="Fraction for test set")
 parser.add_argument("--val-size", type=float, default=0.15, help="Fraction for validation set")
@@ -1948,7 +1879,7 @@ parser.add_argument("--weight-method", type=str, default="exponential", choices=
 parser.add_argument("--weight-half-life", type=int, default=90, help="Half-life in days for weights")
 # Tuning Args
 parser.add_argument("--skip-tuning", action="store_true", help="Skip hyperparameter tuning")
-parser.add_argument("--tune-iterations", type=int, default=200, help="Iterations for RandomizedSearchCV")
+parser.add_argument("--tune-iterations", type=int, default=30, help="Iterations for RandomizedSearchCV")
 parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS, help="CV splits for TimeSeriesSplit")
 parser.add_argument("--scoring-metric", type=str, default='neg_mean_absolute_error', help="Scoring metric for tuning")
 # Analysis Args
