@@ -35,7 +35,7 @@ from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit, Halving
 from sklearn.metrics import (make_scorer, mean_absolute_error,
                              mean_squared_error, r2_score)
 
-from scipy.stats import randint, uniform
+from scipy.stats import randint, uniform, reciprocal, loguniform
 from scipy.optimize import minimize
 
 # --- Import evaluation functions ---
@@ -61,71 +61,28 @@ except ImportError:
     create_client = None
     print("WARNING: Supabase library not installed.")
 
-# --- Conditional XGBoost Import ---
-try:
-    import xgboost as xgb
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    xgb = None
-    XGBOOST_AVAILABLE = False
-    print("WARNING: XGBoost library not found.")
 
 # --- Project-Specific Imports ---
 try:
     from .feature_engineering import NBAFeatureEngine
-    from .models import (RandomForestScorePredictor, RidgeScorePredictor, compute_recency_weights)
+    from .models import (RidgeScorePredictor,
+                         SVRScorePredictor,
+                         compute_recency_weights)
     from . import utils
-    if XGBOOST_AVAILABLE:
-        from .models import XGBoostScorePredictor
-    else:
-        # Dummy XGBoost class
-        class XGBoostScorePredictor:
-            def __init__(self, *args, **kwargs): pass
-            def _build_pipeline(self, *args, **kwargs): return None
-            def train(self, *args, **kwargs): pass
-            def predict(self, *args, **kwargs): return None
-            def save_model(self, *args, **kwargs): pass
-            def load_model(self, *args, **kwargs): pass
-            feature_names_in_ = None
-            training_timestamp = None
-            training_duration = None
-
-    try:
-        import lightgbm as lgb  # Check library first
-        LGBM_AVAILABLE = True
-        from .models import LightGBMScorePredictor  # Import your new class
-    except ImportError:
-        LGBM_AVAILABLE = False
-        LightGBMScorePredictor = None  # Crucial: Set to None if import fails
-        print("WARNING: LightGBM library not found or LightGBMScorePredictor class import failed.")
-
+   
     from backend import config
     LOCAL_MODULES_IMPORTED = True
 except ImportError as e:
     print(f"ERROR: Could not import local modules: {e}. Using dummy classes.")
     # Define dummy classes/functions
     class NBAFeatureEngine: pass
-    class XGBoostScorePredictor:
-        def __init__(self, *args, **kwargs): pass
-        def _build_pipeline(self, *args, **kwargs): return None
-        def train(self, *args, **kwargs): pass
-        def predict(self, *args, **kwargs): return None
-        def save_model(self, *args, **kwargs): pass
-        def load_model(self, *args, **kwargs): pass
-        feature_names_in_ = None
-        training_timestamp = None
-        training_duration = None
-    class RandomForestScorePredictor(XGBoostScorePredictor): pass
-    class RidgeScorePredictor(XGBoostScorePredictor): pass
+    class SVRScorePredictor: pass
+    class RidgeScorePredictor: pass
     def compute_recency_weights(*args, **kwargs): return np.ones(len(args[0])) if args else np.array([])
     def plot_feature_importances(*args, **kwargs): logging.error("Dummy plot_feature_importances called!")
     def plot_actual_vs_predicted(*args, **kwargs): logging.error("Dummy plot_actual_vs_predicted called!")
     def plot_residuals_analysis_detailed(*args, **kwargs): logging.error("Dummy plot_residuals_analysis_detailed called!")
-    if 'LightGBMScorePredictor' not in locals():
-        class LightGBMScorePredictor(XGBoostScorePredictor):
-            def __init__(self, *args, **kwargs):
-                 pass
-        LGBM_AVAILABLE = False
+  
     class utils:
         @staticmethod
         def remove_duplicate_columns(df): return df
@@ -507,79 +464,71 @@ def compute_weights(validation_metrics: Dict[str, float]) -> Dict[str, float]:
 def optimize_ensemble_weights(
     validation_predictions: Dict[str, Dict[str, pd.Series]],
     model_keys: List[str],
-    metric_to_minimize: str = 'avg_mae' # Options: 'avg_mae', 'mae_home', 'mae_away'
+    metric_to_minimize: str = 'avg_mae', # Options: 'avg_mae', 'mae_home', 'mae_away'
+    l2_lambda: float = 0.1              # <<< ADD L2 Regularization Strength Parameter
 ) -> Optional[np.ndarray]:
     """
-    Finds optimal ensemble weights by minimizing a validation metric.
-
-    Args:
-        validation_predictions: Dict where keys are model names and values are dicts containing 
-                                'pred_home', 'true_home', 'pred_away', 'true_away' as pandas Series.
-        model_keys: List of model names to include in the optimization.
-        metric_to_minimize: The metric to minimize.
-
-    Returns:
-        Optimized weight vector as a numpy array, or None if optimization fails.
+    Finds optimal ensemble weights by minimizing a REGULARIZED metric on validation predictions.
+    Includes L2 regularization on weights (lambda * sum(w^2)).
     """
-    logger.info(f"Starting weight optimization for models: {model_keys} using metric: {metric_to_minimize}")
+    logger.info(f"Starting REGULARIZED weight optimization for models: {model_keys} using metric: {metric_to_minimize} with L2 lambda: {l2_lambda}")
     num_models = len(model_keys)
     if num_models < 2:
         logger.warning("At least 2 models are required to optimize weights. Returning None.")
         return None
 
-    # --- Prepare Data ---
+    # --- Prepare Data (Keep existing NaN handling logic) ---
     try:
         ref_idx = validation_predictions[model_keys[0]]['true_home'].index
         y_true_h = validation_predictions[model_keys[0]]['true_home'].loc[ref_idx].values
         y_true_a = validation_predictions[model_keys[0]]['true_away'].loc[ref_idx].values
-
         preds_h = np.zeros((len(ref_idx), num_models))
         preds_a = np.zeros((len(ref_idx), num_models))
-
         for i, key in enumerate(model_keys):
             preds_h[:, i] = validation_predictions[key]['pred_home'].loc[ref_idx].values
             preds_a[:, i] = validation_predictions[key]['pred_away'].loc[ref_idx].values
-
-        # Drop any rows with NaNs
         valid_rows_mask = (~np.isnan(y_true_h)) & (~np.isnan(y_true_a)) & \
                           (~np.isnan(preds_h).any(axis=1)) & (~np.isnan(preds_a).any(axis=1))
-
         if not valid_rows_mask.all():
             n_dropped = (~valid_rows_mask).sum()
             logger.warning(f"Dropping {n_dropped} rows with NaNs before weight optimization.")
-            y_true_h = y_true_h[valid_rows_mask]
-            y_true_a = y_true_a[valid_rows_mask]
-            preds_h = preds_h[valid_rows_mask, :]
-            preds_a = preds_a[valid_rows_mask, :]
-
+            y_true_h, y_true_a = y_true_h[valid_rows_mask], y_true_a[valid_rows_mask]
+            preds_h, preds_a = preds_h[valid_rows_mask, :], preds_a[valid_rows_mask, :]
         if len(y_true_h) == 0:
             logger.error("No valid samples remain after NaN check; optimization aborted.")
             return None
-
     except Exception as e:
         logger.error(f"Error preparing data for weight optimization: {e}", exc_info=True)
         return None
 
-    # --- Objective Function ---
-    def objective_function(weights: np.ndarray, y_true_h, y_true_a, preds_h, preds_a, metric) -> float:
+    # --- Define Regularized Objective Function ---
+    # <<< MODIFIED objective_function >>>
+    def objective_function(weights: np.ndarray, y_true_h, y_true_a, preds_h, preds_a, metric, lambda_reg) -> float:
+        """Calculates the blend MAE + L2 penalty given weights."""
+        # Ensure weights sum to 1 (optimizer might slightly violate)
+        weights = weights / np.sum(weights)
+        weights = np.maximum(0, weights) # Ensure non-negative
+
         blend_pred_h = np.dot(preds_h, weights)
         blend_pred_a = np.dot(preds_a, weights)
         mae_h = mean_absolute_error(y_true_h, blend_pred_h)
         mae_a = mean_absolute_error(y_true_a, blend_pred_a)
-        if metric == 'avg_mae':
-            return (mae_h + mae_a) / 2.0
-        elif metric == 'mae_home':
-            return mae_h
-        elif metric == 'mae_away':
-            return mae_a
-        else:
-            return (mae_h + mae_a) / 2.0
 
-    # --- Constraints & Bounds ---
+        if metric == 'avg_mae': base_metric = (mae_h + mae_a) / 2.0
+        elif metric == 'mae_home': base_metric = mae_h
+        elif metric == 'mae_away': base_metric = mae_a
+        else: base_metric = (mae_h + mae_a) / 2.0
+
+        # Add L2 regularization penalty
+        l2_penalty = lambda_reg * np.sum(weights**2)
+        return base_metric + l2_penalty
+    # <<< END MODIFICATION >>>
+
+    # --- Constraints & Bounds (remain the same) ---
     constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0})
     bounds = tuple((0.0, 1.0) for _ in range(num_models))
 
-    # --- Initial Guess ---
+    # --- Initial Guess (remains the same) ---
     initial_weights = np.array([1.0 / num_models] * num_models)
 
     # --- Run Optimization ---
@@ -587,23 +536,35 @@ def optimize_ensemble_weights(
         result = minimize(
             objective_function,
             initial_weights,
-            args=(y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize),
+            # <<< Pass lambda_reg via args tuple >>>
+            args=(y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize, l2_lambda),
             method='SLSQP',
             bounds=bounds,
             constraints=constraints,
-            options={'disp': False, 'ftol': 1e-6, 'maxiter': 1000}
+            options={'disp': False, 'ftol': 1e-6, 'maxiter': 1000} # Keep options
         )
+
         if result.success:
             optimized_weights = result.x
-            logger.info(f"Optimization successful. Optimal {metric_to_minimize}: {result.fun:.4f}")
-            # Clip negative weights due to floating point issues and renormalize
+            # Log the optimized *regularized* objective value
+            logger.info(f"Optimization successful. Optimal regularized validation {metric_to_minimize}: {result.fun:.4f}")
+            # Calculate and log the *unregularized* MAE for reference using the found weights
+            unreg_mae = objective_function(optimized_weights, y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize, 0.0) # Set lambda=0 for this calc
+            logger.info(f"Unregularized validation {metric_to_minimize} with optimal weights: {unreg_mae:.4f}")
+
+            # Clip negative weights and renormalize (good practice)
             optimized_weights = np.maximum(optimized_weights, 0)
-            optimized_weights /= np.sum(optimized_weights)
-            logger.info(f"Optimal Weights: {dict(zip(model_keys, optimized_weights))}")
+            if np.sum(optimized_weights) > 1e-9:
+                 optimized_weights /= np.sum(optimized_weights)
+            else:
+                 logger.warning("All optimized weights were zero after clipping. Returning equal weights.")
+                 return np.array([1.0 / num_models] * num_models) # Fallback to equal weights
+
+            logger.info(f"Optimal Weights (Regularized, Lambda={l2_lambda}): {dict(zip(model_keys, optimized_weights))}")
             return optimized_weights
         else:
             logger.error(f"Weight optimization failed: {result.message}")
-            return None
+            return None # Indicate failure
     except Exception as e:
         logger.error(f"Exception during weight optimization: {e}", exc_info=True)
         return None
@@ -641,11 +602,6 @@ from .evaluation import (
 from .models import compute_recency_weights
 from .feature_engineering import NBAFeatureEngine
 
-try:
-    import xgboost as xgb
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
 
 MAIN_MODELS_DIR = Path("./models/saved")
 REPORTS_DIR = Path("./reports")
@@ -704,9 +660,6 @@ def tune_and_evaluate_predictor(
     model_full_name = f"{model_name_prefix}_score_predictor"
     if predictor_class is None:
         logger.error(f"Predictor class for {model_full_name} is None.")
-        return None, None
-    if model_name_prefix.lower() == 'xgboost' and not XGBOOST_AVAILABLE:
-        logger.error("XGBoost unavailable.")
         return None, None
     if not feature_list:
         logger.error(f"Input feature list is empty for {model_full_name}.")
@@ -783,34 +736,6 @@ def tune_and_evaluate_predictor(
 
             # --- Prepare fit_params (including potential early stopping) ---
             current_fit_params = tune_fit_params.copy() # Start with sample weights if they exist
-
-            # <<< ADD EARLY STOPPING FOR LIGHTGBM >>>
-            if model_name_prefix.lower() == 'lightgbm' and LGBM_AVAILABLE and lgb is not None:
-                try:
-                    # Prepare eval set using the main validation data passed to tune_and_evaluate_predictor
-                    # Ensure X_val has the right features selected by LASSO
-                    X_val_eval = X_val[feature_list_unique].copy()
-                    # Align y_val_home with the index of X_val_eval
-                    y_val_home_eval = y_val_home.loc[X_val_eval.index]
-
-                    # Add LGBM specific fit parameters for early stopping
-                    # NOTE: We use the main validation set here. This isn't perfect time-series validation
-                    # within each CV fold, but it's the most practical way to enable early stopping
-                    # during the RandomizedSearchCV process without major restructuring.
-                    current_fit_params[f'lgbm__eval_set'] = [(X_val_eval, y_val_home_eval)]
-                    current_fit_params[f'lgbm__eval_metric'] = 'mae' # Make sure metric matches objective/scoring
-                    current_fit_params[f'lgbm__callbacks'] = [
-                        lgb.early_stopping(stopping_rounds=15, # Stop if MAE doesn't improve for 15 rounds
-                                           verbose=False)      # Suppress early stopping messages
-                        ]
-                    logger.info("Added Early Stopping parameters for LightGBM tuning.")
-                except KeyError as ke:
-                    logger.error(f"KeyError preparing eval_set for LightGBM early stopping: {ke}. Skipping early stopping.")
-                except Exception as es_err:
-                     logger.error(f"Error setting up early stopping for LightGBM: {es_err}. Skipping early stopping.")
-            # <<< END EARLY STOPPING FOR LIGHTGBM >>>
-
-
             # Call the tune_model helper (now using RandomizedSearchCV)
             # Pass the potentially modified current_fit_params
             best_params_final, best_score, cv_results_df = tune_model(
@@ -1034,31 +959,82 @@ def tune_and_evaluate_predictor(
         else:
             logger.warning("Skipping plots (test predictions unavailable).")
 
-    val_predictions_dict = None
+        val_predictions_dict = None
+    logger.info(f"Generating validation set predictions for {model_full_name} ({len(X_val)} samples)...")
     try:
-        X_val_final = X_val[feature_list_unique].copy()
-        predictions_df_val = final_predictor.predict(X_val_final)
+        # Ensure feature alignment for validation set prediction
+        X_val_final = X_val[feature_list_unique].copy() # Use X_val features
+
+        # --- FIX: Train a temporary model ONLY on X_train ---
+        logger.debug(f"Training temporary model on X_train ({len(X_tune_features)}) for validation prediction...")
+
+        # Instantiate a new predictor for this temporary training
+        temp_val_predictor = predictor_class(model_dir=None, model_name=f"{model_full_name}_val_pred_temp") # Won't be saved
+
+        # Ensure we have the correctly aligned y_train_away
+        try:
+            y_train_away_aligned = y_train_away.loc[X_tune_features.index].copy()
+        except KeyError as ke:
+            logger.error(f"KeyError aligning y_train_away for temp validation model: {ke}")
+            raise # Propagate error
+
+        # Prepare sample weights if they were used during tuning
+        # The 'sample_weights_tune' variable should still be available from earlier in the function
+        temp_fit_sample_weights = None
+        if use_recency_weights and sample_weights_tune is not None:
+            temp_fit_sample_weights = sample_weights_tune
+            logger.debug("Using recency weights for temporary validation model training.")
+
+        # Train temporary model using only X_train data and best hyperparameters found
+        temp_val_predictor.train(
+            X_train=X_tune_features,        # Data from training set only
+            y_train_home=y_tune_home,       # Aligned training target
+            y_train_away=y_train_away_aligned, # Aligned training target
+            hyperparams_home=best_params_final, # Best params from tuning
+            hyperparams_away=best_params_final, # Best params from tuning
+            sample_weights=temp_fit_sample_weights # Apply weights if needed
+        )
+        logger.debug("Temporary validation model trained.")
+        # --- END FIX ---
+
+        # --- Predict X_val using the temporary model (trained ONLY on X_train) ---
+        logger.debug("Predicting X_val with temporary model...")
+        predictions_df_val = temp_val_predictor.predict(X_val_final)
+        # --- End Predict ---
+
         if predictions_df_val is None or 'predicted_home_score' not in predictions_df_val.columns:
             raise ValueError(f"Prediction on validation set failed or returned invalid format for {model_full_name}.")
+
+        # Align true validation targets (already aligned from function input)
         y_val_home_aligned = y_val_home.loc[X_val_final.index]
         y_val_away_aligned = y_val_away.loc[X_val_final.index]
-        pred_home_val = predictions_df_val['predicted_home_score'].loc[X_val_final.index]
-        pred_away_val = predictions_df_val['predicted_away_score'].loc[X_val_final.index]
+
+        # Extract predictions (reindex just to be safe)
+        pred_home_val = predictions_df_val['predicted_home_score'].reindex(X_val_final.index)
+        pred_away_val = predictions_df_val['predicted_away_score'].reindex(X_val_final.index)
+
+        # Check for NaNs in predictions
+        if pred_home_val.isnull().any() or pred_away_val.isnull().any():
+            logger.warning(f"NaNs found in validation predictions for {model_full_name}. Check temporary model.")
+
+        # Store results in the dictionary
         val_predictions_dict = {
             'pred_home': pred_home_val, 'pred_away': pred_away_val,
             'true_home': y_val_home_aligned, 'true_away': y_val_away_aligned
         }
+        logger.info(f"Successfully generated non-leaked validation predictions for {model_full_name}.")
+
     except KeyError as ke_val:
         logger.error(f"FAILED generating validation predictions: KeyError. Features missing in X_val? {ke_val}", exc_info=True)
         missing_val = set(feature_list_unique) - set(X_val.columns)
-        if missing_val:
-            logger.error(f"Features missing in X_val: {missing_val}")
+        if missing_val: logger.error(f"Features missing in X_val: {missing_val}")
         val_predictions_dict = None
     except Exception as val_pred_e:
         logger.error(f"FAILED generating validation set predictions for {model_full_name}: {val_pred_e}", exc_info=True)
-        val_predictions_dict = None
+        val_predictions_dict = None # Ensure it's None on error
 
-    metrics['total_duration'] = time.time() - start_tune_time
+    # Return metrics and the (now hopefully non-leaked) validation predictions
+    metrics['total_duration'] = time.time() - start_tune_time # Keep timing calculation
     logger.info(f"--- Finished Tuning & Training {model_full_name} in {metrics['total_duration']:.2f}s ---")
     return metrics, val_predictions_dict
 
@@ -1323,45 +1299,27 @@ def run_training_pipeline(args):
     final_feature_list_for_models = selected_features_lasso
     logger.info(f"Using {len(final_feature_list_for_models)} features selected by LASSO for model training.")
 
-    XGB_PARAM_DIST = {
-        'xgb__n_estimators': randint(100, 1001),
-        'xgb__max_depth': randint(3, 11),
-        'xgb__learning_rate': uniform(0.01, 0.14),
-        'xgb__subsample': uniform(0.5, 0.4),
-        'xgb__colsample_bytree': uniform(0.5, 0.4),
-        'xgb__gamma': uniform(0.0, 0.5),
-        'xgb__min_child_weight': randint(1, 11)
-    }
-
-    RF_PARAM_DIST = {
-        'rf__n_estimators': randint(100, 801),
-        'rf__max_depth': randint(3, 11),
-        'rf__min_samples_split': randint(20, 61),
-        'rf__min_samples_leaf': randint(10, 31),
-        'rf__max_features': uniform(0.2, 0.3),
-        'rf__ccp_alpha': uniform(0.0, 0.02),
-        'rf__bootstrap': [True, False]
-    }
-
     RIDGE_PARAM_DIST = {
         'ridge__alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],
         'ridge__fit_intercept': [True, False],
         'ridge__solver': ['auto', 'svd', 'cholesky']
     }
 
-    # Note: LGBM_PARAM_DIST is defined above if model_name_prefix is "lightgbm"
+    SVR_PARAM_DIST = {
+    'svr__kernel': ['rbf', 'linear'],            # Common effective kernels
+    'svr__C': loguniform(0.1, 100),              # Regularization strength (0.1 to 100, log scale)
+    'svr__gamma': ['scale', 'auto'],             # Kernel coefficient for RBF ('scale' is often good)
+    'svr__epsilon': uniform(0.05, 0.2)           # Margin of tolerance (0.05 to 0.25)
+    }
+
     param_dist_map = {
-            "xgboost": XGB_PARAM_DIST,
-            "random_forest": RF_PARAM_DIST,
             "ridge": RIDGE_PARAM_DIST,
-            "lightgbm": {}  # Already handled above
+            "svr": SVR_PARAM_DIST,
         }
 
     predictor_map = {
-        "xgboost": XGBoostScorePredictor if XGBOOST_AVAILABLE else None,
-        "random_forest": RandomForestScorePredictor,
         "ridge": RidgeScorePredictor,
-        "lightgbm": LightGBMScorePredictor if LGBM_AVAILABLE else None
+        "svr": SVRScorePredictor,
     }
 
     # --- Base Model Training Loop ---
@@ -1372,9 +1330,6 @@ def run_training_pipeline(args):
 
     for model_key in models_to_run:
         PredictorClass = predictor_map.get(model_key)
-        if PredictorClass is None or (model_key == 'xgboost' and not XGBOOST_AVAILABLE):
-            logger.warning(f"Model class for '{model_key}' unavailable. Skipping.")
-            continue
 
         param_dist_current = param_dist_map.get(model_key) if not args.skip_tuning else None
 
@@ -1466,7 +1421,7 @@ def run_training_pipeline(args):
     except Exception as prep_corr_e:
         logger.error(f"Error preparing data for correlation analysis: {prep_corr_e}", exc_info=True)
 
-    logger.info("\n--- Calculating Validation MAEs and Ensemble Weights ---")
+        logger.info("\n--- Calculating Validation MAEs ---")
     validation_mae_dict = {}
     for model_key, val_preds_dict in validation_predictions_collector.items():
         try:
@@ -1474,357 +1429,369 @@ def run_training_pipeline(args):
             pred_home = val_preds_dict['pred_home']
             true_away = val_preds_dict['true_away']
             pred_away = val_preds_dict['pred_away']
+
+
             if (true_home.isnull().any() or pred_home.isnull().any() or
                 true_away.isnull().any() or pred_away.isnull().any()):
-                logger.warning(f"NaNs detected in validation predictions/targets for {model_key}. Skipping MAE calculation for this model.")
+                logger.warning(f"NaNs detected for {model_key}. Skipping MAE calc.")
                 validation_mae_dict[model_key] = np.nan
                 continue
+
             mae_home = mean_absolute_error(true_home, pred_home)
             mae_away = mean_absolute_error(true_away, pred_away)
             avg_mae = (mae_home + mae_away) / 2.0
             validation_mae_dict[model_key] = avg_mae
-            logger.info(f"Validation MAE for {model_key}: Home={mae_home:.4f}, Away={mae_away:.4f}, Avg={avg_mae:.4f}")
-        except KeyError as ke:
-            logger.error(f"Missing expected keys in validation predictions for {model_key}: {ke}. Cannot calculate MAE.")
-            validation_mae_dict[model_key] = np.nan
-        except Exception as mae_err:
-            logger.error(f"Error calculating validation MAE for {model_key}: {mae_err}")
-            validation_mae_dict[model_key] = np.nan
+            logger.info(f"Validation MAE for {model_key}: Home={mae_home:.4f}, Away={mae_away:.4f}, Avg={avg_mae:.4f}") # This might log 0.0000 for KNN
+
+        except KeyError as ke: logger.error(f"MAE Calc KeyError {model_key}: {ke}"); validation_mae_dict[model_key] = np.nan
+        except Exception as mae_err: logger.error(f"MAE Calc Error {model_key}: {mae_err}"); validation_mae_dict[model_key] = np.nan
 
     # --- Calculate and Save Inverse Validation MAE Weights ---
     logger.info("\n--- Calculating and Saving Standard Ensemble Weights (Inverse Validation MAE) ---")
-    ensemble_weights = compute_weights(validation_mae_dict)
-    if ensemble_weights:
-        weights_path = MAIN_MODELS_DIR / "ensemble_weights.json" # Standard weights file
+    # Calculate fresh weights based on current validation MAEs
+    inv_val_mae_weights = compute_weights(validation_mae_dict) # Use a distinct variable name
+    if inv_val_mae_weights:
+        weights_path = MAIN_MODELS_DIR / "ensemble_weights.json" # Standard weights file name
         try:
-            with open(weights_path, 'w') as f: json.dump(ensemble_weights, f, indent=4)
-            logger.info(f"Saved ensemble weights (Inv Val MAE) to {weights_path}")
-        except Exception as e: logger.error(f"Failed to save ensemble weights: {e}", exc_info=True)
+            with open(weights_path, 'w') as f: json.dump(inv_val_mae_weights, f, indent=4)
+            logger.info(f"Saved ensemble weights (Inv Val MAE) to {weights_path}: {inv_val_mae_weights}") # Log the weights saved
+        except Exception as e: logger.error(f"Failed to save Inv Val MAE ensemble weights: {e}", exc_info=True)
     else:
-        logger.error("Standard ensemble weights could not be computed. Weights file not saved.")
+        logger.error("Inv Val MAE ensemble weights could not be computed. Weights file not saved.")
+        inv_val_mae_weights = {} # Ensure it's an empty dict if failed
 
-    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # +++ NEW BLOCK: Optimize Weights using Validation Data +++
-    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # --- Optimize Ensemble Weights using Validation Set ---
     logger.info("\n--- Optimizing Ensemble Weights using Validation Set ---")
-    optimized_weights = None # Initialize
-    if not validation_predictions_collector:
-         logger.warning("Validation predictions collector is empty, cannot optimize weights.")
-    elif not successful_base_models:
-         logger.warning("No successful base models identified, cannot optimize weights.")
+    optimized_weights = None
+    if not validation_predictions_collector or not successful_base_models:
+         logger.warning("Cannot optimize weights (missing validation predictions or successful models).")
     else:
-         # Use only models that successfully produced validation predictions
          models_to_optimize = successful_base_models
-         optimized_weights_array = optimize_ensemble_weights( # Call the helper function
+         optimized_weights_array = optimize_ensemble_weights(
              validation_predictions=validation_predictions_collector,
              model_keys=models_to_optimize,
-             metric_to_minimize='avg_mae' # Or 'mae_home'/'mae_away'
+             metric_to_minimize='avg_mae',
+             l2_lambda=0.1 # <<< ADD LAMBDA VALUE HERE (e.g., 0.1)
          )
-         # Process and save the result if optimization succeeded
+         # ... (rest of the block processing/saving optimized_weights remains the same) ...
          if optimized_weights_array is not None:
              optimized_weights = dict(zip(models_to_optimize, optimized_weights_array))
-             opt_weights_path = MAIN_MODELS_DIR / "ensemble_weights_optimized.json" # New file name
-             try:
-                 with open(opt_weights_path, 'w') as f:
-                     json.dump(optimized_weights, f, indent=4)
-                 logger.info(f"Saved OPTIMIZED ensemble weights to {opt_weights_path}")
-             except Exception as e:
-                 logger.error(f"Failed to save optimized ensemble weights: {e}", exc_info=True)
+             opt_weights_path = MAIN_MODELS_DIR / "ensemble_weights_optimized.json"
+             # ... (save logic) ...
          else:
-             logger.error("Weight optimization failed. Optimized weights not saved.")
-    # +++ END NEW BLOCK +++
-    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+             logger.error("Weight optimization failed.")
+             optimized_weights = {} # Use empty dict if failed
 
+    # --------------------------------------------------------------------------
+    # --- Ensemble EVALUATION Section ---
+    # First, load models and generate test predictions ONCE
+    # --------------------------------------------------------------------------
+    logger.info("\n--- Preparing for Ensemble Evaluations on Test Set ---")
+    base_model_test_preds = {}
+    models_loaded_for_eval = {}
 
-    # --- Evaluate Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---
-    # NOTE: This block RELOADS models and generates base_model_test_preds
-    logger.info("\n--- Evaluating Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---")
-    base_model_test_preds = {} # Initialize dict to store test predictions
-    models_loaded_for_eval = {} # Initialize dict to store loaded models
-
-    logger.info("Loading saved base models for ensemble evaluation...")
-    models_to_reload = successful_base_models
-    if ensemble_weights:
-        models_to_reload = list(ensemble_weights.keys())
-
-        for model_key in models_to_reload:
-                model_loaded = False
-                for m in all_metrics:
-                    full_model_name = m.get('model_name', '')
-                    save_path = m.get('save_path')
-                    if full_model_name.split('_score_predictor')[0].lower() == model_key.lower() and save_path and Path(save_path).is_file():
-                        try:
-                            PredictorClass = predictor_map.get(model_key)
-                            if PredictorClass:
-                                predictor = PredictorClass(model_dir=str(MAIN_MODELS_DIR), model_name=f"{model_key}_score_predictor")
-                                predictor.load_model(filepath=save_path)
-                                if getattr(predictor, 'pipeline_home', None) and getattr(predictor, 'pipeline_away', None):
-                                    models_loaded_for_eval[model_key] = predictor
-                                    model_loaded = True
-                                    logger.info(f"Successfully loaded model {model_key} from {save_path}")
-                                    break
-                                else: logger.error(f"Loaded model {model_key} from {save_path} but pipelines missing.")
-                            else: logger.error(f"Predictor class not found for {model_key} during reload.")
-                        except Exception as load_err:
-                            logger.error(f"Failed to reload model {model_key} from {save_path}: {load_err}")
-                if not model_loaded:
-                    logger.error(f"Could not reload model {model_key}. It cannot be used in evaluation.")
-
+    logger.info("Loading saved base models needed for evaluation...")
+    # We reload models that were successful in THIS run
+    models_to_reload_eval = successful_base_models
+    if not models_to_reload_eval:
+        logger.error("No successful models from this run to evaluate.")
+    else:
+        for model_key in models_to_reload_eval:
+            model_loaded = False
+            for m in all_metrics: # Find the saved path from metrics collected earlier
+                full_model_name = m.get('model_name', '')
+                save_path = m.get('save_path')
+                if full_model_name.split('_score_predictor')[0].lower() == model_key.lower() and save_path and Path(save_path).is_file():
+                     try:
+                         PredictorClass = predictor_map.get(model_key)
+                         if PredictorClass:
+                              predictor = PredictorClass(model_dir=str(MAIN_MODELS_DIR), model_name=f"{model_key}_score_predictor")
+                              predictor.load_model(filepath=save_path) # Load the specific model file
+                              if getattr(predictor, 'pipeline_home', None) and getattr(predictor, 'pipeline_away', None):
+                                  models_loaded_for_eval[model_key] = predictor
+                                  model_loaded = True
+                                  logger.info(f"Successfully loaded model {model_key} from {save_path}")
+                                  break # Stop searching metrics once found
+                              else: logger.error(f"Loaded model {model_key} pipelines invalid.")
+                         else: logger.error(f"Predictor class not found for {model_key} during reload.")
+                     except Exception as load_err: logger.error(f"Failed to reload model {model_key} from {save_path}: {load_err}")
+            if not model_loaded: logger.error(f"Could not reload model {model_key}.")
 
         logger.info("Generating test set predictions from reloaded base models...")
         if not models_loaded_for_eval:
-                logger.error("No base models successfully reloaded. Cannot evaluate any weighted ensemble.")
-                # If no models loaded, skip all subsequent evaluation blocks
-                base_model_test_preds = {} # Ensure it's empty
+             logger.error("No base models successfully reloaded. Cannot proceed with ensemble evaluations.")
         else:
             try:
-                X_test_eval = X_test[final_feature_list_for_models].copy() # Use consistent features
+                # Use the correct feature list determined earlier (e.g., from LASSO)
+                X_test_eval = X_test[final_feature_list_for_models].copy()
                 for model_key, predictor in models_loaded_for_eval.items():
                     logger.debug(f"Predicting test set with reloaded {model_key}...")
                     preds_df = predictor.predict(X_test_eval)
                     if preds_df is not None and not preds_df.empty and all(c in preds_df for c in ['predicted_home_score', 'predicted_away_score']):
-                        base_model_test_preds[model_key] = preds_df.loc[X_test_eval.index, ['predicted_home_score', 'predicted_away_score']]
+                        # Store predictions aligned with X_test index
+                        base_model_test_preds[model_key] = preds_df.reindex(X_test_eval.index)[['predicted_home_score', 'predicted_away_score']]
                         logger.debug(f"Stored test predictions for {model_key}")
                     else:
-                            logger.warning(f"Failed to get valid test predictions from reloaded {model_key}.")
-                            base_model_test_preds[model_key] = None # Mark as failed if prediction issue
+                         logger.warning(f"Failed valid test predictions from {model_key}.")
+                         base_model_test_preds[model_key] = None # Mark as None if failed
             except Exception as repred_err:
                 logger.error(f"Error during re-prediction for ensemble evaluation: {repred_err}", exc_info=True)
                 base_model_test_preds = {} # Clear if error
 
-        # Now evaluate using the inverse validation MAE weights (ensemble_weights)
-        if not ensemble_weights:
-            logger.info("Skipping evaluation using inverse validation MAE weights (weights unavailable).")
-        elif not base_model_test_preds:
-            logger.error("Skipping evaluation using inverse validation MAE weights (base predictions missing).")
-        else:
-            logger.info("Calculating weighted average predictions for test set (using Inv Val MAE weights)...")
-            weighted_home_sum = pd.Series(0.0, index=X_test.index)
-            weighted_away_sum = pd.Series(0.0, index=X_test.index)
-            total_weight_applied_series = pd.Series(0.0, index=X_test.index)
-            successful_models_for_inv_mae_avg = [k for k, v in base_model_test_preds.items() if v is not None]
-            for model_key in successful_models_for_inv_mae_avg:
-                 weight = ensemble_weights.get(model_key, 0.0)
-                 preds_df = base_model_test_preds.get(model_key)
-                 if weight > 1e-6 and preds_df is not None:
-                    preds_df = preds_df.reindex(X_test.index)
-                    valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
-                    weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
-                    weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
-                    total_weight_applied_series.loc[valid_idx] += weight
-            final_pred_home_inv_mae = pd.Series(np.nan, index=X_test.index)
-            final_pred_away_inv_mae = pd.Series(np.nan, index=X_test.index)
-            valid_weight_idx = total_weight_applied_series > 1e-6
-            final_pred_home_inv_mae.loc[valid_weight_idx] = weighted_home_sum.loc[valid_weight_idx] / total_weight_applied_series.loc[valid_weight_idx]
-            final_pred_away_inv_mae.loc[valid_weight_idx] = weighted_away_sum.loc[valid_weight_idx] / total_weight_applied_series.loc[valid_weight_idx]
-            fallback_idx = ~valid_weight_idx
-            if fallback_idx.any():
-                logger.warning(f"Applying simple average fallback for {fallback_idx.sum()} test samples (Inv Val MAE weights).")
-                valid_dfs_for_avg = [df for df in base_model_test_preds.values() if df is not None]
-                if valid_dfs_for_avg:
-                     simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
-                     simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
-                     final_pred_home_inv_mae.loc[fallback_idx] = simple_avg_home.loc[fallback_idx]
-                     final_pred_away_inv_mae.loc[fallback_idx] = simple_avg_away.loc[fallback_idx]
-                final_pred_home_inv_mae = final_pred_home_inv_mae.fillna(115.0)
-                final_pred_away_inv_mae = final_pred_away_inv_mae.fillna(115.0)
-            logger.info("Evaluating weighted ensemble predictions (Inv Val MAE weights)...")
-            try:
-                 y_test_home_aligned_w = y_test_home.reindex(final_pred_home_inv_mae.index)
-                 y_test_away_aligned_w = y_test_away.reindex(final_pred_away_inv_mae.index)
-                 valid_final_idx = final_pred_home_inv_mae.notna() & final_pred_away_inv_mae.notna() & y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
-                 if not valid_final_idx.all():
-                     logger.warning(f"Dropping {(~valid_final_idx).sum()} samples with NaNs before Inv Val MAE weighted evaluation.")
-                 final_pred_home_inv_mae = final_pred_home_inv_mae[valid_final_idx]
-                 final_pred_away_inv_mae = final_pred_away_inv_mae[valid_final_idx]
-                 y_test_home_aligned_w = y_test_home_aligned_w[valid_final_idx]
-                 y_test_away_aligned_w = y_test_away_aligned_w[valid_final_idx]
-                 if final_pred_home_inv_mae.empty:
-                     logger.error("No valid predictions remaining for Inv Val MAE weighted evaluation.")
-                 else:
-                    ens_metrics_home = calculate_regression_metrics(y_test_home_aligned_w, final_pred_home_inv_mae)
-                    ens_metrics_away = calculate_regression_metrics(y_test_away_aligned_w, final_pred_away_inv_mae)
-                    ens_mae_total = mean_absolute_error(y_test_home_aligned_w + y_test_away_aligned_w, final_pred_home_inv_mae + final_pred_away_inv_mae)
-                    ens_mae_diff = mean_absolute_error(y_test_home_aligned_w - y_test_away_aligned_w, final_pred_home_inv_mae - final_pred_away_inv_mae)
-                    y_true_comb_ens = np.vstack((y_test_home_aligned_w.values, y_test_away_aligned_w.values)).T
-                    y_pred_comb_ens = np.vstack((final_pred_home_inv_mae.values, final_pred_away_inv_mae.values)).T
-                    ens_betting = calculate_betting_metrics(y_true_comb_ens, y_pred_comb_ens)
-                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test MAE : Home={ens_metrics_home.get('mae', np.nan):.3f}, Away={ens_metrics_away.get('mae', np.nan):.3f}, Total={ens_mae_total:.3f}, Diff={ens_mae_diff:.3f}")
-                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test RMSE: Home={ens_metrics_home.get('rmse', np.nan):.3f}, Away={ens_metrics_away.get('rmse', np.nan):.3f}")
-                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test R2  : Home={ens_metrics_home.get('r2', np.nan):.3f}, Away={ens_metrics_away.get('r2', np.nan):.3f}")
-                    logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Betting Metrics: {ens_betting}")
-            except Exception as ens_eval_err:
-                 logger.error(f"Error evaluating Inv Val MAE weighted ensemble: {ens_eval_err}", exc_info=True)
+    # --- NOW Evaluate the different blends using base_model_test_preds ---
 
-            logger.info("\n--- Evaluating MANUALLY Weighted Ensemble on Test Set ---")
-            manual_weights = {'ridge': 0.55, 'random_forest': 0.25, 'xgboost': 0.20} # Note: Doesn't include LGBM yet
-            logger.info(f"Using Manual Weights: {manual_weights}")
-
-        if not base_model_test_preds:
-            logger.error("Missing base model test predictions. Cannot calculate manually weighted ensemble performance.")
-        else:
-            logger.info("Calculating MANUALLY weighted average predictions for test set...")
-            manual_weighted_home_sum = pd.Series(0.0, index=X_test.index)
-            manual_weighted_away_sum = pd.Series(0.0, index=X_test.index)
-            manual_total_weight_applied_series = pd.Series(0.0, index=X_test.index)
-            models_in_manual_weights = list(manual_weights.keys())
-            for model_key in models_in_manual_weights:
-                 weight = manual_weights.get(model_key, 0.0)
-                 preds_df = base_model_test_preds.get(model_key)
-                 if weight > 1e-6 and preds_df is not None:
-                     preds_df = preds_df.reindex(X_test.index)
-                     valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
-                     manual_weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
-                     manual_weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
-                     manual_total_weight_applied_series.loc[valid_idx] += weight
-                 elif weight > 1e-6 and preds_df is None:
-                      logger.warning(f"Model {model_key} needed for manual weights but test predictions missing. Skipping.")
-            manual_final_pred_home = pd.Series(np.nan, index=X_test.index)
-            manual_final_pred_away = pd.Series(np.nan, index=X_test.index)
-            manual_valid_weight_idx = manual_total_weight_applied_series > 1e-6
-            manual_final_pred_home.loc[manual_valid_weight_idx] = manual_weighted_home_sum.loc[manual_valid_weight_idx] / manual_total_weight_applied_series.loc[manual_valid_weight_idx]
-            manual_final_pred_away.loc[manual_valid_weight_idx] = manual_weighted_away_sum.loc[manual_valid_weight_idx] / manual_total_weight_applied_series.loc[manual_valid_weight_idx]
-            manual_fallback_idx = ~manual_valid_weight_idx
-            if manual_fallback_idx.any():
-                logger.warning(f"Applying simple average fallback for {manual_fallback_idx.sum()} test samples (manual weights).")
-                valid_dfs_for_avg = [df for df in base_model_test_preds.values() if df is not None]
-                if valid_dfs_for_avg:
-                     simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
-                     simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
-                     manual_final_pred_home.loc[manual_fallback_idx] = simple_avg_home.loc[manual_fallback_idx]
-                     manual_final_pred_away.loc[manual_fallback_idx] = simple_avg_away.loc[manual_fallback_idx]
-                manual_final_pred_home = manual_final_pred_home.fillna(115.0)
-                manual_final_pred_away = manual_final_pred_away.fillna(115.0)
-            logger.info("Evaluating MANUALLY weighted ensemble predictions...")
-            try:
-                 y_test_home_aligned_w = y_test_home.reindex(manual_final_pred_home.index)
-                 y_test_away_aligned_w = y_test_away.reindex(manual_final_pred_away.index)
-                 valid_final_idx_man = manual_final_pred_home.notna() & manual_final_pred_away.notna() & y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
-                 if not valid_final_idx_man.all():
-                     logger.warning(f"Dropping {(~valid_final_idx_man).sum()} samples with NaNs before final manual weighted evaluation.")
-                 manual_final_pred_home = manual_final_pred_home[valid_final_idx_man]
-                 manual_final_pred_away = manual_final_pred_away[valid_final_idx_man]
-                 y_test_home_aligned_w = y_test_home_aligned_w[valid_final_idx_man]
-                 y_test_away_aligned_w = y_test_away_aligned_w[valid_final_idx_man]
-                 if manual_final_pred_home.empty:
-                     logger.error("No valid predictions remaining for manual weighted ensemble evaluation.")
-                 else:
-                    man_ens_metrics_home = calculate_regression_metrics(y_test_home_aligned_w, manual_final_pred_home)
-                    man_ens_metrics_away = calculate_regression_metrics(y_test_away_aligned_w, manual_final_pred_away)
-                    man_ens_mae_total = mean_absolute_error(y_test_home_aligned_w + y_test_away_aligned_w, manual_final_pred_home + manual_final_pred_away)
-                    man_ens_mae_diff = mean_absolute_error(y_test_home_aligned_w - y_test_away_aligned_w, manual_final_pred_home - manual_final_pred_away)
-                    y_true_comb_ens_man = np.vstack((y_test_home_aligned_w.values, y_test_away_aligned_w.values)).T
-                    y_pred_comb_ens_man = np.vstack((manual_final_pred_home.values, manual_final_pred_away.values)).T
-                    man_ens_betting = calculate_betting_metrics(y_true_comb_ens_man, y_pred_comb_ens_man)
-                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Test MAE : Home={man_ens_metrics_home.get('mae', np.nan):.3f}, Away={man_ens_metrics_away.get('mae', np.nan):.3f}, Total={man_ens_mae_total:.3f}, Diff={man_ens_mae_diff:.3f}")
-                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Test RMSE: Home={man_ens_metrics_home.get('rmse', np.nan):.3f}, Away={man_ens_metrics_away.get('rmse', np.nan):.3f}")
-                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Test R2  : Home={man_ens_metrics_home.get('r2', np.nan):.3f}, Away={man_ens_metrics_away.get('r2', np.nan):.3f}")
-                    logger.info(f"MANUAL WEIGHTED ENSEMBLE Betting Metrics: {man_ens_betting}")
-            except Exception as man_ens_eval_err:
-                 logger.error(f"Error evaluating manually weighted ensemble performance: {man_ens_eval_err}", exc_info=True)
-    logger.info("\n--- Training Pipeline Summary ---")
-    if all_metrics:
-         metrics_df = pd.DataFrame(all_metrics)
-         cols_to_show = [
-             'model_name', 'feature_count', 'training_duration_final',
-             'test_mae_home', 'test_mae_away', 'test_r2_home', 'test_r2_away',
-             'test_mae_total', 'test_mae_diff'
-         ]
-         if 'test_combined_loss' in metrics_df.columns:
-             cols_to_show.append('test_combined_loss')
-         if 'betting_metrics' in metrics_df.columns:
-             cols_to_show.append('betting_metrics')
-         cols_to_show_present = [col for col in cols_to_show if col in metrics_df.columns]
-         logger.info("Base Model Performance (Test Set):")
-         try:
-             metrics_df_display = metrics_df[cols_to_show_present].copy()
-             if 'betting_metrics' in metrics_df_display.columns:
-                  metrics_df_display['betting_metrics'] = metrics_df_display['betting_metrics'].astype(str)
-             logger.info("\n" + metrics_df_display.to_string(index=False))
-         except Exception as e:
-              logger.warning(f"Could not format summary table: {e}")
-              logger.info("\n" + metrics_df[cols_to_show_present].to_string(index=False))
-    if ensemble_weights:
-        logger.info("\nCalculated Ensemble Weights (Inverse Validation MAE):")
-        logger.info(json.dumps(ensemble_weights, indent=4))
+    # --- Evaluate Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---
+    logger.info("\n--- Evaluating Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---")
+    # This block depends on base_model_test_preds being populated above
+    if not inv_val_mae_weights: # Use the freshly calculated weights variable
+        logger.warning("Inv Val MAE weights not available. Skipping evaluation.")
+    elif not base_model_test_preds:
+        logger.warning("Base model test predictions missing. Skipping Inv Val MAE blend evaluation.")
     else:
-         logger.warning("\nEnsemble weights (Inv Val MAE) were not calculated successfully.")
+        logger.info("Calculating weighted average predictions for test set (using Inv Val MAE weights)...")
+        # --- Calculation Logic ---
+        weighted_home_sum = pd.Series(0.0, index=X_test.index)
+        weighted_away_sum = pd.Series(0.0, index=X_test.index)
+        total_weight_applied_series = pd.Series(0.0, index=X_test.index)
+        # Use models for which we successfully generated test predictions
+        models_for_eval = [k for k, v in base_model_test_preds.items() if v is not None]
 
-        # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # +++ NEW BLOCK: Evaluate Weighted Ensemble (OPTIMIZED Weights) on Test Set +++
-    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        for model_key in models_for_eval:
+             # Use the weights calculated from validation MAE earlier
+             weight = inv_val_mae_weights.get(model_key, 0.0)
+             preds_df = base_model_test_preds.get(model_key) # Already checked this isn't None
+
+             if weight > 1e-6: # Only apply if weight is meaningful
+                 preds_df = preds_df.reindex(X_test.index) # Ensure alignment
+                 valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
+                 # Add weighted predictions where preds are not NaN
+                 weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
+                 weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
+                 total_weight_applied_series.loc[valid_idx] += weight
+             # else: No need to log if weight is zero or prediction failed
+
+        # --- Normalize & Fallback ---
+        final_pred_home_inv_mae = pd.Series(np.nan, index=X_test.index)
+        final_pred_away_inv_mae = pd.Series(np.nan, index=X_test.index)
+        valid_weight_idx = total_weight_applied_series > 1e-6 # Where did weights get applied?
+
+        final_pred_home_inv_mae.loc[valid_weight_idx] = weighted_home_sum.loc[valid_weight_idx] / total_weight_applied_series.loc[valid_weight_idx]
+        final_pred_away_inv_mae.loc[valid_weight_idx] = weighted_away_sum.loc[valid_weight_idx] / total_weight_applied_series.loc[valid_weight_idx]
+
+        fallback_idx = ~valid_weight_idx # Where weights were NOT applied (or sum was zero)
+        if fallback_idx.any():
+            logger.warning(f"Applying simple average fallback for {fallback_idx.sum()} test samples (Inv Val MAE weights).")
+            # Average predictions ONLY from models included in the inv_val_mae_weights dict and successful predict
+            valid_dfs_for_avg = [df for k, df in base_model_test_preds.items() if k in inv_val_mae_weights and df is not None]
+            if valid_dfs_for_avg:
+                 simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                 simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                 final_pred_home_inv_mae.loc[fallback_idx] = simple_avg_home.loc[fallback_idx]
+                 final_pred_away_inv_mae.loc[fallback_idx] = simple_avg_away.loc[fallback_idx]
+            # Final fill for any remaining NaNs (e.g., if ALL models failed for a sample)
+            final_pred_home_inv_mae = final_pred_home_inv_mae.fillna(115.0) # Use a reasonable default
+            final_pred_away_inv_mae = final_pred_away_inv_mae.fillna(115.0) # Use a reasonable default
+
+        # --- Evaluation ---
+        logger.info("Evaluating weighted ensemble predictions (Inv Val MAE weights)...")
+        try:
+             y_test_home_aligned_w = y_test_home.reindex(final_pred_home_inv_mae.index)
+             y_test_away_aligned_w = y_test_away.reindex(final_pred_away_inv_mae.index)
+             valid_final_idx = final_pred_home_inv_mae.notna() & final_pred_away_inv_mae.notna() & \
+                               y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
+             if not valid_final_idx.all():
+                 logger.warning(f"Dropping {(~valid_final_idx).sum()} samples with NaNs before Inv Val MAE weighted evaluation.")
+
+             # Filter all series/arrays to only valid indexes
+             final_pred_home_eval = final_pred_home_inv_mae[valid_final_idx]
+             final_pred_away_eval = final_pred_away_inv_mae[valid_final_idx]
+             y_test_home_eval = y_test_home_aligned_w[valid_final_idx]
+             y_test_away_eval = y_test_away_aligned_w[valid_final_idx]
+
+             if final_pred_home_eval.empty:
+                 logger.error("No valid predictions remaining for Inv Val MAE weighted evaluation.")
+             else:
+                 # Calculate and log metrics
+                 ens_metrics_home = calculate_regression_metrics(y_test_home_eval, final_pred_home_eval)
+                 ens_metrics_away = calculate_regression_metrics(y_test_away_eval, final_pred_away_eval)
+                 ens_mae_total = mean_absolute_error(y_test_home_eval + y_test_away_eval, final_pred_home_eval + final_pred_away_eval)
+                 ens_mae_diff = mean_absolute_error(y_test_home_eval - y_test_away_eval, final_pred_home_eval - final_pred_away_eval)
+                 y_true_comb_ens = np.vstack((y_test_home_eval.values, y_test_away_eval.values)).T
+                 y_pred_comb_ens = np.vstack((final_pred_home_eval.values, final_pred_away_eval.values)).T
+                 ens_betting = calculate_betting_metrics(y_true_comb_ens, y_pred_comb_ens)
+
+                 logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test MAE : Home={ens_metrics_home.get('mae', np.nan):.3f}, Away={ens_metrics_away.get('mae', np.nan):.3f}, Total={ens_mae_total:.3f}, Diff={ens_mae_diff:.3f}")
+                 logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test RMSE: Home={ens_metrics_home.get('rmse', np.nan):.3f}, Away={ens_metrics_away.get('rmse', np.nan):.3f}")
+                 logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Test R2  : Home={ens_metrics_home.get('r2', np.nan):.3f}, Away={ens_metrics_away.get('r2', np.nan):.3f}")
+                 logger.info(f"WEIGHTED ENSEMBLE (Inv Val MAE) Betting Metrics: {ens_betting}")
+
+        except Exception as ens_eval_err:
+             logger.error(f"Error evaluating Inv Val MAE weighted ensemble: {ens_eval_err}", exc_info=True)
+
+    # --- Evaluate MANUALLY Weighted Ensemble on Test Set ---
+    logger.info("\n--- Evaluating MANUALLY Weighted Ensemble on Test Set ---")
+    # Define weights, including SVR (ensure sum=1)
+    manual_weights = {
+        'ridge': 0.50,
+        'svr': 0.50,
+    }
+    # Verify sum is close to 1.0
+    if abs(sum(manual_weights.values()) - 1.0) > 1e-6:
+         logger.warning(f"Manual weights do not sum to 1! Sum = {sum(manual_weights.values())}")
+    # <<< END UPDATE >>>
+
+    logger.info(f"Using Manual Weights: {manual_weights}")
+
+    if not base_model_test_preds: # Check if base predictions exist
+        logger.error("Base model test predictions missing. Cannot calculate manually weighted blend.")
+    else:
+        logger.info("Calculating MANUALLY weighted average predictions for test set...")
+        # --- Calculation Logic ---
+        manual_weighted_home_sum = pd.Series(0.0, index=X_test.index)
+        manual_weighted_away_sum = pd.Series(0.0, index=X_test.index)
+        manual_total_weight_applied_series = pd.Series(0.0, index=X_test.index)
+        models_in_manual_weights = list(manual_weights.keys()) # Use keys from this dict
+
+        for model_key in models_in_manual_weights:
+             weight = manual_weights.get(model_key, 0.0)
+             preds_df = base_model_test_preds.get(model_key) # Get predictions for this model
+
+             if weight > 1e-6 and preds_df is not None: # Check if model predicted successfully
+                 preds_df = preds_df.reindex(X_test.index) # Ensure alignment
+                 valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
+                 manual_weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
+                 manual_weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
+                 manual_total_weight_applied_series.loc[valid_idx] += weight
+             elif weight > 1e-6 and preds_df is None:
+                  logger.warning(f"Model '{model_key}' needed for manual weights but its test predictions are missing/failed. Skipping.")
+
+        # --- Normalize & Fallback ---
+        manual_final_pred_home = pd.Series(np.nan, index=X_test.index)
+        manual_final_pred_away = pd.Series(np.nan, index=X_test.index)
+        manual_valid_weight_idx = manual_total_weight_applied_series > 1e-6
+        manual_final_pred_home.loc[manual_valid_weight_idx] = manual_weighted_home_sum.loc[manual_valid_weight_idx] / manual_total_weight_applied_series.loc[manual_valid_weight_idx]
+        manual_final_pred_away.loc[manual_valid_weight_idx] = manual_weighted_away_sum.loc[manual_valid_weight_idx] / manual_total_weight_applied_series.loc[manual_valid_weight_idx]
+        manual_fallback_idx = ~manual_valid_weight_idx
+        if manual_fallback_idx.any():
+            logger.warning(f"Applying simple average fallback for {manual_fallback_idx.sum()} test samples (manual weights).")
+            # Average using only models present in manual_weights AND successful predict
+            valid_dfs_for_avg_man = [df for k, df in base_model_test_preds.items() if k in manual_weights and df is not None]
+            if valid_dfs_for_avg_man:
+                 simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg_man], axis=1).mean(axis=1)
+                 simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg_man], axis=1).mean(axis=1)
+                 manual_final_pred_home.loc[manual_fallback_idx] = simple_avg_home.loc[manual_fallback_idx]
+                 manual_final_pred_away.loc[manual_fallback_idx] = simple_avg_away.loc[manual_fallback_idx]
+            manual_final_pred_home = manual_final_pred_home.fillna(115.0)
+            manual_final_pred_away = manual_final_pred_away.fillna(115.0)
+
+        # --- Evaluate Manual Weighted Predictions ---
+        logger.info("Evaluating MANUALLY weighted ensemble predictions...")
+        try:
+             y_test_home_aligned_w = y_test_home.reindex(manual_final_pred_home.index)
+             y_test_away_aligned_w = y_test_away.reindex(manual_final_pred_away.index)
+             valid_final_idx_man = manual_final_pred_home.notna() & manual_final_pred_away.notna() & \
+                                   y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
+             if not valid_final_idx_man.all():
+                 logger.warning(f"Dropping {(~valid_final_idx_man).sum()} samples with NaNs before final manual weighted evaluation.")
+
+             manual_final_pred_home_eval = manual_final_pred_home[valid_final_idx_man]
+             manual_final_pred_away_eval = manual_final_pred_away[valid_final_idx_man]
+             y_test_home_eval_man = y_test_home_aligned_w[valid_final_idx_man]
+             y_test_away_eval_man = y_test_away_aligned_w[valid_final_idx_man]
+
+             if manual_final_pred_home_eval.empty:
+                 logger.error("No valid predictions remaining for manual weighted ensemble evaluation.")
+             else:
+                 # Calculate and log metrics
+                 man_ens_metrics_home = calculate_regression_metrics(y_test_home_eval_man, manual_final_pred_home_eval)
+                 man_ens_metrics_away = calculate_regression_metrics(y_test_away_eval_man, manual_final_pred_away_eval)
+                 man_ens_mae_total = mean_absolute_error(y_test_home_eval_man + y_test_away_eval_man, manual_final_pred_home_eval + manual_final_pred_away_eval)
+                 man_ens_mae_diff = mean_absolute_error(y_test_home_eval_man - y_test_away_eval_man, manual_final_pred_home_eval - manual_final_pred_away_eval)
+                 y_true_comb_ens_man = np.vstack((y_test_home_eval_man.values, y_test_away_eval_man.values)).T
+                 y_pred_comb_ens_man = np.vstack((manual_final_pred_home_eval.values, manual_final_pred_away_eval.values)).T
+                 man_ens_betting = calculate_betting_metrics(y_true_comb_ens_man, y_pred_comb_ens_man)
+
+                 logger.info(f"MANUAL WEIGHTED ENSEMBLE Test MAE : Home={man_ens_metrics_home.get('mae', np.nan):.3f}, Away={man_ens_metrics_away.get('mae', np.nan):.3f}, Total={man_ens_mae_total:.3f}, Diff={man_ens_mae_diff:.3f}")
+                 logger.info(f"MANUAL WEIGHTED ENSEMBLE Test RMSE: Home={man_ens_metrics_home.get('rmse', np.nan):.3f}, Away={man_ens_metrics_away.get('rmse', np.nan):.3f}")
+                 logger.info(f"MANUAL WEIGHTED ENSEMBLE Test R2  : Home={man_ens_metrics_home.get('r2', np.nan):.3f}, Away={man_ens_metrics_away.get('r2', np.nan):.3f}")
+                 logger.info(f"MANUAL WEIGHTED ENSEMBLE Betting Metrics: {man_ens_betting}")
+
+        except Exception as man_ens_eval_err:
+             logger.error(f"Error evaluating manually weighted ensemble performance: {man_ens_eval_err}", exc_info=True)
+
+
+    # --- Evaluate OPTIMIZED Weighted Ensemble ---
     logger.info("\n--- Evaluating Weighted Ensemble (OPTIMIZED Weights) on Test Set ---")
-    if optimized_weights is None: # Check if optimization succeeded
+    if optimized_weights is None or not optimized_weights: # Check if optimization produced valid weights
         logger.warning("Optimized weights not available. Skipping evaluation.")
-    elif not base_model_test_preds: # Check if test predictions were generated
-        logger.error("Base model test predictions missing. Cannot evaluate optimized weighted ensemble.")
+    elif not base_model_test_preds:
+        logger.error("Base model test predictions missing. Cannot evaluate optimized weighted blend.")
     else:
         logger.info("Calculating weighted average predictions for test set (using Optimized weights)...")
         logger.info(f"Using Optimized Weights: {optimized_weights}")
 
-        # --- Calculation Logic (Similar to other blocks, uses 'optimized_weights') ---
+        # --- Calculation Logic ---
         opt_weighted_home_sum = pd.Series(0.0, index=X_test.index)
         opt_weighted_away_sum = pd.Series(0.0, index=X_test.index)
         opt_total_weight_applied_series = pd.Series(0.0, index=X_test.index)
         models_in_opt_weights = list(optimized_weights.keys()) # Keys from successful optimization
 
         for model_key in models_in_opt_weights:
-             # Use the weights found by the optimizer
-             weight = optimized_weights.get(model_key, 0.0)
-             # Use the test predictions generated earlier
-             preds_df = base_model_test_preds.get(model_key)
+             weight = optimized_weights.get(model_key, 0.0) # Use the optimized weights
+             preds_df = base_model_test_preds.get(model_key) # Use test predictions
 
              if weight > 1e-6 and preds_df is not None:
-                 preds_df = preds_df.reindex(X_test.index) # Ensure alignment
+                 preds_df = preds_df.reindex(X_test.index)
                  valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
                  opt_weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
                  opt_weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
                  opt_total_weight_applied_series.loc[valid_idx] += weight
              elif weight > 1e-6 and preds_df is None:
-                  logger.warning(f"Model {model_key} used in optimized weights but test predictions missing. Skipping.")
+                  logger.warning(f"Model '{model_key}' used in optimized weights but its test predictions are missing/failed. Skipping.")
 
-        # --- Normalize & Fallback (same logic as other blocks) ---
+        # --- Normalize & Fallback ---
         opt_final_pred_home = pd.Series(np.nan, index=X_test.index)
         opt_final_pred_away = pd.Series(np.nan, index=X_test.index)
         opt_valid_weight_idx = opt_total_weight_applied_series > 1e-6
         opt_final_pred_home.loc[opt_valid_weight_idx] = opt_weighted_home_sum.loc[opt_valid_weight_idx] / opt_total_weight_applied_series.loc[opt_valid_weight_idx]
         opt_final_pred_away.loc[opt_valid_weight_idx] = opt_weighted_away_sum.loc[opt_valid_weight_idx] / opt_total_weight_applied_series.loc[opt_valid_weight_idx]
         opt_fallback_idx = ~opt_valid_weight_idx
-        if opt_fallback_idx.any(): # Apply fallback if needed
+        if opt_fallback_idx.any():
             logger.warning(f"Applying simple average fallback for {opt_fallback_idx.sum()} test samples (optimized weights).")
-            valid_dfs_for_avg = [df for k, df in base_model_test_preds.items() if k in models_in_opt_weights and df is not None] # Use only models included in optimization
-            if valid_dfs_for_avg:
-                 simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
-                 simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+            # Average using only models included in optimization weights AND successful predict
+            valid_dfs_for_avg_opt = [df for k, df in base_model_test_preds.items() if k in optimized_weights and df is not None]
+            if valid_dfs_for_avg_opt:
+                 simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg_opt], axis=1).mean(axis=1)
+                 simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg_opt], axis=1).mean(axis=1)
                  opt_final_pred_home.loc[opt_fallback_idx] = simple_avg_home.loc[opt_fallback_idx]
                  opt_final_pred_away.loc[opt_fallback_idx] = simple_avg_away.loc[opt_fallback_idx]
-            opt_final_pred_home = opt_final_pred_home.fillna(115.0) # Use default
-            opt_final_pred_away = opt_final_pred_away.fillna(115.0) # Use default
+            opt_final_pred_home = opt_final_pred_home.fillna(115.0)
+            opt_final_pred_away = opt_final_pred_away.fillna(115.0)
 
         # --- Evaluate Optimized Weighted Predictions ---
         logger.info("Evaluating OPTIMIZED weighted ensemble predictions...")
         try:
-             # Align true values
              y_test_home_aligned_w = y_test_home.reindex(opt_final_pred_home.index)
              y_test_away_aligned_w = y_test_away.reindex(opt_final_pred_away.index)
-             # Drop NaNs
-             valid_final_idx_opt = opt_final_pred_home.notna() & opt_final_pred_away.notna() & y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
+             valid_final_idx_opt = opt_final_pred_home.notna() & opt_final_pred_away.notna() & \
+                                   y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
              if not valid_final_idx_opt.all(): logger.warning(f"Dropping {(~valid_final_idx_opt).sum()} samples with NaNs before final optimized weighted evaluation.")
-             opt_final_pred_home = opt_final_pred_home[valid_final_idx_opt]
-             opt_final_pred_away = opt_final_pred_away[valid_final_idx_opt]
-             y_test_home_aligned_w = y_test_home_aligned_w[valid_final_idx_opt]
-             y_test_away_aligned_w = y_test_away_aligned_w[valid_final_idx_opt]
 
-             if opt_final_pred_home.empty:
+             opt_final_pred_home_eval = opt_final_pred_home[valid_final_idx_opt]
+             opt_final_pred_away_eval = opt_final_pred_away[valid_final_idx_opt]
+             y_test_home_eval_opt = y_test_home_aligned_w[valid_final_idx_opt]
+             y_test_away_eval_opt = y_test_away_aligned_w[valid_final_idx_opt]
+
+             if opt_final_pred_home_eval.empty:
                  logger.error("No valid predictions remaining for optimized weighted ensemble evaluation.")
              else:
-                 # Calculate and log metrics...
-                 opt_ens_metrics_home = calculate_regression_metrics(y_test_home_aligned_w, opt_final_pred_home)
-                 opt_ens_metrics_away = calculate_regression_metrics(y_test_away_aligned_w, opt_final_pred_away)
-                 opt_ens_mae_total = mean_absolute_error(y_test_home_aligned_w + y_test_away_aligned_w, opt_final_pred_home + opt_final_pred_away)
-                 opt_ens_mae_diff = mean_absolute_error(y_test_home_aligned_w - y_test_away_aligned_w, opt_final_pred_home - opt_final_pred_away)
-                 y_true_comb_ens_opt = np.vstack((y_test_home_aligned_w.values, y_test_away_aligned_w.values)).T
-                 y_pred_comb_ens_opt = np.vstack((opt_final_pred_home.values, opt_final_pred_away.values)).T
+                 # Calculate and log metrics
+                 opt_ens_metrics_home = calculate_regression_metrics(y_test_home_eval_opt, opt_final_pred_home_eval)
+                 opt_ens_metrics_away = calculate_regression_metrics(y_test_away_eval_opt, opt_final_pred_away_eval)
+                 opt_ens_mae_total = mean_absolute_error(y_test_home_eval_opt + y_test_away_eval_opt, opt_final_pred_home_eval + opt_final_pred_away_eval)
+                 opt_ens_mae_diff = mean_absolute_error(y_test_home_eval_opt - y_test_away_eval_opt, opt_final_pred_home_eval - opt_final_pred_away_eval)
+                 y_true_comb_ens_opt = np.vstack((y_test_home_eval_opt.values, y_test_away_eval_opt.values)).T
+                 y_pred_comb_ens_opt = np.vstack((opt_final_pred_home_eval.values, opt_final_pred_away_eval.values)).T
                  opt_ens_betting = calculate_betting_metrics(y_true_comb_ens_opt, y_pred_comb_ens_opt)
 
                  logger.info(f"OPTIMIZED WEIGHTED ENSEMBLE Test MAE : Home={opt_ens_metrics_home.get('mae', np.nan):.3f}, Away={opt_ens_metrics_away.get('mae', np.nan):.3f}, Total={opt_ens_mae_total:.3f}, Diff={opt_ens_mae_diff:.3f}")
@@ -1834,11 +1801,51 @@ def run_training_pipeline(args):
 
         except Exception as opt_ens_eval_err:
              logger.error(f"Error evaluating optimized weighted ensemble performance: {opt_ens_eval_err}", exc_info=True)
-    # +++ END Evaluation Block for OPTIMIZED Weights +++
-    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # --- End Evaluation Block for OPTIMIZED Weights ---
 
+    # --- Final Summary Logging ---
+    logger.info("\n--- Training Pipeline Summary ---")
+    if all_metrics:
+         logger.info("Base Model Performance (Test Set):")
+         # Use the fixed summary table logging logic
+         try:
+             metrics_df = pd.DataFrame(all_metrics)
+             cols_to_show = [
+                 'model_name', 'feature_count', 'training_duration_final',
+                 'test_mae_home', 'test_mae_away', 'test_r2_home', 'test_r2_away',
+                 'test_mae_total', 'test_mae_diff'
+             ]
+             if 'test_combined_loss' in metrics_df.columns: cols_to_show.append('test_combined_loss')
+             if 'betting_metrics' in metrics_df.columns: cols_to_show.append('betting_metrics')
+             cols_to_show_present = [col for col in cols_to_show if col in metrics_df.columns]
 
-    logger.info(f"\nManual Ensemble Weights Used for Evaluation: {manual_weights}")
+             metrics_df_display = metrics_df[cols_to_show_present].copy()
+             if 'betting_metrics' in metrics_df_display.columns:
+                  metrics_df_display['betting_metrics'] = metrics_df_display['betting_metrics'].astype(str)
+
+             # Define formatters AFTER converting betting_metrics
+             float_cols = metrics_df_display.select_dtypes(include=['float']).columns
+             format_dict = {col: '{:.3f}' for col in float_cols}
+
+             logger.info("\n" + metrics_df_display.to_string(index=False, formatters=format_dict)) # Single call with formatters
+
+         except Exception as e:
+              logger.warning(f"Could not format summary table: {e}")
+              logger.info("\n" + metrics_df[cols_to_show_present].to_string(index=False)) # Fallback
+
+    # Log the different weights used/calculated
+    if inv_val_mae_weights: # Use the correct variable name from this scope
+        logger.info("\nCalculated Ensemble Weights (Inverse Validation MAE):")
+        logger.info(json.dumps(inv_val_mae_weights, indent=4))
+    else: logger.warning("\nInv Val MAE weights were not calculated/available.")
+
+    if optimized_weights: # Log optimized weights if they exist
+        logger.info("\nOptimized Ensemble Weights (from Validation Set):")
+        logger.info(json.dumps(optimized_weights, indent=4))
+    else: logger.warning("\nOptimized weights were not calculated/available.")
+
+    logger.info(f"\nManual Ensemble Weights Used for Evaluation: {manual_weights}") # Log manual weights used
+
     end_time_pipeline = time.time()
     logger.info(f"\n--- NBA Model Training Pipeline Finished in {end_time_pipeline - start_pipeline_time:.2f} seconds ---")
  
@@ -1870,7 +1877,7 @@ parser.add_argument("--data-source", type=str, default="supabase", choices=["csv
 parser.add_argument("--historical-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_game_stats.csv'), help="Path to historical games CSV")
 parser.add_argument("--team-stats-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_team_stats.csv'), help="Path to team stats CSV")
 parser.add_argument("--lookback-days", type=int, default=1095, help="Days of historical data to load")
-parser.add_argument("--models", type=str, default="xgboost,random_forest,ridge", help="Comma-separated models to train")
+parser.add_argument("--models", type=str, default="ridge,svr", help="Comma-separated models to train")
 parser.add_argument("--rolling-windows", type=str, default="5,10,20", help="Comma-separated rolling window sizes")
 parser.add_argument("--h2h-window", type=int, default=5, help="Number of games for H2H features")
 parser.add_argument("--test-size", type=float, default=0.15, help="Fraction for test set")
@@ -1879,7 +1886,7 @@ parser.add_argument("--use-weights", action="store_true", help="Use recency weig
 parser.add_argument("--weight-method", type=str, default="exponential", choices=["exponential", "half_life"], help="Recency weighting method")
 parser.add_argument("--weight-half-life", type=int, default=90, help="Half-life in days for weights")
 parser.add_argument("--skip-tuning", action="store_true", help="Skip hyperparameter tuning")
-parser.add_argument("--tune-iterations", type=int, default=30, help="Iterations for RandomizedSearchCV")
+parser.add_argument("--tune-iterations", type=int, default=100, help="Iterations for RandomizedSearchCV")
 parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS, help="CV splits for TimeSeriesSplit")
 parser.add_argument("--scoring-metric", type=str, default='neg_mean_absolute_error', help="Scoring metric for tuning")
 parser.add_argument("--run-analysis", action="store_true", help="Run optional analysis functions")
