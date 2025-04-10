@@ -29,7 +29,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
 
-# --- Optional XGBoost Import ---
+# --- Imports ---
 try:
     import xgboost as xgb
     XGBOOST_AVAILABLE = True
@@ -38,11 +38,24 @@ except ImportError:
     XGBOOST_AVAILABLE = False
     logging.warning("XGBoost library not found...")
 
+try:
+    import lightgbm as lgb
+    LGBM_AVAILABLE = True
+except ImportError:
+    lgb = None
+    LGBM_AVAILABLE = False
+    # Keep logger definition consistent with how it's handled for XGBoost
+    logging.warning("LightGBM library not found...")
+
 # --- Configuration ---
-MODELS_BASE_DIR = Path(__file__).resolve().parent.parent / 'models' / 'saved'
-MODELS_BASE_DIR.mkdir(parents=True, exist_ok=True)
-QUARTERLY_MODELS_DIR = Path(__file__).resolve().parent.parent / 'models' / 'quarterly'
-QUARTERLY_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+# Determine Project Root relative to this file
+SCRIPT_DIR = Path(__file__).resolve().parent # backend/nba_score_prediction
+BACKEND_DIR = SCRIPT_DIR.parent             # backend
+PROJECT_ROOT = BACKEND_DIR.parent           # project_root
+
+# Use the same primary directory as train_models.py/prediction.py for the default
+MODELS_BASE_DIR_DEFAULT = PROJECT_ROOT / 'models' / 'saved'
+MODELS_BASE_DIR_DEFAULT.mkdir(parents=True, exist_ok=True)
 
 # --- Logger Configuration ---
 logging.basicConfig(
@@ -51,6 +64,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+SEED = 42
 
 # --- Utility Functions ---
 def compute_recency_weights(dates: pd.Series, method: str = 'half_life', half_life: int = 60, decay_rate: float = 0.98) -> Optional[np.ndarray]:
@@ -133,8 +148,8 @@ class BaseScorePredictor:
     Abstract base class for NBA score predictors.
     Provides common training, prediction, saving, and loading logic.
     """
-    def __init__(self, model_dir: Union[str, Path], model_name: str):
-        self.model_dir: Path = Path(model_dir)
+    def __init__(self, model_name: str, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT):
+        self.model_dir: Path = Path(model_dir) # model_dir still takes the (potentially default) value
         self.model_name: str = model_name
         self.pipeline_home: Optional[Pipeline] = None
         self.pipeline_away: Optional[Pipeline] = None
@@ -406,14 +421,14 @@ class BaseScorePredictor:
 # --- XGBoost Model Definition ---
 class XGBoostScorePredictor(BaseScorePredictor):
     """XGBoost-based predictor with a preprocessing pipeline."""
-    def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR, model_name: str = "xgboost_score_predictor"):
+    def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "xgboost_score_predictor"):
         super().__init__(model_dir, model_name)
         if not XGBOOST_AVAILABLE:
             logger.error("XGBoost library not found. XGBoostScorePredictor will not function.")
         self._default_xgb_params: Dict[str, Any] = {
             'objective': 'reg:squarederror', 'n_estimators': 300, 'learning_rate': 0.05,
             'max_depth': 5, 'min_child_weight': 3, 'subsample': 0.8, 'colsample_bytree': 0.8,
-            'gamma': 0.1, 'reg_alpha': 1.0, 'reg_lambda': 2.0, 'random_state': 42, 'n_jobs': -1
+            'gamma': 0.1, 'reg_alpha': 1.0, 'reg_lambda': 2.0, 'random_state': SEED, 'n_jobs': -1
         }
 
     def _build_pipeline(self, xgb_params: Dict[str, Any]) -> Pipeline:
@@ -474,11 +489,11 @@ class XGBoostScorePredictor(BaseScorePredictor):
 # --- RandomForest Model Definition ---
 class RandomForestScorePredictor(BaseScorePredictor):
     """RandomForest-based predictor with a preprocessing pipeline."""
-    def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR, model_name: str = "random_forest_score_predictor"):
+    def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "xgboost_score_predictor"):
         super().__init__(model_dir, model_name)
         self._default_rf_params: Dict[str, Any] = {
             'n_estimators': 200, 'max_depth': 15, 'min_samples_split': 5,
-            'min_samples_leaf': 2, 'max_features': 'sqrt', 'random_state': 42,
+            'min_samples_leaf': 2, 'max_features': 'sqrt', 'random_state': SEED,
             'n_jobs': -1, 'oob_score': False
         }
 
@@ -532,10 +547,10 @@ class RandomForestScorePredictor(BaseScorePredictor):
 # --- Ridge Model Definition ---
 class RidgeScorePredictor(BaseScorePredictor):
     """Ridge-based predictor with a preprocessing pipeline."""
-    def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR, model_name: str = "ridge_score_predictor"):
+    def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "xgboost_score_predictor"):
         super().__init__(model_dir, model_name)
         self._default_ridge_params: Dict[str, Any] = {
-            'alpha': 1.0, 'fit_intercept': True, 'solver': 'auto', 'random_state': 42
+            'alpha': 1.0, 'fit_intercept': True, 'solver': 'auto', 'random_state': SEED
         }
 
     def _build_pipeline(self, ridge_params: Dict[str, Any]) -> Pipeline:
@@ -584,6 +599,114 @@ class RidgeScorePredictor(BaseScorePredictor):
         except Exception as e:
             logger.error(f"Validation error for Ridge model: {e}", exc_info=True)
             raise
+        
+class LightGBMScorePredictor(BaseScorePredictor):
+    """LightGBM-based predictor with a preprocessing pipeline."""
+    def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "xgboost_score_predictor"):
+        super().__init__(model_dir, model_name)
+        self._default_lgbm_params: Dict[str, Any] = {
+             'objective': 'regression_l1', # MAE objective is often good for scores
+             'metric': 'mae',              # Use MAE for evaluation/early stopping if enabled
+             'n_estimators': 300,
+             'learning_rate': 0.05,
+             'num_leaves': 31,          # Default, adjust based on max_depth if needed
+             'max_depth': -1,           # Default (no limit unless constrained in tuning)
+             'feature_fraction': 0.8,   # Equivalent to colsample_bytree
+             'bagging_fraction': 0.8,   # Equivalent to subsample
+             'bagging_freq': 1,         # Perform bagging at every iteration
+             'reg_alpha': 0.1,          # L1 regularization
+             'reg_lambda': 0.1,         # L2 regularization
+             'min_child_samples': 20,   # Default minimum samples in a leaf
+             'random_state': SEED,      # For reproducibility
+             'n_jobs': -1,              # Use all available cores
+             'boosting_type': 'gbdt'    # Standard gradient boosting decision tree
+             # Add 'verbose': -1 to suppress LightGBM's internal verbosity during fit/predict
+         }
+
+    def _build_pipeline(self, lgbm_params: Dict[str, Any]) -> Pipeline:
+         """Builds the scikit-learn pipeline for LightGBM."""
+         if not LGBM_AVAILABLE:
+             raise ImportError("LightGBM library required for LightGBMScorePredictor.")
+
+         final_params = self._default_lgbm_params.copy()
+         final_params.update(lgbm_params)
+         # Remove verbose if it was passed during tuning to avoid conflict
+         final_params.pop('verbose', None)
+
+         preprocessing = _preprocessing_pipeline() # Get the standard Imputer + Scaler
+         pipeline = Pipeline([
+             ('preprocessing', preprocessing),
+             # Use 'lgbm' prefix consistent with other models for hyperparameter tuning keys
+             ('lgbm', lgb.LGBMRegressor(**final_params, verbose=-1)) # Set verbose=-1 here
+         ])
+         try: # Set output format for scikit-learn >= 1.0
+             pipeline.set_output(transform="pandas")
+             logger.debug("LightGBM pipeline set to output pandas DataFrame.")
+         except AttributeError:
+             logger.debug("Could not set pipeline output for LightGBM (older scikit-learn version).")
+         return pipeline
+
+    def train(self, X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
+              hyperparams_home: Optional[Dict[str, Any]] = None, hyperparams_away: Optional[Dict[str, Any]] = None,
+              sample_weights: Optional[np.ndarray] = None,
+              # Accept fit_params which might contain eval_set from RandomizedSearchCV wrapper
+              fit_params: Optional[Dict[str, Any]] = None,
+              # Allow eval_set_data for consistency, though might not be directly used by common logic if fit_params handles it
+              eval_set_data: Optional[Tuple] = None) -> None:
+        """Trains the LightGBM model using the common training logic."""
+        if not LGBM_AVAILABLE:
+            raise ImportError("LightGBM library not found; cannot train LightGBMScorePredictor.")
+
+        # Prepare fit parameters specifically for LGBM if needed (e.g., eval_set structure)
+        # Note: sample_weight is passed directly to _common_train_logic
+        # RandomizedSearchCV usually handles passing fit_params correctly if keys match
+        # We might need adjustments in _common_train_logic if LGBM requires fit_params keys
+        # different from XGBoost (e.g., 'lgbm__eval_set' vs 'xgb__eval_set')
+
+        # For simplicity now, assume RandomizedSearchCV handles passing relevant fit_params correctly
+        # based on the pipeline structure ('lgbm__...')
+
+        self._common_train_logic(X_train, y_train_home, y_train_away,
+                                 hyperparams_home, hyperparams_away, sample_weights,
+                                 self._default_lgbm_params,
+                                 fit_params=fit_params, # Pass along fit_params
+                                 eval_set_data=eval_set_data # Pass along eval_set_data
+                                 )
+
+
+    def predict(self, X: pd.DataFrame) -> Optional[pd.DataFrame]:
+         """Generates predictions using the common prediction logic."""
+         predictions = self._common_predict_logic(X)
+         if predictions is None: return None
+         pred_home, pred_away = predictions
+         # Post-process predictions same as other models
+         pred_home_processed = np.maximum(0, np.round(pred_home)).astype(int)
+         pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
+         return pd.DataFrame({'predicted_home_score': pred_home_processed, 'predicted_away_score': pred_away_processed}, index=X.index)
+
+    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "LightGBMScorePredictor":
+         """Loads the model and validates its type."""
+         loaded_instance = super().load_model(filepath, model_name)
+         self._validate_loaded_model_type()
+         # Need to ignore type checking here as superclass returns BaseScorePredictor
+         return loaded_instance # type: ignore
+
+    def _validate_loaded_model_type(self) -> None:
+        """Validates that the loaded model is indeed a LightGBM regressor."""
+        if not LGBM_AVAILABLE: return # Skip if library not found
+        try:
+            # Check the actual estimator instance in the final step of the pipeline
+            final_estimator_home = self.pipeline_home.steps[-1][1] if self.pipeline_home else None
+            final_estimator_away = self.pipeline_away.steps[-1][1] if self.pipeline_away else None
+
+            if final_estimator_home and not isinstance(final_estimator_home, lgb.LGBMRegressor):
+                 raise TypeError(f"Loaded home pipeline's final step is not an LGBMRegressor.")
+            if final_estimator_away and not isinstance(final_estimator_away, lgb.LGBMRegressor):
+                 raise TypeError(f"Loaded away pipeline's final step is not an LGBMRegressor.")
+            logger.debug("Validated LightGBM pipelines successfully.")
+        except Exception as e:
+             logger.error(f"Validation error for LightGBM model: {e}", exc_info=True)
+             raise # Re-raise the error after logging
 
 # --- Quarter-Specific Model System ---
 class QuarterSpecificModelSystem:
