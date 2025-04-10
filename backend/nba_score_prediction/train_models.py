@@ -14,16 +14,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from sklearn.experimental import enable_halving_search_cv  # noqa: F401
-from sklearn.model_selection import HalvingRandomSearchCV
-from scipy.stats import randint, uniform
-
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 from supabase import Client
 from datetime import datetime, timedelta
 from pathlib import Path
 
 # --- Scikit-learn Imports ---
+from sklearn.metrics import mean_absolute_error
 from sklearn.linear_model import Ridge as MetaRidge
 from sklearn.linear_model import LassoCV
 from sklearn.linear_model import RidgeCV
@@ -35,9 +32,11 @@ from sklearn.experimental import enable_halving_search_cv
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Ridge as MetaRidge
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit, HalvingRandomSearchCV
-from scipy.stats import randint, uniform, reciprocal  
 from sklearn.metrics import (make_scorer, mean_absolute_error,
                              mean_squared_error, r2_score)
+
+from scipy.stats import randint, uniform
+from scipy.optimize import minimize
 
 # --- Import evaluation functions ---
 from .evaluation import (
@@ -504,6 +503,110 @@ def compute_weights(validation_metrics: Dict[str, float]) -> Dict[str, float]:
         weights = {model: inv_error / total for model, inv_error in inv_errors.items()}
     logger.info(f"Calculated normalized weights: {weights}")
     return weights
+
+def optimize_ensemble_weights(
+    validation_predictions: Dict[str, Dict[str, pd.Series]],
+    model_keys: List[str],
+    metric_to_minimize: str = 'avg_mae' # Options: 'avg_mae', 'mae_home', 'mae_away'
+) -> Optional[np.ndarray]:
+    """
+    Finds optimal ensemble weights by minimizing a validation metric.
+
+    Args:
+        validation_predictions: Dict where keys are model names and values are dicts containing 
+                                'pred_home', 'true_home', 'pred_away', 'true_away' as pandas Series.
+        model_keys: List of model names to include in the optimization.
+        metric_to_minimize: The metric to minimize.
+
+    Returns:
+        Optimized weight vector as a numpy array, or None if optimization fails.
+    """
+    logger.info(f"Starting weight optimization for models: {model_keys} using metric: {metric_to_minimize}")
+    num_models = len(model_keys)
+    if num_models < 2:
+        logger.warning("At least 2 models are required to optimize weights. Returning None.")
+        return None
+
+    # --- Prepare Data ---
+    try:
+        ref_idx = validation_predictions[model_keys[0]]['true_home'].index
+        y_true_h = validation_predictions[model_keys[0]]['true_home'].loc[ref_idx].values
+        y_true_a = validation_predictions[model_keys[0]]['true_away'].loc[ref_idx].values
+
+        preds_h = np.zeros((len(ref_idx), num_models))
+        preds_a = np.zeros((len(ref_idx), num_models))
+
+        for i, key in enumerate(model_keys):
+            preds_h[:, i] = validation_predictions[key]['pred_home'].loc[ref_idx].values
+            preds_a[:, i] = validation_predictions[key]['pred_away'].loc[ref_idx].values
+
+        # Drop any rows with NaNs
+        valid_rows_mask = (~np.isnan(y_true_h)) & (~np.isnan(y_true_a)) & \
+                          (~np.isnan(preds_h).any(axis=1)) & (~np.isnan(preds_a).any(axis=1))
+
+        if not valid_rows_mask.all():
+            n_dropped = (~valid_rows_mask).sum()
+            logger.warning(f"Dropping {n_dropped} rows with NaNs before weight optimization.")
+            y_true_h = y_true_h[valid_rows_mask]
+            y_true_a = y_true_a[valid_rows_mask]
+            preds_h = preds_h[valid_rows_mask, :]
+            preds_a = preds_a[valid_rows_mask, :]
+
+        if len(y_true_h) == 0:
+            logger.error("No valid samples remain after NaN check; optimization aborted.")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error preparing data for weight optimization: {e}", exc_info=True)
+        return None
+
+    # --- Objective Function ---
+    def objective_function(weights: np.ndarray, y_true_h, y_true_a, preds_h, preds_a, metric) -> float:
+        blend_pred_h = np.dot(preds_h, weights)
+        blend_pred_a = np.dot(preds_a, weights)
+        mae_h = mean_absolute_error(y_true_h, blend_pred_h)
+        mae_a = mean_absolute_error(y_true_a, blend_pred_a)
+        if metric == 'avg_mae':
+            return (mae_h + mae_a) / 2.0
+        elif metric == 'mae_home':
+            return mae_h
+        elif metric == 'mae_away':
+            return mae_a
+        else:
+            return (mae_h + mae_a) / 2.0
+
+    # --- Constraints & Bounds ---
+    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0})
+    bounds = tuple((0.0, 1.0) for _ in range(num_models))
+
+    # --- Initial Guess ---
+    initial_weights = np.array([1.0 / num_models] * num_models)
+
+    # --- Run Optimization ---
+    try:
+        result = minimize(
+            objective_function,
+            initial_weights,
+            args=(y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize),
+            method='SLSQP',
+            bounds=bounds,
+            constraints=constraints,
+            options={'disp': False, 'ftol': 1e-6, 'maxiter': 1000}
+        )
+        if result.success:
+            optimized_weights = result.x
+            logger.info(f"Optimization successful. Optimal {metric_to_minimize}: {result.fun:.4f}")
+            # Clip negative weights due to floating point issues and renormalize
+            optimized_weights = np.maximum(optimized_weights, 0)
+            optimized_weights /= np.sum(optimized_weights)
+            logger.info(f"Optimal Weights: {dict(zip(model_keys, optimized_weights))}")
+            return optimized_weights
+        else:
+            logger.error(f"Weight optimization failed: {result.message}")
+            return None
+    except Exception as e:
+        logger.error(f"Exception during weight optimization: {e}", exc_info=True)
+        return None
 
 # ==============================================================================
 # SECTION 4: QUARTERLY MODEL TRAINING UTILITIES (Placeholders)
@@ -1388,71 +1491,108 @@ def run_training_pipeline(args):
             logger.error(f"Error calculating validation MAE for {model_key}: {mae_err}")
             validation_mae_dict[model_key] = np.nan
 
+    # --- Calculate and Save Inverse Validation MAE Weights ---
+    logger.info("\n--- Calculating and Saving Standard Ensemble Weights (Inverse Validation MAE) ---")
     ensemble_weights = compute_weights(validation_mae_dict)
     if ensemble_weights:
-        weights_path = MAIN_MODELS_DIR / "ensemble_weights.json"
+        weights_path = MAIN_MODELS_DIR / "ensemble_weights.json" # Standard weights file
         try:
-            with open(weights_path, 'w') as f:
-                json.dump(ensemble_weights, f, indent=4)
-            logger.info(f"Saved ensemble weights (based on validation MAE) to {weights_path}")
-        except Exception as e:
-            logger.error(f"Failed to save ensemble weights: {e}", exc_info=True)
+            with open(weights_path, 'w') as f: json.dump(ensemble_weights, f, indent=4)
+            logger.info(f"Saved ensemble weights (Inv Val MAE) to {weights_path}")
+        except Exception as e: logger.error(f"Failed to save ensemble weights: {e}", exc_info=True)
     else:
-        logger.error("Ensemble weights could not be computed. Weights file not saved.")
+        logger.error("Standard ensemble weights could not be computed. Weights file not saved.")
 
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # +++ NEW BLOCK: Optimize Weights using Validation Data +++
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    logger.info("\n--- Optimizing Ensemble Weights using Validation Set ---")
+    optimized_weights = None # Initialize
+    if not validation_predictions_collector:
+         logger.warning("Validation predictions collector is empty, cannot optimize weights.")
+    elif not successful_base_models:
+         logger.warning("No successful base models identified, cannot optimize weights.")
+    else:
+         # Use only models that successfully produced validation predictions
+         models_to_optimize = successful_base_models
+         optimized_weights_array = optimize_ensemble_weights( # Call the helper function
+             validation_predictions=validation_predictions_collector,
+             model_keys=models_to_optimize,
+             metric_to_minimize='avg_mae' # Or 'mae_home'/'mae_away'
+         )
+         # Process and save the result if optimization succeeded
+         if optimized_weights_array is not None:
+             optimized_weights = dict(zip(models_to_optimize, optimized_weights_array))
+             opt_weights_path = MAIN_MODELS_DIR / "ensemble_weights_optimized.json" # New file name
+             try:
+                 with open(opt_weights_path, 'w') as f:
+                     json.dump(optimized_weights, f, indent=4)
+                 logger.info(f"Saved OPTIMIZED ensemble weights to {opt_weights_path}")
+             except Exception as e:
+                 logger.error(f"Failed to save optimized ensemble weights: {e}", exc_info=True)
+         else:
+             logger.error("Weight optimization failed. Optimized weights not saved.")
+    # +++ END NEW BLOCK +++
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+    # --- Evaluate Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---
+    # NOTE: This block RELOADS models and generates base_model_test_preds
     logger.info("\n--- Evaluating Weighted Ensemble (Inverse Validation MAE Weights) on Test Set ---")
-    base_model_test_preds = {}
-    models_loaded_for_eval = {}
+    base_model_test_preds = {} # Initialize dict to store test predictions
+    models_loaded_for_eval = {} # Initialize dict to store loaded models
 
     logger.info("Loading saved base models for ensemble evaluation...")
-    models_to_reload = list(predictor_map.keys())
+    models_to_reload = successful_base_models
     if ensemble_weights:
         models_to_reload = list(ensemble_weights.keys())
 
-    for model_key in models_to_reload:
-        model_loaded = False
-        for m in all_metrics:
-            full_model_name = m.get('model_name', '')
-            save_path = m.get('save_path')
-            if full_model_name.split('_score_predictor')[0].lower() == model_key.lower() and save_path and os.path.exists(save_path):
-                 try:
-                     PredictorClass = predictor_map.get(model_key)
-                     if PredictorClass:
-                          predictor = PredictorClass(model_dir=str(MAIN_MODELS_DIR), model_name=f"{model_key}_score_predictor")
-                          predictor.load_model(filepath=save_path)
-                          if getattr(predictor, 'pipeline_home', None) and getattr(predictor, 'pipeline_away', None):
-                              models_loaded_for_eval[model_key] = predictor
-                              model_loaded = True
-                              logger.info(f"Successfully loaded model {model_key} from {save_path}")
-                              break
-                          else:
-                              logger.error(f"Loaded model {model_key} from {save_path} but pipelines missing.")
-                     else:
-                          logger.error(f"Predictor class not found for {model_key} during reload.")
-                 except Exception as load_err:
-                     logger.error(f"Failed to reload model {model_key} from {save_path}: {load_err}")
-        if not model_loaded:
-            logger.error(f"Could not reload model {model_key}. It cannot be used in evaluation.")
+        for model_key in models_to_reload:
+                model_loaded = False
+                for m in all_metrics:
+                    full_model_name = m.get('model_name', '')
+                    save_path = m.get('save_path')
+                    if full_model_name.split('_score_predictor')[0].lower() == model_key.lower() and save_path and Path(save_path).is_file():
+                        try:
+                            PredictorClass = predictor_map.get(model_key)
+                            if PredictorClass:
+                                predictor = PredictorClass(model_dir=str(MAIN_MODELS_DIR), model_name=f"{model_key}_score_predictor")
+                                predictor.load_model(filepath=save_path)
+                                if getattr(predictor, 'pipeline_home', None) and getattr(predictor, 'pipeline_away', None):
+                                    models_loaded_for_eval[model_key] = predictor
+                                    model_loaded = True
+                                    logger.info(f"Successfully loaded model {model_key} from {save_path}")
+                                    break
+                                else: logger.error(f"Loaded model {model_key} from {save_path} but pipelines missing.")
+                            else: logger.error(f"Predictor class not found for {model_key} during reload.")
+                        except Exception as load_err:
+                            logger.error(f"Failed to reload model {model_key} from {save_path}: {load_err}")
+                if not model_loaded:
+                    logger.error(f"Could not reload model {model_key}. It cannot be used in evaluation.")
 
-    logger.info("Generating test set predictions from reloaded base models...")
-    if not models_loaded_for_eval:
-         logger.error("No base models successfully reloaded. Cannot evaluate any weighted ensemble.")
-    else:
-        try:
-            X_test_eval = X_test[final_feature_list_for_models].copy()
-            for model_key, predictor in models_loaded_for_eval.items():
-                logger.debug(f"Predicting test set with reloaded {model_key}...")
-                preds_df = predictor.predict(X_test_eval)
-                if preds_df is not None and not preds_df.empty and all(c in preds_df for c in ['predicted_home_score', 'predicted_away_score']):
-                    base_model_test_preds[model_key] = preds_df.loc[X_test_eval.index, ['predicted_home_score', 'predicted_away_score']]
-                    logger.debug(f"Stored test predictions for {model_key}")
-                else:
-                     logger.warning(f"Failed to get valid test predictions from reloaded {model_key}.")
-                     base_model_test_preds[model_key] = None
-        except Exception as repred_err:
-            logger.error(f"Error during re-prediction for ensemble evaluation: {repred_err}", exc_info=True)
-            base_model_test_preds = {}
 
+        logger.info("Generating test set predictions from reloaded base models...")
+        if not models_loaded_for_eval:
+                logger.error("No base models successfully reloaded. Cannot evaluate any weighted ensemble.")
+                # If no models loaded, skip all subsequent evaluation blocks
+                base_model_test_preds = {} # Ensure it's empty
+        else:
+            try:
+                X_test_eval = X_test[final_feature_list_for_models].copy() # Use consistent features
+                for model_key, predictor in models_loaded_for_eval.items():
+                    logger.debug(f"Predicting test set with reloaded {model_key}...")
+                    preds_df = predictor.predict(X_test_eval)
+                    if preds_df is not None and not preds_df.empty and all(c in preds_df for c in ['predicted_home_score', 'predicted_away_score']):
+                        base_model_test_preds[model_key] = preds_df.loc[X_test_eval.index, ['predicted_home_score', 'predicted_away_score']]
+                        logger.debug(f"Stored test predictions for {model_key}")
+                    else:
+                            logger.warning(f"Failed to get valid test predictions from reloaded {model_key}.")
+                            base_model_test_preds[model_key] = None # Mark as failed if prediction issue
+            except Exception as repred_err:
+                logger.error(f"Error during re-prediction for ensemble evaluation: {repred_err}", exc_info=True)
+                base_model_test_preds = {} # Clear if error
+
+        # Now evaluate using the inverse validation MAE weights (ensemble_weights)
         if not ensemble_weights:
             logger.info("Skipping evaluation using inverse validation MAE weights (weights unavailable).")
         elif not base_model_test_preds:
@@ -1516,9 +1656,10 @@ def run_training_pipeline(args):
             except Exception as ens_eval_err:
                  logger.error(f"Error evaluating Inv Val MAE weighted ensemble: {ens_eval_err}", exc_info=True)
 
-        logger.info("\n--- Evaluating MANUALLY Weighted Ensemble on Test Set ---")
-        manual_weights = {'ridge': 0.55, 'random_forest': 0.25, 'xgboost': 0.20}
-        logger.info(f"Using Manual Weights: {manual_weights}")
+            logger.info("\n--- Evaluating MANUALLY Weighted Ensemble on Test Set ---")
+            manual_weights = {'ridge': 0.55, 'random_forest': 0.25, 'xgboost': 0.20} # Note: Doesn't include LGBM yet
+            logger.info(f"Using Manual Weights: {manual_weights}")
+
         if not base_model_test_preds:
             logger.error("Missing base model test predictions. Cannot calculate manually weighted ensemble performance.")
         else:
@@ -1608,6 +1749,94 @@ def run_training_pipeline(args):
         logger.info(json.dumps(ensemble_weights, indent=4))
     else:
          logger.warning("\nEnsemble weights (Inv Val MAE) were not calculated successfully.")
+
+        # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # +++ NEW BLOCK: Evaluate Weighted Ensemble (OPTIMIZED Weights) on Test Set +++
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    logger.info("\n--- Evaluating Weighted Ensemble (OPTIMIZED Weights) on Test Set ---")
+    if optimized_weights is None: # Check if optimization succeeded
+        logger.warning("Optimized weights not available. Skipping evaluation.")
+    elif not base_model_test_preds: # Check if test predictions were generated
+        logger.error("Base model test predictions missing. Cannot evaluate optimized weighted ensemble.")
+    else:
+        logger.info("Calculating weighted average predictions for test set (using Optimized weights)...")
+        logger.info(f"Using Optimized Weights: {optimized_weights}")
+
+        # --- Calculation Logic (Similar to other blocks, uses 'optimized_weights') ---
+        opt_weighted_home_sum = pd.Series(0.0, index=X_test.index)
+        opt_weighted_away_sum = pd.Series(0.0, index=X_test.index)
+        opt_total_weight_applied_series = pd.Series(0.0, index=X_test.index)
+        models_in_opt_weights = list(optimized_weights.keys()) # Keys from successful optimization
+
+        for model_key in models_in_opt_weights:
+             # Use the weights found by the optimizer
+             weight = optimized_weights.get(model_key, 0.0)
+             # Use the test predictions generated earlier
+             preds_df = base_model_test_preds.get(model_key)
+
+             if weight > 1e-6 and preds_df is not None:
+                 preds_df = preds_df.reindex(X_test.index) # Ensure alignment
+                 valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
+                 opt_weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
+                 opt_weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
+                 opt_total_weight_applied_series.loc[valid_idx] += weight
+             elif weight > 1e-6 and preds_df is None:
+                  logger.warning(f"Model {model_key} used in optimized weights but test predictions missing. Skipping.")
+
+        # --- Normalize & Fallback (same logic as other blocks) ---
+        opt_final_pred_home = pd.Series(np.nan, index=X_test.index)
+        opt_final_pred_away = pd.Series(np.nan, index=X_test.index)
+        opt_valid_weight_idx = opt_total_weight_applied_series > 1e-6
+        opt_final_pred_home.loc[opt_valid_weight_idx] = opt_weighted_home_sum.loc[opt_valid_weight_idx] / opt_total_weight_applied_series.loc[opt_valid_weight_idx]
+        opt_final_pred_away.loc[opt_valid_weight_idx] = opt_weighted_away_sum.loc[opt_valid_weight_idx] / opt_total_weight_applied_series.loc[opt_valid_weight_idx]
+        opt_fallback_idx = ~opt_valid_weight_idx
+        if opt_fallback_idx.any(): # Apply fallback if needed
+            logger.warning(f"Applying simple average fallback for {opt_fallback_idx.sum()} test samples (optimized weights).")
+            valid_dfs_for_avg = [df for k, df in base_model_test_preds.items() if k in models_in_opt_weights and df is not None] # Use only models included in optimization
+            if valid_dfs_for_avg:
+                 simple_avg_home = pd.concat([df['predicted_home_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                 simple_avg_away = pd.concat([df['predicted_away_score'] for df in valid_dfs_for_avg], axis=1).mean(axis=1)
+                 opt_final_pred_home.loc[opt_fallback_idx] = simple_avg_home.loc[opt_fallback_idx]
+                 opt_final_pred_away.loc[opt_fallback_idx] = simple_avg_away.loc[opt_fallback_idx]
+            opt_final_pred_home = opt_final_pred_home.fillna(115.0) # Use default
+            opt_final_pred_away = opt_final_pred_away.fillna(115.0) # Use default
+
+        # --- Evaluate Optimized Weighted Predictions ---
+        logger.info("Evaluating OPTIMIZED weighted ensemble predictions...")
+        try:
+             # Align true values
+             y_test_home_aligned_w = y_test_home.reindex(opt_final_pred_home.index)
+             y_test_away_aligned_w = y_test_away.reindex(opt_final_pred_away.index)
+             # Drop NaNs
+             valid_final_idx_opt = opt_final_pred_home.notna() & opt_final_pred_away.notna() & y_test_home_aligned_w.notna() & y_test_away_aligned_w.notna()
+             if not valid_final_idx_opt.all(): logger.warning(f"Dropping {(~valid_final_idx_opt).sum()} samples with NaNs before final optimized weighted evaluation.")
+             opt_final_pred_home = opt_final_pred_home[valid_final_idx_opt]
+             opt_final_pred_away = opt_final_pred_away[valid_final_idx_opt]
+             y_test_home_aligned_w = y_test_home_aligned_w[valid_final_idx_opt]
+             y_test_away_aligned_w = y_test_away_aligned_w[valid_final_idx_opt]
+
+             if opt_final_pred_home.empty:
+                 logger.error("No valid predictions remaining for optimized weighted ensemble evaluation.")
+             else:
+                 # Calculate and log metrics...
+                 opt_ens_metrics_home = calculate_regression_metrics(y_test_home_aligned_w, opt_final_pred_home)
+                 opt_ens_metrics_away = calculate_regression_metrics(y_test_away_aligned_w, opt_final_pred_away)
+                 opt_ens_mae_total = mean_absolute_error(y_test_home_aligned_w + y_test_away_aligned_w, opt_final_pred_home + opt_final_pred_away)
+                 opt_ens_mae_diff = mean_absolute_error(y_test_home_aligned_w - y_test_away_aligned_w, opt_final_pred_home - opt_final_pred_away)
+                 y_true_comb_ens_opt = np.vstack((y_test_home_aligned_w.values, y_test_away_aligned_w.values)).T
+                 y_pred_comb_ens_opt = np.vstack((opt_final_pred_home.values, opt_final_pred_away.values)).T
+                 opt_ens_betting = calculate_betting_metrics(y_true_comb_ens_opt, y_pred_comb_ens_opt)
+
+                 logger.info(f"OPTIMIZED WEIGHTED ENSEMBLE Test MAE : Home={opt_ens_metrics_home.get('mae', np.nan):.3f}, Away={opt_ens_metrics_away.get('mae', np.nan):.3f}, Total={opt_ens_mae_total:.3f}, Diff={opt_ens_mae_diff:.3f}")
+                 logger.info(f"OPTIMIZED WEIGHTED ENSEMBLE Test RMSE: Home={opt_ens_metrics_home.get('rmse', np.nan):.3f}, Away={opt_ens_metrics_away.get('rmse', np.nan):.3f}")
+                 logger.info(f"OPTIMIZED WEIGHTED ENSEMBLE Test R2  : Home={opt_ens_metrics_home.get('r2', np.nan):.3f}, Away={opt_ens_metrics_away.get('r2', np.nan):.3f}")
+                 logger.info(f"OPTIMIZED WEIGHTED ENSEMBLE Betting Metrics: {opt_ens_betting}")
+
+        except Exception as opt_ens_eval_err:
+             logger.error(f"Error evaluating optimized weighted ensemble performance: {opt_ens_eval_err}", exc_info=True)
+    # +++ END Evaluation Block for OPTIMIZED Weights +++
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 
     logger.info(f"\nManual Ensemble Weights Used for Evaluation: {manual_weights}")
     end_time_pipeline = time.time()

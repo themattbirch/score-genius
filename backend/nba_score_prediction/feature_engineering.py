@@ -25,7 +25,38 @@ try:
 except ImportError:
     PLOTTING_AVAILABLE = False
 
-# -- Logger Configuration --
+try:
+    SCRIPT_DIR_FE = Path(__file__).resolve().parent # backend/nba_score_prediction
+    BACKEND_DIR_FE = SCRIPT_DIR_FE.parent             # backend
+    PROJECT_ROOT_FE = BACKEND_DIR_FE.parent           # project_root
+    # Define paths relative to project root for consistency
+    REPORTS_DIR_FE = PROJECT_ROOT_FE / 'reports'
+    FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
+    # Create directories if they don't exist
+    REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
+    # FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True) # Uncomment this line if you want the debug dir created
+    PATHS_DEFINED = True
+except NameError:
+    # Fallback if __file__ is not defined (e.g., interactive environment)
+    logging.warning("Could not automatically determine project root. Using relative paths './reports'.")
+    PROJECT_ROOT_FE = Path('.') # Use current directory as root fallback
+    REPORTS_DIR_FE = Path('./reports')
+    FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
+    # Create directories if they don't exist
+    REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
+    # FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True) # Uncomment this line if you want the debug dir created
+    PATHS_DEFINED = False
+except Exception as e_path:
+     logging.error(f"Error setting up paths: {e_path}", exc_info=True)
+     PROJECT_ROOT_FE = Path('.') # Use current directory as root fallback
+     REPORTS_DIR_FE = Path('./reports')
+     FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
+     # Create directories if they don't exist
+     REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
+     # FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True) # Uncomment this line if you want the debug dir created
+     PATHS_DEFINED = False
+
+# --- Logger Configuration (Keep your existing setup) ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
@@ -33,18 +64,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -- Constants --
-EPSILON = 1e-6  # Small value to avoid division by zero if needed elsewhere
-
-# -- Define Output Directory (Consistent) --
-try:
-    SCRIPT_DIR_FE = Path(__file__).resolve().parent
-    # Adjust path relative to this file's location
-    REPORTS_DIR_FE = SCRIPT_DIR_FE.parent.parent / 'reports'
-except NameError:
-    # Fallback if __file__ is not defined (e.g., interactive environment)
-    REPORTS_DIR_FE = Path('./reports')
-FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
-
+EPSILON = 1e-6 # Small value to avoid division by zero if needed elsewhere
 
 # -- Module-Level Helper Functions --
 
@@ -114,8 +134,8 @@ class NBAFeatureEngine:
         self.supabase_client = supabase_client
         logger.debug("NBAFeatureEngine Initialized.")
 
-                # <<< INSERT THIS LINE HERE >>>
-        self._teams_to_watch = {"pistons", "grizzlies", "lakers," "clippers", "nets", "knicks"}
+        # <<< INSERT THIS LINE HERE >>>
+        self._teams_to_watch = {"pistons", "grizzlies", "lakers", "clippers", "nets", "knicks"}
         # <<< END INSERT >>>
 
 
