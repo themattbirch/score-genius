@@ -27,29 +27,9 @@ import re
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
 from sklearn.svm import SVR
-from sklearn.neighbors import KNeighborsRegressor
 
-
-# --- Imports ---
-try:
-    import xgboost as xgb
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    xgb = None
-    XGBOOST_AVAILABLE = False
-    logging.warning("XGBoost library not found...")
-
-#try:
-    #import lightgbm as lgb
-    #LGBM_AVAILABLE = True
-#except ImportError:
-    #lgb = None
-    #LGBM_AVAILABLE = False
-    # Keep logger definition consistent with how it's handled for XGBoost
-    #logging.warning("LightGBM library not found...")
 
 # --- Configuration ---
 # Determine Project Root relative to this file
@@ -361,32 +341,6 @@ class BaseScorePredictor:
             else:
                 logger.warning(f"Sample weights length mismatch: {len(sample_weights)} vs {len(X_train_for_fit)}. Ignoring weights.")
 
-        # Handle XGBoost eval_set if applicable
-        is_xgb = False
-        try:
-            final_estimator_home = self.pipeline_home.steps[-1][1]
-            if XGBOOST_AVAILABLE and isinstance(final_estimator_home, xgb.XGBRegressor):
-                is_xgb = True
-        except Exception:
-            pass
-
-        if is_xgb and eval_set_data:
-            logger.info("Preparing eval_set for XGBoost...")
-            if isinstance(eval_set_data, tuple) and len(eval_set_data) == 3:
-                try:
-                    X_val, y_val_home, y_val_away = eval_set_data
-                    X_val_aligned = X_val[self.feature_names_in_]
-                    y_val_home_aligned = y_val_home.loc[X_val_aligned.index]
-                    y_val_away_aligned = y_val_away.loc[X_val_aligned.index]
-                    final_estimator_name = self.pipeline_home.steps[-1][0]
-                    fit_kwargs_home[f'{final_estimator_name}__eval_set'] = [(X_val_aligned.values, y_val_home_aligned.values)]
-                    fit_kwargs_away[f'{final_estimator_name}__eval_set'] = [(X_val_aligned.values, y_val_away_aligned.values)]
-                    logger.info(f"XGBoost eval_set applied using prefix '{final_estimator_name}__'.")
-                except Exception as e:
-                    logger.error(f"Eval set alignment error: {e}. Ignoring eval_set.", exc_info=True)
-            else:
-                logger.warning("Incorrect format for eval_set_data. Ignoring.")
-
         try:
             logger.info(f"Training home model with fit args: {list(fit_kwargs_home.keys())}")
             self.pipeline_home.fit(X_train_for_fit, y_train_home, **fit_kwargs_home)
@@ -620,17 +574,14 @@ class RidgeScorePredictor(BaseScorePredictor):
 class SVRScorePredictor(BaseScorePredictor):
     """SVR-based predictor with a preprocessing pipeline."""
     def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "svr_score_predictor"):
-         super().__init__(model_dir, model_name)
-         # <<< FIX: Define the _default_svr_params attribute >>>
-         self._default_svr_params: Dict[str, Any] = {
-             'kernel': 'rbf',      # Default kernel
-             'C': 1.0,             # Default regularization
-             'gamma': 'scale',     # Default gamma for rbf
-             'epsilon': 0.1,       # Default epsilon
-             # 'cache_size': 500   # Optional: Can increase if needed
-             # No 'random_state' for SVR itself
-         }
-         # <<< END FIX >>>
+        # Pass keyword arguments to ensure proper assignment.
+        super().__init__(model_name=model_name, model_dir=model_dir)
+        self._default_svr_params: Dict[str, Any] = {
+            'kernel': 'rbf',
+            'C': 1.0,
+            'gamma': 'scale',
+            'epsilon': 0.1,
+        }
 
     def _build_pipeline(self, svr_params: Dict[str, Any]) -> Pipeline:
          """Builds the scikit-learn pipeline for SVR."""

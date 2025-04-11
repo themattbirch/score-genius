@@ -27,7 +27,7 @@ if str(BACKEND_DIR) not in sys.path:
 # --- Project Module Imports ---
 try:
     from nba_score_prediction.feature_engineering import NBAFeatureEngine
-    from nba_score_prediction.models import XGBoostScorePredictor, RandomForestScorePredictor, RidgeScorePredictor
+    from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor
     from nba_score_prediction.simulation import PredictionUncertaintyEstimator
     from caching.supabase_client import supabase as supabase_client_instance
     from backend import config
@@ -427,7 +427,7 @@ def fetch_and_parse_betting_odds(supabase_client: Any, game_ids: List[str]) -> D
 # --- Model Loading Function ---
 def load_trained_models(model_dir: Path = MODELS_DIR) -> Tuple[Optional[Dict[str, Any]], Optional[List[str]]]:
     models = {}
-    model_configs = {"xgboost": XGBoostScorePredictor, "random_forest": RandomForestScorePredictor, "ridge": RidgeScorePredictor}
+    model_configs = {"svr": SVRScorePredictor, "ridge": RidgeScorePredictor}
     loaded_feature_names = None
     all_models_loaded = True
     inconsistent_features_found = False
