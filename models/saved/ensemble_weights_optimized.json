@@ -1,7 +1,0 @@
-{
-    "xgboost": 0.0,
-    "random_forest": 0.0,
-    "ridge": 0.0,
-    "lightgbm": 1.0,
-    "svr": 0.0
-}
