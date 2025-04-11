@@ -84,15 +84,12 @@ PACIFIC_TZ = pytz.timezone("America/Los_Angeles")
 DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
 DEFAULT_UPCOMING_DAYS_WINDOW = 2
 
-# --- Ensemble Configuration --- # <<< RENAMED SECTION
-# META_MODEL_FILENAME = "stacking_meta_model_xgb_hs.joblib" # <<< REMOVE or COMMENT OUT
+# --- Ensemble Configuration --- #  
 ENSEMBLE_WEIGHTS_FILENAME = "ensemble_weights.json" # <<< ADD Filename for weights
-
 # Fallback weights if the JSON file cannot be loaded
 FALLBACK_ENSEMBLE_WEIGHTS: Dict[str, float] = {
-    "xgboost": 0.30,
-    "random_forest": 0.40,
-    "ridge": 0.30
+    "ridge": 0.5,  
+    "svr": 0.5    
 }
 # --- Data Column Requirements (Restored from Old Script) ---
 REQUIRED_HISTORICAL_COLS = [
@@ -426,57 +423,106 @@ def fetch_and_parse_betting_odds(supabase_client: Any, game_ids: List[str]) -> D
 
 # --- Model Loading Function ---
 def load_trained_models(model_dir: Path = MODELS_DIR) -> Tuple[Optional[Dict[str, Any]], Optional[List[str]]]:
+    """
+    Loads the required feature list from a JSON file and then loads the
+    corresponding trained base models (Ridge, SVR), verifying feature consistency.
+
+    Args:
+        model_dir: The directory containing the saved models and the feature list file.
+
+    Returns:
+        A tuple containing:
+        - A dictionary of loaded model predictor instances {model_name: predictor_object}.
+        - A list of required feature names loaded from the file.
+        Returns (None, None) on critical failure (missing feature file, model load error,
+        feature mismatch).
+    """
     models = {}
     model_configs = {"svr": SVRScorePredictor, "ridge": RidgeScorePredictor}
-    loaded_feature_names = None
-    all_models_loaded = True
-    inconsistent_features_found = False
+    loaded_feature_list_from_file: Optional[List[str]] = None
+
+    # --- Step 1: Load the Required Feature List from JSON ---
+    feature_list_path = model_dir / "selected_features.json"
+    logger.info(f"Attempting to load required feature list from: {feature_list_path}")
+    if not feature_list_path.is_file():
+        logger.critical(f"Required feature list file not found at {feature_list_path}. Cannot proceed.")
+        return None, None
+    try:
+        with open(feature_list_path, 'r') as f:
+            loaded_feature_list_from_file = json.load(f)
+        if not isinstance(loaded_feature_list_from_file, list) or not loaded_feature_list_from_file:
+            raise ValueError("Feature list file is empty or not a valid list.")
+        logger.info(f"Successfully loaded feature list ({len(loaded_feature_list_from_file)} features).")
+    except Exception as e:
+        logger.critical(f"Error loading or validating feature list from {feature_list_path}: {e}", exc_info=True)
+        return None, None
+
+    # --- Step 2: Load Base Models and Verify Features ---
+    all_models_loaded_successfully = True
     for name, PredictorClass in model_configs.items():
+        # Check if dummy classes are being used (indicates import failure)
         if not PROJECT_MODULES_IMPORTED or getattr(PredictorClass, '__module__', '').startswith('_Dummy'):
-            logger.error(f"Cannot load '{name}': Module not imported.")
-            all_models_loaded = False
-            continue
+            logger.error(f"Cannot load '{name}': Module not imported or dummy class in use.")
+            all_models_loaded_successfully = False
+            continue # Skip loading this model
+
         try:
             logger.info(f"Loading latest '{name}' model from {model_dir}")
+            # Instantiate the predictor class
             predictor = PredictorClass(model_dir=str(model_dir), model_name=f"{name}_score_predictor")
-            predictor.load_model()
-            if predictor.pipeline_home is None or predictor.pipeline_away is None:
-                raise ValueError(f"Pipelines not loaded correctly for {name}")
+            # Load the actual model file (e.g., .joblib)
+            predictor.load_model() # This method should load pipeline_home/away etc.
+
+            # --- Feature Consistency Check ---
+            model_features = getattr(predictor, 'feature_names_in_', None)
+            if model_features is None:
+                logger.error(f"Loaded model '{name}' is missing the 'feature_names_in_' attribute.")
+                all_models_loaded_successfully = False
+                continue # Cannot verify this model
+
+            # Compare sets for content, lengths for completeness/duplicates
+            if set(model_features) != set(loaded_feature_list_from_file):
+                logger.error(f"FATAL: Feature set mismatch for model '{name}'. "
+                             f"Model expected {len(model_features)}, loaded list has {len(loaded_feature_list_from_file)}. "
+                             f"Content differs.")
+                # Log differences if helpful for debugging (can be long)
+                # diff1 = set(model_features) - set(loaded_feature_list_from_file)
+                # diff2 = set(loaded_feature_list_from_file) - set(model_features)
+                # logger.debug(f"Features in model but not file: {diff1}")
+                # logger.debug(f"Features in file but not model: {diff2}")
+                all_models_loaded_successfully = False
+                continue # Skip this inconsistent model
+
+            elif len(model_features) != len(loaded_feature_list_from_file):
+                # Sets match, but lengths differ - indicates duplicates in one list
+                logger.warning(f"Feature length mismatch for model '{name}' but content matches "
+                               f"(Model: {len(model_features)}, File: {len(loaded_feature_list_from_file)}). "
+                               f"Check for duplicates. Using list loaded from file.")
+                # Proceed, but warn the user.
+
+            # If checks pass, add the loaded model
             models[name] = predictor
-            logger.info(f"Loaded {name} model trained on {predictor.training_timestamp or 'unknown date'}.")
-            current_features = getattr(predictor, 'feature_names_in_', None)
-            if current_features is None:
-                logger.error(f"Model '{name}' missing feature list ('feature_names_in_').")
-                inconsistent_features_found = True
-                all_models_loaded = False
-                continue
-            if loaded_feature_names is None:
-                loaded_feature_names = current_features
-                logger.info(f"Using feature list from '{name}' ({len(loaded_feature_names)} features).")
-            elif set(current_features) != set(loaded_feature_names):
-                logger.error(f"Feature mismatch: '{name}' features differ from previously loaded model.")
-                inconsistent_features_found = True
-                all_models_loaded = False
-            elif len(current_features) != len(loaded_feature_names):
-                logger.warning(f"Feature length mismatch for '{name}' though sets match. Check for duplicates.")
+            logger.info(f"Successfully loaded '{name}' model trained on {predictor.training_timestamp or 'unknown date'}. Features verified against loaded list.")
+
         except FileNotFoundError:
-            logger.error(f"No model file found for '{name}' in {model_dir}.")
-            all_models_loaded = False
+            logger.error(f"No model file found for '{name}' matching expected pattern in {model_dir}.")
+            all_models_loaded_successfully = False
         except Exception as e:
             logger.error(f"Error loading model '{name}': {e}", exc_info=True)
-            all_models_loaded = False
+            all_models_loaded_successfully = False
 
-    if inconsistent_features_found:
-        logger.error("Aborting due to inconsistent features across models.")
-        return None, None
-    if not all_models_loaded or not models:
-        logger.error("Failed to load one or more required models.")
-        return None, None
-    if not loaded_feature_names:
-        logger.error("No feature list found from loaded models.")
-        return models, None
-    logger.info(f"All models loaded with consistent feature list ({len(loaded_feature_names)} features).")
-    return models, loaded_feature_names
+    # --- Final Check and Return ---
+    if not all_models_loaded_successfully:
+        logger.error("One or more base models failed to load or had inconsistent features. Cannot proceed.")
+        return None, None # Return None, None indicating failure
+
+    if len(models) != len(model_configs):
+         logger.error(f"Expected {len(model_configs)} models, but only loaded {len(models)} successfully.")
+         return None, None # Ensure all required models are present
+
+    logger.info(f"All required models ({list(models.keys())}) loaded successfully.")
+    # Return the dictionary of loaded models and the feature list loaded from the file
+    return models, loaded_feature_list_from_file
 
 # --- Calibration Function (Restored Implementation) ---
 def calibrate_prediction_with_odds(

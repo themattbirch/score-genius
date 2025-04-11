@@ -17,8 +17,7 @@ try:
     # --- CORRECTED IMPORTS using 'src.scripts' ---
     from src.scripts.data_fetcher import fetch_live_game_data
     from src.scripts.archive_live_data import archive_live_data
-    from src.scripts.precompute_features import precompute_features
-    from src.scripts.model_inference import run_model_inference
+    #from src.scripts.model_inference import run_model_inference
     from src.scripts.nba_stats_live import scheduled_update_nba_schedule
     from src.scripts.nba_games_preview import (
         clear_old_games,
