@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 import os
 from supabase import create_client, Client
 
-# Adjust the path to your .env file as needed:
 env_path = os.path.join(os.path.dirname(__file__), '../../.env')
 load_dotenv(dotenv_path=env_path)
 

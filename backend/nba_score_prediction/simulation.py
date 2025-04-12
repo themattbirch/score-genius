@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import time
 import math
 from functools import wraps
-import scipy.stats as scipy_stats # Renamed to avoid conflict with stats module if any
+import scipy.stats as scipy_stats 
 import matplotlib.pyplot as plt
 import functools
 from matplotlib.patches import Rectangle
@@ -16,8 +16,6 @@ import logging # Added logging
 
 # --- Setup Logging ---
 logger = logging.getLogger(__name__)
-# Ensure logging is configured elsewhere in your app or add basic config here if needed:
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # +++ PREDICTION UNCERTAINTY ESTIMATOR DEFINITION ADDED HERE +++
@@ -40,7 +38,6 @@ class PredictionUncertaintyEstimator:
     }
 
     # --- Default Coverage Targets (can be overridden) ---
-    # What percentage of time we ideally want the true value to fall within the calculated interval
     DEFAULT_COVERAGE_TARGETS = {
         0: 0.70, # 70% coverage pregame
         1: 0.75, # 75% coverage Q1
@@ -119,8 +116,8 @@ class PredictionUncertaintyEstimator:
     def calculate_prediction_interval(self,
                                       prediction: float,
                                       current_quarter: int,
-                                      score_margin: Optional[float] = None, # Absolute difference
-                                      momentum: Optional[float] = None # Contextual factor
+                                      score_margin: Optional[float] = None, 
+                                      momentum: Optional[float] = None 
                                       ) -> Tuple[float, float, float]:
         """
         Calculates a prediction interval, potentially adjusting the base width
@@ -141,12 +138,11 @@ class PredictionUncertaintyEstimator:
 
         if base_width <= 0:
             self.log("Base interval width is zero or negative.", level="WARNING")
-            return lower_b, upper_b, 50.0 # Return base interval, default confidence
+            return lower_b, upper_b, 50.0 
 
         # 2. Apply Contextual Adjustments (Optional)
-        # This section can be expanded with more sophisticated logic
         adjustment_factor = 1.0
-        if current_quarter > 0: # Only apply in-game adjustments
+        if current_quarter > 0: 
             # Example: Widen interval slightly for very close games
             if score_margin is not None and score_margin < 5:
                 # Increase range up to 5% for closer games (0 diff = +5%, 5 diff = +0%)
@@ -162,7 +158,7 @@ class PredictionUncertaintyEstimator:
 
         # Apply the adjustment factor to the interval width
         adj_lower_b, adj_upper_b = lower_b, upper_b
-        if adjustment_factor > 1.0: # Only apply widening adjustments here for simplicity
+        if adjustment_factor > 1.0: 
              center = (lower_b + upper_b) / 2.0
              new_half_range = (base_width / 2.0) * adjustment_factor
              adj_lower_b = center - new_half_range
@@ -180,11 +176,10 @@ class PredictionUncertaintyEstimator:
             target_conf_at_expected_width = 80.0 # e.g., 80% confidence if width is as expected
             width_ratio = final_width / expected_width_for_q if expected_width_for_q > 1e-6 else 1.0
             # Example scaling: Lower confidence if wider (ratio > 1), higher if narrower (ratio < 1)
-            # This needs careful thought - maybe non-linear scaling? Start simple:
             confidence = target_conf_at_expected_width - (width_ratio - 1.0) * 50.0 # Adjust the '50.0' sensitivity factor
             confidence = max(5.0, min(95.0, confidence)) # Apply caps (avoiding 0 or 100 maybe)
         else:
-            confidence = 50.0 # Default confidence if expected range is zero
+            confidence = 50.0 
 
         self.log(f"Calculated base interval: [{adj_lower_b:.1f}, {adj_upper_b:.1f}], Confidence: {confidence:.1f}%", level="DEBUG")
         return adj_lower_b, adj_upper_b, confidence
@@ -193,7 +188,7 @@ class PredictionUncertaintyEstimator:
     def dynamically_adjust_interval(self,
                                     prediction: float,
                                     current_quarter: int,
-                                    historic_accuracy: Optional[Dict] = None # Dict derived from get_coverage_stats()
+                                    historic_accuracy: Optional[Dict] = None 
                                     ) -> Tuple[float, float, float]:
         """
         Calculates a base prediction interval and then adjusts its width based on
@@ -211,7 +206,6 @@ class PredictionUncertaintyEstimator:
                    The adjustment modifies the *bounds* to meet historical coverage.
         """
         # 1. Calculate Base Interval & Confidence using the other method
-        # Pass None for context factors here, or retrieve them if needed for base calc
         lower_b, upper_b, base_confidence = self.calculate_prediction_interval(
             prediction=prediction,
             current_quarter=current_quarter,
@@ -220,11 +214,11 @@ class PredictionUncertaintyEstimator:
         )
         base_width = upper_b - lower_b
 
-        if base_width <= 0: # Handle edge case
+        if base_width <= 0: 
             self.log("Base interval width is zero or negative. Cannot adjust.", level="WARNING")
             return lower_b, upper_b, base_confidence
 
-        adj_lower, adj_upper = lower_b, upper_b # Start with base interval
+        adj_lower, adj_upper = lower_b, upper_b 
 
         # 2. Adjust Interval Width based on Historical Coverage (if available)
         adjustment_factor = 1.0
@@ -233,8 +227,8 @@ class PredictionUncertaintyEstimator:
 
         if historic_accuracy and isinstance(historic_accuracy, dict) and current_quarter in historic_accuracy:
             q_stats = historic_accuracy[current_quarter]
-            actual_cov = q_stats.get('actual_coverage') # e.g., 0.75 for 75%
-            target_cov = self.coverage_targets.get(current_quarter) # e.g., 0.80 for 80%
+            actual_cov = q_stats.get('actual_coverage') 
+            target_cov = self.coverage_targets.get(current_quarter) 
 
             if actual_cov is not None and target_cov is not None and target_cov > 0 and actual_cov > 0:
                 # If actual coverage < target, need wider interval (factor > 1)
@@ -242,7 +236,7 @@ class PredictionUncertaintyEstimator:
                 # Adjustment aims to scale the width to achieve the target coverage
                 # Assumes a roughly linear relationship near the target, can be refined
                 coverage_ratio = actual_cov / target_cov
-                adjustment_factor = 1.0 / coverage_ratio # Inverse relationship
+                adjustment_factor = 1.0 / coverage_ratio 
 
                 # Dampen adjustment: Apply only a fraction of the suggested change
                 damping = 0.5
@@ -291,7 +285,7 @@ if __name__ == '__main__':
     print("\n--- Test Case 1: Basic Usage ---")
     estimator_basic = PredictionUncertaintyEstimator(debug=True)
     pred = 220.0
-    for q_test in range(5): # Test quarters 0 through 4
+    for q_test in range(5): 
         print(f"\nTesting Quarter {q_test}...")
         l1, u1, c1 = estimator_basic.calculate_prediction_interval(pred, q_test, score_margin=15, momentum=0.2)
         print(f"  Base Interval (margin=15, mom=0.2): [{l1:.1f}, {u1:.1f}], Confidence: {c1:.1f}%")
@@ -304,7 +298,7 @@ if __name__ == '__main__':
     hist_stats_data = {
         'quarter': [0, 1, 2, 3, 4],
         # Simulate different coverage scenarios
-        'actual_coverage': [0.65, 0.70, 0.85, 0.82, 0.95], # Below target, Below, Above, Below, Above
+        'actual_coverage': [0.65, 0.70, 0.85, 0.82, 0.95], 
         'avg_interval_width': [35, 30, 22, 18, 12]
     }
     hist_stats_df = pd.DataFrame(hist_stats_data)
@@ -324,7 +318,7 @@ if __name__ == '__main__':
         print(hist_dict_for_func)
 
     if hist_dict_for_func:
-        for q_test in range(5): # Test quarters 0 through 4
+        for q_test in range(5):
             print(f"\nTesting Dynamic Adjustment for Quarter {q_test}...")
             target_cov_disp = estimator_dynamic.coverage_targets.get(q_test, 'N/A')
             actual_cov_disp = hist_dict_for_func.get(q_test, {}).get('actual_coverage', 'N/A')

@@ -4,7 +4,6 @@ from caching.supabase_client import supabase
 from datetime import datetime
 import logging
 
-# Setup basic logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -16,7 +15,7 @@ def cache_game_data(game_id: int, game_data: dict):
     Inserts or updates cached game data for a given game_id.
     """
     try:
-        # Extract team names and date for logging purposes only
+        # Extract team names and date for logging purposes 
         try:
             home_team = game_data.get('teams', {}).get('home', {}).get('name', 'Unknown')
             away_team = game_data.get('teams', {}).get('away', {}).get('name', 'Unknown')
@@ -40,27 +39,22 @@ def cache_game_data(game_id: int, game_data: dict):
             away_score = 0
             logger.warning(f"Error extracting away score for game {game_id}")
         
-        # Log what we're going to cache
         logger.info(f"Caching game: {game_id} - {home_team} vs {away_team} ({home_score}-{away_score}) on {game_date}")
         
-        # Check if a record already exists
         existing = supabase.table("game_cache").select("*").eq("game_id", game_id).execute()
         
-        # Create data object that exactly matches your table schema
         data = {
             "game_id": game_id,
-            "data": game_data,               # Store complete data as JSON
+            "data": game_data,           
             "updated_at": datetime.utcnow().isoformat(),
             "home_score": home_score,
             "away_score": away_score
         }
         
         if existing.data:
-            # Update the existing record
             logger.info(f"Updating existing record for game_id: {game_id}")
             response = supabase.table("game_cache").update(data).eq("game_id", game_id).execute()
         else:
-            # Insert a new record
             logger.info(f"Inserting new record for game_id: {game_id}")
             response = supabase.table("game_cache").insert(data).execute()
         
@@ -68,7 +62,6 @@ def cache_game_data(game_id: int, game_data: dict):
     
     except Exception as e:
         logger.error(f"Error in cache_game_data: {str(e)}")
-        # Re-raise the exception to be handled by caller
         raise
 
 def get_cached_game_data(game_id: int):

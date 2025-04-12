@@ -22,7 +22,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Optional import for LOWESS smoother - plotting will work without it
+# Optional import for LOWESS smoother
 try:
     import statsmodels.api as sm
     _has_statsmodels = True
@@ -101,10 +101,10 @@ def evaluate_predictions(y_true: Union[pd.Series, np.ndarray],
 def plot_actual_vs_predicted(y_true: Union[pd.Series, np.ndarray],
                                y_pred: Union[pd.Series, np.ndarray],
                                title: str = "Actual vs. Predicted Scores",
-                               metrics_dict: Optional[Dict[str, float]] = None, # Renamed from 'metrics'
+                               metrics_dict: Optional[Dict[str, float]] = None, 
                                figsize: tuple = SMALL_FIG_SIZE,
                                save_path: Optional[Union[str, Path]] = None,
-                               show_plot: bool = True): # Added show_plot parameter
+                               show_plot: bool = True): 
     """ Generates a scatter plot of actual vs. predicted values. """
     try:
         y_true = np.asarray(y_true).flatten(); y_pred = np.asarray(y_pred).flatten()
@@ -119,7 +119,6 @@ def plot_actual_vs_predicted(y_true: Union[pd.Series, np.ndarray],
         plt.xlim(min_val, max_val); plt.ylim(min_val, max_val)
         plt.grid(True, linestyle='--', alpha=0.7); plt.legend()
 
-        # Use metrics_dict now
         if metrics_dict and 'r2' in metrics_dict and 'rmse' in metrics_dict:
              r2 = metrics_dict['r2']; rmse = metrics_dict['rmse']
              if not (np.isnan(r2) or np.isnan(rmse)):
@@ -134,10 +133,10 @@ def plot_actual_vs_predicted(y_true: Union[pd.Series, np.ndarray],
             plt.savefig(save_path, bbox_inches='tight')
             logger.info(f"Plot saved to {save_path}")
 
-        if show_plot: # Use show_plot condition
+        if show_plot: 
             plt.show()
         else:
-            plt.close() # Close the figure if not showing interactively
+            plt.close()
 
     except Exception as e: logger.error(f"Error generating actual vs predicted plot: {e}")
 
@@ -205,14 +204,13 @@ def plot_metrics_comparison(metrics_dict: Dict[str, Dict[str, float]], metric_to
         plt.show()
     except Exception as e: logger.error(f"Error generating metrics comparison plot: {e}")
 
-# *** DEFINITIONS of plot_residuals_analysis_detailed, plot_conditional_bias, plot_temporal_bias NOW PLACED *BEFORE* generate_evaluation_report ***
 
 def plot_residuals_analysis_detailed(y_true: Union[pd.Series, np.ndarray],
                                      y_pred: Union[pd.Series, np.ndarray],
                                      title_prefix: str = "",
                                      figsize: tuple = (12, 10),
                                      save_dir: Optional[Union[str, Path]] = None,
-                                     show_plot: bool = True): # Added show_plot parameter
+                                     show_plot: bool = True): 
     """Generates a detailed set of residual analysis plots."""
     logger.info(f"\n--- Generating Detailed Residual Analysis: {title_prefix} ---")
     try:
@@ -275,10 +273,10 @@ def plot_residuals_analysis_detailed(y_true: Union[pd.Series, np.ndarray],
             except Exception as e:
                 logger.error(f"Error saving detailed residual plot: {e}")
 
-        if show_plot: # Use show_plot condition
+        if show_plot:
             plt.show()
         else:
-            plt.close() # Close the figure if not showing interactively
+            plt.close() 
 
     except Exception as e:
         logger.error(f"Error generating detailed residual plot: {e}")
@@ -451,7 +449,7 @@ def plot_feature_importances(
     plot_groups: bool = False,
     feature_group_config: Optional[Dict[str, List[str]]] = None,
     save_dir: Optional[Union[str, Path]] = None,
-    show_plot: bool = True # Added show_plot parameter
+    show_plot: bool = True 
 ):
     """
     Generates and saves feature importance plots for individual models
@@ -463,7 +461,7 @@ def plot_feature_importances(
         save_dir_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"Saving plots/data to: {save_dir_path}")
 
-    importances_data = {} # Store Series for plotting/processing
+    importances_data = {} 
 
     logger.info("Extracting feature importance from models...")
     for name, model in models_dict.items():
@@ -471,7 +469,7 @@ def plot_feature_importances(
         if imp_dict:
             # Create sorted Series
             importance_series = pd.Series(imp_dict).sort_values(ascending=False)
-            importances_data[name] = importance_series # Store the Series
+            importances_data[name] = importance_series 
 
             # Create DataFrame for saving
             importance_df_to_save = importance_series.reset_index()
@@ -479,7 +477,7 @@ def plot_feature_importances(
 
             # --- Save Full Importance Data (CSV and TXT) ---
             if save_dir_path:
-                # Save CSV (keep this)
+                # Save CSV 
                 csv_path = save_dir_path / f"feature_importance_{name}_full.csv"
                 try:
                     importance_df_to_save.to_csv(csv_path, index=False)
@@ -487,7 +485,7 @@ def plot_feature_importances(
                 except Exception as e:
                     logger.error(f"Failed to save importance CSV for {name}: {e}")
 
-                # *** ADDED: Save TXT ***
+                # Save TXT ***
                 txt_path = save_dir_path / f"feature_importance_{name}_full.txt"
                 try:
                     with open(txt_path, 'w') as f:
@@ -499,8 +497,6 @@ def plot_feature_importances(
                     logger.info(f"Full importance list for '{name}' saved to {txt_path} (TXT Format)")
                 except Exception as e:
                     logger.error(f"Failed to save importance TXT for {name}: {e}")
-                # *** END ADDED BLOCK ***
-            # --- End Saving Block ---
         else:
             logger.warning(f"-> Could not extract importance for model: {name}")
 
@@ -515,7 +511,7 @@ def plot_feature_importances(
 
     if top_n is None or top_n <= 0:
         # Determine max features dynamically if top_n is not specified
-        plot_n = len(next(iter(importances_data.values()))) # Length of first importance series
+        plot_n = len(next(iter(importances_data.values()))) 
         logger.info(f"Plotting ALL {plot_n} features (plot might be large/unreadable).")
     else:
         plot_n = min(top_n, len(next(iter(importances_data.values()))))
@@ -527,7 +523,7 @@ def plot_feature_importances(
     axes_ind = axes_ind.flatten(); plot_idx = 0
 
     for name, imp_series in importances_data.items():
-        if plot_idx >= len(axes_ind): break # Avoid index error if more models than subplots
+        if plot_idx >= len(axes_ind): break 
 
         # Normalize if sum is meaningful (not near zero)
         total_imp = imp_series.sum()
@@ -546,8 +542,6 @@ def plot_feature_importances(
             ax.set_title(f'Top {len(plot_data)} Features - {name}'); ax.set_xlabel(xlabel)
             ax.tick_params(axis='y', labelsize=9) # Adjust label size if needed
             # Optional: Add value labels to bars
-            # for i, v in enumerate(plot_data.values):
-            #     ax.text(v + (imp_plot.max()*0.01), i, f' {v:.3f}', va='center', fontsize=8)
             plot_idx += 1
         else:
             logger.warning(f"No importance values > 0 to plot for {name}.")
@@ -558,13 +552,11 @@ def plot_feature_importances(
     # Remove any unused subplots
     for i in range(plot_idx, len(axes_ind)):
         fig_ind.delaxes(axes_ind[i])
-    # <<< End of for loop >>>
 
-    # <<< CORRECTED INDENTATION: This if/else block is now AFTER the loop >>>
-    if plot_idx > 0: # Only adjust layout and save if something was plotted
+    if plot_idx > 0: 
         fig_ind.suptitle('Feature Importance by Model', fontsize=16, y=1.01)
         try:
-            plt.tight_layout(rect=[0, 0, 1, 0.97]) # Adjust rect to prevent title overlap
+            plt.tight_layout(rect=[0, 0, 1, 0.97]) 
         except ValueError:
             logger.warning("tight_layout failed, plot formatting might be imperfect.")
 
@@ -576,12 +568,12 @@ def plot_feature_importances(
             except Exception as e:
                 logger.error(f"Error saving plot {f_path}: {e}")
 
-        if show_plot: # Use show_plot condition
-            plt.show() # Keep showing plot interactively if needed
+        if show_plot: 
+            plt.show()
         else:
-            plt.close(fig_ind) # Close the figure if not showing interactively
+            plt.close(fig_ind) 
     else:
-        plt.close(fig_ind) # Close the figure if nothing was plotted
+        plt.close(fig_ind) 
 
     # --- Grouped Importance Plotting ---
     if plot_groups:
@@ -591,27 +583,7 @@ def plot_feature_importances(
     logger.info("--- Feature Importance Report Complete ---")
 
 
-# --- RESTORED: plot_model_agreement ---
-def plot_model_agreement(predictions_dict: Dict[str, np.ndarray],
-                         game_identifiers: Union[List, pd.Series, np.ndarray],
-                         y_true: Optional[Union[pd.Series, np.ndarray]] = None,
-                         ensemble_pred: Optional[np.ndarray] = None,
-                         ensemble_weights: Optional[Dict[str, float]] = None,
-                         target_name: str = "Score",
-                         num_games_to_plot: int = 20,
-                         figsize: tuple = (15, 8),
-                         save_dir: Optional[Union[str, Path]] = None):
-    """
-    Visualizes predictions from multiple models for recent games, showing model agreement
-    based on the standard deviation of component predictions.
-    """
-    # (Implementation from original file - code is lengthy, assume it's here)
-    logger.info("\n--- Generating Model Agreement Plot ---")
-    # ... (full implementation) ...
-    logger.info("--- Model Agreement Plot Complete ---")
-
-
-# --- RESTORED: plot_predictions_over_time ---
+# ---  plot_predictions_over_time ---
 def plot_predictions_over_time(dates: Union[List, pd.Series, np.ndarray],
                                y_true: Union[pd.Series, np.ndarray],
                                y_pred: Union[pd.Series, np.ndarray],
@@ -638,10 +610,8 @@ def generate_evaluation_report(y_true: Union[pd.Series, np.ndarray], y_pred: Uni
     plot_actual_vs_predicted(y_true, y_pred, title=f"{model_name} - Actual vs. Predicted ({target_type})", metrics=metrics, save_path=save_dir_path / f"{base_filename}_actual_vs_pred.png" if save_dir_path else None)
     plot_score_distribution_density(y_true, y_pred, title=f"{model_name} - Score Distribution Density ({target_type})", save_path=save_dir_path / f"{base_filename}_density.png" if save_dir_path else None)
 
-    # *** This is where the calls are made - ensure function definitions are ABOVE this line ***
     if include_bias_analysis:
         logger.info("\n--- Generating Residual & Bias Analysis ---"); residuals = np.asarray(y_true) - np.asarray(y_pred)
-        # Ensure these functions are defined before this point in the file
         plot_residuals_analysis_detailed(y_true, y_pred, title_prefix=f"{model_name} ({target_type})", save_dir=save_dir_path)
         plot_conditional_bias(y_pred, residuals, title=f"{model_name} - Conditional Bias ({target_type})", save_dir=save_dir_path)
         plot_error_by_prediction_range(y_true, y_pred, title=f"{model_name} - Mean Error by Range ({target_type})", save_path=save_dir_path / f"{base_filename}_error_range.png" if save_dir_path else None)
@@ -650,7 +620,6 @@ def generate_evaluation_report(y_true: Union[pd.Series, np.ndarray], y_pred: Uni
 
     if dates is not None:
         logger.info("\n--- Generating Time Series Plot ---")
-        # Ensure this function is defined before this point
         plot_predictions_over_time(dates=dates, y_true=y_true, y_pred=y_pred, title=f"{model_name} - Predictions Over Time ({target_type})", target_name=target_type.replace('_', ' ').title(), save_dir=save_dir_path)
     else: logger.info("Skipping predictions over time plot: 'dates' not provided.")
 

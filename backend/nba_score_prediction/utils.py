@@ -3,11 +3,11 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import List, Optional, Dict, Any # Added Optional, Dict, Any
-from functools import lru_cache # Added for normalize_team_name
+from typing import List, Optional, Dict, Any 
+from functools import lru_cache 
 
 logger = logging.getLogger(__name__)
-EPSILON = 1e-6 # Keep epsilon if used by safe_divide or others
+EPSILON = 1e-6 
 
 # --- DataFrame Operations ---
 
@@ -15,9 +15,9 @@ def convert_and_fill(df: pd.DataFrame, columns: List[str], default: float = 0.0)
     """Convert specified columns to numeric and fill NaNs with a default value."""
     if df is None:
         logger.error("Input DataFrame is None in convert_and_fill.")
-        return pd.DataFrame() # Return empty df if input is None
+        return pd.DataFrame() 
 
-    df_copy = df.copy() # Work on a copy to avoid SettingWithCopyWarning
+    df_copy = df.copy()
     for col in columns:
         if col not in df_copy.columns:
             # If column is entirely missing, add it with the default value
@@ -88,7 +88,7 @@ def slice_dataframe_by_features(df: pd.DataFrame, feature_list: List[str], fill_
         logger.error(f"Error reindexing DataFrame in slice_dataframe_by_features: {e}", exc_info=True)
         logger.error(f"Feature list requested: {feature_list}")
         logger.error(f"DataFrame columns available: {list(df_copy.columns)}")
-        return None # Return None on error
+        return None 
 
 def remove_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -100,7 +100,7 @@ def remove_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with duplicate columns removed, or original if no duplicates.
     """
-    if df is None: return pd.DataFrame() # Handle None input
+    if df is None: return pd.DataFrame()
     if df.columns.duplicated().any():
         logger.warning("Duplicate column names found. Removing duplicates, keeping first occurrence.")
         return df.loc[:, ~df.columns.duplicated(keep='first')]
@@ -118,7 +118,7 @@ def ensure_unique_columns(df: pd.DataFrame) -> List[str]:
     """
     if df is None: return []
     # pd.Index automatically handles uniqueness, converting to list gives unique names
-    return list(pd.Index(df.columns)) # Simplified from original proposal
+    return list(pd.Index(df.columns)) 
 
 def fill_missing_numeric(df: pd.DataFrame, default_value: float = 0.0) -> pd.DataFrame:
     """
@@ -142,19 +142,18 @@ def fill_missing_numeric(df: pd.DataFrame, default_value: float = 0.0) -> pd.Dat
 def safe_divide(numerator: pd.Series, denominator: pd.Series, default_val: float = 0.0) -> pd.Series:
     """Safely divide two series, handling zeros and NaNs."""
     num = pd.to_numeric(numerator, errors='coerce')
-    den = pd.to_numeric(denominator, errors='coerce').replace(0, np.nan) # Replace 0 with NaN before division
+    den = pd.to_numeric(denominator, errors='coerce').replace(0, np.nan) 
     result = num / den
-    result.replace([np.inf, -np.inf], np.nan, inplace=True) # Handle infinity
-    return result.fillna(default_val) # Fill NaNs with default
+    result.replace([np.inf, -np.inf], np.nan, inplace=True) 
+    return result.fillna(default_val) #
 
 # --- String/Date Helpers (Moved from Feature Engine) ---
 
-@lru_cache(maxsize=512) # Keep cache
+@lru_cache(maxsize=512) 
 def normalize_team_name(team_name: Optional[str]) -> str:
     """Normalize team names using a predefined mapping."""
     if not isinstance(team_name, str): return "Unknown"
     team_lower = team_name.lower().strip()
-    # Consider loading this mapping from a config file or constant
     mapping = {
         "atlanta hawks": "hawks", "atlanta": "hawks", "atl": "hawks", "hawks": "hawks", "atlanta h": "hawks",
         "boston celtics": "celtics", "boston": "celtics", "bos": "celtics", "celtics": "celtics",
@@ -198,16 +197,14 @@ def normalize_team_name(team_name: Optional[str]) -> str:
         if len(team_lower) > 3 and team_lower in name: return norm
         if len(name) > 3 and name in team_lower: return norm
     logger.warning(f"Team name '{team_name}' normalized to '{team_lower}' - no mapping found!")
-    return team_lower # Return lowercased name if no match
+    return team_lower 
 
 def to_datetime_naive(series: pd.Series) -> pd.Series:
     """Converts a Series to datetime objects, coercing errors and making timezone naive."""
     try:
         return pd.to_datetime(series, errors='coerce').dt.tz_localize(None)
-    except AttributeError: # Handle cases where tz_localize might fail (e.g., already naive)
+    except AttributeError: 
         return pd.to_datetime(series, errors='coerce')
     except Exception as e:
         logger.error(f"Error in to_datetime_naive: {e}")
-        return pd.Series([pd.NaT] * len(series), index=series.index) # Return NaT series on failure
-
-# Add other general utility functions here if needed
+        return pd.Series([pd.NaT] * len(series), index=series.index) 

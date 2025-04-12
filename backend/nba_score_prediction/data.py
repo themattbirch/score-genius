@@ -6,10 +6,6 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Union, Any
 
-# Assuming supabase client is configured and imported, e.g.:
-# from caching.supabase_client import supabase
-# If supabase is not globally configured, adjust instantiation logic.
-
 # -------------------- Data Fetching Class --------------------
 class SupabaseDataFetcher:
     """ Handles data fetching from Supabase for NBA prediction models. """
@@ -66,7 +62,7 @@ class SupabaseDataFetcher:
                         ['id', 'game_id', 'home_team', 'away_team', 'game_date']]
 
         all_data = []
-        page_size = 1000 # Supabase default page size limit
+        page_size = 1000 
         start_index = 0
         try:
             while True:
@@ -87,12 +83,12 @@ class SupabaseDataFetcher:
                 self._print_debug(f"Retrieved batch of {batch_size} records, total: {len(all_data)}")
 
                 if batch_size < page_size:
-                    break # Last page reached
+                    break 
                 start_index += page_size
 
             if not all_data:
                 self._print_debug(f"No historical game data found since {threshold_date}.")
-                return pd.DataFrame() # Return empty df, let caller handle fallback
+                return pd.DataFrame() 
 
             df = pd.DataFrame(all_data)
 
@@ -106,7 +102,6 @@ class SupabaseDataFetcher:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 else:
-                    # If a selected numeric column is somehow missing, add it with zeros
                     self._print_debug(f"Warning: Expected numeric column '{col}' missing. Adding with zeros.")
                     df[col] = 0
 
@@ -115,7 +110,7 @@ class SupabaseDataFetcher:
         except Exception as e:
             self._print_debug(f"Error fetching or processing historical games: {e}")
             traceback.print_exc()
-            return pd.DataFrame() # Return empty df on error
+            return pd.DataFrame() 
 
     def fetch_team_stats(self) -> pd.DataFrame:
         """
@@ -189,9 +184,6 @@ class SupabaseDataFetcher:
             today = datetime.now().strftime('%Y-%m-%d')
             future_date = (datetime.now() + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
 
-            # Explicitly select needed columns and nested team names
-            # Adjust 'home_team_id', 'away_team_id' if the foreign key columns have different names
-            # Adjust 'team_name' if the field name within the related table is different
             select_query = "game_id, game_date, home_team:home_team_id(team_name), away_team:away_team_id(team_name)"
 
             response = self.supabase.table("nba_upcoming_games") \
@@ -248,6 +240,3 @@ class SupabaseDataFetcher:
             self._print_debug(f"Error fetching upcoming games: {e}")
             traceback.print_exc()
             return pd.DataFrame()
-
-# Note: The large example usage cell originally here has been removed
-# as it belongs in the script that *uses* this class, not within the class definition file.

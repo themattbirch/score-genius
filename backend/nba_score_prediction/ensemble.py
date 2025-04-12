@@ -43,11 +43,11 @@ class EnsembleWeightManager:
             'adaptive': self._adaptive_weights,
         }
         self.weight_history: List[Dict[str, Any]] = []
-        self.BASE_WEIGHT_MIN: float = 0.6    # Minimum base weight for main model in adaptive strategy
-        self.BASE_WEIGHT_MAX: float = 0.95   # Maximum base weight for main model in adaptive strategy
-        self.HEURISTIC_MAIN_WEIGHT_MAX: float = 0.95  # Overall cap for main model weight after heuristics
-        self.HEURISTIC_QUARTER_WEIGHT_MAX: float = 0.4  # Cap for quarter model weight after heuristics
-        self.HISTORIC_WEIGHT_SMOOTHING: float = 0.7  # Smoothing factor for updating error history
+        self.BASE_WEIGHT_MIN: float = 0.6    
+        self.BASE_WEIGHT_MAX: float = 0.95   
+        self.HEURISTIC_MAIN_WEIGHT_MAX: float = 0.95  
+        self.HEURISTIC_QUARTER_WEIGHT_MAX: float = 0.4 
+        self.HISTORIC_WEIGHT_SMOOTHING: float = 0.7  
         self.debug: bool = debug
 
     def log(self, message: str, level: str = "INFO") -> None:

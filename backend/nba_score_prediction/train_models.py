@@ -40,8 +40,8 @@ from supabase import Client, create_client
 from sklearn.base import clone
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.feature_selection import SelectFromModel
-from sklearn.linear_model import LassoCV, RidgeCV  # RidgeCV might be used later
-from sklearn.linear_model import Ridge as MetaRidge # Used for potential meta-model later? Keep for now.
+from sklearn.linear_model import LassoCV, RidgeCV 
+from sklearn.linear_model import Ridge as MetaRidge 
 from sklearn.metrics import (make_scorer, mean_absolute_error,
                              mean_squared_error, r2_score)
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
@@ -59,7 +59,6 @@ logger = logging.getLogger(__name__)
 
 
 # --- Project-Specific Imports ---
-# Use try-except for robustness, especially if run outside standard environment
 try:
     from .evaluation import (
         plot_actual_vs_predicted, plot_conditional_bias,
@@ -71,8 +70,8 @@ try:
         RidgeScorePredictor, SVRScorePredictor,
         compute_recency_weights
     )
-    from . import utils  # Assumes utils.py is in the same directory
-    from backend import config  # Assumes config.py is in the parent 'backend' directory
+    from . import utils  
+    from backend import config  
     LOCAL_MODULES_IMPORTED = True
 except ImportError as e:
     logger.error("Local modules could not be imported; falling back to dummy implementations.")
@@ -99,7 +98,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Reduce verbosity from http libraries
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
@@ -107,11 +105,9 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = BACKEND_DIR.parent
-# Use config paths if available, otherwise default relative to project root
 MAIN_MODELS_DIR = Path(getattr(config, 'MAIN_MODELS_DIR', PROJECT_ROOT / 'models' / 'saved'))
 REPORTS_DIR = Path(getattr(config, 'REPORTS_DIR', PROJECT_ROOT / 'reports'))
 
-# Ensure directories exist
 MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -119,7 +115,6 @@ REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 TARGET_COLUMNS = ['home_score', 'away_score']
 SEED = 42
 DEFAULT_CV_FOLDS = 5
-# Columns required from historical data source
 HISTORICAL_REQUIRED_COLS = [
     'game_id', 'game_date', 'home_team', 'away_team', 'home_score', 'away_score',
     'home_q1', 'home_q2', 'home_q3', 'home_q4', 'home_ot', 'away_q1', 'away_q2',
@@ -214,8 +209,6 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
                 missing_cols_in_df = sorted([col for col in HISTORICAL_REQUIRED_COLS if col not in hist_df.columns])
                 if missing_cols_in_df:
                     logger.error(f"COLUMNS MISSING AFTER DataFrame CREATION ({len(missing_cols_in_df)} missing): {missing_cols_in_df}")
-                    # Decide how to handle: return empty, fill, or proceed with warning?
-                    # For now, log error and proceed, conversion below might fail.
                 else:
                      logger.info("All requested historical columns appear present in created DataFrame.")
 
@@ -224,10 +217,9 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
 
         except Exception as e:
             logger.error(f"Error loading historical games from Supabase: {e}", exc_info=True)
-            hist_df = pd.DataFrame() # Ensure empty on error
+            hist_df = pd.DataFrame() 
 
         # --- Load Team Stats Data from Supabase ---
-        # (Assumes team stats are always needed if source is supabase for historical)
         logger.info("Loading team stats from Supabase...")
         try:
             select_str_team = ", ".join(TEAM_STATS_REQUIRED_COLS)
@@ -239,7 +231,7 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
                 logger.warning("No team stats found in Supabase.")
         except Exception as e:
             logger.error(f"Error loading team stats from Supabase: {e}", exc_info=True)
-            team_stats_df = pd.DataFrame() # Ensure empty on error
+            team_stats_df = pd.DataFrame() 
 
     elif source_type == "csv":
         logger.info("Loading data from CSV files...")
@@ -266,25 +258,22 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
 
     # --- Common Post-Processing ---
     if not hist_df.empty:
-        # Date Conversion
         if 'game_date' in hist_df.columns:
             hist_df['game_date'] = pd.to_datetime(hist_df['game_date'], errors='coerce').dt.tz_localize(None)
             hist_df = hist_df.dropna(subset=['game_date'])
             logger.debug(f"Historical DataFrame shape after date processing: {hist_df.shape}")
         else:
             logger.error("'game_date' column missing from historical data. Cannot proceed reliably.")
-            return pd.DataFrame(), team_stats_df # Return empty if date is crucial
+            return pd.DataFrame(), team_stats_df 
 
         # Numeric Conversion and NaN Handling for Historical Data
         logger.info("Converting historical numeric columns and filling NaNs with 0...")
-        # Convert historical numeric columns and fill NaNs with 0...
         for col in hist_numeric_cols:
             if col in hist_df.columns:
                 hist_df[col] = pd.to_numeric(hist_df[col], errors='coerce').fillna(0)
             else:
                 logger.warning(f"Historical column '{col}' missing. Adding and filling with 0.")
                 hist_df[col] = 0
-        # Sort by date
         hist_df = hist_df.sort_values('game_date').reset_index(drop=True)
 
     if not team_stats_df.empty:
@@ -322,7 +311,7 @@ def visualize_recency_weights(dates, weights, title="Recency Weights Distributio
             save_path.parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path)
             logger.info(f"Recency weights plot saved to {save_path}")
-        plt.close() # Close plot to free memory
+        plt.close() 
     except Exception as e:
          logger.error(f"Error visualizing recency weights: {e}", exc_info=True)
 
@@ -353,14 +342,13 @@ def calculate_regression_metrics(y_true: Union[pd.Series, np.ndarray],
         y_true_valid = y_true[valid_mask]
         y_pred_valid = y_pred[valid_mask]
 
-        if len(y_true_valid) == 0: # Should be caught above, but double-check
+        if len(y_true_valid) == 0: 
              logger.warning("No valid pairs after NaN filtering.")
              return {'mse': np.nan, 'rmse': np.nan, 'mae': np.nan, 'r2': np.nan}
 
         mse = mean_squared_error(y_true_valid, y_pred_valid)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_true_valid, y_pred_valid)
-        # R2 requires at least 2 samples and non-constant true values
         r2 = r2_score(y_true_valid, y_pred_valid) if len(y_true_valid) >= 2 and np.var(y_true_valid) > 1e-9 else np.nan
 
         return {'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2}
@@ -371,10 +359,8 @@ def calculate_regression_metrics(y_true: Union[pd.Series, np.ndarray],
 def nba_score_loss(y_true, y_pred, spread_weight=0.6, total_weight=0.4) -> float:
     """Custom loss function penalizing errors in predicted spread and total."""
     try:
-        # Ensure numpy arrays
         if isinstance(y_true, (pd.DataFrame, pd.Series)): y_true = y_true.values
         if isinstance(y_pred, (pd.DataFrame, pd.Series)): y_pred = y_pred.values
-        # Ensure correct shape (N, 2)
         if y_true.ndim == 1: y_true = y_true.reshape(-1, 2)
         if y_pred.ndim == 1: y_pred = y_pred.reshape(-1, 2)
 
@@ -384,7 +370,7 @@ def nba_score_loss(y_true, y_pred, spread_weight=0.6, total_weight=0.4) -> float
 
         # Handle potential NaNs
         valid_mask = ~np.isnan(y_true).any(axis=1) & ~np.isnan(y_pred).any(axis=1)
-        if not valid_mask.any(): return np.inf # No valid rows
+        if not valid_mask.any(): return np.inf 
         y_true, y_pred = y_true[valid_mask], y_pred[valid_mask]
 
         true_home, true_away = y_true[:, 0], y_true[:, 1]
@@ -401,7 +387,6 @@ def nba_score_loss(y_true, y_pred, spread_weight=0.6, total_weight=0.4) -> float
 def nba_distribution_loss(y_true, y_pred) -> float:
     """Custom loss function penalizing predictions deviating from typical NBA score distributions."""
     try:
-        # y_true is not actually used here, only y_pred distributions
         if isinstance(y_pred, (pd.DataFrame, pd.Series)): y_pred = y_pred.values
         if y_pred.ndim == 1: y_pred = y_pred.reshape(-1, 2)
         if y_pred.shape[1] != 2:
@@ -415,7 +400,7 @@ def nba_distribution_loss(y_true, y_pred) -> float:
 
         pred_home, pred_away = y_pred[:, 0], y_pred[:, 1]
 
-        # Typical historical averages/std devs (could be made dynamic later)
+        # Typical historical averages/std devs )
         home_mean, home_std = 114, 13.5
         away_mean, away_std = 112, 13.5
         diff_mean, diff_std = 2.5, 13.5   # home - away
@@ -447,7 +432,6 @@ def combined_nba_loss(y_true, y_pred, accuracy_weight=0.7, distribution_weight=0
     return accuracy_weight * score_loss + distribution_weight * dist_loss
 
 # --- Scorers for use with scikit-learn ---
-# Note: greater_is_better=False because these are loss functions (lower is better)
 mae_scorer = make_scorer(mean_absolute_error, greater_is_better=False)
 nba_score_scorer = make_scorer(nba_score_loss, greater_is_better=False)
 nba_distribution_scorer = make_scorer(nba_distribution_loss, greater_is_better=False)
@@ -455,7 +439,7 @@ combined_scorer = make_scorer(combined_nba_loss, greater_is_better=False)
 
 def calculate_betting_metrics(y_true, y_pred) -> Dict[str, float]:
     """Calculates basic betting-related metrics (e.g., win prediction accuracy)."""
-    metrics = {'win_prediction_accuracy': np.nan} # Initialize
+    metrics = {'win_prediction_accuracy': np.nan} 
     try:
         if isinstance(y_true, (pd.DataFrame, pd.Series)): y_true = y_true.values
         if isinstance(y_pred, (pd.DataFrame, pd.Series)): y_pred = y_pred.values
@@ -473,7 +457,7 @@ def calculate_betting_metrics(y_true, y_pred) -> Dict[str, float]:
              return metrics
         y_true, y_pred = y_true[valid_mask], y_pred[valid_mask]
 
-        if len(y_true) == 0: # Should be caught above
+        if len(y_true) == 0: 
             logger.warning("Empty arrays after NaN filtering for betting metrics.")
             return metrics
 
@@ -486,12 +470,9 @@ def calculate_betting_metrics(y_true, y_pred) -> Dict[str, float]:
         # Correct winner prediction accuracy
         metrics['win_prediction_accuracy'] = np.mean((true_diff > 0) == (pred_diff > 0))
 
-        # Add more metrics later (e.g., spread accuracy, total accuracy vs lines)
-        # if vegas_lines DataFrame is passed and aligned.
-
     except Exception as e:
         logger.error(f"Error calculating betting metrics: {e}", exc_info=True)
-        metrics['win_prediction_accuracy'] = np.nan # Ensure NaN on error
+        metrics['win_prediction_accuracy'] = np.nan 
     return metrics
 
 # ==============================================================================
@@ -504,11 +485,11 @@ def compute_inverse_error_weights(validation_metrics: Dict[str, float]) -> Dict[
     logger.info(f"Computing inverse error weights based on validation metrics: {validation_metrics}")
 
     for model, error in validation_metrics.items():
-        if pd.isna(error) or error <= 1e-9: # Use small threshold instead of 0
+        if pd.isna(error) or error <= 1e-9: 
              logger.warning(f"Invalid or zero error ({error}) for model '{model}'. Assigning zero weight.")
              inv_errors[model] = 0.0
         else:
-            inv_errors[model] = 1.0 / error # Direct inverse
+            inv_errors[model] = 1.0 / error 
 
     total_inv_error = sum(inv_errors.values())
     weights = {}
@@ -538,8 +519,8 @@ def compute_inverse_error_weights(validation_metrics: Dict[str, float]) -> Dict[
 def optimize_ensemble_weights(
     validation_predictions: Dict[str, Dict[str, pd.Series]],
     model_keys: List[str],
-    metric_to_minimize: str = 'avg_mae', # Options: 'avg_mae', 'mae_home', 'mae_away'
-    l2_lambda: float = 0.1 # Regularization strength
+    metric_to_minimize: str = 'avg_mae', 
+    l2_lambda: float = 0.1 
 ) -> Optional[Dict[str, float]]:
     """
     Finds optimal ensemble weights by minimizing a REGULARIZED metric on validation predictions.
@@ -555,7 +536,6 @@ def optimize_ensemble_weights(
 
     # --- Prepare Data ---
     try:
-        # Use the index of the first model's predictions as the reference
         ref_idx = validation_predictions[model_keys[0]]['true_home'].index
         y_true_h = validation_predictions[model_keys[0]]['true_home'].loc[ref_idx].values
         y_true_a = validation_predictions[model_keys[0]]['true_away'].loc[ref_idx].values
@@ -588,13 +568,13 @@ def optimize_ensemble_weights(
     # --- Define Regularized Objective Function ---
     def objective_function(weights: np.ndarray, y_true_h, y_true_a, preds_h, preds_a, metric, lambda_reg) -> float:
         """Calculates the blend MAE + L2 penalty given weights."""
-        # Optimizer might slightly violate constraints, ensure weights sum to 1 and are non-negative
+
         weights = np.maximum(0, weights)
         weights_sum = np.sum(weights)
         if weights_sum > 1e-9:
             weights = weights / weights_sum
-        else: # Handle case where all weights are zeroed
-            return np.inf # Return infinity if weights are invalid
+        else: 
+            return np.inf 
 
         blend_pred_h = np.dot(preds_h, weights)
         blend_pred_a = np.dot(preds_a, weights)
@@ -605,15 +585,15 @@ def optimize_ensemble_weights(
         if metric == 'avg_mae': base_metric = (mae_h + mae_a) / 2.0
         elif metric == 'mae_home': base_metric = mae_h
         elif metric == 'mae_away': base_metric = mae_a
-        else: base_metric = (mae_h + mae_a) / 2.0 # Default to average MAE
+        else: base_metric = (mae_h + mae_a) / 2.0 
 
         # Add L2 regularization penalty
         l2_penalty = lambda_reg * np.sum(weights**2)
         return base_metric + l2_penalty
 
     # --- Constraints & Bounds ---
-    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}) # Weights must sum to 1
-    bounds = tuple((0.0, 1.0) for _ in range(num_models))      # Weights between 0 and 1
+    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0})
+    bounds = tuple((0.0, 1.0) for _ in range(num_models))
 
     # --- Initial Guess ---
     initial_weights = np.array([1.0 / num_models] * num_models)
@@ -623,8 +603,8 @@ def optimize_ensemble_weights(
         result = minimize(
             objective_function,
             initial_weights,
-            args=(y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize, l2_lambda), # Pass extra args
-            method='SLSQP', # Suitable for constrained optimization
+            args=(y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize, l2_lambda), 
+            method='SLSQP', 
             bounds=bounds,
             constraints=constraints,
             options={'disp': False, 'ftol': 1e-6, 'maxiter': 1000}
@@ -632,11 +612,10 @@ def optimize_ensemble_weights(
 
         if result.success:
             optimized_weights_raw = result.x
-            # Log the optimized *regularized* objective value
             logger.info(f"Optimization successful. Optimal regularized validation {metric_to_minimize}: {result.fun:.4f}")
 
             # Calculate and log the *unregularized* MAE for reference using the found weights
-            unreg_mae = objective_function(optimized_weights_raw, y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize, 0.0) # Set lambda=0
+            unreg_mae = objective_function(optimized_weights_raw, y_true_h, y_true_a, preds_h, preds_a, metric_to_minimize, 0.0) 
             logger.info(f"Unregularized validation {metric_to_minimize} with optimal weights: {unreg_mae:.4f}")
 
             # Clip negative weights (due to numerical precision) and renormalize
@@ -646,7 +625,7 @@ def optimize_ensemble_weights(
                  optimized_weights /= final_sum
             else:
                  logger.warning("All optimized weights were zero after clipping. Returning equal weights.")
-                 optimized_weights = np.array([1.0 / num_models] * num_models) # Fallback
+                 optimized_weights = np.array([1.0 / num_models] * num_models)
 
             final_weights_dict = dict(zip(model_keys, optimized_weights))
             logger.info(f"Optimal Weights (Regularized, Lambda={l2_lambda}): {final_weights_dict}")
@@ -663,7 +642,7 @@ def optimize_ensemble_weights(
             return final_weights_dict
         else:
             logger.error(f"Weight optimization failed: {result.message}")
-            return None # Indicate failure
+            return None 
     except Exception as e:
         logger.error(f"Exception during weight optimization: {e}", exc_info=True)
         return None
@@ -694,10 +673,10 @@ def tune_model_with_randomizedsearch(
         scoring=scoring,
         cv=cv,
         n_jobs=-1,
-        verbose=1, # Show progress during tuning
+        verbose=1, 
         random_state=random_state,
-        error_score='raise', # Raise errors during CV
-        refit=False          # We refit the best model separately on Train+Val
+        error_score='raise', 
+        refit=False 
     )
 
     logger.info(f"Starting RandomizedSearchCV fitting with {n_iter} iterations...")
@@ -715,16 +694,16 @@ def tune_model_with_randomizedsearch(
 
 
 def tune_and_evaluate_predictor(
-    predictor_class: Type, # Pass the class itself
+    predictor_class: Type, 
     X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
     X_val: pd.DataFrame, y_val_home: pd.Series, y_val_away: pd.Series,
     X_test: pd.DataFrame, y_test_home: pd.Series, y_test_away: pd.Series,
     model_name_prefix: str,
     feature_list: List[str],
-    param_dist: Optional[Dict[str, Any]], # Parameter distribution for tuning
-    n_iter: int = 50, # Number of iterations for RandomizedSearch
-    n_splits: int = 5, # Number of CV splits for TimeSeriesSplit
-    scoring: str = 'neg_mean_absolute_error', # Scorer for tuning
+    param_dist: Optional[Dict[str, Any]], 
+    n_iter: int = 50, 
+    n_splits: int = 5, 
+    scoring: str = 'neg_mean_absolute_error', 
     use_recency_weights: bool = False,
     weight_method: str = 'exponential',
     weight_half_life: int = 90,
@@ -766,7 +745,7 @@ def tune_and_evaluate_predictor(
     logger.info(f"--- Starting Pipeline for {predictor_class.__name__} ({model_full_name}) ---")
     start_time_model = time.time()
     metrics = {'model_name': model_full_name, 'predictor_class': predictor_class.__name__}
-    best_params_final = {} # Will store best params found during tuning
+    best_params_final = {} 
 
     # --- Data Preparation ---
     if not feature_list:
@@ -776,12 +755,12 @@ def tune_and_evaluate_predictor(
     if len(feature_list_unique) != len(feature_list):
         logger.warning(f"Removed {len(feature_list) - len(feature_list_unique)} duplicate features.")
     metrics['feature_count'] = len(feature_list_unique)
-    metrics['features_used'] = feature_list_unique # Store the actual features used
+    metrics['features_used'] = feature_list_unique 
 
     # Ensure all required features are present in the data splits
     required_cols_train = feature_list_unique + (['game_date'] if use_recency_weights else [])
     required_cols_val = feature_list_unique + (['game_date'] if use_recency_weights else [])
-    required_cols_test = feature_list_unique # Test set doesn't need date for prediction
+    required_cols_test = feature_list_unique 
 
     missing_train = [col for col in required_cols_train if col not in X_train.columns]
     missing_val = [col for col in required_cols_val if col not in X_val.columns]
@@ -795,10 +774,9 @@ def tune_and_evaluate_predictor(
         # Data for tuning (using only the training set)
         X_tune = X_train[feature_list_unique].copy()
         y_tune_home = y_train_home.loc[X_tune.index].copy()
-        y_tune_away = y_train_away.loc[X_tune.index].copy() # Needed for temporary model training later
+        y_tune_away = y_train_away.loc[X_tune.index].copy() 
 
         # Data for final model training (combined Train + Val)
-        # Combine using the original indices to ensure correct alignment later
         X_train_val = pd.concat([X_train, X_val])
         X_train_val_features = X_train_val[feature_list_unique].copy()
         y_train_val_home = pd.concat([y_train_home, y_val_home]).loc[X_train_val_features.index]
@@ -827,7 +805,7 @@ def tune_and_evaluate_predictor(
     # --- Prepare Sample Weights (if enabled) ---
     tune_fit_params = {}
     final_fit_sample_weights = None
-    temp_fit_sample_weights = None # For temporary model training later (on X_tune)
+    temp_fit_sample_weights = None 
 
     if use_recency_weights:
         logger.info(f"Calculating recency weights (method='{weight_method}', half_life={weight_half_life})...")
@@ -839,19 +817,18 @@ def tune_and_evaluate_predictor(
                     dates_tune = pd.to_datetime(dates_tune)
                 except Exception as date_conv_e:
                     logger.error(f"Could not convert 'game_date' in X_train to datetime: {date_conv_e}. Cannot compute weights.", exc_info=True)
-                    use_recency_weights = False # Disable weighting if conversion fails
+                    use_recency_weights = False 
             if use_recency_weights:
                 temp_fit_sample_weights = compute_recency_weights(dates_tune, method=weight_method, half_life=weight_half_life)
 
                 if temp_fit_sample_weights is not None and len(temp_fit_sample_weights) == len(X_tune):
                     logger.info(f"Sample weights prepared for tuning/temp model. Min: {np.min(temp_fit_sample_weights):.4f}, Max: {np.max(temp_fit_sample_weights):.4f}")
-                    # (Weight param name determined later inside tuning block if needed for RandomizedSearch)
                 else:
                     logger.warning("Tuning/temp sample weights calculation failed or length mismatched.")
                     temp_fit_sample_weights = None
         else:
             logger.warning("'use_recency_weights' is True, but 'game_date' column is missing in X_train.")
-            use_recency_weights = False # Cannot use weights without the date column
+            use_recency_weights = False 
 
         # Weights for the final model (based on combined Train+Val dates)
         if use_recency_weights and 'game_date' in X_train_val.columns:
@@ -861,7 +838,7 @@ def tune_and_evaluate_predictor(
                      dates_final = pd.to_datetime(dates_final)
                  except Exception as date_conv_e:
                      logger.error(f"Could not convert 'game_date' in combined Train+Val to datetime: {date_conv_e}. Cannot compute final weights.", exc_info=True)
-                     final_fit_sample_weights = None # Ensure it's None if conversion fails
+                     final_fit_sample_weights = None 
                  else:
                      final_fit_sample_weights = compute_recency_weights(dates_final, method=weight_method, half_life=weight_half_life)
             else:
@@ -882,13 +859,13 @@ def tune_and_evaluate_predictor(
              logger.warning("'use_recency_weights' is True, but 'game_date' column is missing in combined Train+Val data.")
              final_fit_sample_weights = None
 
-    # --- Hyperparameter Tuning (Conditional: RidgeCV for Ridge, RandomizedSearch otherwise) ---
+    # --- Hyperparameter Tuning ---
     metrics['tuning_duration'] = 0.0
     metrics['best_params'] = 'default'
     metrics['best_cv_score'] = None
-    best_params_final = {} # Use empty dict -> defaults
+    best_params_final = {} 
 
-    tuning_start_time = time.time() # Start timer outside conditional blocks
+    tuning_start_time = time.time() 
 
     # --- Ridge Specific Tuning using RidgeCV ---
     if model_name_prefix == "ridge":
@@ -898,13 +875,11 @@ def tune_and_evaluate_predictor(
             if not hasattr(predictor_class, '_build_pipeline') or not callable(getattr(predictor_class, '_build_pipeline')):
                  raise AttributeError(f"{predictor_class.__name__} needs a '_build_pipeline' method for RidgeCV setup.")
 
-            alphas_to_test = np.logspace(-4, 4, 50) # Define alpha range for RidgeCV
+            alphas_to_test = np.logspace(-4, 4, 50) 
             tscv = TimeSeriesSplit(n_splits=n_splits)
 
-            # Get preprocessing steps from a temporary instance
             temp_predictor_for_prep = predictor_class()
-            # Need to handle potential args for predictor init if any
-            temp_pipeline_prep = temp_predictor_for_prep._build_pipeline({}) # Build with default params
+            temp_pipeline_prep = temp_predictor_for_prep._build_pipeline({}) 
             if not isinstance(temp_pipeline_prep, Pipeline):
                  raise TypeError("_build_pipeline did not return a scikit-learn Pipeline object.")
             if not temp_pipeline_prep.steps:
@@ -914,33 +889,21 @@ def tune_and_evaluate_predictor(
             preprocessing_steps = temp_pipeline_prep.steps[0][1]
             logger.debug(f"Extracted preprocessing steps for RidgeCV: {preprocessing_steps}")
 
-            # Create RidgeCV tuner and pipeline
-            # Note: RidgeCV itself is the estimator here, not a hyperparameter tuner *around* Ridge
             ridge_cv_tuner = RidgeCV(alphas=alphas_to_test, cv=tscv, scoring=scoring, store_cv_values=False)
             ridge_cv_pipeline = Pipeline([
                 ('preprocessing', preprocessing_steps),
                 ('ridge_cv', ridge_cv_tuner)
             ])
 
-            # Prepare fit parameters (handle sample weights)
             ridge_cv_fit_params = {}
             if use_recency_weights and temp_fit_sample_weights is not None:
-                # Pass sample_weight directly to the pipeline's fit method.
-                # It should be automatically routed to the final estimator (RidgeCV) if it supports it.
-                # RidgeCV *does* accept 'sample_weight' in its fit method.
                 ridge_cv_fit_params['sample_weight'] = temp_fit_sample_weights
                 logger.info("Applying sample weights to RidgeCV tuning.")
 
-            # Fit the RidgeCV pipeline (using training data only for tuning)
-            # We tune based on predicting the home score
             ridge_cv_pipeline.fit(X_tune, y_tune_home, **ridge_cv_fit_params)
 
-            # Extract best alpha
             best_alpha = ridge_cv_pipeline.named_steps['ridge_cv'].alpha_
-            # Store the best param in the format expected by the predictor's train method
-            # Assuming the predictor expects {'alpha': value} for Ridge
             best_params_final = {'alpha': best_alpha}
-            # RidgeCV score_ is complex (per alpha), best_score_ might exist depending on refit=True
             best_cv_score = getattr(ridge_cv_pipeline.named_steps['ridge_cv'], 'best_score_', 'N/A (RidgeCV)')
             metrics['best_cv_score'] = best_cv_score
             metrics['best_params'] = best_params_final
@@ -948,24 +911,22 @@ def tune_and_evaluate_predictor(
 
         except Exception as ridge_cv_e:
             logger.error(f"RidgeCV tuning failed: {ridge_cv_e}", exc_info=True)
-            best_params_final = {} # Revert to default params on failure
+            best_params_final = {} 
             metrics['best_params'] = 'default (RidgeCV failed)'
 
         metrics['tuning_duration'] = time.time() - tuning_start_time
         logger.info(f"Tuning finished in {metrics['tuning_duration']:.2f}s.")
 
-    # --- RandomizedSearch for other models (like SVR) if param_dist provided ---
+    # --- RandomizedSearch for other models  ---
     elif param_dist:
         logger.info(f"Starting hyperparameter tuning (RandomizedSearchCV, n_iter={n_iter}, cv={n_splits}, scoring='{scoring}')...")
         tscv = TimeSeriesSplit(n_splits=n_splits)
         try:
-            # Ensure predictor_class has _build_pipeline
             if not hasattr(predictor_class, '_build_pipeline') or not callable(getattr(predictor_class, '_build_pipeline')):
                  raise AttributeError(f"{predictor_class.__name__} needs a '_build_pipeline' method for RandomizedSearch setup.")
 
             temp_predictor_tune = predictor_class()
-            # Need to handle potential args for predictor init if any
-            tuning_pipeline = temp_predictor_tune._build_pipeline({}) # Build with default params for tuning structure
+            tuning_pipeline = temp_predictor_tune._build_pipeline({}) 
             if tuning_pipeline is None: raise RuntimeError(f"Could not build pipeline for {predictor_class.__name__}")
             if not isinstance(tuning_pipeline, Pipeline): raise TypeError("_build_pipeline did not return a Pipeline object.")
             if not tuning_pipeline.steps: raise ValueError("Pipeline built by _build_pipeline has no steps.")
@@ -973,15 +934,12 @@ def tune_and_evaluate_predictor(
             # Prepare fit params (handle sample weights for RandomizedSearch)
             random_search_fit_params = {}
             if use_recency_weights and temp_fit_sample_weights is not None:
-                 # Determine the name of the final estimator step in the pipeline
                  final_estimator_name = tuning_pipeline.steps[-1][0]
-                 # The key for fit_params needs to be 'estimatorname__parametername'
                  weight_param_name_tune = f"{final_estimator_name}__sample_weight"
                  random_search_fit_params[weight_param_name_tune] = temp_fit_sample_weights
                  logger.info(f"Applying sample weights to RandomizedSearch using key: '{weight_param_name_tune}'")
 
             # Call the external tuning function
-            # We tune based on predicting the home score
             best_params_found, best_score, cv_results_df = tune_model_with_randomizedsearch(
                 estimator=tuning_pipeline,
                 param_dist=param_dist,
@@ -991,17 +949,16 @@ def tune_and_evaluate_predictor(
                 scoring=scoring,
                 n_iter=n_iter,
                 random_state=SEED,
-                fit_params=random_search_fit_params # Pass weights if applicable
+                fit_params=random_search_fit_params 
             )
 
             if best_params_found and not np.isnan(best_score):
-                best_params_final = best_params_found # Store the found params
+                best_params_final = best_params_found 
                 metrics['best_cv_score'] = best_score
                 metrics['best_params'] = best_params_final
                 logger.info(f"Tuning complete. Best CV Score ({scoring}): {best_score:.4f}")
                 logger.info(f"Best Params Found: {best_params_final}")
                 try:
-                    # Log top results from CV results dataframe
                     logger.info("--- Top CV Tuning Results ---")
                     log_cols = ['rank_test_score', 'mean_test_score', 'std_test_score', 'params']
                     log_cols_present = [c for c in log_cols if c in cv_results_df.columns]
@@ -1013,13 +970,13 @@ def tune_and_evaluate_predictor(
                     logger.warning(f"Could not display CV results: {report_e}")
             else:
                  logger.error("RandomizedSearchCV did not return valid best parameters or score. Using default parameters.")
-                 best_params_final = {} # Revert to default params
+                 best_params_final = {} 
                  metrics['best_params'] = 'default (tuning invalid results)'
 
 
         except Exception as search_e:
             logger.error(f"RandomizedSearchCV failed for {model_name_prefix}: {search_e}", exc_info=True)
-            best_params_final = {} # Revert to default params on failure
+            best_params_final = {} 
             metrics['best_params'] = 'default (tuning failed)'
 
         metrics['tuning_duration'] = time.time() - tuning_start_time
@@ -1028,46 +985,37 @@ def tune_and_evaluate_predictor(
     # --- Case where tuning is skipped entirely (not Ridge and no param_dist) ---
     else:
         logger.info(f"Skipping hyperparameter tuning for {model_name_prefix} (param_dist not provided). Using default parameters.")
-        best_params_final = {} # Ensure it's empty to use defaults
+        best_params_final = {} 
 
     # --- Train Final Model ---
     logger.info("Training final model on combined Train+Val data...")
-    # Instantiate the predictor class, passing required args if any (like model_dir)
     try:
-         # Assumes predictor_class takes model_dir and model_name in its __init__
-         # Adapt this if your predictor classes have different initializers
          final_predictor = predictor_class(model_dir=str(MAIN_MODELS_DIR), model_name=model_full_name)
     except Exception as init_e:
          logger.error(f"Failed to instantiate predictor class {predictor_class.__name__}: {init_e}", exc_info=True)
-         return metrics, None # Cannot proceed
+         return metrics, None 
 
     try:
         train_start_time = time.time()
-        # Call the predictor's train method
-        # It should internally handle building pipelines for home/away scores
-        # and apply the hyperparameters and sample weights.
         final_predictor.train(
-            X_train=X_train_val_features, # Use combined Train+Val features
+            X_train=X_train_val_features, 
             y_train_home=y_train_val_home,
             y_train_away=y_train_val_away,
-            hyperparams_home=best_params_final, # Use tuned params (or {} for defaults)
-            hyperparams_away=best_params_final, # Assume same params for away unless specified otherwise
-            sample_weights=final_fit_sample_weights # Use weights calculated on combined set
+            hyperparams_home=best_params_final, 
+            hyperparams_away=best_params_final, 
+            sample_weights=final_fit_sample_weights 
         )
-        # Use training duration reported by the model if available, otherwise estimate
-        # Assumes the predictor instance might store this after training
         metrics['training_duration_final'] = getattr(final_predictor, 'training_duration', time.time() - train_start_time)
         logger.info(f"Final model training completed in {metrics['training_duration_final']:.2f} seconds.")
 
         # Save the trained model using a method provided by the predictor class
         if hasattr(final_predictor, 'save_model') and callable(getattr(final_predictor, 'save_model')):
-            save_filename = f"{model_full_name}.joblib" # Use consistent naming convention
-            save_path = final_predictor.save_model(filename=save_filename) # save_model should handle the directory
+            save_filename = f"{model_full_name}.joblib" 
+            save_path = final_predictor.save_model(filename=save_filename) 
             if save_path:
                 logger.info(f"Final tuned model saved to {save_path}")
                 metrics['save_path'] = str(save_path)
             else:
-                # If save_model returns None or empty path on success, adjust this check
                 logger.warning("Model saving method 'save_model' did not return a valid path.")
                 metrics['save_path'] = "Save path not returned"
         else:
@@ -1078,17 +1026,13 @@ def tune_and_evaluate_predictor(
         logger.error(f"Training or saving final model failed: {train_e}", exc_info=True)
         metrics['training_duration_final'] = None
         metrics['save_path'] = "Save failed"
-        # If training fails, we likely can't evaluate, but maybe return partial metrics?
-        # Decide if you want to proceed to evaluation attempts or return here.
-        # Let's return here as evaluation depends on a trained model.
         return metrics, None
 
     # --- Evaluate Final Model on Test Set ---
     logger.info(f"Evaluating final {model_full_name} on test set ({len(X_test_final)} samples)...")
-    pred_home_test, pred_away_test = None, None # Initialize
+    pred_home_test, pred_away_test = None, None 
     y_test_home_aligned, y_test_away_aligned = None, None
     try:
-        # Ensure predictor has a predict method
         if not hasattr(final_predictor, 'predict') or not callable(getattr(final_predictor, 'predict')):
              raise AttributeError(f"Predictor object for {model_full_name} does not have a 'predict' method.")
 
@@ -1119,7 +1063,6 @@ def tune_and_evaluate_predictor(
         metrics['test_r2_away'] = test_metrics_away.get('r2')
 
         # Calculate combined metrics (Total Score MAE, Point Differential MAE)
-        # Create a mask for valid (non-NaN) pairs of true and predicted values
         valid_test_mask = y_test_home_aligned.notna() & y_test_away_aligned.notna() & \
                           pred_home_test.notna() & pred_away_test.notna()
 
@@ -1138,11 +1081,10 @@ def tune_and_evaluate_predictor(
                 (pred_home_test_valid - pred_away_test_valid)
             )
             # Calculate custom losses and betting metrics
-            # Ensure input format matches expected format for loss/betting functions (e.g., numpy array)
             y_true_comb_test = np.vstack((y_true_home_valid.values, y_true_away_valid.values)).T
             y_pred_comb_test = np.vstack((pred_home_test_valid.values, pred_away_test_valid.values)).T
 
-            try: # Wrap custom metric calculations in try-except
+            try: 
                  metrics['test_nba_score_loss'] = nba_score_loss(y_true_comb_test, y_pred_comb_test)
                  metrics['test_nba_dist_loss'] = nba_distribution_loss(y_true_comb_test, y_pred_comb_test)
                  metrics['test_combined_loss'] = combined_nba_loss(y_true_comb_test, y_pred_comb_test)
@@ -1160,25 +1102,22 @@ def tune_and_evaluate_predictor(
         # Log final metrics concisely
         log_metrics = {k: f"{v:.3f}" if isinstance(v, (float, np.floating)) and not np.isnan(v) else v
                        for k, v in metrics.items() if k.startswith('test_')}
-        log_metrics.pop('betting_metrics', None) # Remove dict for simple logging
+        log_metrics.pop('betting_metrics', None) 
         logger.info(f"FINAL Test Metrics: {log_metrics}")
         logger.info(f"FINAL Test Betting Metrics: {metrics.get('betting_metrics', {})}")
 
 
     except Exception as test_eval_e:
         logger.error(f"Failed evaluating test set: {test_eval_e}", exc_info=True)
-        # Ensure metric keys exist even if calculation fails
         for k in ['test_mae_home','test_rmse_home','test_r2_home','test_mae_away','test_rmse_away','test_r2_away',
                   'test_mae_total','test_mae_diff', 'test_nba_score_loss','test_nba_dist_loss','test_combined_loss']:
             metrics.setdefault(k, np.nan)
         metrics['betting_metrics'] = {'error': 'Evaluation failed'}
 
-    # --- Evaluate Final Model on Training Set (optional, for diagnosing overfitting) ---
-    # Using the combined Train+Val set which the final model was trained on
-    pred_home_train, pred_away_train = None, None # Initialize
+    # --- Evaluate Final Model on Training Set ---
+    pred_home_train, pred_away_train = None, None 
     try:
         logger.info("Evaluating final model on training data (Train+Val)...")
-        # Predict on the same data used for final training
         predictions_df_train = final_predictor.predict(X_train_val_features)
         if predictions_df_train is None or not isinstance(predictions_df_train, pd.DataFrame) or \
            'predicted_home_score' not in predictions_df_train.columns or \
@@ -1195,7 +1134,7 @@ def tune_and_evaluate_predictor(
         train_metrics_home = calculate_regression_metrics(y_train_val_home, pred_home_train)
         train_metrics_away = calculate_regression_metrics(y_train_val_away, pred_away_train)
         metrics['train_mae_home'] = train_metrics_home.get('mae')
-        metrics['train_r2_home'] = train_metrics_home.get('r2') # Often more useful than RMSE on train
+        metrics['train_r2_home'] = train_metrics_home.get('r2') 
         metrics['train_mae_away'] = train_metrics_away.get('mae')
         metrics['train_r2_away'] = train_metrics_away.get('r2')
 
@@ -1233,11 +1172,10 @@ def tune_and_evaluate_predictor(
     metrics['samples_train_final'] = len(X_train_val_features)
     metrics['samples_test'] = len(X_test_final)
     metrics['samples_tune'] = len(X_tune)
-    metrics['samples_val'] = len(X_val) # Record original validation set size
+    metrics['samples_val'] = len(X_val) 
 
     # --- Generate Performance Plots ---
     if (visualize or save_plots) and 'pred_home_test' in locals() and pred_home_test is not None:
-        # Check if test predictions were successfully generated before trying to plot
         timestamp = getattr(final_predictor, 'training_timestamp', datetime.now().strftime("%Y%m%d_%H%M%S"))
         plot_base_name = f"{model_full_name}_performance_{timestamp}"
         plot_dir = REPORTS_DIR / plot_base_name
@@ -1274,15 +1212,12 @@ def tune_and_evaluate_predictor(
             )
 
             # Feature Importance Plots (if model provides them)
-            # Assumes predictor object might store its internal pipelines and feature names
             pipeline_home = getattr(final_predictor, 'pipeline_home', None)
             pipeline_away = getattr(final_predictor, 'pipeline_away', None)
-            # Use feature_list_unique as the base features input to the pipeline
             features_in = feature_list_unique
 
             can_plot_importance = False
             if isinstance(pipeline_home, Pipeline) and isinstance(pipeline_away, Pipeline) and features_in:
-                # Check if the *final step* of the pipeline has importance attributes
                 model_step_home = pipeline_home.steps[-1][1] if pipeline_home.steps else None
                 model_step_away = pipeline_away.steps[-1][1] if pipeline_away.steps else None
                 if (model_step_home and (hasattr(model_step_home, 'coef_') or hasattr(model_step_home, 'feature_importances_'))) or \
@@ -1291,15 +1226,14 @@ def tune_and_evaluate_predictor(
 
             if can_plot_importance:
                 logger.info(f"Attempting to plot feature importance for {model_full_name}...")
-                # Need to pass the actual pipeline objects to the plotting function
                 models_to_plot = {}
                 if pipeline_home: models_to_plot[f"{model_full_name}_Home"] = pipeline_home
                 if pipeline_away: models_to_plot[f"{model_full_name}_Away"] = pipeline_away
 
                 plot_feature_importances(
                     models_dict=models_to_plot,
-                    feature_names=features_in, # Pass the input features
-                    top_n=30, plot_groups=True, # Adjust parameters as needed
+                    feature_names=features_in, 
+                    top_n=30, plot_groups=True, 
                     save_dir=plot_dir / "feature_importance" if save_plots else None,
                     show_plot=visualize
                 )
@@ -1316,39 +1250,30 @@ def tune_and_evaluate_predictor(
         logger.warning("Skipping test set plots because test predictions were not successfully generated.")
 
 
-    # --- Generate NON-LEAKED Validation Predictions ---
-    # Strategy: Train a temporary model using ONLY the training data (X_tune)
-    # with the best hyperparameters found, then predict on the validation set (X_val).
     logger.info(f"Generating non-leaked validation predictions for {model_full_name}...")
     val_predictions_dict = None
     try:
-        # Use features for validation set (already prepared if needed, ensure alignment)
         X_val_features = X_val[feature_list_unique].copy()
 
-        # Instantiate a *new*, temporary predictor. Crucially, DO NOT save this one.
-        # Adapt initialization if necessary
         temp_val_predictor = predictor_class(model_dir=None, model_name=f"{model_full_name}_val_pred_temp")
 
         logger.debug(f"Training temporary model on X_train ({len(X_tune)} samples) for validation prediction...")
-        # Train temporary model using ONLY X_train data (X_tune) and best hyperparameters
-        # Use the sample weights calculated *only* on the training set (temp_fit_sample_weights)
         temp_val_predictor.train(
-            X_train=X_tune,                # Use original training features
-            y_train_home=y_tune_home,      # Original training targets
-            y_train_away=y_tune_away,      # Original training targets
-            hyperparams_home=best_params_final, # Best params from tuning (or defaults)
-            hyperparams_away=best_params_final, # Best params from tuning (or defaults)
-            sample_weights=temp_fit_sample_weights # Use weights calculated ONLY on training set
+            X_train=X_tune,                
+            y_train_home=y_tune_home,      
+            y_train_away=y_tune_away,      
+            hyperparams_home=best_params_final,
+            hyperparams_away=best_params_final, 
+            sample_weights=temp_fit_sample_weights 
         )
         logger.debug("Temporary validation model trained.")
 
         # Predict on the validation set using the temporary model
         logger.debug(f"Predicting X_val ({len(X_val_features)} samples) with temporary model...")
-        # Ensure predict method exists
         if not hasattr(temp_val_predictor, 'predict') or not callable(getattr(temp_val_predictor, 'predict')):
              raise AttributeError(f"Temporary predictor object for {model_full_name} does not have a 'predict' method.")
 
-        predictions_df_val = temp_val_predictor.predict(X_val_features) # Predict on X_val features
+        predictions_df_val = temp_val_predictor.predict(X_val_features) 
 
         if predictions_df_val is None or not isinstance(predictions_df_val, pd.DataFrame) or \
            'predicted_home_score' not in predictions_df_val.columns or \
@@ -1358,7 +1283,7 @@ def tune_and_evaluate_predictor(
         # Align predictions with the validation set's index
         predictions_df_val = predictions_df_val.reindex(X_val_features.index)
 
-        # Align true validation targets (passed as input to this function) using validation index
+        # Align true validation targets
         y_val_home_aligned = y_val_home.loc[X_val_features.index]
         y_val_away_aligned = y_val_away.loc[X_val_features.index]
 
@@ -1381,7 +1306,7 @@ def tune_and_evaluate_predictor(
 
     except Exception as val_pred_e:
         logger.error(f"FAILED generating non-leaked validation set predictions for {model_full_name}: {val_pred_e}", exc_info=True)
-        val_predictions_dict = None # Ensure None on error
+        val_predictions_dict = None 
 
     # --- Finish ---
     metrics['total_duration'] = time.time() - start_time_model
@@ -1399,7 +1324,7 @@ def run_training_pipeline(args: argparse.Namespace):
     start_pipeline_time = time.time()
     if args.debug:
         logger.setLevel(logging.DEBUG)
-        for handler in logging.root.handlers: # Ensure handlers also reflect level
+        for handler in logging.root.handlers: 
              handler.setLevel(logging.DEBUG)
         logger.debug("DEBUG logging enabled.")
 
@@ -1410,12 +1335,12 @@ def run_training_pipeline(args: argparse.Namespace):
     if not LOCAL_MODULES_IMPORTED and not args.allow_dummy:
         logger.critical("Required local modules not found and --allow-dummy not set. Exiting.")
         sys.exit(1)
-    if not config and not args.allow_dummy: # Check config specifically too
+    if not config and not args.allow_dummy: 
         logger.critical("Config module missing or failed to import and --allow-dummy not set. Exiting.")
         sys.exit(1)
 
     # --- Initialize Clients ---
-    supabase_client = get_supabase_client() # Will be None if not configured/installed
+    supabase_client = get_supabase_client() 
 
     # --- Load Data ---
     historical_df, team_stats_df = load_data_source(
@@ -1430,25 +1355,22 @@ def run_training_pipeline(args: argparse.Namespace):
     # --- Feature Engineering ---
     logger.info("Initializing Feature Engine...")
     try:
-        # Pass client only if it was successfully created
         feature_engine = NBAFeatureEngine(supabase_client=supabase_client, debug=args.debug)
-    except TypeError: # Handle case where dummy class doesn't accept args
+    except TypeError: 
          feature_engine = NBAFeatureEngine()
          logger.warning("Using dummy NBAFeatureEngine without arguments.")
     except Exception as fe_init_e:
          logger.error(f"Failed to initialize NBAFeatureEngine: {fe_init_e}", exc_info=True)
          sys.exit(1)
 
-
     logger.info("Generating features for ALL historical data...")
     rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10]
     logger.info(f"Using rolling windows: {rolling_windows_list}")
 
     try:
-        # Assuming generate_all_features is the primary method
         features_df = feature_engine.generate_all_features(
-            df=historical_df.copy(), # Pass base data
-            historical_games_df=historical_df.copy(), # Pass historical context
+            df=historical_df.copy(), 
+            historical_games_df=historical_df.copy(), 
             team_stats_df=team_stats_df.copy() if not team_stats_df.empty else None,
             rolling_windows=rolling_windows_list,
             h2h_window=args.h2h_window,
@@ -1466,7 +1388,6 @@ def run_training_pipeline(args: argparse.Namespace):
     logger.info(f"Feature generation completed. Shape: {features_df.shape}")
 
     # --- Feature Cleaning & Pre-selection ---
-    # Remove duplicates
     if features_df.columns.duplicated().any():
         logger.warning("Duplicate column names found! Removing duplicates, keeping first occurrence.")
         features_df = features_df.loc[:, ~features_df.columns.duplicated(keep='first')]
@@ -1482,21 +1403,18 @@ def run_training_pipeline(args: argparse.Namespace):
         logger.error("No rows remaining after dropping missing targets. Exiting.")
         sys.exit(1)
 
-    # --- Feature Value Analysis (Optional but Recommended) ---
+    # --- Feature Value Analysis ---
     if args.run_analysis:
         logger.info("Analyzing generated feature values...")
         try:
             numeric_features_df = features_df.select_dtypes(include=np.number)
             if not numeric_features_df.empty:
                 desc_stats = numeric_features_df.describe().transpose()
-                # Calculate percentage of zero values
                 zero_pct = (numeric_features_df == 0).mean().mul(100).rename('zero_percentage')
-                # Calculate percentage of NaN values (should be low after target drop/fills)
                 nan_pct = numeric_features_df.isnull().mean().mul(100).rename('nan_percentage')
 
                 feature_summary = pd.concat([desc_stats, zero_pct, nan_pct], axis=1)
 
-                # Identify potentially problematic features (low variance, high zero %, high NaN %)
                 problem_threshold_std = 1e-7
                 problem_threshold_zero_pct = 99.0
                 problem_threshold_nan_pct = 50.0
@@ -1534,15 +1452,13 @@ def run_training_pipeline(args: argparse.Namespace):
 
     # --- LASSO Feature Selection (on Pre-Game Features) ---
     logger.info("--- Starting LASSO Feature Selection ---")
-    # Define prefixes/names considered safe (representing pre-game information)
-    # This is crucial for preventing data leakage from post-game info.
     SAFE_PREFIXES = (
-        'home_rolling_', 'away_rolling_', 'rolling_', # Rolling stats before the game
-        'home_season_', 'away_season_', 'season_',     # Season averages/stats before the game
-        'matchup_',                                    # Head-to-head stats before the game
-        'rest_days_', 'is_back_to_back_',              # Rest and schedule factors
-        'games_last_',                                 # Games played in recent window
-        'home_form_', 'away_form_'                     # Team form/momentum indicators
+        'home_rolling_', 'away_rolling_', 'rolling_',
+        'home_season_', 'away_season_', 'season_',     
+        'matchup_',                                   
+        'rest_days_', 'is_back_to_back_',              
+        'games_last_',                                
+        'home_form_', 'away_form_'  
     )
     SAFE_EXACT_NAMES = {
         # Manually curated list of other potentially safe features
@@ -1554,7 +1470,6 @@ def run_training_pipeline(args: argparse.Namespace):
     }
 
     potential_feature_cols = features_df.select_dtypes(include=np.number).columns
-    # Exclude target variables and identifiers
     cols_to_exclude_lasso = set(TARGET_COLUMNS + ['game_id', 'game_date'])
 
     feature_candidates_for_lasso = []
@@ -1563,7 +1478,6 @@ def run_training_pipeline(args: argparse.Namespace):
     for col in potential_feature_cols:
         if col in cols_to_exclude_lasso:
             continue
-        # Check if feature has non-zero variance and isn't all NaN
         if features_df[col].isnull().all() or features_df[col].var() < 1e-8:
             excluded_or_leaky_lasso.append(f"{col} (all_nan_or_zero_variance)")
             continue
@@ -1585,13 +1499,11 @@ def run_training_pipeline(args: argparse.Namespace):
         logger.error("No candidate features remaining for LASSO selection. Exiting.")
         sys.exit(1)
 
-    # Prepare data for LASSO (handle NaNs robustly before scaling)
+    # Prepare data for LASSO 
     X_lasso = features_df[feature_candidates_for_lasso].copy()
     y_home_lasso = features_df[TARGET_COLUMNS[0]].copy()
     y_away_lasso = features_df[TARGET_COLUMNS[1]].copy()
 
-    # Impute remaining NaNs (e.g., with median) BEFORE scaling
-    # This should ideally not happen if feature generation is robust, but good safeguard.
     if X_lasso.isnull().any().any():
         logger.warning("NaNs found in LASSO feature candidates! Imputing with median.")
         from sklearn.impute import SimpleImputer
@@ -1603,19 +1515,19 @@ def run_training_pipeline(args: argparse.Namespace):
     X_lasso_scaled = scaler.fit_transform(X_lasso)
 
     logger.info("Running LassoCV for Home Score...")
-    lasso_cv_home = LassoCV(cv=args.cv_splits, random_state=SEED, n_jobs=-1, max_iter=3000, tol=1e-3) # Increased max_iter/tol
+    lasso_cv_home = LassoCV(cv=args.cv_splits, random_state=SEED, n_jobs=-1, max_iter=3000, tol=1e-3) 
     lasso_cv_home.fit(X_lasso_scaled, y_home_lasso)
     logger.info(f"LassoCV (Home) completed. Optimal alpha: {lasso_cv_home.alpha_:.6f}")
 
     logger.info("Running LassoCV for Away Score...")
-    lasso_cv_away = LassoCV(cv=args.cv_splits, random_state=SEED, n_jobs=-1, max_iter=3000, tol=1e-3) # Increased max_iter/tol
+    lasso_cv_away = LassoCV(cv=args.cv_splits, random_state=SEED, n_jobs=-1, max_iter=3000, tol=1e-3) 
     lasso_cv_away.fit(X_lasso_scaled, y_away_lasso)
     logger.info(f"LassoCV (Away) completed. Optimal alpha: {lasso_cv_away.alpha_:.6f}")
 
-    # Combine selected features (union of features selected for home or away)
-    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=1e-5) # Use small threshold
+    # Combine selected features
+    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=1e-5) 
     selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=1e-5)
-    selected_mask = selector_home.get_support() | selector_away.get_support() # Union
+    selected_mask = selector_home.get_support() | selector_away.get_support() 
     final_feature_list_for_models = X_lasso.columns[selected_mask].tolist()
 
     num_selected = len(final_feature_list_for_models)
@@ -1624,35 +1536,26 @@ def run_training_pipeline(args: argparse.Namespace):
     if num_selected == 0:
         logger.error("LASSO selected 0 features. Cannot proceed with model training. Exiting.")
         sys.exit(1)
-    elif num_selected < 15: # Adjust threshold as needed
+    elif num_selected < 15: 
         logger.warning(f"LASSO selected a relatively small number of features ({num_selected}). Model performance might be limited.")
     if args.debug:
         logger.debug(f"Final selected features by LASSO: {final_feature_list_for_models}")
 
-        # --- Save the Selected Feature List --- # <<< NEW BLOCK
+        # --- Save the Selected Feature List --- # 
     selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
     try:
-        # Ensure MAIN_MODELS_DIR exists (should already from earlier checks)
         MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
         with open(selected_features_path, 'w') as f:
             json.dump(final_feature_list_for_models, f, indent=4)
         logger.info(f"Successfully saved selected feature list ({num_selected} features) to {selected_features_path}")
-        # Store the path in overall metrics (optional but potentially useful)
-        # Note: This assumes run_training_pipeline accumulates metrics, which it doesn't directly.
-        #       Might be better just to log it. If needed elsewhere, read the file.
-        # metrics['selected_features_path'] = str(selected_features_path) # Not directly usable here
     except Exception as e:
         logger.error(f"Failed to save selected feature list to {selected_features_path}: {e}", exc_info=True)
-        # Decide if this is critical - maybe proceed with warning, or exit?
         logger.error("Proceeding without saved feature list - prediction script will likely fail.")
-        # sys.exit(1) # Uncomment this line to make saving the feature list critical
-
 
     # --- Data Splitting (using LASSO-selected features) ---  
     logger.info("Splitting data (time-based) using LASSO-selected features...")
     essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
     cols_for_split_df = essential_non_feature_cols + final_feature_list_for_models
-    # Ensure all needed columns are present before selecting
     missing_split_cols = [col for col in cols_for_split_df if col not in features_df.columns]
     if missing_split_cols:
          logger.error(f"Columns required for splitting are missing from features_df: {missing_split_cols}")
@@ -1663,8 +1566,7 @@ def run_training_pipeline(args: argparse.Namespace):
 
     n_total = len(features_df_selected)
     test_split_idx = int(n_total * (1 - args.test_size))
-    # Ensure validation size doesn't overlap test set if test_size + val_size > 1
-    val_split_frac_adjusted = min(args.val_size, 1.0 - args.test_size - 0.01) # Leave small gap if needed
+    val_split_frac_adjusted = min(args.val_size, 1.0 - args.test_size - 0.01) 
     val_split_idx = int(n_total * (1 - args.test_size - val_split_frac_adjusted))
 
     if val_split_idx <= 0 or test_split_idx <= val_split_idx:
@@ -1675,12 +1577,12 @@ def run_training_pipeline(args: argparse.Namespace):
     val_df   = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
     test_df  = features_df_selected.iloc[test_split_idx:].copy()
 
-    # Prepare X and y splits, include 'game_date' if weighting is enabled
+    # Prepare X and y splits
     feature_cols_with_date = final_feature_list_for_models + (['game_date'] if args.use_weights else [])
 
     X_train = train_df[[col for col in feature_cols_with_date if col in train_df.columns]].copy()
     X_val   = val_df[[col for col in feature_cols_with_date if col in val_df.columns]].copy()
-    X_test  = test_df[final_feature_list_for_models].copy() # Test set prediction doesn't need date
+    X_test  = test_df[final_feature_list_for_models].copy() 
 
     y_train_home, y_train_away = train_df[TARGET_COLUMNS[0]], train_df[TARGET_COLUMNS[1]]
     y_val_home, y_val_away     = val_df[TARGET_COLUMNS[0]], val_df[TARGET_COLUMNS[1]]
@@ -1691,26 +1593,10 @@ def run_training_pipeline(args: argparse.Namespace):
          logger.error("One or more data splits are empty after splitting. Exiting.")
          sys.exit(1)
 
-    # --- Define Base Models and Tuning Parameters ---
-    # Parameter distributions for RandomizedSearchCV
-    #RIDGE_PARAM_DIST = {
-        #'ridge__alpha': loguniform(1e-3, 1e3), # Log-uniform distribution for alpha
-        #'ridge__fit_intercept': [True, False],
-        #'ridge__solver': ['auto', 'svd', 'cholesky', 'lsqr', 'sag'] # More solvers
-    #}
-    SVR_PARAM_DIST = {
-        'svr__kernel': ['rbf', 'linear'],            # Common effective kernels
-        'svr__C': loguniform(0.1, 100),              # Regularization strength (log scale)
-        'svr__gamma': ['scale', 'auto'] + list(loguniform(1e-4, 1e-1).rvs(size=5, random_state=SEED)), # Kernel coefficient (incl. some specific values)
-        'svr__epsilon': uniform(0.05, 0.2)           # Margin of tolerance (uniform distribution)
-    }
-
-    # Proposed refined distribution for SVR RandomizedSearch
     SVR_PARAM_DIST_REFINED = {
-        'svr__kernel': ['rbf', 'linear'], # Still explore both main kernels
-        'svr__C': loguniform(1, 250), # Wider range, but starting higher based on previous results (~35)
-        'svr__epsilon': uniform(0.05, 0.25), # Keep a reasonable range around 0.1-0.2
-        # Explore gamma more thoroughly near previous best (~0.0003), plus standard options
+        'svr__kernel': ['rbf', 'linear'], 
+        'svr__C': loguniform(1, 250), 
+        'svr__epsilon': uniform(0.05, 0.25), 
         'svr__gamma': ['scale', 'auto'] + list(loguniform(1e-4, 1e-2).rvs(size=20, random_state=SEED))
     }
 
@@ -1731,7 +1617,7 @@ def run_training_pipeline(args: argparse.Namespace):
 
     logger.info(f"--- Starting Tuning & Training for Base Models: {models_to_run} ---")
     all_metrics = []
-    validation_predictions_collector = {} # Stores non-leaked validation predictions
+    validation_predictions_collector = {} 
 
     for model_key in models_to_run:
         PredictorClass = predictor_map[model_key]
@@ -1740,14 +1626,12 @@ def run_training_pipeline(args: argparse.Namespace):
         # Call the core training and evaluation function
         metrics_result, val_preds = tune_and_evaluate_predictor(
             predictor_class=PredictorClass,
-            # Pass data splits explicitly
             X_train=X_train, y_train_home=y_train_home, y_train_away=y_train_away,
             X_val=X_val, y_val_home=y_val_home, y_val_away=y_val_away,
             X_test=X_test, y_test_home=y_test_home, y_test_away=y_test_away,
             model_name_prefix=model_key,
-            feature_list=final_feature_list_for_models, # Use LASSO selected features
+            feature_list=final_feature_list_for_models, 
             param_dist=param_dist_current,
-            # Pass tuning/training args
             n_iter=args.tune_iterations,
             n_splits=args.cv_splits,
             scoring=args.scoring_metric,
@@ -1761,10 +1645,9 @@ def run_training_pipeline(args: argparse.Namespace):
         if metrics_result:
             all_metrics.append(metrics_result)
         if val_preds:
-            # Basic validation of the returned prediction dictionary
             if (isinstance(val_preds, dict) and
                 'pred_home' in val_preds and 'true_home' in val_preds and
-                len(val_preds['pred_home']) == len(X_val)): # Check length against X_val
+                len(val_preds['pred_home']) == len(X_val)):
                 validation_predictions_collector[model_key] = val_preds
                 logger.info(f"Collected non-leaked validation predictions for {model_key}.")
             else:
@@ -1780,18 +1663,16 @@ def run_training_pipeline(args: argparse.Namespace):
 
     logger.info(f"Base models with validation predictions: {successful_base_models}")
 
-    # --- Optimize Ensemble Weights (Optional - Requires >1 model) ---
+    # --- Optimize Ensemble Weights ---
     if len(successful_base_models) > 1:
-         # Example: Optimize using average MAE and L2 regularization
          optimized_weights = optimize_ensemble_weights(
              validation_predictions=validation_predictions_collector,
              model_keys=successful_base_models,
              metric_to_minimize='avg_mae',
-             l2_lambda=0.05 # Adjust regularization strength as needed
+             l2_lambda=0.05 
          )
          if optimized_weights:
               logger.info("Optimized weights found.")
-              # Can potentially use these optimized_weights for evaluation below
          else:
               logger.warning("Optimized weight calculation failed.")
     else:
@@ -1815,7 +1696,6 @@ def run_training_pipeline(args: argparse.Namespace):
                 logger.info(f"Correlation matrix input shape: {X_meta_train_corr.shape}")
                 correlation_matrix = X_meta_train_corr.corr()
                 logger.info("\nCorrelation Matrix (Validation Predictions):\n" + correlation_matrix.to_string())
-                # Plot heatmap
                 if args.save_plots or args.visualize:
                     try:
                         plt.figure(figsize=(max(6, len(X_meta_train_corr.columns)*0.8), max(5, len(X_meta_train_corr.columns)*0.6)))
@@ -1839,33 +1719,30 @@ def run_training_pipeline(args: argparse.Namespace):
             logger.error(f"Error during correlation analysis: {corr_err}", exc_info=True)
 
     # --------------------------------------------------------------------------
-    # --- Generate Test Set Predictions from Final Base Models --- # <<< NEW BLOCK START
+    # --- Generate Test Set Predictions from Final Base Models --- # 
     # --------------------------------------------------------------------------
     logger.info("\n--- Generating Test Set Predictions from Final Base Models ---")
-    base_model_test_preds = {} # Use a new name to avoid confusion
-    models_to_predict = successful_base_models # Models that ran successfully
+    base_model_test_preds = {} 
+    models_to_predict = successful_base_models 
 
     if not models_to_predict:
         logger.error("No successful base models available to generate test predictions.")
     else:
-        # Ensure we have the correct X_test (LASSO features only)
-        X_test_final_features = X_test[final_feature_list_for_models].copy() # Use the list saved earlier
+        X_test_final_features = X_test[final_feature_list_for_models].copy() 
 
         for model_key in models_to_predict:
             logger.info(f"Loading final model '{model_key}' for test prediction...")
             loaded_predictor = None
             save_path_found = None
 
-            # Find the saved path from the metrics collected earlier
             for m in all_metrics:
-                # Match based on the start of the model name to handle potential suffixes
                 if m.get('model_name', '').startswith(model_key) and m.get('save_path'):
                     save_path_found = m['save_path']
                     break
 
             if not save_path_found or not Path(save_path_found).is_file():
                 logger.error(f"Could not find valid saved model path for '{model_key}' in collected metrics. Skipping its prediction.")
-                base_model_test_preds[model_key] = None # Mark as failed
+                base_model_test_preds[model_key] = None 
                 continue
 
             try:
@@ -1875,8 +1752,7 @@ def run_training_pipeline(args: argparse.Namespace):
                      base_model_test_preds[model_key] = None
                      continue
 
-                # Instantiate and load the specific model file
-                predictor = PredictorClass(model_dir=None) # model_dir irrelevant when loading specific file
+                predictor = PredictorClass(model_dir=None) 
                 predictor.load_model(filepath=save_path_found)
                 logger.info(f"Loaded '{model_key}' from {save_path_found}.")
 
@@ -1888,14 +1764,12 @@ def run_training_pipeline(args: argparse.Namespace):
                      logger.warning(f"Prediction from loaded '{model_key}' failed or returned invalid format.")
                      base_model_test_preds[model_key] = None
                 else:
-                     # Ensure index alignment with X_test
                      base_model_test_preds[model_key] = preds_df.reindex(X_test_final_features.index)
                      logger.info(f"Successfully generated test predictions for '{model_key}'.")
 
             except Exception as load_pred_err:
                 logger.error(f"Error loading or predicting with final model '{model_key}': {load_pred_err}", exc_info=True)
                 base_model_test_preds[model_key] = None
-
 
 
     # --------------------------------------------------------------------------
@@ -1915,47 +1789,42 @@ def run_training_pipeline(args: argparse.Namespace):
             if isinstance(optimized_weights_loaded, dict) and optimized_weights_loaded:
                 models_needed_optimized = list(optimized_weights_loaded.keys())
                 logger.info(f"Loaded Optimized Weights from {optimized_weights_path}: {optimized_weights_loaded}")
-                # Optional: Normalize weights again just in case file format was slightly off
                 weight_sum = sum(optimized_weights_loaded.values())
                 if abs(weight_sum - 1.0) > 1e-5:
                     logger.warning(f"Optimized weights from file sum to {weight_sum:.4f}. Renormalizing.")
                     if weight_sum > 1e-9:
                          optimized_weights_loaded = {k: v / weight_sum for k, v in optimized_weights_loaded.items()}
-                    else: # Handle all zero case
+                    else: 
                          logger.error("Optimized weights from file are all zero or invalid sum. Cannot evaluate.")
-                         optimized_weights_loaded = {} # Prevent proceeding
+                         optimized_weights_loaded = {} 
                          models_needed_optimized = []
             else:
                 logger.error(f"Invalid or empty data in {optimized_weights_path}. Cannot evaluate optimized weights.")
-                optimized_weights_loaded = {} # Prevent proceeding
+                optimized_weights_loaded = {} 
                 models_needed_optimized = []
         except Exception as e:
             logger.error(f"Error loading optimized weights from {optimized_weights_path}: {e}", exc_info=True)
-            optimized_weights_loaded = {} # Prevent proceeding
+            optimized_weights_loaded = {} 
             models_needed_optimized = []
     else:
         logger.warning(f"Optimized weights file not found at {optimized_weights_path}. Cannot evaluate optimized weights.")
 
-        # --- Check if base model predictions are available ---
-    # Reuse the predictions generated FOR THE OPTIMIZED EVALUATION (`base_model_test_preds`) # <<< CHANGE COMMENT
     if not models_needed_optimized or not base_model_test_preds: # <<< CHANGED variable name
         logger.error("Optimized weights or base model test predictions missing. Cannot calculate optimized weighted blend.")
     else:
-        # Check if predictions exist in the NEW dictionary
-        missing_preds_for_opt = [m for m in models_needed_optimized if m not in base_model_test_preds or base_model_test_preds[m] is None] # <<< CHANGED variable name
+        missing_preds_for_opt = [m for m in models_needed_optimized if m not in base_model_test_preds or base_model_test_preds[m] is None] 
         if missing_preds_for_opt:
              logger.error(f"Test predictions missing for models needed by optimized weights: {missing_preds_for_opt}. Cannot evaluate.")
         else:
             logger.info("Calculating OPTIMIZED weighted average predictions for test set...")
-            # --- Calculation Logic ---
             opt_weighted_home_sum = pd.Series(0.0, index=X_test.index)
             opt_weighted_away_sum = pd.Series(0.0, index=X_test.index)
             opt_total_weight_applied_series = pd.Series(0.0, index=X_test.index)
 
             for model_key, weight in optimized_weights_loaded.items():
-                 preds_df = base_model_test_preds.get(model_key) # Get predictions for this model
-                 if weight > 1e-9 and preds_df is not None: # Check weight and prediction validity
-                     preds_df = preds_df.reindex(X_test.index) # Ensure alignment
+                 preds_df = base_model_test_preds.get(model_key) 
+                 if weight > 1e-9 and preds_df is not None: 
+                     preds_df = preds_df.reindex(X_test.index) 
                      valid_idx = preds_df['predicted_home_score'].notna() & preds_df['predicted_away_score'].notna()
                      opt_weighted_home_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_home_score'] * weight
                      opt_weighted_away_sum.loc[valid_idx] += preds_df.loc[valid_idx, 'predicted_away_score'] * weight
@@ -1963,10 +1832,10 @@ def run_training_pipeline(args: argparse.Namespace):
                  elif weight > 1e-9 and preds_df is None:
                       logger.warning(f"Model '{model_key}' needed for optimized weights but its test predictions are missing/failed. Skipping.")
 
-            # --- Normalize & Fallback (shouldn't be needed if weights normalized correctly) ---
+            # --- Normalize & Fallback  ---
             opt_final_pred_home = pd.Series(np.nan, index=X_test.index)
             opt_final_pred_away = pd.Series(np.nan, index=X_test.index)
-            opt_valid_weight_idx = opt_total_weight_applied_series > 1e-6 # Indices where weights were applied
+            opt_valid_weight_idx = opt_total_weight_applied_series > 1e-6 
 
             opt_final_pred_home.loc[opt_valid_weight_idx] = opt_weighted_home_sum.loc[opt_valid_weight_idx] / opt_total_weight_applied_series.loc[opt_valid_weight_idx]
             opt_final_pred_away.loc[opt_valid_weight_idx] = opt_weighted_away_sum.loc[opt_valid_weight_idx] / opt_total_weight_applied_series.loc[opt_valid_weight_idx]
@@ -1974,11 +1843,9 @@ def run_training_pipeline(args: argparse.Namespace):
             # --- Evaluate Optimized Weighted Predictions ---
             logger.info("Evaluating OPTIMIZED weighted ensemble predictions...")
             try:
-                 # Align true labels
                  y_test_home_aligned_opt = y_test_home.reindex(opt_final_pred_home.index)
                  y_test_away_aligned_opt = y_test_away.reindex(opt_final_pred_away.index)
 
-                 # Find where we have valid true labels AND valid predictions
                  valid_final_idx_opt = opt_final_pred_home.notna() & opt_final_pred_away.notna() & \
                                        y_test_home_aligned_opt.notna() & y_test_away_aligned_opt.notna()
 
@@ -1993,7 +1860,6 @@ def run_training_pipeline(args: argparse.Namespace):
                  if opt_final_pred_home_eval.empty:
                      logger.error("No valid predictions remaining for optimized weighted ensemble evaluation.")
                  else:
-                     # Calculate and log metrics
                      opt_ens_metrics_home = calculate_regression_metrics(y_test_home_eval_opt, opt_final_pred_home_eval)
                      opt_ens_metrics_away = calculate_regression_metrics(y_test_away_eval_opt, opt_final_pred_away_eval)
                      opt_ens_mae_total = mean_absolute_error(y_test_home_eval_opt + y_test_away_eval_opt, opt_final_pred_home_eval + opt_final_pred_away_eval)
@@ -2019,15 +1885,12 @@ def run_training_pipeline(args: argparse.Namespace):
         logger.info("Base Model Performance (Test Set):")
         try:
             metrics_df = pd.DataFrame(all_metrics)
-            # Select and order columns for display
             cols_to_show = [
                 'model_name', 'feature_count', 'training_duration_final',
                 'test_mae_home', 'test_mae_away', 'test_r2_home', 'test_r2_away',
                 'test_mae_total', 'test_mae_diff', 'test_combined_loss'
-                # Add betting accuracy if available and desired
             ]
             if 'betting_metrics' in metrics_df.columns:
-                 # Try to extract win prediction accuracy specifically
                  metrics_df['win_pred_acc'] = metrics_df['betting_metrics'].apply(lambda x: x.get('win_prediction_accuracy', np.nan) if isinstance(x, dict) else np.nan)
                  cols_to_show.append('win_pred_acc')
 
@@ -2044,9 +1907,8 @@ def run_training_pipeline(args: argparse.Namespace):
             metrics_filename = f"training_metrics_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             metrics_save_path = REPORTS_DIR / metrics_filename
             try:
-                 # Clean up dict columns before saving if needed
                  metrics_df_save = metrics_df.copy()
-                 for col in ['best_params', 'betting_metrics']: # Example columns that might be dicts
+                 for col in ['best_params', 'betting_metrics']:
                       if col in metrics_df_save.columns:
                            metrics_df_save[col] = metrics_df_save[col].astype(str)
                  metrics_df_save.to_csv(metrics_save_path, index=False, float_format="%.4f")
@@ -2056,7 +1918,6 @@ def run_training_pipeline(args: argparse.Namespace):
 
         except Exception as summary_e:
             logger.error(f"Error generating summary table: {summary_e}", exc_info=True)
-            # Fallback: Print raw metrics list
             for m in all_metrics: logger.info(m)
     else:
         logger.warning("No model metrics were collected during the run.")

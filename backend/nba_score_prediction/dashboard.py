@@ -139,7 +139,7 @@ def generate_pregame_dashboard(upcoming_predictions=None, models_metadata=None, 
             print("- Key performance metrics (e.g., Test MAE/RMSE) not found in model metadata.")
 
         # Display top features (if available in metadata for a primary model)
-        primary_model_meta = models_metadata.get('home_score') # Assuming home score is primary
+        primary_model_meta = models_metadata.get('home_score') 
         if isinstance(primary_model_meta, dict) and 'metrics' in primary_model_meta and \
            isinstance(primary_model_meta['metrics'], dict) and \
            'feature_importance' in primary_model_meta['metrics'] and \
@@ -157,7 +157,6 @@ def generate_pregame_dashboard(upcoming_predictions=None, models_metadata=None, 
         print("- No valid model metadata provided.")
 
     # --- Backtest Summary ---
-    # Simplified handling based on expected dictionary structure
     print("\nBACKTEST SUMMARY:")
     if backtest_summary and isinstance(backtest_summary, dict):
          overall_mae = backtest_summary.get('overall_mae')
@@ -181,7 +180,6 @@ def generate_pregame_dashboard(upcoming_predictions=None, models_metadata=None, 
              print(f"  Warning: Upcoming predictions DataFrame missing required columns: {required_cols}. Cannot display games.")
         else:
             try:
-                # Ensure game_date is comparable string, handle potential errors
                 upcoming_predictions['game_date_dt'] = pd.to_datetime(upcoming_predictions['game_date'], errors='coerce')
                 upcoming_predictions = upcoming_predictions.dropna(subset=['game_date_dt']) # Remove games with invalid dates
                 upcoming_predictions['game_date_str'] = upcoming_predictions['game_date_dt'].dt.strftime('%Y-%m-%d')
@@ -204,7 +202,7 @@ def generate_pregame_dashboard(upcoming_predictions=None, models_metadata=None, 
                         win_p = f"{game['win_probability']:.1%}" if pd.notna(game['win_probability']) else "N/A"
                         print(f"- {game['home_team']} vs {game['away_team']}: {home_s}-{away_s} (Win prob: {win_p})")
 
-                        # Generate betting recommendations (example uses first game only for brevity)
+                        # Generate betting recommendations
                         if idx == today_games.index[0]:
                             try:
                                 recs = generate_betting_recommendations(game.to_dict())
@@ -311,8 +309,8 @@ def plot_metrics_comparison(metrics_dict: Dict[str, Dict[str, float]],
     except Exception as e: logger.error(f"Error generating metrics comparison plot: {e}", exc_info=True)
 
 
-def plot_feature_importances(models_metadata: Dict[str, Dict[str, Any]], # Expecting metadata, not models
-                             primary_model_key: str = 'home_score', # Key to get importances from
+def plot_feature_importances(models_metadata: Dict[str, Dict[str, Any]], 
+                             primary_model_key: str = 'home_score', 
                              top_n: int = 15,
                              figsize: tuple = (8, 7),
                              save_path: Optional[Union[str, Path]] = None):
@@ -388,7 +386,6 @@ def plot_predictions_over_time(dates: Union[List, pd.Series, np.ndarray],
                                figsize: tuple = (14, 7),
                                save_dir: Optional[Union[str, Path]] = None):
     """Plots actual vs predicted values over time (dashboard relevant)."""
-    # (Implementation is the same as before, keeping it)
     try:
         dates = np.asarray(dates)
         y_true = np.asarray(y_true).flatten()
@@ -430,9 +427,9 @@ if __name__ == '__main__':
 
     # --- Simulate data needed for dashboard ---
     np.random.seed(42)
-    n_samples = 50 # Smaller sample for example
+    n_samples = 50 
 
-    # 1. Model Metadata (like what might be loaded from a file/db)
+    # 1. Model Metadata 
     mock_features = [f'feature_{i}' for i in range(10)] + ['rolling_avg_pts', 'pace_last_5', 'elo_diff', 'rest_days', 'home_3p_pct']
     mock_features = mock_features[:12]
     mock_model_metadata = {
@@ -469,7 +466,7 @@ if __name__ == '__main__':
     # a) Feature Importance Plot
     plot_feature_importances(
         models_metadata=mock_model_metadata,
-        primary_model_key='home_score', # Specify which model's importance to plot
+        primary_model_key='home_score', 
         top_n=10,
         save_path=main_save_dir / "top_features.png"
     )
@@ -478,7 +475,7 @@ if __name__ == '__main__':
     metrics_for_comparison = {
         name: meta.get('metrics', {}) for name, meta in mock_model_metadata.items()
     }
-    # Filter out entries without the metric we want to plot (e.g., test_mae)
+    # Filter out entries without the metric we want to plot 
     metrics_for_comparison_filtered = {
         name: metrics for name, metrics in metrics_for_comparison.items() if pd.notna(metrics.get('test_mae'))
     }
@@ -492,7 +489,6 @@ if __name__ == '__main__':
          )
 
     # c) Example Actual vs Predicted (if recent results data is available)
-    # Simulate some recent actuals/preds
     y_true_recent = np.random.normal(loc=225, scale=22, size=n_samples).round()
     y_pred_recent_ensemble = y_true_recent + np.random.normal(loc=-2.5, scale=11, size=n_samples)
     metrics_recent = calculate_regression_metrics(y_true_recent, y_pred_recent_ensemble)

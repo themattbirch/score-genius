@@ -16,9 +16,8 @@ HEADERS = {
 TEAM_NAME_CACHE = {}
 TEAM_DEBUG_MODE = True
 
-# Add a hardcoded team ID to name mapping as fallback
 TEAM_ID_TO_NAME = {
-    134: "Memphis Grizzlies",  # Based on the screenshot, this is likely Memphis
+    134: "Memphis Grizzlies",  
     140: "Detroit Pistons",
     161: "Washington Wizards",
     # Add more teams as needed
@@ -32,7 +31,6 @@ def fix_player_name(name: str) -> str:
     parts = name.split()
     if len(parts) == 2:
         last, first = parts
-        # If last ends with '.', treat as an initial, skip flipping
         if last.endswith('.'):
             return name
         return f"{first} {last}"
@@ -51,7 +49,7 @@ def parse_season_from_date(game_date: str) -> str:
         else:
             return f"{dt.year - 1}-{dt.year}"
     except:
-        return "2024-2025"  # Default to current season
+        return "2024-2025"  
 
 ###############################################################################
 #            LOOKUP TEAM NAME, FALLBACK 'YYYY-YYYY+1' -> 'YYYY'               #
@@ -105,7 +103,7 @@ def get_team_name_from_api(team_id: int, league='12', season='2024-2025') -> str
             TEAM_NAME_CACHE[cache_key] = prev_name
             return prev_name
     
-    # Last resort: check hardcoded mapping
+    # Check hardcoded mapping
     if team_id in TEAM_ID_TO_NAME:
         team_name = TEAM_ID_TO_NAME[team_id]
         TEAM_NAME_CACHE[cache_key] = team_name
@@ -113,7 +111,7 @@ def get_team_name_from_api(team_id: int, league='12', season='2024-2025') -> str
             print(f"[DEBUG] Using hardcoded team name '{team_name}' for team_id={team_id}")
         return team_name
 
-    # If all else fails, log the issue and return Unknown
+    # If all else fails... log the issue and return unknown
     if TEAM_DEBUG_MODE:
         print(f"[WARNING] Failed to resolve team name for team_id={team_id} after all fallbacks")
     
@@ -217,14 +215,13 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
         return {"error": str(e)}
 
 ################################################################################
-#                       LIVE PLAYER STATS (REFERENCE)                          #
+#                       LIVE PLAYER STATS                                      #
 ################################################################################
 
 def upsert_live_player_stats(game_id: int, player_stats: dict) -> dict:
     if not isinstance(player_stats, dict):
         return {"error": f"player_stats is not a dictionary: {type(player_stats)}"}
 
-    # Get current season dynamically instead of hardcoding
     current_date = datetime.now().strftime("%Y-%m-%d")
     current_season = parse_season_from_date(current_date)
     

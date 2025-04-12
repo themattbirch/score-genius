@@ -32,10 +32,9 @@ from sklearn.svm import SVR
 
 
 # --- Configuration ---
-# Determine Project Root relative to this file
-SCRIPT_DIR = Path(__file__).resolve().parent # backend/nba_score_prediction
-BACKEND_DIR = SCRIPT_DIR.parent             # backend
-PROJECT_ROOT = BACKEND_DIR.parent           # project_root
+SCRIPT_DIR = Path(__file__).resolve().parent 
+BACKEND_DIR = SCRIPT_DIR.parent             
+PROJECT_ROOT = BACKEND_DIR.parent           
 
 # Use the same primary directory as train_models.py/prediction.py for the default
 MODELS_BASE_DIR_DEFAULT = PROJECT_ROOT / 'models' / 'saved'
@@ -132,15 +131,10 @@ class BaseScorePredictor:
     Abstract base class for NBA score predictors.
     Provides common training, prediction, saving, and loading logic.
     """
-    # Make model_dir Optional in signature and handle None
     def __init__(self, model_name: str, model_dir: Optional[Union[str, Path]] = MODELS_BASE_DIR_DEFAULT):
-         # <<< FIX: Handle None input for model_dir >>>
          resolved_model_dir = model_dir if model_dir is not None else MODELS_BASE_DIR_DEFAULT
-         # Ensure the directory exists, using the resolved path
          Path(resolved_model_dir).mkdir(parents=True, exist_ok=True)
-         # Assign the Path object using the resolved path
          self.model_dir: Path = Path(resolved_model_dir)
-         # <<< END FIX >>>
 
          self.model_name: str = model_name
          self.pipeline_home: Optional[Pipeline] = None
@@ -170,7 +164,6 @@ class BaseScorePredictor:
                 filename += ".joblib"
 
         save_path = Path(self.model_dir) / filename
-        # Create the directory if it doesn't exist
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         if self.feature_names_in_ is None:
@@ -206,31 +199,26 @@ class BaseScorePredictor:
                 if not model_dir_path.is_dir():
                     raise FileNotFoundError(f"Model directory not found: {self.model_dir}")
 
-                # --- REPLACEMENT LOGIC ---
                 files = []
                 for path in model_dir_path.iterdir():
                     if path.is_file() and \
                        path.name.startswith(search_name) and \
                        path.name.endswith(".joblib"):
                         files.append(path)
-                # --- END REPLACEMENT LOGIC ---
 
                 if not files:
                     raise FileNotFoundError(f"No model file found starting with '{search_name}' in {self.model_dir}")
 
-                # --- Keep the sorting logic the same ---
                 def get_timestamp_from_filename(path: Path) -> datetime:
-                    # (Your existing timestamp extraction logic - using regex or split)
                     try:
-                        # Example using regex (adjust if needed)
                         match = re.search(r'_(\d{8}_\d{6})$', path.stem)
                         if match:
                             timestamp_str = match.group(1)
                             return datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
                         else:
-                            return datetime.fromtimestamp(path.stat().st_mtime) # Fallback
-                    except (IndexError, ValueError, AttributeError): # Added AttributeError just in case
-                        return datetime.fromtimestamp(path.stat().st_mtime) # Fallback
+                            return datetime.fromtimestamp(path.stat().st_mtime) 
+                    except (IndexError, ValueError, AttributeError): 
+                        return datetime.fromtimestamp(path.stat().st_mtime) 
 
                 files.sort(key=get_timestamp_from_filename, reverse=True)
                 load_path_str = str(files[0])
@@ -402,14 +390,11 @@ class BaseScorePredictor:
             logger.error(f"Error during prediction: {e}", exc_info=True)
             return None
 
-
 # --- Ridge Model Definition ---
 class RidgeScorePredictor(BaseScorePredictor):
     """Ridge-based predictor with a preprocessing pipeline."""
     def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "ridge_score_predictor"): # Corrected default model_name
-        # --- CORRECTED LINE USING NAMED ARGUMENTS ---
         super().__init__(model_name=model_name, model_dir=model_dir)
-        # --- END CORRECTION ---
         self._default_ridge_params: Dict[str, Any] = {
             'alpha': 1.0, 'fit_intercept': True, 'solver': 'auto', 'random_state': SEED
         }
@@ -461,120 +446,10 @@ class RidgeScorePredictor(BaseScorePredictor):
             logger.error(f"Validation error for Ridge model: {e}", exc_info=True)
             raise
         
-# class LightGBMScorePredictor(BaseScorePredictor):
-#     """LightGBM-based predictor with a preprocessing pipeline."""
-#     def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "xgboost_score_predictor"):
-#         super().__init__(model_dir, model_name)
-#         self._default_lgbm_params: Dict[str, Any] = {
-#              'objective': 'regression_l1', # MAE objective is often good for scores
-#              'metric': 'mae',              # Use MAE for evaluation/early stopping if enabled
-#              'n_estimators': 300,
-#              'learning_rate': 0.05,
-#              'num_leaves': 31,          # Default, adjust based on max_depth if needed
-#              'max_depth': -1,           # Default (no limit unless constrained in tuning)
-#              'feature_fraction': 0.8,   # Equivalent to colsample_bytree
-#              'bagging_fraction': 0.8,   # Equivalent to subsample
-#              'bagging_freq': 1,         # Perform bagging at every iteration
-#              'reg_alpha': 0.1,          # L1 regularization
-#              'reg_lambda': 0.1,         # L2 regularization
-#              'min_child_samples': 20,   # Default minimum samples in a leaf
-#              'random_state': SEED,      # For reproducibility
-#              'n_jobs': -1,              # Use all available cores
-#              'boosting_type': 'gbdt'    # Standard gradient boosting decision tree
-#              # Add 'verbose': -1 to suppress LightGBM's internal verbosity during fit/predict
-#          }
-# 
-#     def _build_pipeline(self, lgbm_params: Dict[str, Any]) -> Pipeline:
-#          """Builds the scikit-learn pipeline for LightGBM."""
-#          if not LGBM_AVAILABLE:
-#              raise ImportError("LightGBM library required for LightGBMScorePredictor.")
-# 
-#          final_params = self._default_lgbm_params.copy()
-#          final_params.update(lgbm_params)
-#          # Remove verbose if it was passed during tuning to avoid conflict
-#          final_params.pop('verbose', None)
-# 
-#          preprocessing = _preprocessing_pipeline() # Get the standard Imputer + Scaler
-#          pipeline = Pipeline([
-#              ('preprocessing', preprocessing),
-#              # Use 'lgbm' prefix consistent with other models for hyperparameter tuning keys
-#              ('lgbm', lgb.LGBMRegressor(**final_params, verbose=-1)) # Set verbose=-1 here
-#          ])
-#          try: # Set output format for scikit-learn >= 1.0
-#              pipeline.set_output(transform="pandas")
-#              logger.debug("LightGBM pipeline set to output pandas DataFrame.")
-#          except AttributeError:
-#              logger.debug("Could not set pipeline output for LightGBM (older scikit-learn version).")
-#          return pipeline
-# 
-#     def train(self, X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
-#               hyperparams_home: Optional[Dict[str, Any]] = None, hyperparams_away: Optional[Dict[str, Any]] = None,
-#               sample_weights: Optional[np.ndarray] = None,
-#               # Accept fit_params which might contain eval_set from RandomizedSearchCV wrapper
-#               fit_params: Optional[Dict[str, Any]] = None,
-#               # Allow eval_set_data for consistency, though might not be directly used by common logic if fit_params handles it
-#               eval_set_data: Optional[Tuple] = None) -> None:
-#         """Trains the LightGBM model using the common training logic."""
-#         if not LGBM_AVAILABLE:
-#             raise ImportError("LightGBM library not found; cannot train LightGBMScorePredictor.")
-# 
-#         # Prepare fit parameters specifically for LGBM if needed (e.g., eval_set structure)
-#         # Note: sample_weight is passed directly to _common_train_logic
-#         # RandomizedSearchCV usually handles passing fit_params correctly if keys match
-#         # We might need adjustments in _common_train_logic if LGBM requires fit_params keys
-#         # different from XGBoost (e.g., 'lgbm__eval_set' vs 'xgb__eval_set')
-# 
-#         # For simplicity now, assume RandomizedSearchCV handles passing relevant fit_params correctly
-#         # based on the pipeline structure ('lgbm__...')
-# 
-#         self._common_train_logic(X_train, y_train_home, y_train_away,
-#                                  hyperparams_home, hyperparams_away, sample_weights,
-#                                  self._default_lgbm_params,
-#                                  fit_params=fit_params, # Pass along fit_params
-#                                  eval_set_data=eval_set_data # Pass along eval_set_data
-#                                  )
-# 
-# 
-#     def predict(self, X: pd.DataFrame) -> Optional[pd.DataFrame]:
-#          """Generates predictions using the common prediction logic."""
-#          predictions = self._common_predict_logic(X)
-#          if predictions is None: return None
-#          pred_home, pred_away = predictions
-#          # Post-process predictions same as other models
-#          pred_home_processed = np.maximum(0, np.round(pred_home)).astype(int)
-#          pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
-#          return pd.DataFrame({'predicted_home_score': pred_home_processed, 'predicted_away_score': pred_away_processed}, index=X.index)
-# 
-#     def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "LightGBMScorePredictor":
-#          """Loads the model and validates its type."""
-#          loaded_instance = super().load_model(filepath, model_name)
-#          self._validate_loaded_model_type()
-#          # Need to ignore type checking here as superclass returns BaseScorePredictor
-#          return loaded_instance # type: ignore
-# 
-#     def _validate_loaded_model_type(self) -> None:
-#         """Validates that the loaded model is indeed a LightGBM regressor."""
-#         if not LGBM_AVAILABLE: return # Skip if library not found
-#         try:
-#             # Check the actual estimator instance in the final step of the pipeline
-#             final_estimator_home = self.pipeline_home.steps[-1][1] if self.pipeline_home else None
-#             final_estimator_away = self.pipeline_away.steps[-1][1] if self.pipeline_away else None
-# 
-#             if final_estimator_home and not isinstance(final_estimator_home, lgb.LGBMRegressor):
-#                  raise TypeError(f"Loaded home pipeline's final step is not an LGBMRegressor.")
-#             if final_estimator_away and not isinstance(final_estimator_away, lgb.LGBMRegressor):
-#                  raise TypeError(f"Loaded away pipeline's final step is not an LGBMRegressor.")
-#             logger.debug("Validated LightGBM pipelines successfully.")
-#         except Exception as e:
-#              logger.error(f"Validation error for LightGBM model: {e}", exc_info=True)
-#              raise # Re-raise the error after logging
-
 # --- SVR Model Definition ---
-# --- Corrected SVR Model Definition ---
 class SVRScorePredictor(BaseScorePredictor):
     """SVR-based predictor with a preprocessing pipeline."""
     def __init__(self, model_dir: Union[str, Path] = MODELS_BASE_DIR_DEFAULT, model_name: str = "svr_score_predictor"):
-        # Pass keyword arguments to ensure proper assignment.
         super().__init__(model_name=model_name, model_dir=model_dir)
         self._default_svr_params: Dict[str, Any] = {
             'kernel': 'rbf',
@@ -585,16 +460,16 @@ class SVRScorePredictor(BaseScorePredictor):
 
     def _build_pipeline(self, svr_params: Dict[str, Any]) -> Pipeline:
          """Builds the scikit-learn pipeline for SVR."""
-         final_params = self._default_svr_params.copy() # Now uses the defined attribute
+         final_params = self._default_svr_params.copy() 
          final_params.update(svr_params)
 
-         preprocessing = _preprocessing_pipeline() # Get the standard Imputer + Scaler
+         preprocessing = _preprocessing_pipeline() 
 
          pipeline = Pipeline([
              ('preprocessing', preprocessing),
-             ('svr', SVR(**final_params)) # Use 'svr' prefix
+             ('svr', SVR(**final_params)) 
          ])
-         try: # Set output format for scikit-learn >= 1.0
+         try: 
              pipeline.set_output(transform="pandas")
              logger.debug("SVR pipeline set to output pandas DataFrame.")
          except AttributeError:
@@ -604,15 +479,14 @@ class SVRScorePredictor(BaseScorePredictor):
     def train(self, X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
               hyperparams_home: Optional[Dict[str, Any]] = None, hyperparams_away: Optional[Dict[str, Any]] = None,
               sample_weights: Optional[np.ndarray] = None,
-              fit_params: Optional[Dict[str, Any]] = None, # Keep signature consistent
-              eval_set_data: Optional[Tuple] = None) -> None: # Keep signature consistent
+              fit_params: Optional[Dict[str, Any]] = None, 
+              eval_set_data: Optional[Tuple] = None) -> None: 
          """Trains the SVR model using the common training logic."""
-         # Pass fit_params down; _common_train_logic will extract sample_weight if key matches
          self._common_train_logic(X_train, y_train_home, y_train_away,
                                   hyperparams_home, hyperparams_away, sample_weights,
-                                  self._default_svr_params, # Now uses the defined attribute
+                                  self._default_svr_params,
                                   fit_params=fit_params,
-                                  eval_set_data=eval_set_data) # Pass along, though SVR won't use eval_set
+                                  eval_set_data=eval_set_data) 
 
 
     def predict(self, X: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -620,7 +494,6 @@ class SVRScorePredictor(BaseScorePredictor):
          predictions = self._common_predict_logic(X)
          if predictions is None: return None
          pred_home, pred_away = predictions
-         # Post-process SVR predictions (same as others)
          pred_home_processed = np.maximum(0, np.round(pred_home)).astype(int)
          pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
          return pd.DataFrame({'predicted_home_score': pred_home_processed, 'predicted_away_score': pred_away_processed}, index=X.index)
@@ -629,7 +502,7 @@ class SVRScorePredictor(BaseScorePredictor):
          """Loads the model and validates its type."""
          loaded_instance = super().load_model(filepath, model_name)
          self._validate_loaded_model_type()
-         return loaded_instance # type: ignore
+         return loaded_instance
 
     def _validate_loaded_model_type(self) -> None:
         """Validates that the loaded model is indeed an SVR."""
@@ -656,8 +529,8 @@ class QuarterSpecificModelSystem:
     def __init__(self, feature_generator: Optional[Any] = None, debug: bool = False):
         self.feature_generator = feature_generator
         self.debug = debug
-        self.models: Dict[int, Any] = {}       # Primary quarter-specific models
-        self.fallback_models: Dict[int, Any] = {}  # Fallback Ridge models
+        self.models: Dict[int, Any] = {}   
+        self.fallback_models: Dict[int, Any] = {} 
         self.quarter_feature_sets: Dict[int, List[str]] = self._get_consolidated_feature_sets()
         self.error_history: Dict[str, Dict[int, float]] = {
             'main_model': {1: 7.0, 2: 6.2, 3: 5.5, 4: 4.7},
@@ -733,7 +606,6 @@ class QuarterSpecificModelSystem:
 
         X_predict_qtr = X[features_available]
 
-        # Generate a cache key using a simple hash of the row's values.
         cache_key = None
         try:
             key_tuple = tuple(X_predict_qtr.iloc[0].fillna(0).values)
@@ -757,7 +629,6 @@ class QuarterSpecificModelSystem:
             return default_score
 
         try:
-            # Optionally validate that input features match the model's expected features if stored.
             if hasattr(model_to_use, 'steps'):
                 model_instance = model_to_use.steps[-1][1]
                 if hasattr(model_instance, 'feature_names_in_') and model_instance.feature_names_in_ is not None:

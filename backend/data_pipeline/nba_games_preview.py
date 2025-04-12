@@ -1,4 +1,4 @@
-# backend/src/scripts/nba_games_preview.py
+#backend/data_pipeline/nba_games_preview.py
 
 import json
 import requests

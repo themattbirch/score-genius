@@ -17,7 +17,6 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 import logging
 from pathlib import Path
 
-# -- Optional Plotting (conditional import) --
 try:
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -26,37 +25,29 @@ except ImportError:
     PLOTTING_AVAILABLE = False
 
 try:
-    SCRIPT_DIR_FE = Path(__file__).resolve().parent # backend/nba_score_prediction
-    BACKEND_DIR_FE = SCRIPT_DIR_FE.parent             # backend
-    PROJECT_ROOT_FE = BACKEND_DIR_FE.parent           # project_root
-    # Define paths relative to project root for consistency
+    SCRIPT_DIR_FE = Path(__file__).resolve().parent 
+    BACKEND_DIR_FE = SCRIPT_DIR_FE.parent            
+    PROJECT_ROOT_FE = BACKEND_DIR_FE.parent          
     REPORTS_DIR_FE = PROJECT_ROOT_FE / 'reports'
     FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
-    # Create directories if they don't exist
     REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
-    # FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True) # Uncomment this line if you want the debug dir created
     PATHS_DEFINED = True
 except NameError:
-    # Fallback if __file__ is not defined (e.g., interactive environment)
     logging.warning("Could not automatically determine project root. Using relative paths './reports'.")
-    PROJECT_ROOT_FE = Path('.') # Use current directory as root fallback
+    PROJECT_ROOT_FE = Path('.') 
     REPORTS_DIR_FE = Path('./reports')
     FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
-    # Create directories if they don't exist
     REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
-    # FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True) # Uncomment this line if you want the debug dir created
     PATHS_DEFINED = False
 except Exception as e_path:
      logging.error(f"Error setting up paths: {e_path}", exc_info=True)
-     PROJECT_ROOT_FE = Path('.') # Use current directory as root fallback
+     PROJECT_ROOT_FE = Path('.') 
      REPORTS_DIR_FE = Path('./reports')
      FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
-     # Create directories if they don't exist
      REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
-     # FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True) # Uncomment this line if you want the debug dir created
      PATHS_DEFINED = False
 
-# --- Logger Configuration (Keep your existing setup) ---
+# --- Logger Configuration  ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
@@ -64,7 +55,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -- Constants --
-EPSILON = 1e-6 # Small value to avoid division by zero if needed elsewhere
+EPSILON = 1e-6 
 
 # -- Module-Level Helper Functions --
 
@@ -127,17 +118,13 @@ class NBAFeatureEngine:
         self.debug = debug
         if self.debug:
             logger.setLevel(logging.DEBUG)
-            # FEATURE_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
             logger.info("DEBUG mode enabled for detailed logging.")
         else:
             logger.setLevel(logging.INFO)
         self.supabase_client = supabase_client
         logger.debug("NBAFeatureEngine Initialized.")
 
-        # <<< INSERT THIS LINE HERE >>>
         self._teams_to_watch = {"pistons", "grizzlies", "lakers", "clippers", "nets", "knicks"}
-        # <<< END INSERT >>>
-
 
         # --- Default Values ---
         self.defaults = {
@@ -165,23 +152,21 @@ class NBAFeatureEngine:
         self.defaults['off_rating'] = self.defaults['offensive_rating']
         self.defaults['def_rating'] = self.defaults['defensive_rating']
 
-        # League averages (can be updated externally if needed)
+        # League averages (can be updated)
         self.league_averages = {
             'score': self.defaults['avg_pts_for'],
             'quarter_scores': {1: 28.5, 2: 28.5, 3: 28.0, 4: 29.0}
         }
     
-    @lru_cache(maxsize=512) # Keep the cache decorator
+    @lru_cache(maxsize=512) 
     def normalize_team_name(self, team_name: Optional[str]) -> str:
         """Normalize team names using a predefined mapping."""
         if not isinstance(team_name, str):
-            # Handle non-string inputs gracefully
             logger.debug(f"normalize_team_name received non-string input: {team_name}. Returning 'Unknown'.")
             return "Unknown"
 
         team_lower = team_name.lower().strip()
 
-        # Handle empty strings after stripping
         if not team_lower:
              logger.debug("normalize_team_name received empty string input. Returning 'Unknown'.")
              return "Unknown"
@@ -205,7 +190,7 @@ class NBAFeatureEngine:
             "indiana pacers": "pacers", "indiana": "pacers", "ind": "pacers", "pacers": "pacers",
             "los angeles clippers": "clippers", "la clippers": "clippers", "lac": "clippers", "clippers": "clippers",
             "los angeles lakers": "lakers", "la lakers": "lakers", "lal": "lakers", "lakers": "lakers",
-            "la": "lakers", # Common abbreviation explicitly mapped
+            "la": "lakers", 
 
             # --- MEMPHIS GRIZZLIES (Added 'mem grizzlies', 'grizz') ---
             "memphis grizzlies": "grizzlies", "memphis": "grizzlies", "mem": "grizzlies", "grizzlies": "grizzlies", "memphis gri": "grizzlies", "mem grizzlies": "grizzlies", "grizz": "grizzlies",
@@ -227,33 +212,23 @@ class NBAFeatureEngine:
             "washington wizards": "wizards", "washington": "wizards", "was": "wizards", "wizards": "wizards", "wiz": "wizards", "wash wizards": "wizards",
 
             # --- Special Cases / All-Star Teams ---
-            "east": "east", "west": "west", # Keep if needed for specific data sources
-            # You might want to map All-Star teams to a generic 'allstar' or 'other_team'
+            "east": "east", "west": "west", 
             "team lebron": "allstar", "team durant": "allstar", "team giannis": "allstar", "team stephen": "allstar",
             "chuck’s global stars": "other_team", "shaq’s ogs": "other_team",
             "kenny’s young stars": "other_team", "candace’s rising stars": "other_team",
         }
 
-        # 1. Check for exact match in mapping (most common case)
+        # Check for exact match in mapping 
         if team_lower in mapping:
             return mapping[team_lower]
 
-        # 2. Fallback: Check if input contains a known full name/city (e.g., "Utah Jazz" in "Utah Jazz Team") - less common
-        # Be careful with short keys here
-        # for name, norm in mapping.items():
-        #    if len(name) > 5 and name in team_lower: # Check if known name is substring of input
-        #        logger.debug(f"Normalized '{team_name}' to '{norm}' via substring containment (name in team_lower)")
-        #        return norm
-
-        # 3. Fallback: Check if input is contained within a known name (e.g., "Portland" in "Portland Trail Blazers")
-        # More likely scenario for partial inputs
         for name, norm in mapping.items():
              if len(team_lower) > 3 and team_lower in name: # Check if input is substring of known name
                  logger.debug(f"Normalized '{team_name}' to '{norm}' via substring containment (team_lower in name)")
                  return norm
 
 
-        # 4. If no match found after explicit and substring checks
+        # If no match found after explicit and substring checks
         logger.warning(f"Team name '{team_name}' (normalized to '{team_lower}') did not match any explicit or substring mapping. Returning raw normalized input.")
 
     def _determine_season(self, game_date: pd.Timestamp) -> str:
@@ -318,7 +293,6 @@ class NBAFeatureEngine:
             'home_total_reb','away_off_reb', 'away_def_reb', 'away_total_reb',
             'home_turnovers', 'away_turnovers','home_ot', 'away_ot'
         ]
-        # Add missing columns as 0 and ensure numeric type, filling NaNs with 0
         for col in stat_cols:
             if col not in result_df.columns:
                 logger.warning(f"Advanced Metrics: Column '{col}' not found. Adding with default value 0.")
@@ -349,7 +323,7 @@ class NBAFeatureEngine:
 
         # --- 3. Calculate Pace and Possessions ---
         logger.debug("Calculating raw possessions, average possessions, and Pace...")
-        # Calculate Raw Possessions per team (using standard 0.44 factor)
+        # Calculate Raw Possessions per team
         home_poss_raw = (
             result_df['home_fg_attempted']
             + 0.44 * result_df['home_ft_attempted']
@@ -362,11 +336,10 @@ class NBAFeatureEngine:
             - result_df['away_off_reb']
             + result_df['away_turnovers']
         )
-        # Store raw possessions (handle 0s before using as denominator)
         result_df['home_poss_raw'] = home_poss_raw
         result_df['away_poss_raw'] = away_poss_raw
-        home_poss_safe_denom = home_poss_raw.replace(0, np.nan) # Use NaN for safe division
-        away_poss_safe_denom = away_poss_raw.replace(0, np.nan) # Use NaN for safe division
+        home_poss_safe_denom = home_poss_raw.replace(0, np.nan) 
+        away_poss_safe_denom = away_poss_raw.replace(0, np.nan) 
 
         # Calculate Average Possessions per Team (for Pace calculation)
         avg_poss_per_team = 0.5 * (home_poss_raw + away_poss_raw)
@@ -378,7 +351,7 @@ class NBAFeatureEngine:
         # Calculate Game Minutes Played
         num_ot = np.maximum(result_df.get('home_ot', 0), result_df.get('away_ot', 0)).clip(lower=0)
         game_minutes_calc = 48.0 + num_ot * 5.0
-        result_df['game_minutes_played'] = np.maximum(48.0, game_minutes_calc) # Ensure minimum 48 mins
+        result_df['game_minutes_played'] = np.maximum(48.0, game_minutes_calc) 
 
         # Calculate Game Pace (Pace per 48 minutes, using average possessions estimate)
         result_df['game_pace'] = safe_divide(
@@ -395,8 +368,8 @@ class NBAFeatureEngine:
         logger.debug("Calculating ratings and TOV% using raw possessions...")
         result_df['home_offensive_rating'] = safe_divide(result_df['home_score'] * 100, home_poss_safe_denom, self.defaults['offensive_rating'])
         result_df['away_offensive_rating'] = safe_divide(result_df['away_score'] * 100, away_poss_safe_denom, self.defaults['offensive_rating'])
-        result_df['home_defensive_rating'] = result_df['away_offensive_rating'] # Opponent's offense
-        result_df['away_defensive_rating'] = result_df['home_offensive_rating'] # Opponent's offense
+        result_df['home_defensive_rating'] = result_df['away_offensive_rating'] 
+        result_df['away_defensive_rating'] = result_df['home_offensive_rating'] 
 
         # Apply clipping to ratings
         rating_cols = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating']
@@ -433,8 +406,6 @@ class NBAFeatureEngine:
             result_df['point_diff'] = result_df['home_score'] - result_df['away_score']
 
         # --- 6. Clean Up ---
-        # Remove intermediate columns if they exist and are no longer needed
-        # The old 'home_possessions'/'away_possessions' stored the average, we used raw now.
         result_df = result_df.drop(columns=['home_possessions', 'away_possessions'], errors='ignore')    
 
         logger.debug("Finished integrating advanced features with revised Pace/Poss/Ratings.")
@@ -449,18 +420,16 @@ class NBAFeatureEngine:
             return df
 
         local_df = df.copy()
-        # Define generic columns we want rolling stats for
         cols_to_roll_generic = [
             'score_for', 'score_against', 'point_diff', 'momentum_ewma',
             'off_rating', 'def_rating', 'net_rating', 'pace', 'efg_pct',
             'tov_rate', 'trb_pct', 'oreb_pct', 'dreb_pct', 'ft_rate'
         ]
-        # Map generic names to actual source columns in the DataFrame for home/away perspectives
-        source_mapping_home = { # How to get 'generic_col' from the perspective of the home team
+        source_mapping_home = { 
             'home_score': 'score_for',
             'away_score': 'score_against',
             'point_diff': 'point_diff',
-            'momentum_score_ewma_q4': 'momentum_ewma', # Make sure this source col exists after momentum step
+            'momentum_score_ewma_q4': 'momentum_ewma', 
             'home_offensive_rating': 'off_rating',
             'home_defensive_rating': 'def_rating',
             'home_net_rating': 'net_rating',
@@ -472,10 +441,10 @@ class NBAFeatureEngine:
             'home_dreb_pct': 'dreb_pct',
             'home_ft_rate': 'ft_rate'
         }
-        source_mapping_away = { # How to get 'generic_col' from the perspective of the away team
+        source_mapping_away = { 
             'away_score': 'score_for',
             'home_score': 'score_against',
-            'point_diff': 'point_diff', # Sign flip applied later
+            'point_diff': 'point_diff', 
             'momentum_score_ewma_q4': 'momentum_ewma',
             'away_offensive_rating': 'off_rating',
             'away_defensive_rating': 'def_rating',
@@ -494,23 +463,20 @@ class NBAFeatureEngine:
              local_df['point_diff'] = pd.to_numeric(local_df['home_score'], errors='coerce') - pd.to_numeric(local_df['away_score'], errors='coerce')
         if 'game_pace' not in local_df.columns:
              logger.warning("Rolling: 'game_pace' column missing. Pace features rely on defaults.")
-             local_df['game_pace'] = self.defaults.get('pace', 100.0) # Assign default pace
+             local_df['game_pace'] = self.defaults.get('pace', 100.0) 
 
         required_sources = set(source_mapping_home.keys()) | set(source_mapping_away.keys()) | {'game_id', 'game_date', 'home_team', 'away_team'}
         missing_sources = [col for col in required_sources if col not in local_df.columns]
         if missing_sources:
              logger.warning(f"Rolling: Missing essential source columns: {missing_sources}. Features might use defaults.")
-             # Add missing cols as NaN before proceeding, they will be filled with defaults later
              for col in missing_sources:
                   if col not in local_df.columns: local_df[col] = np.nan
 
         # Determine which generic columns can actually be calculated
         cols_to_roll_final = []
         for generic_col in cols_to_roll_generic:
-            # Find corresponding source columns
             home_source = next((k for k, v in source_mapping_home.items() if v == generic_col), None)
             away_source = next((k for k, v in source_mapping_away.items() if v == generic_col), None)
-            # Check if sources exist (even if added as NaN above)
             home_source_exists = home_source in local_df.columns if home_source else False
             away_source_exists = away_source in local_df.columns if away_source else False
 
@@ -520,7 +486,6 @@ class NBAFeatureEngine:
 
             if home_source_exists and away_source_exists:
                 cols_to_roll_final.append(generic_col)
-                # Convert sources to numeric safely *now*, applying defaults
                 default_val = self.defaults.get(generic_col, 0.0)
                 if home_source: local_df[home_source] = pd.to_numeric(local_df[home_source], errors='coerce').fillna(default_val)
                 if away_source and away_source != home_source: local_df[away_source] = pd.to_numeric(local_df[away_source], errors='coerce').fillna(default_val)
@@ -529,7 +494,7 @@ class NBAFeatureEngine:
 
         if not cols_to_roll_final:
             logger.error("Rolling: No valid columns found to calculate rolling features after checking sources.")
-            return df # Return original df if no features can be made
+            return df 
 
         # --- Create Team-Centric View ---
         logger.debug(f"Rolling: Creating team-centric view for columns: {cols_to_roll_final}")
@@ -557,19 +522,14 @@ class NBAFeatureEngine:
                 home_source = next((k for k, v in source_mapping_home.items() if v == generic_col), None)
                 away_source = next((k for k, v in source_mapping_away.items() if v == generic_col), None)
 
-                # Get the correct series for home perspective
                 if home_source and home_source in local_df.columns:
                     home_series = local_df[home_source].rename(generic_col)
-                    # point_diff perspective is already correct (home - away)
                     home_data_list.append(home_series)
 
-                # Get the correct series for away perspective
                 if away_source and away_source in local_df.columns:
                     away_series = local_df[away_source].rename(generic_col)
-                    # Flip sign for point_diff perspective (needs to be away - home = -point_diff)
                     if generic_col == 'point_diff' and away_source == 'point_diff':
                         away_series = -away_series
-                    # score_against for away team comes from home_score - already handled by mapping
                     away_data_list.append(away_series)
 
             home_view = pd.concat([home_view_base] + home_data_list, axis=1)
@@ -577,11 +537,10 @@ class NBAFeatureEngine:
 
             team_view = (
                 pd.concat([home_view, away_view], ignore_index=True)
-                .assign(game_date=lambda x: pd.to_datetime(x['game_date'])) # Ensure date is datetime
-                .sort_values(['team_norm', 'game_date', 'game_id'], kind='mergesort') # Stable sort needed for rolling
+                .assign(game_date=lambda x: pd.to_datetime(x['game_date'])) 
+                .sort_values(['team_norm', 'game_date', 'game_id'], kind='mergesort') 
                 .reset_index(drop=True)
             )
-            # Ensure game_id is string in team_view for merge key consistency
             team_view['game_id'] = team_view['game_id'].astype(str)
 
             # <<< START INSERT (Team View Logging - After Creation -- COMMENTED OUT ATM) >>>
@@ -595,16 +554,14 @@ class NBAFeatureEngine:
 
         except Exception as e:
             logger.error(f"Rolling: Error creating team view: {e}", exc_info=True)
-            # If team view fails, we cannot calculate rolling stats, return original df
             return df
 
         # --- Calculate Rolling Features on Team View ---
         logger.debug(f"Rolling: Calculating shifted mean/std for windows {window_sizes}...")
-        rolling_cols_generated = [] # Keep track of columns successfully generated
+        rolling_cols_generated = [] 
         for window in window_sizes:
-            min_p = max(1, window // 2) # Ensure min_periods is at least 1
+            min_p = max(1, window // 2) 
             for col in cols_to_roll_final:
-                # Check column exists in team_view (should based on cols_to_roll_final)
                 if col not in team_view.columns:
                      logger.warning(f"Rolling: Column '{col}' missing from team_view. Skipping.")
                      continue
@@ -615,65 +572,48 @@ class NBAFeatureEngine:
 
                 try:
                     grouped_col = team_view.groupby('team_norm', observed=True)[col]
-                    # Shift by 1 to prevent data leakage from the current game
                     shifted_data = grouped_col.shift(1)
-                    # Get rolling object on shifted data
                     rolling_op = shifted_data.rolling(window=window, min_periods=min_p)
 
-                    # Calculate mean and std, fill NaNs resulting *from the rolling operation*
                     team_view[roll_mean_col] = rolling_op.mean()
                     std_dev = rolling_op.std()
-                    team_view[roll_std_col] = np.maximum(0, std_dev) # Ensure std is non-negative
+                    team_view[roll_std_col] = np.maximum(0, std_dev) 
 
-                    # Fill remaining NaNs (from shift/min_periods) with appropriate defaults
                     default_mean = self.defaults.get(col, 0.0)
-                    # Check for specific std default (e.g., 'pace_std') or use generic 0.0
                     default_std = self.defaults.get(f'{col}_std', 0.0)
 
                     team_view[roll_mean_col] = team_view[roll_mean_col].fillna(default_mean)
                     team_view[roll_std_col] = team_view[roll_std_col].fillna(default_std)
 
-                    # Add successfully generated columns to list
                     rolling_cols_generated.extend([roll_mean_col, roll_std_col])
 
                 except Exception as calc_err:
                      logger.error(f"Rolling: Error calculating for col='{col}', window={window}: {calc_err}", exc_info=True)
-                     # Add columns with defaults if calculation failed
                      team_view[roll_mean_col] = self.defaults.get(col, 0.0)
                      team_view[roll_std_col] = self.defaults.get(f'{col}_std', 0.0)
-                     # Do not add to rolling_cols_generated if failed
 
-        # Remove duplicates just in case? Unlikely needed here if sort is correct.
-        rolling_cols_generated = sorted(list(set(rolling_cols_generated))) # Get unique list
+        rolling_cols_generated = sorted(list(set(rolling_cols_generated))) 
 
-
-        # --- Merge Rolling Stats Back to Original DataFrame ---
         logger.debug("Rolling: Merging rolling stats back...")
 
-        # <<< FIX: Initialize parsed_bases BEFORE the try block >>>
-        parsed_bases = set() # Ensures variable exists for the except block
+        parsed_bases = set() 
 
-        try: # Main try block for merging and renaming
-             merge_data = None # Initialize merge_data to None
+        try: 
+             merge_data = None 
 
-             # --- Sub-Try block for key/merge_data creation ---
              try:
                  logger.debug("Rolling: Preparing merge keys and data...")
-                 # Build merge keys robustly (ensure game_id is string)
                  local_df['game_id'] = local_df['game_id'].astype(str)
-                 team_view['game_id'] = team_view['game_id'].astype(str) # Redundant? Belt & suspenders.
+                 team_view['game_id'] = team_view['game_id'].astype(str) 
 
                  team_view['merge_key_rolling'] = team_view['game_id'] + "_" + team_view['team_norm'].astype(str)
                  local_df['merge_key_home'] = local_df['game_id'] + "_" + local_df['home_team_norm'].astype(str)
                  local_df['merge_key_away'] = local_df['game_id'] + "_" + local_df['away_team_norm'].astype(str)
 
-                 # Prepare data to merge - ensure only valid generated columns are selected
                  cols_to_merge = ['merge_key_rolling'] + [c for c in rolling_cols_generated if c in team_view.columns]
-                 if len(cols_to_merge) <= 1 : # Only contains the key
+                 if len(cols_to_merge) <= 1 :
                      logger.warning("Rolling: No rolling columns were successfully generated to merge.")
-                     # If no columns to merge, skip merge logic, but maybe add defaults later?
-                     # For now, let it proceed, merge will likely be empty/ineffective.
-                     merge_data = pd.DataFrame(columns=['merge_key_rolling']) # Create empty DF with key
+                     merge_data = pd.DataFrame(columns=['merge_key_rolling']) 
                  else:
                      logger.debug(f"Rolling: Columns selected for merge: {cols_to_merge}")
                      merge_data = (
@@ -684,8 +624,7 @@ class NBAFeatureEngine:
 
              except Exception as prep_err:
                  logger.error(f"Rolling: Error PREPARING merge keys or data: {prep_err}", exc_info=True)
-                 # If prep fails, set merge_data to None or empty to prevent later errors
-                 merge_data = None # Signal that merge cannot proceed
+                 merge_data = None 
 
 
              # --- Proceed with Merge only if merge_data is valid ---
@@ -706,7 +645,6 @@ class NBAFeatureEngine:
                  # --- Dictionary Comprehensions for Renaming ---
                  home_rename_dict = {}
                  away_rename_dict = {}
-                 # parsed_bases = set() # Moved initialization outside try block
 
                  for col in merge_data.columns:
                      if col == 'merge_key_rolling': continue
@@ -716,7 +654,7 @@ class NBAFeatureEngine:
                              window = int(parts[-1])
                              stat_type = parts[-2]
                              base = "_".join(parts[1:-2])
-                             parsed_bases.add(base) # Track the base column name
+                             parsed_bases.add(base) 
 
                              home_rename_dict[col] = generate_rolling_column_name('home', base, stat_type, window)
                              away_rename_dict[col] = generate_rolling_column_name('away', base, stat_type, window)
@@ -743,23 +681,19 @@ class NBAFeatureEngine:
                      #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away): No watched teams found in Left DF.")
                  # <<< END INSERT >>>
 
-                 local_df = pd.merge(local_df, merge_data, how='left', # Use same merge_data
+                 local_df = pd.merge(local_df, merge_data, how='left', 
                                      left_on='merge_key_away', right_on='merge_key_rolling'
                                     ).rename(columns=away_rename_dict)
                  if 'merge_key_rolling' in local_df.columns: local_df = local_df.drop(columns=['merge_key_rolling'])
                  # --- End Merge Logic ---
 
-             else: # Handle case where merge_data prep failed or was empty
+             else: 
                   logger.warning("Rolling: Skipping merge operations as merge_data was not prepared successfully or was empty.")
-                  # Consider adding default columns here if merge skipped entirely
-                  # This logic is now primarily handled by the main except block below
 
         # --- Main Exception Handler for Merging/Renaming ---
         except Exception as e:
             logger.error(f"Rolling: Error during merge/rename stats back: {e}", exc_info=True)
-            # Fallback: Add columns with defaults if merge failed
             missing_cols_defaults = {}
-            # Use cols_to_roll_final as fallback if parsed_bases is empty (e.g., error before rename)
             bases_for_fallback = parsed_bases if parsed_bases else cols_to_roll_final
 
             logger.warning(f"Rolling: Attempting to add defaults for bases: {bases_for_fallback}")
@@ -770,7 +704,6 @@ class NBAFeatureEngine:
                             col_name = generate_rolling_column_name(prefix, base, stat, w)
                             if col_name not in local_df.columns:
                                 default_key = f'{base}_std' if stat == 'std' else base
-                                # Use .get() with another fallback for safety
                                 missing_cols_defaults[col_name] = self.defaults.get(default_key, 0.0)
 
             if missing_cols_defaults:
@@ -784,21 +717,17 @@ class NBAFeatureEngine:
         new_diff_cols = {}
 
         for stat_type in ['mean', 'std']:
-            for base_col in cols_to_roll_final: # Iterate through cols attempted
-                # Fill NaNs for existing rolling columns first
+            for base_col in cols_to_roll_final: 
                 for w in window_sizes:
                     for prefix in ['home', 'away']:
                         col_name = generate_rolling_column_name(prefix, base_col, stat_type, w)
                         default_key = f'{base_col}_std' if stat_type == 'std' else base_col
                         default = self.defaults.get(default_key, 0.0)
                         if col_name not in local_df.columns:
-                            # Add column if missing entirely (e.g., due to error)
                             logger.warning(f"Rolling column '{col_name}' missing before final fill/diff. Adding default.")
                             local_df[col_name] = default
                         else:
-                            # Fill NaNs that might still exist
                             local_df[col_name] = local_df[col_name].fillna(default)
-                        # Ensure std dev is non-negative after filling NaNs
                         if stat_type == 'std': local_df[col_name] = np.maximum(0, local_df[col_name])
 
                 # --- Calculate differential using primary window ---
@@ -810,7 +739,7 @@ class NBAFeatureEngine:
                 expected_base_name = base_col
                 if base_col == 'point_diff': expected_base_name = 'margin'
                 elif base_col == 'net_rating': expected_base_name = 'eff'
-                elif base_col.endswith('_pct'): expected_base_name = base_col[:-4] # Remove _pct
+                elif base_col.endswith('_pct'): expected_base_name = base_col[:-4] 
                 elif base_col == 'momentum_ewma': expected_base_name = 'momentum'
 
                 diff_col_name = f'rolling_{expected_base_name}_diff_{stat_type}'
@@ -819,21 +748,16 @@ class NBAFeatureEngine:
                 if home_col in local_df.columns and away_col in local_df.columns:
                     home_vals = local_df[home_col]
                     away_vals = local_df[away_col]
-                    # Use subtraction for differentials instead of ratio for simplicity/stability
-                    # Positive diff means home advantage (except for 'lower is better' stats)
                     if base_col in ['tov_rate', 'def_rating', 'score_against']:
-                        # Lower is better: away - home -> positive means home is better
                         diff = away_vals - home_vals
                     else:
-                        # Higher is better: home - away -> positive means home is better
                         diff = home_vals - away_vals
 
-                    new_diff_cols[diff_col_name] = diff.fillna(0.0) # Fill NaN diffs with 0.0
+                    new_diff_cols[diff_col_name] = diff.fillna(0.0) 
                 else:
                     logger.warning(f"Could not calculate differential for {diff_col_name}, missing sources: '{home_col}' or '{away_col}'. Assigning default 0.0.")
                     new_diff_cols[diff_col_name] = 0.0
 
-        # Assign all new differential columns at once
         if new_diff_cols: local_df = local_df.assign(**new_diff_cols)
 
         # --- Clean up intermediate columns ---
@@ -885,7 +809,6 @@ class NBAFeatureEngine:
             return df_copy
 
         logger.debug("Calculating rest days...")
-        # Ensure team_log is unique by (team, game_date)
         team_log = (
             pd.concat([
                 df_copy[['game_date', 'home_team']].rename(columns={'home_team': 'team'}),
@@ -896,9 +819,7 @@ class NBAFeatureEngine:
         )
         team_log['prev_game_date'] = team_log.groupby('team', observed=True)['game_date'].shift(1)
 
-        # Use a deduplicated temporary DataFrame for merging rest days
         temp_rest = team_log[['team', 'game_date', 'prev_game_date']].drop_duplicates(subset=['team', 'game_date'])
-        # Merge for home team with merge validation to catch unexpected duplicates
         
         # <<< START INSERT - Before Home Rest Merge -- COMMENTED OUT ATM >>>
         #if self.debug:
@@ -922,7 +843,7 @@ class NBAFeatureEngine:
             how='left',
             left_on=['home_team', 'game_date'],
             right_on=['team', 'game_date'],
-            validate='many_to_one'  # Expect each home_team/game_date to match at most one row
+            validate='many_to_one'  
         ).rename(columns={'prev_game_date': 'prev_home_game_date'}).drop(columns='team', errors='ignore')
 
         # <<< START INSERT - Before Away Rest Merg -- COMMENTED OUT ATMe >>>
@@ -967,11 +888,9 @@ class NBAFeatureEngine:
         # <<< END INSERT >>>
 
         try:
-            # Build a lookup for game_ids per team and game_date
             home_log_ids = df_copy[['game_date', 'home_team', 'game_id']].rename(columns={'home_team': 'team'})
             away_log_ids = df_copy[['game_date', 'away_team', 'game_id']].rename(columns={'away_team': 'team'})
             game_ids_log = pd.concat([home_log_ids, away_log_ids], ignore_index=True)
-            # Ensure uniqueness on (team, game_date)
             game_ids_log = game_ids_log.drop_duplicates(subset=['team', 'game_date'], keep='first')
 
             # Merge the unique game_ids back to team_log
@@ -1090,8 +1009,6 @@ class NBAFeatureEngine:
             return df
         result_df = df.copy()
 
-        # Define placeholder columns based on the helper function's expected output keys
-        # Ensure _get_matchup_history_single returns expected structure even with empty input for this setup
         placeholder_cols = [
             'matchup_num_games', 'matchup_avg_point_diff', 'matchup_home_win_pct',
             'matchup_avg_total_score', 'matchup_avg_home_score', 'matchup_avg_away_score',
@@ -1104,7 +1021,7 @@ class NBAFeatureEngine:
                     default_key = col.replace('matchup_', '')
                     default_val = self.defaults.get(default_key, 0.0 if col != 'matchup_last_date' else pd.NaT)
                     result_df[col] = default_val
-            return result_df # Return early if no historical data
+            return result_df 
 
         try:
             # --- Prepare Historical Data ---
@@ -1122,8 +1039,6 @@ class NBAFeatureEngine:
 
             if hist_df.empty:
                  logger.warning("H2H: Historical DataFrame has no valid rows after cleaning. Adding H2H placeholders.")
-                 # Add placeholders similar to the check above if needed, though it should fall through correctly
-                 # (Returning result_df here might be safer if downstream relies on these columns existing)
 
             # Normalize team names and create matchup keys in historical data
             hist_df['home_team_norm'] = hist_df['home_team'].astype(str).apply(self.normalize_team_name)
@@ -1131,10 +1046,7 @@ class NBAFeatureEngine:
             hist_df['matchup_key'] = hist_df.apply(lambda row: "_vs_".join(sorted([row['home_team_norm'], row['away_team_norm']])), axis=1)
             hist_df = hist_df.sort_values('game_date') # Sort for correct history lookup
 
-            # Create a lookup dictionary for faster access
-            #logger.debug("H2H: Grouping historical data by matchup key...")
             hist_lookup = {key: group for key, group in hist_df.groupby('matchup_key', observed=True)}
-            #logger.debug(f"H2H: Created lookup for {len(hist_lookup)} unique matchup keys.")
 
             # --- Prepare Target Data ---
             result_df['game_date'] = pd.to_datetime(result_df['game_date'], errors='coerce').dt.tz_localize(None)
@@ -1142,78 +1054,66 @@ class NBAFeatureEngine:
 
             if result_df.empty:
                 logger.warning("H2H: No valid input rows remaining in target df after date processing.")
-                # Ensure placeholder columns exist if returning empty or partially processed df
                 for col in placeholder_cols:
                     if col not in result_df.columns:
                         default_key = col.replace('matchup_', '')
                         default_val = self.defaults.get(default_key, 0.0 if col != 'matchup_last_date' else pd.NaT)
                         result_df[col] = default_val
-                return result_df # Return early if no valid target rows
+                return result_df 
 
             # Normalize team names and create matchup keys in target data
             result_df['home_team_norm'] = result_df['home_team'].astype(str).apply(self.normalize_team_name)
             result_df['away_team_norm'] = result_df['away_team'].astype(str).apply(self.normalize_team_name)
             result_df['matchup_key'] = result_df.apply(lambda row: "_vs_".join(sorted([row['home_team_norm'], row['away_team_norm']])), axis=1)
 
-                        # --- Calculate H2H Features Row-by-Row ---
+            # --- Calculate H2H Features Row-by-Row ---
             logger.debug("H2H: Calculating features row by row...")
             h2h_results_list = []
-            # Loop through each target game row
             for index, row in result_df.iterrows(): # Keep using iterrows
                 # --- Define variables for this specific row ---
                 home_norm = row.get('home_team_norm', 'Unknown_Home')
                 away_norm = row.get('away_team_norm', 'Unknown_Away')
                 matchup_key = row.get('matchup_key', 'Unknown_Key')
-                game_id = row.get('game_id', 'Unknown_ID') # Keep for context if needed
+                game_id = row.get('game_id', 'Unknown_ID') 
                 current_game_date = row.get('game_date', pd.NaT)
 
                 # --- Find historical games for this specific matchup key ---
                 matchup_hist_subset = hist_lookup.get(matchup_key, pd.DataFrame())
 
                 # --- Calculate H2H stats using the helper function ---
-                # Pass the current loop index to the helper function
                 single_h2h_stats = self._get_matchup_history_single(
                     home_team_norm=home_norm,
                     away_team_norm=away_norm,
                     historical_subset=matchup_hist_subset,
                     max_games=max_games,
                     current_game_date=current_game_date,
-                    loop_index=index # <<< PASS THE INDEX HERE
+                    loop_index=index 
                 )
-
-                # Remove or keep the old print statement as desired
-                # if index < 20:
-                #      print(f"DEBUG LOOP - Game {game_id} - Index {index}: {single_h2h_stats}")
 
                 h2h_results_list.append(single_h2h_stats)
 
-            # --- End of loop ---
             # --- Combine Results ---
             if h2h_results_list:
                 h2h_results_df = pd.DataFrame(h2h_results_list, index=result_df.index)
 
-                # +++ ADD THIS BLOCK +++
                 if self.debug:
                     logger.debug("H2H: h2h_results_df Info BEFORE JOIN:")
                     h2h_results_df.info(verbose=True, show_counts=True)
                     logger.debug("H2H: h2h_results_df Describe BEFORE JOIN:\n" + h2h_results_df.describe().to_string())
-                    # Check variance specifically
                     matchup_cols_check = [col for col in placeholder_cols if col in h2h_results_df.columns and col != 'matchup_last_date']
                     if matchup_cols_check:
                          variances_before_join = h2h_results_df[matchup_cols_check].var()
                          logger.debug(f"H2H: Variances BEFORE JOIN:\n{variances_before_join}")
                     else:
                          logger.warning("H2H: No matchup columns found BEFORE JOIN to check variance.")
-                # +++ END ADDED BLOCK +++
+                
                 if self.debug:
                     logger.debug("H2H: h2h_results_df Info:")
                     h2h_results_df.info(verbose=True, show_counts=True)
                     logger.debug("H2H: h2h_results_df Describe:\n" + h2h_results_df.describe().to_string())
                 result_df = result_df.join(h2h_results_df, how='left')
-        #logger.debug(f"H2H: Joined {len(h2h_results_df)} rows of H2H results.")
             else:
                 logger.warning("H2H: No head-to-head results were generated (list was empty).")
-                # Ensure placeholder columns exist even if no results generated
                 for col in placeholder_cols:
                      if col not in result_df.columns: result_df[col] = np.nan # Add as NaN first
 
@@ -1223,34 +1123,29 @@ class NBAFeatureEngine:
             logger.debug("H2H: Finalizing features (filling defaults)...")
             for col in placeholder_cols:
                 default_key = col.replace('matchup_', '')
-                # Determine the correct default value based on column name
-                default_val = self.defaults.get(default_key, 0.0) # Default to 0.0
+                default_val = self.defaults.get(default_key, 0.0) 
                 if col == 'matchup_last_date':
                     default_val = pd.NaT
                 elif col == 'matchup_home_win_pct':
-                     default_val = self.defaults.get('matchup_home_win_pct', 0.5) # Specific default
+                     default_val = self.defaults.get('matchup_home_win_pct', 0.5) 
 
                 # Fill NaNs or add column if missing entirely
                 if col not in result_df.columns:
                     result_df[col] = default_val
                 else:
-                    # Fill NaNs that might exist from failed calculations or joins
                     result_df[col] = result_df[col].fillna(default_val)
 
                 # Ensure correct data types after filling
                 if col == 'matchup_last_date':
                     result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
                 elif col in ['matchup_num_games', 'matchup_streak']:
-                    # Ensure these are numeric before rounding/casting
                     result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0).round().astype(int)
                 else:
-                    # Ensure other stats are numeric
                      result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(default_val)
 
 
         except Exception as e:
             logger.error(f"H2H: Error adding features: {e}", exc_info=True)
-            # Attempt to add default placeholders if an error occurred mid-processing
             logger.warning("H2H: Adding placeholders due to error during processing.")
             for col in placeholder_cols:
                 if col not in result_df.columns:
@@ -1258,7 +1153,6 @@ class NBAFeatureEngine:
                     default_val = self.defaults.get(default_key, 0.0 if col != 'matchup_last_date' else pd.NaT)
                     if col == 'matchup_home_win_pct': default_val = self.defaults.get('matchup_home_win_pct', 0.5)
                     result_df[col] = default_val
-                    # Apply types again just in case
                     if col == 'matchup_last_date': result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
                     elif col in ['matchup_num_games', 'matchup_streak']: result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0).round().astype(int)
                     else: result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0.0)
@@ -1432,10 +1326,9 @@ class NBAFeatureEngine:
         result_df['season_net_rating_diff'] = result_df['home_season_net_rating'] - result_df['away_season_net_rating']
         result_df = result_df.drop(columns=['season', 'home_team_norm', 'away_team_norm', 'merge_key_home', 'merge_key_away'], errors='ignore')
         
-        # <<< FINAL LOGGING BLOCK (Using original 'df' input -- COMMENTED OUT ATM) >>>
         if self.debug:
             try:
-                """  # Start block comment
+                """  # COMMENTED OUT ATM
                 # Define the final seasonal columns created/populated by this function
                 final_season_cols_to_log = ['game_id', 'game_date'] + [c for c in placeholder_cols if c in result_df.columns]
                 # Check if necessary columns exist for linking and filtering
@@ -1466,7 +1359,6 @@ class NBAFeatureEngine:
                 """ # End block comment
             except Exception as log_err:
                  logger.warning(f"[WATCH_TEAM] Error during final season context logging: {log_err}", exc_info=True) # Keep this active maybe?
-        # <<< END OF CORRECTED FINAL LOGGING BLOCK >>>
 
         logger.info("Finished adding season context features.")
         return result_df
@@ -1505,8 +1397,6 @@ class NBAFeatureEngine:
 
          # <<< START INSERT - After Form Calc -- COMMENTED OUT ATM >>>
         if self.debug:
-            # Check original team names before they might be dropped if needed
-            # Assuming 'home_team', 'away_team' still exist or use normalized names if available
             home_team_col_check = 'home_team' if 'home_team' in result_df.columns else 'home_team_norm' # Adjust if names change
             away_team_col_check = 'away_team' if 'away_team' in result_df.columns else 'away_team_norm'
 
@@ -1540,8 +1430,6 @@ class NBAFeatureEngine:
         """Calculates H2H stats for a single matchup, perspective of home_team_norm."""
         is_debug = _is_debug_enabled(logger) # Keep this check
 
-        # --- START: New Debug Logging Block ---
-        # Log details only if debug mode is on AND loop_index is passed AND index is low (e.g., < 5)
         should_log_details = is_debug and loop_index is not None and loop_index < 5
         
         if should_log_details:
@@ -1550,13 +1438,11 @@ class NBAFeatureEngine:
             if historical_subset is not None and not historical_subset.empty:
                 logger.debug(f"Received historical_subset shape: {historical_subset.shape}")
                 try:
-                    # Log head to see recent data in the subset for this matchup
                     logger.debug(f"Received historical_subset head:\n{historical_subset.head().to_string()}")
                 except Exception as e_head:
                      logger.debug(f"Could not log head of historical_subset: {e_head}")
             else:
                 logger.debug(f"Received historical_subset is None or empty.")
-        # --- END: New Debug Logging Block ---
 
         default_result = {
             'matchup_num_games': self.defaults['matchup_num_games'],
@@ -1573,17 +1459,15 @@ class NBAFeatureEngine:
             if should_log_details: logger.debug("H2H Helper: Returning default: Empty history, max_games<=0, or invalid date.")
             return default_result
 
-        # Filter for games strictly before the current date
         try:
             past_games_df = historical_subset[historical_subset['game_date'] < current_game_date].copy()
         except TypeError as te:
              logger.error(f"H2H Helper: TypeError during date comparison. Check 'game_date' dtype and 'current_game_date'. Error: {te}", exc_info=True)
-             return default_result # Cannot proceed if date comparison fails
+             return default_result 
         except Exception as e_filter:
              logger.error(f"H2H Helper: Error during date filtering: {e_filter}", exc_info=True)
              return default_result
 
-        # --- START: New Debug Logging Block ---
         if should_log_details:
             logger.debug(f"Filtered to past_games_df shape: {past_games_df.shape} (Games before {current_game_date.date()})")
             if not past_games_df.empty:
@@ -1594,17 +1478,13 @@ class NBAFeatureEngine:
                     logger.debug(f"Could not log head/tail of past_games_df: {e_past_log}")
             else:
                  logger.debug("past_games_df is empty after date filter.")
-        # --- END: New Debug Logging Block ---
 
         if past_games_df.empty:
-            # No need to log again here if already logged above
             return default_result
 
         try:
-            # Get the N most recent games from the filtered past games
             recent_matchups = past_games_df.sort_values('game_date', ascending=False).head(max_games)
 
-            # --- START: New Debug Logging Block ---
             if should_log_details:
                  logger.debug(f"Selected recent_matchups shape: {recent_matchups.shape} (Max {max_games} games)")
                  if not recent_matchups.empty:
@@ -1616,26 +1496,23 @@ class NBAFeatureEngine:
 
                  else:
                       logger.debug("recent_matchups is empty after head(max_games).")
-            # --- END: New Debug Logging Block ---
 
             if recent_matchups.empty:
-                # No need to log again here if already logged above
                 return default_result
 
-            # Ensure scores are numeric (should be pre-processed, but double-check)
+            # Ensure scores are numeric
             recent_matchups['home_score'] = pd.to_numeric(recent_matchups['home_score'], errors='coerce')
             recent_matchups['away_score'] = pd.to_numeric(recent_matchups['away_score'], errors='coerce')
             recent_matchups = recent_matchups.dropna(subset=['home_score', 'away_score'])
 
             if recent_matchups.empty:
-                #if is_debug: logger.debug("H2H Helper: Returning default as no valid scores found in recent matchups.")
                 return default_result
 
-            # Calculate stats - loop through the selected recent games *chronologically* for streak
+            # Calculate stats 
             diffs, total_scores, home_persp_scores, away_persp_scores = [], [], [], []
             home_persp_wins = 0
             current_streak = 0
-            last_winner_norm = None # Tracks winner for streak calc (home_team_norm or away_team_norm)
+            last_winner_norm = None 
 
             # Iterate from oldest to newest among the selected recent games
             for _, game in recent_matchups.sort_values('game_date', ascending=True).iterrows():
@@ -1644,21 +1521,17 @@ class NBAFeatureEngine:
                 g_home_norm = game.get('home_team_norm', 'Hist_Unknown_Home')
                 g_away_norm = game.get('away_team_norm', 'Hist_Unknown_Away')
 
-                #if is_debug: logger.debug(f"H2H Helper Iter: Date={game['game_date'].date()}, GameHome={g_home_norm}, GameAway={g_away_norm}, HScore={h_score}, AScore={a_score}")
-
-                # Determine diff and winner from perspective of the *target* home_team_norm
-                if g_home_norm == home_team_norm: # Target home team played at home in this historical game
+                if g_home_norm == home_team_norm: 
                     diff = h_score - a_score
                     won = h_score > a_score
                     h_persp_score = h_score
                     a_persp_score = a_score
-                elif g_away_norm == home_team_norm: # Target home team played away
+                elif g_away_norm == home_team_norm: 
                     diff = a_score - h_score
                     won = a_score > h_score
-                    h_persp_score = a_score # Score FOR the target team
-                    a_persp_score = h_score # Score AGAINST the target team
+                    h_persp_score = a_score 
+                    a_persp_score = h_score 
                 else:
-                    # This case should ideally not happen if historical_subset was correctly filtered by matchup_key
                     logger.warning(f"H2H Helper: Mismatch in game teams vs target teams! Game: {g_home_norm} vs {g_away_norm}, Target Home: {home_team_norm}. Skipping game.")
                     continue
 
@@ -1668,25 +1541,20 @@ class NBAFeatureEngine:
                 away_persp_scores.append(a_persp_score)
 
                 game_winner_norm = home_team_norm if won else away_team_norm
-                #if is_debug: logger.debug(f"H2H Helper Iter: Perspective={home_team_norm}, Diff={diff:.1f}, Won={won}, Winner={game_winner_norm}")
 
                 if won: home_persp_wins += 1
 
-                # Calculate streak (relative to the target home team)
-                if last_winner_norm is None: # First game in streak calculation
+                if last_winner_norm is None: 
                     current_streak = 1 if won else -1
-                elif game_winner_norm == last_winner_norm: # Streak continues
+                elif game_winner_norm == last_winner_norm: 
                     current_streak += (1 if won else -1)
                 else: # Streak broken
                     current_streak = 1 if won else -1
-                last_winner_norm = game_winner_norm # Update for next iteration
-
-                #if is_debug: logger.debug(f"H2H Helper Iter: Streak after game: {current_streak}")
+                last_winner_norm = game_winner_norm 
 
 
             num_games = len(diffs)
             if num_games == 0:
-                #if is_debug: logger.debug("H2H Helper: Returning default as no valid games processed in loop.")
                 return default_result
 
             # Assemble final results
@@ -1700,15 +1568,12 @@ class NBAFeatureEngine:
                 'matchup_last_date': recent_matchups['game_date'].max(), # Date of most recent game in H2H history
                 'matchup_streak': int(current_streak) # Final streak value
             }
-            #if is_debug: logger.debug(f"H2H Helper: Calculated final stats: {final_stats}")
 
-            # Ensure all keys from default_result are present
             for k, v in default_result.items():
                 final_stats.setdefault(k, v)
-                if pd.isna(final_stats[k]): final_stats[k] = v # Fill NaNs just in case
-
+                if pd.isna(final_stats[k]): final_stats[k] = v 
             
-            if should_log_details and num_games > 0: # Only log if we actually calculated something
+            if should_log_details and num_games > 0: 
                  logger.debug(f"H2H Helper: Calculated final stats for Index {loop_index}: {final_stats}")
                  logger.debug(f"--- End H2H Helper Call (Index: {loop_index}) ---")
 
@@ -1717,15 +1582,13 @@ class NBAFeatureEngine:
 
         except Exception as e:
             logger.error(f"H2H Helper: Error calculating for Index {loop_index}, {home_team_norm} vs {away_team_norm} on {current_game_date}: {e}", exc_info=True)
-            return default_result # Return defaults on error
+            return default_result 
 
 
     def _extract_form_metrics_single(self, form_string: Optional[str]) -> Dict[str, float]:
         """Extracts metrics (win %, streak, momentum) from a form string like 'WWLWL'."""
-        # <<< Add Check for Debug Level >>>
         is_debug = _is_debug_enabled(logger)
 
-        #if is_debug: logger.debug(f"Form Helper: Called with string='{form_string}'")
 
         defaults = {
             'form_win_pct': self.defaults['form_win_pct'],
@@ -1734,7 +1597,6 @@ class NBAFeatureEngine:
         }
 
         if not form_string or pd.isna(form_string) or not isinstance(form_string, str):
-            #if is_debug: logger.debug("Form Helper: Returning default due to invalid/empty input string.")
             return defaults
 
         # Clean the string
@@ -1742,49 +1604,41 @@ class NBAFeatureEngine:
         form_len = len(form_string)
 
         if form_len == 0 or form_string == 'N/A':
-            #if is_debug: logger.debug("Form Helper: Returning default due to empty/NA string after cleaning.")
             return defaults
 
         # Calculate Win Percentage
         wins = form_string.count('W')
         form_win_pct = wins / form_len
-        #if is_debug: logger.debug(f"Form Helper: Wins={wins}, Len={form_len}, WinPct={form_win_pct:.3f}")
 
         # Calculate Current Streak
         current_streak = 0
         if form_len > 0:
-            streak_char = form_string[-1] # Last game result determines streak type (W or L)
+            streak_char = form_string[-1] 
             streak_count = 0
-            for char in reversed(form_string): # Count consecutive same results from the end
+            for char in reversed(form_string): 
                 if char == streak_char:
                     streak_count += 1
                 else:
                     break
             current_streak = streak_count if streak_char == 'W' else -streak_count
-        #if is_debug: logger.debug(f"Form Helper: Calculated Streak={current_streak}")
-
 
         # Calculate Momentum Direction (comparing recent half vs older half)
         momentum_direction = 0.0
-        if form_len >= 4: # Need at least 4 games for a meaningful split
-            split_point = form_len // 2 # Integer division
+        if form_len >= 4: 
+            split_point = form_len // 2 
             # Ensure correct slicing
             recent_half_str = form_string[-split_point:]
-            older_half_str = form_string[:form_len - split_point] # Handles odd lengths correctly
+            older_half_str = form_string[:form_len - split_point]
             len_r, len_o = len(recent_half_str), len(older_half_str)
-
-            #if is_debug: logger.debug(f"Form Helper: Momentum check - Older='{older_half_str}' (len={len_o}), Recent='{recent_half_str}' (len={len_r})")
 
             if len_r > 0 and len_o > 0: # Ensure both halves exist
                 wins_r = recent_half_str.count('W')
                 wins_o = older_half_str.count('W')
                 pct_r = wins_r / len_r
                 pct_o = wins_o / len_o
-                #if is_debug: logger.debug(f"Form Helper: Momentum check - OlderPct={pct_o:.3f}, RecentPct={pct_r:.3f}")
 
-                if pct_r > pct_o: momentum_direction = 1.0 # Improving form
-                elif pct_r < pct_o: momentum_direction = -1.0 # Declining form
-        #if is_debug: logger.debug(f"Form Helper: Calculated MomentumDir={momentum_direction}")
+                if pct_r > pct_o: momentum_direction = 1.0 
+                elif pct_r < pct_o: momentum_direction = -1.0 
 
 
         final_metrics = {
@@ -1792,7 +1646,6 @@ class NBAFeatureEngine:
             'current_streak': int(current_streak),
             'momentum_direction': momentum_direction
         }
-        #if is_debug: logger.debug(f"Form Helper: Returning metrics: {final_metrics}")
 
         return final_metrics
 
@@ -1822,7 +1675,7 @@ class NBAFeatureEngine:
         try:
             target_games_df['game_date'] = pd.to_datetime(target_games_df['game_date'], errors='coerce').dt.tz_localize(None)
             target_games_df = target_games_df.dropna(subset=['game_date'])
-            # Ensure game_id is string early
+
             if 'game_id' in target_games_df.columns:
                  target_games_df['game_id'] = target_games_df['game_id'].astype(str)
         except Exception as e:
@@ -1840,7 +1693,7 @@ class NBAFeatureEngine:
                 hist_df_processed = historical_games_df.copy()
                 hist_df_processed['game_date'] = pd.to_datetime(hist_df_processed['game_date'], errors='coerce').dt.tz_localize(None)
                 hist_df_processed = hist_df_processed.dropna(subset=['game_date'])
-                # Ensure game_id is string early and remove duplicates
+
                 if 'game_id' in hist_df_processed.columns:
                     hist_df_processed['game_id'] = hist_df_processed['game_id'].astype(str)
                     hist_df_processed = hist_df_processed.drop_duplicates(subset=['game_id'], keep='last')
@@ -1848,22 +1701,23 @@ class NBAFeatureEngine:
             except Exception as e:
                 logger.error(f"Error processing 'game_date' or 'game_id' in historical_games_df: {e}. Proceeding without historical.")
                 hist_df_processed = None
-        # --- Determine base_calc_df START ---
+
+        # --- Determine base_calc_df ---
         base_calc_df = None
         if hist_df_processed is not None and not hist_df_processed.empty:
-            # Check if inputs are effectively the same dataset
+
             df_ids = set(target_games_df['game_id'].unique())
             hist_ids = set(hist_df_processed['game_id'].unique())
 
-            if df_ids == hist_ids: # Scenario 1: Inputs are identical
+            if df_ids == hist_ids: 
                 logger.info("Using the provided historical data directly as the base (inputs appear identical).")
                 base_calc_df = hist_df_processed.copy().sort_values(['game_date', 'game_id'], kind='mergesort').reset_index(drop=True)
-                # game_id already string
+
                 logger.info(f"Created base calculation DataFrame with {len(base_calc_df)} unique games.")
-            else: # Scenario 2: History and Target are distinct (and History exists)
+            else: 
                 try:
                     logger.info(f"Combining {len(hist_df_processed)} processed historical and {len(target_games_df)} target games...")
-                    # Align columns before concat
+
                     hist_cols = set(hist_df_processed.columns); target_cols = set(target_games_df.columns); all_cols_union = list(hist_cols.union(target_cols))
                     for col in all_cols_union:
                         if col not in hist_df_processed.columns: hist_df_processed[col] = np.nan
@@ -1872,29 +1726,26 @@ class NBAFeatureEngine:
                     base_calc_df = pd.concat([hist_df_processed[all_cols_union], target_games_df[all_cols_union]], ignore_index=True)\
                                     .sort_values(['game_date','game_id'], kind='mergesort')
                     initial_rows = len(base_calc_df)
-                    # game_id already string
-                    base_calc_df = base_calc_df.drop_duplicates('game_id', keep='last') # Keep dedup here
+
+                    base_calc_df = base_calc_df.drop_duplicates('game_id', keep='last')
                     rows_dropped = initial_rows - len(base_calc_df)
                     if rows_dropped > 0: logger.warning(f"Dropped {rows_dropped} duplicate game_id rows during combination.")
                     logger.info(f"Created base calculation DataFrame with {len(base_calc_df)} unique games.")
                 except Exception as e:
                     logger.error(f"Error combining distinct historical and target data: {e}", exc_info=True)
                     logger.warning("Falling back to using only target games data."); base_calc_df = target_games_df.copy().sort_values(['game_date','game_id']).reset_index(drop=True)
-                    # game_id already string in target_games_df
-        else: # Scenario 3: Only Target exists (no History)
+
+        else: 
             logger.warning("No historical data provided or processed. Using only target games data.")
             base_calc_df = target_games_df.copy().sort_values(['game_date','game_id']).reset_index(drop=True)
-            # game_id already string
 
         if base_calc_df is None or base_calc_df.empty:
             logger.error("Base DataFrame for feature calculation is empty. Cannot proceed.")
             return pd.DataFrame()
-        # --- Determine base_calc_df END ---
 
 
         # --- Feature Generation Sequence ---
         try:
-            # --- Add Checks After Each Step ---
             logger.info("Step 1/8: Adding intra-game momentum features...")
             base_calc_df = self.add_intra_game_momentum(base_calc_df)
             logger.debug(f"Shape after momentum: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
@@ -1912,7 +1763,7 @@ class NBAFeatureEngine:
             logger.debug(f"Shape after rest: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
 
             logger.info("Step 5/8: Adding head-to-head matchup features...")
-            # Pass the *original processed* historical df for lookup if it exists
+
             hist_lookup_df = hist_df_processed if hist_df_processed is not None else pd.DataFrame()
             base_calc_df = self.add_matchup_history_features(base_calc_df, hist_lookup_df, max_games=h2h_window)
             logger.debug(f"Shape after H2H: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
@@ -1925,8 +1776,6 @@ class NBAFeatureEngine:
             base_calc_df = self.add_form_string_features(base_calc_df)
             logger.debug(f"Shape after form: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
         
-            # --- End Checks ---
-
         except Exception as e:
             logger.error(f"Error during feature generation pipeline step: {e}", exc_info=True)
             return pd.DataFrame()
@@ -1934,20 +1783,18 @@ class NBAFeatureEngine:
         # --- Final Filtering ---
         logger.info("Filtering results back to target games...")
         try:
-            original_game_ids = df['game_id'].astype(str).unique() # Use the original input df game_ids
+            original_game_ids = df['game_id'].astype(str).unique() 
             num_unique_original_ids = len(original_game_ids)
             logger.debug(f"Filtering for {num_unique_original_ids} unique target game IDs...")
             if 'game_id' not in base_calc_df.columns:
                 raise ValueError("'game_id' column missing after feature generation.")
-            # base_calc_df['game_id'] is already string
+
             final_df = base_calc_df[base_calc_df['game_id'].isin(original_game_ids)].copy()
             logger.info(f"Shape of final DataFrame after filtering: {final_df.shape}")
             if len(final_df) != num_unique_original_ids:
-                 # This could happen if some target games had issues during feature gen (e.g., missing critical data)
+
                 logger.warning(f"Final Filtering Count Mismatch! Expected: {num_unique_original_ids}, Got: {len(final_df)}. Some target games might have been dropped due to processing errors.")
-                # Decide if this is critical - returning empty might be too harsh if some rows are okay
-                # For now, let's return the rows we have, but log the warning strongly.
-                # return pd.DataFrame() # Option: return empty if mismatch is unacceptable
+         
             else:
                 logger.info("Final filtering successful, row count matches target game count.")
         except Exception as filter_e:
@@ -1956,14 +1803,15 @@ class NBAFeatureEngine:
 
         total_time = time.time() - start_time_total
         logger.info(f"Feature generation pipeline complete for {len(final_df)} games in {total_time:.2f}s.")
-        return final_df.reset_index(drop=True) # Return the filtered df
+        return final_df.reset_index(drop=True) 
 
 
-# -- Example Usage (Keep empty if run externally) --
+# -- Example Usage --
 if __name__ == '__main__':
     logger.info("NBAFeatureEngine script executed directly (usually imported).")
-    # Example usage:
+
     engine = NBAFeatureEngine(debug=True)
+    
     # dummy_df = pd.DataFrame(...) # Create dummy data
     # features = engine.generate_all_features(dummy_df)
     # print(features.info())
