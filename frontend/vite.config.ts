@@ -21,7 +21,7 @@ export default defineConfig({
     rollupOptions: {
         input: {
           home: resolve(__dirname, "home.html"),
-          pwa: resolve(__dirname, "public/index.html"), // rename to app.html later
+          pwa: resolve(__dirname, "app.html"), // rename to app.html later
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
