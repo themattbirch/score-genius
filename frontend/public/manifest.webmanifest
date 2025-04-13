@@ -1,7 +1,7 @@
 {
-  "name": "Score Geniusr",
+  "name": "Score Genius",
   "short_name": "ScoreGenius",
-  "version": "1.2",
+  "version": "1.0",
   "description": "Get real-time NBA analytics with AI-powered score predictions that improve as games progress. Make informed betting decisions with accurate, quarter-by-quarter insights.",
   "start_url": "/app/",
   "scope": "/app/",
@@ -13,7 +13,7 @@
   "prefer_related_applications": false,
   "lang": "en-US",
   "dir": "ltr",
-  "id": "com.sportsvenueweather.app",
+  "id": "com.scoregenius.app",
   "launch_handler": {
     "client_mode": ["navigate-existing", "auto"]
   },
