@@ -1,132 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Support - ScoreGenius</title>
-    <meta name="description" content="Support for ScoreGenius NBA Analytics Progressive Web App">
-    <link rel="icon" href="/public/icons/favicon-16x16.png" sizes="16x16" type="image/png">
-    <link rel="icon" href="/public/icons/favicon-32x32.png" sizes="32x32" type="image/png">
-    <link rel="icon" href="/public/icons/favicon-192x192.png" sizes="192x192" type="image/png">
-    <link rel="manifest" href="/public/manifest.webmanifest" /> 
-     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <title>Support Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="/public/icons/favicon-32x32.png" type="image/png">
+    <style>/* Simple style to see if CSS loads */ body { border: 5px solid red; }</style>
 </head>
+<body>
+    <h1>Support Page Test</h1>
+    <p>If you see this and a red border, the HTML loaded.</p>
+    <p>Check network tab for tailwindcss.com request.</p>
 
-<body class="min-h-screen bg-gradient-to-b from-gray-900 to-black">
-    <!-- Navigation -->
-    <nav class="fixed w-full bg-black/80 backdrop-blur-sm z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16 items-center">
-                <a href="/" class="flex items-center">
-                    <i data-lucide="bar-chart" class="w-8 h-8 text-red-600"></i>
-                    <span class="ml-2 font-bold text-white">ScoreGenius</span>
-                </a>
-                <a href="/" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
-                    Download app
-                </a>
-            </div>
-        </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="pt-24 pb-16 px-4">
-        <div class="max-w-3xl mx-auto bg-gray-800 rounded-2xl shadow-xl p-8">
-            <header class="mb-8 border-b border-gray-700 pb-8">
-                <h1 class="text-3xl font-bold text-white mb-2">Support</h1>
-                <p class="text-gray-400">Get help with ScoreGenius</p>
-            </header>
-
-            <main class="space-y-8">
-                <section>
-                    <h2 class="text-2xl font-semibold text-white mb-4">Quick Start Guide</h2>
-                    <p class="text-gray-300 mb-4">
-                        ScoreGenius provides real-time NBA analytics, predictive insights, and betting recommendations. Here's how to get
-                        started:
-                    </p>
-                    <div class="bg-gray-700 rounded-lg p-4 space-y-2">
-                        <ul class="list-disc pl-5 text-gray-300 space-y-2">
-                            <li>Install the app from your browser or device's app store</li>
-                            <li>View today's NBA games and predictions</li>
-                            <li>Track live game progress with real-time score predictions</li>
-                            <li>Explore betting insights and recommendations</li>
-                        </ul>
-                    </div>
-                </section>
-
-                <section>
-                    <h2 class="text-2xl font-semibold text-white mb-4">Frequently Asked Questions
-                    </h2>
-                    <div class="space-y-4">
-                        <div class="bg-gray-700 rounded-lg p-4">
-                            <h3 class="font-semibold text-white mb-2">How often are predictions updated?</h3>
-                            <p class="text-gray-300">Predictions update in real-time during games. Quarter-by-quarter models improve accuracy as games progress.</p>
-                        </div>
-                        <div class="bg-gray-700 rounded-lg p-4">
-                            <h3 class="font-semibold text-white mb-2">How accurate are the predictions?</h3>
-                            <p class="text-gray-300">Our models achieve increasing accuracy throughout games, with Q4 predictions reaching ~4.7 RMSE (significantly better than early-game predictions).</p>
-                        </div>
-                        <div class="bg-gray-700 rounded-lg p-4">
-                            <h3 class="font-semibold text-white mb-2">Does the app work offline?</h3>
-                            <p class="text-gray-300">Yes, previously loaded data and predictions are cached for offline viewing, though real-time updates require an internet connection.</p>
-                        </div>
-                    </div>
-                </section>
-
-                <section>
-                    <h2 class="text-2xl font-semibold text-white mb-4">Troubleshooting</h2>
-                    <div class="bg-gray-700 rounded-lg p-4 space-y-4">
-                        <div>
-                            <h3 class="font-semibold text-white mb-2">Predictions Not Loading</h3>
-                            <ul class="list-disc pl-5 text-gray-300 space-y-1">
-                                <li>Check your internet connection</li>
-                                <li>Refresh the app</li>
-                                <li>Clear app cache and try again</li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h3 class="font-semibold text-white mb-2">Chart Display Issues</h3>
-                            <ul class="list-disc pl-5 text-gray-300 space-y-1">
-                                <li>Ensure your app is updated to the latest version</li>
-                                <li>Try switching between data visualization modes</li>
-                                <li>Restart the app</li>
-                            </ul>
-                        </div>
-                    </div>
-                </section>
-
-                <section>
-                    <h2 class="text-2xl font-semibold text-white mb-4">Contact Support</h2>
-                    <p class="text-gray-300 mb-4">
-                        Still need help? Contact our support team:
-                    </p>
-                    <div class="bg-gray-700 rounded-lg p-4">
-                        <p class="text-red-400">support@sportsgenius.io</p>
-                    </div>
-                </section>
-            </main>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <footer class="py-8 px-4 bg-black">
-        <div class="max-w-7xl mx-auto text-center">
-            <p class="text-gray-400">
-                © 2025 Optimize Web Solutions. All rights reserved.
-            </p>
-            <div class="mt-4 space-x-4">
-                <a href="/" class="text-gray-400 hover:text-white">Home</a>
-                <a href="/privacy" class="text-gray-400 hover:text-white">Privacy</a>
-            </div>
-        </div>
-    </footer>
-
-    <script>
-        lucide.createIcons();
-        // Always use dark mode since we have a dark theme
-        document.documentElement.classList.add('dark');
-    </script>
-</body>
-
+    </body>
 </html>
