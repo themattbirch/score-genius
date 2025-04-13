@@ -1,10 +1,14 @@
 const CACHE_NAME = 'score-genius';
 const PRECACHE_URLS = [
   '/app',
-  '/index.html',
-  '/offline.html',
-  '/manifest.webmanifest',
-  '/icons/ICON-48.png',
+  '/',
+  '/public/404.html',
+  '/public/offline.html',
+  '/public/privacy.html',
+  '/public/terms.html',
+  '/public/support.html',
+  '/public/manifest.webmanifest',
+  '/icons/football-icon-48.png',
 ];
 
 const OFFLINE_FALLBACK_URL = '/offline.html';

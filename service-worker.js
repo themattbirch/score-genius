@@ -1,6 +1,6 @@
 // frontend/public/service-worker.js
 const CACHE_NAME = "scoregenius-cache-v1";
-const urlsToCache = ["/", "/index.html", "/manifest.json", "/favicon.ico"];
+const urlsToCache = ["/", "/index.html", "/manifest.webmanifest", "/favicon.ico"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
