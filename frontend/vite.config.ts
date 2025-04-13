@@ -1,4 +1,3 @@
-/// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
@@ -10,30 +9,19 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          // Copy everything from frontend/public/*
           src: resolve(__dirname, "public/*"),
-          // To the root of frontend/dist/
           dest: ".",
         },
       ],
     }),
   ],
-  server: {
-    open: "/app/",
-    proxy: {
-      "/app": {
-        target: "http://localhost:5173/public",
-        rewrite: (path) => path.replace(/^\/app/, ""),
-        secure: false,
-      },
-    },
-  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: {
-        main: resolve(__dirname, "home.html"),
+        input: {
+          home: resolve(__dirname, "home.html"),
+          pwa: resolve(__dirname, "public/index.html"), // rename to app.html later
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
@@ -42,5 +30,6 @@ export default defineConfig({
       },
     },
   },
-  publicDir: "public",
+  // For production, you typically don’t need the dev `server` block:
+  // server: { ... } // remove or leave in dev only
 });
