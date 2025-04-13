@@ -33,7 +33,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
+        main: resolve(__dirname, "mainindex.html"),
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
