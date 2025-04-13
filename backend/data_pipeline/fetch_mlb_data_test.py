@@ -64,7 +64,7 @@ def fetch_picks(game_id="401472105"):
     data = call_endpoint(endpoint)
     print(data)
 
-def fetch_schedule(year="2020", month="09", day="17"):
+def fetch_schedule(year="2025", month="04", day="11"):
     """Retrieves schedule data."""
     endpoint = "/mlb/schedule"
     params = {"year": year, "month": month, "day": day}
@@ -152,47 +152,47 @@ def fetch_team_roster(team_id="16", season="2023"):
 if __name__ == "__main__":
     print("Starting MLB API tests with RapidAPI endpoints...\n")
     
-    fetch_play_by_play()
-    time.sleep(1)
+    # fetch_play_by_play()
+    # time.sleep(1)
     
-    fetch_box_score()
-    time.sleep(1)
+    # fetch_box_score()
+    # time.sleep(1)
     
-    fetch_summary()
-    time.sleep(1)
+    # fetch_summary()
+    # time.sleep(1)
     
-    fetch_picks()
-    time.sleep(1)
+    # fetch_picks()
+    # time.sleep(1)
     
-    fetch_schedule()
-    time.sleep(1)
+    #fetch_schedule()
+    #time.sleep(1)
     
-    fetch_scoreboard()
-    time.sleep(1)
+    # fetch_scoreboard()
+    # time.sleep(1)
     
-    fetch_standings()
-    time.sleep(1)
+    # fetch_standings()
+    # time.sleep(1)
     
-    fetch_team_list()
-    time.sleep(1)
+    # fetch_team_list()
+    # time.sleep(1)
     
-    fetch_team_info()
-    time.sleep(1)
+    # fetch_team_info()
+    # time.sleep(1)
     
-    fetch_team_players()
-    time.sleep(1)
+    # fetch_team_players()
+    # time.sleep(1)
     
-    fetch_news()
-    time.sleep(1)
+    # fetch_news()
+    # time.sleep(1)
     
-    fetch_player_statistic()
-    time.sleep(1)
+    # fetch_player_statistic()
+    # time.sleep(1)
     
-    fetch_player_statistic2()
-    time.sleep(1)
+    # fetch_player_statistic2()
+    # time.sleep(1)
     
-    fetch_player_splits()
-    time.sleep(1)
+    # fetch_player_splits()
+    # time.sleep(1)
     
     fetch_team_roster()
     
