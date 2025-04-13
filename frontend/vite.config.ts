@@ -8,7 +8,6 @@ export default defineConfig({
   plugins: [
     react(),
     viteStaticCopy({
-      // <-- Add the plugin configuration
       targets: [
         {
           // Copy everything from frontend/public/*
@@ -16,11 +15,6 @@ export default defineConfig({
           // To the root of frontend/dist/
           dest: ".",
         },
-        // Note: Depending on how the glob (*) works, you might need separate entries
-        // if it doesn't copy directories correctly, e.g.:
-        // { src: resolve(__dirname, 'public/icons'), dest: '.' },
-        // { src: resolve(__dirname, 'public/help.html'), dest: '.' }, etc.
-        // But try the simple 'public/*' first.
       ],
     }),
   ],
