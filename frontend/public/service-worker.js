@@ -8,7 +8,7 @@ const PRECACHE_URLS = [
   // Routes (will cache the index.html served for these)
   "/",
   "/app",
-  "/help", // Changed from /public/support.html - caches the result of the /help route
+  "/support", // Changed from /public/support.html - caches the result of the /help route
   "/privacy", // Changed from /public/privacy.html - caches the result of the /privacy route
   "/terms", // Changed from /public/terms.html - caches the result of the /terms route
 
