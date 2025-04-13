@@ -1,29 +1,21 @@
 // service-worker.js
 
-const CACHE_NAME = "score-genius-v1.1"; // Consider versioning this, e.g., 'score-genius-v1.1'
+const CACHE_NAME = "score-genius-v1.1"; 
 
-// IMPORTANT: Verify asset paths (manifest, icons, main JS/CSS) after deployment!
-// Vite might hash them and put them in /assets/. Update paths below if needed.
 const PRECACHE_URLS = [
   // Routes (will cache the index.html served for these)
   "/",
   "/app",
-  "/support", // Changed from /public/support.html - caches the result of the /help route
-  "/privacy", // Changed from /public/privacy.html - caches the result of the /privacy route
-  "/terms", // Changed from /public/terms.html - caches the result of the /terms route
+  "/support", 
+  "/privacy", 
+  "/terms", 
 
   // Specific Files (relative to the 'frontend/dist' root)
-  "/offline.html", // Changed from /public/offline.html - MUST match OFFLINE_FALLBACK_URL
-  "/404.html", // Changed from /public/404.html - caches the actual 404 file
-  "/manifest.webmanifest", // Changed from /public/manifest.webmanifest - VERIFY if hashed to /assets/
-  "/icons/football-icon-48.png", // Kept as is - VERIFY if hashed to /assets/
+  "/offline.html", 
+  "/404.html", 
+  "/manifest.webmanifest", 
+  "/icons/football-icon-48.png",
 
-  // ===> RECOMMENDED ADDITIONS (find exact paths from Network tab after successful deploy) <===
-  // '/assets/index.xxxxx.js',  // Replace with your actual main JS bundle path
-  // '/assets/index.xxxxx.css', // Replace with your actual main CSS bundle path
-  // '/icons/favicon-32x32.png', // Or hashed path from /assets/ if applicable
-  // '/icons/favicon-192x192.png', // Or hashed path from /assets/ if applicable
-  // etc. for other critical icons/assets
 ];
 
 const OFFLINE_FALLBACK_URL = "/offline.html"; // This MUST exactly match an entry in PRECACHE_URLS
