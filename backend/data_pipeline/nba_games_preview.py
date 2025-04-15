@@ -11,14 +11,14 @@ from supabase import create_client, Client # Import create_client and Client
 
 # API-Sports configuration (for game previews)
 API_KEY_SPORTS = API_SPORTS_KEY
-BASE_URL_SPORTS = 'https://v1.basketball.api-sports.io'
+NBA_URL_SPORTS = 'https://v1.basketball.api-sports.io'
 HEADERS_SPORTS = {
     'x-rapidapi-key': API_KEY_SPORTS,
     'x-rapidapi-host': 'v1.basketball.api-sports.io'
 }
 
 # The Odds API configuration
-BASE_URL_ODDS = 'https://api.the-odds-api.com/v4/sports/basketball_nba/odds'
+NBA_URL_ODDS = 'https://api.the-odds-api.com/v4/sports/basketball_nba/odds'
 ODDS_API_KEY = ODDS_API_KEY # Ensure this is correctly assigned from config
 
 # Supabase client initialization (can be done once if needed globally)
@@ -40,7 +40,7 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
     """
     Fetches all game data from API-Basketball for the given date, league, season, and timezone.
     """
-    url = f"{BASE_URL_SPORTS}/games"
+    url = f"{NBA_URL_SPORTS}/games"
     params = {
         'league': league,
         'season': season,
@@ -80,7 +80,7 @@ def get_betting_odds(date: datetime) -> list:
     }
 
     try:
-        response = requests.get(BASE_URL_ODDS, params=params)
+        response = requests.get(NBA_URL_ODDS, params=params)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.HTTPError as http_err:
