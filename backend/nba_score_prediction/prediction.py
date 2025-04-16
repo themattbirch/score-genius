@@ -21,8 +21,9 @@ from typing import List, Dict, Optional, Any, Tuple
 SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = BACKEND_DIR.parent
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 # --- Project Module Imports ---
 try:
@@ -30,8 +31,10 @@ try:
     from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor
     from nba_score_prediction.simulation import PredictionUncertaintyEstimator
     from caching.supabase_client import supabase as supabase_client_instance
+    from supabase import create_client, Client
+    from config import SUPABASE_URL, SUPABASE_ANON_KEY
     from backend import config
-    from . import utils 
+    from nba_score_prediction import utils
     PROJECT_MODULES_IMPORTED = True
 except ImportError as e:
     logging.error(f"Error importing project modules: {e}. Prediction script may fail.", exc_info=True)
@@ -293,23 +296,22 @@ def parse_moneyline_str(ml_str: Optional[str], home_team: str, away_team: str) -
         if len(mls) == 2:
             ml1, ml2 = int(mls[0]), int(mls[1])
             if ml1 < 0 and ml2 > 0: 
-                 home_ml = ml1; away_ml = ml2
+                home_ml = ml1; away_ml = ml2
             elif ml2 < 0 and ml1 > 0: 
-                 home_ml = ml2; away_ml = ml1
-            elif ml1 < 0 and ml2 < 0: 
-                 home_ml = ml1; away_ml = ml2
-                 logger.warning(f"Both moneylines negative in '{ml_str}'. Assigning {ml1} to home.")
-            elif ml1 > 0 and ml2 > 0: 
-                 home_ml = ml1; away_ml = ml2
-                 logger.warning(f"Both moneylines positive in '{ml_str}'. Assigning {ml1} to home.")
-            else: 
-                 home_ml = ml1; away_ml = ml2
-            # TODO: 
+                home_ml = ml2; away_ml = ml1
+            elif ml1 < 0 and ml2 < 0:
+                # Both moneylines negative: keep the assignments as they are
+                home_ml = ml1; away_ml = ml2
+                logger.debug(f"Both moneylines negative in '{ml_str}'. Using {ml1} for home and {ml2} for away.")
+            elif ml1 > 0 and ml2 > 0:
+                home_ml = ml1; away_ml = ml2
+                logger.warning(f"Both moneylines positive in '{ml_str}'. Assigning {ml1} to home.")
+            else:
+                home_ml = ml1; away_ml = ml2
         elif len(mls) == 1:
-             logger.warning(f"Only one moneyline found in '{ml_str}'. Cannot assign reliably.")
+            logger.warning(f"Only one moneyline found in '{ml_str}'. Cannot assign reliably.")
         else:
             logger.warning(f"Could not find two moneylines in '{ml_str}'.")
-
     except Exception as e:
         logger.warning(f"Could not parse moneyline string '{ml_str}': {e}")
     return home_ml, away_ml
@@ -1032,3 +1034,53 @@ if __name__ == "__main__":
     else:
         logger.warning("Prediction pipeline finished but produced no final results.")
     logger.info("--- Prediction Script Finished ---")
+
+def upsert_score_predictions(predictions: List[Dict[str, Any]]) -> None:
+    """
+    Updates predicted scores in the Supabase nba_game_schedule table for each existing game_id.
+    Only updates predicted_home_score and predicted_away_score.
+    """
+    from supabase import create_client, Client
+    from config import SUPABASE_URL, SUPABASE_ANON_KEY
+
+    # Initialize the Supabase client
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    
+    updated = 0
+    for pred in predictions:
+        game_id = pred.get("game_id")
+        if not game_id:
+            print("Skipping prediction with missing game_id:", pred)
+            continue
+
+        update_dict = {
+            "predicted_home_score": pred.get("predicted_home_score"),
+            "predicted_away_score": pred.get("predicted_away_score")
+        }
+        try:
+            response = supabase.table("nba_game_schedule").update(update_dict).eq("game_id", game_id).execute()
+            if response.data:
+                print(f"Updated predicted scores for game_id {game_id}.")
+                updated += 1
+            else:
+                print(f"No row found to update for game_id {game_id}.")
+        except Exception as e:
+            print(f"Error updating game_id {game_id}: {e}")
+    print(f"Finished updating predicted scores for {updated} games.")
+
+
+# Example usage:
+if __name__ == "__main__":
+    # ... Your existing prediction logic (e.g., generate_predictions) to obtain final_preds ...
+    final_preds, raw_preds = generate_predictions(
+        days_window=DEFAULT_UPCOMING_DAYS_WINDOW,
+        model_dir=MODELS_DIR,
+        calibrate_with_odds=True,
+        blend_factor=0.3,
+        historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES
+    )
+    
+    if final_preds:
+        upsert_score_predictions(final_preds)
+    else:
+        print("No final predictions generated to upsert.")

@@ -45,7 +45,7 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-# --- NEW: Add RapidAPI Credentials ---
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
 # --- End New Section ---
@@ -56,8 +56,9 @@ config_status = {
     "ODDS_API_KEY": "Set" if ODDS_API_KEY else "Not Set",
     "DATABASE_URL": "Set" if DATABASE_URL else "Not Set",
     "SUPABASE_URL": "Set" if SUPABASE_URL else "Not Set",
-    "SUPABASE_KEY": "Set" if SUPABASE_ANON_KEY else "Not Set",
-     # --- NEW: Add RapidAPI status ---
+    "SUPABASE_ANON_KEY": "Set" if SUPABASE_ANON_KEY else "Not Set",
+    "SUPABASE_SERVICE_KEY": "Set" if SUPABASE_SERVICE_KEY else "Not Set",
+
     "RAPIDAPI_KEY": "Set" if RAPIDAPI_KEY else "Not Set",
     "RAPIDAPI_HOST": "Set" if RAPIDAPI_HOST else "Not Set",
     # --- End New Section ---

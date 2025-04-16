@@ -23,7 +23,6 @@ try:
         build_game_preview,
         upsert_previews_to_supabase
     )
-    from data_pipeline.process_odds_data import main as process_odds_data_main
     from caching.supabase_cache import cache_game_data
 
     PROJECT_MODULES_IMPORTED = True

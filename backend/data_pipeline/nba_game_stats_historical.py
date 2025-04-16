@@ -12,10 +12,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
 from config import API_SPORTS_KEY
 from caching.supabase_client import supabase
-# IMPORTANT: We only need this upsert function for game-level stats
 from caching.supabase_stats import upsert_historical_game_stats_team
 
 API_KEY = API_SPORTS_KEY
+SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
     'x-rapidapi-key': API_KEY,
@@ -272,7 +272,7 @@ def process_day(date_obj: datetime):
 
 def main():
     # Example: fetch data from 2025-03-16 to 2025-03-17
-    start_date = datetime(2025, 4, 12)
+    start_date = datetime(2025, 4, 15)
     end_date = datetime(2025, 4, 16)
 
     print(f"Starting historical data import from {start_date} to {end_date}")
