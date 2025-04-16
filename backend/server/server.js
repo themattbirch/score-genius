@@ -1,74 +1,58 @@
 // backend/server/server.js
+ // Simple way to load .env - ensure it's found or configure path below
+
+// --- OR Explicit path loading ---
+// import dotenv from 'dotenv';
+// import path from 'path';
+// import { fileURLToPath } from 'url';
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
+// dotenv.config({ path: path.resolve(__dirname, '../../.env') }); // Load .env from project root
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import morgan from 'morgan'; // Optional: for HTTP request logging
+import 'dotenv/config';
 
-// --- Load Environment Variables ---
-// Loads variables from .env file into process.env
-// Make sure to create a .env file for variables like PORT, SUPABASE_URL, SUPABASE_KEY
-dotenv.config();
+// --- Route Imports (using import, add .js extension) ---
+// import nbaRoutes from './routes/nbaRoutes.js';
+import mlbRoutes from './routes/mlb_routes.js';// --- End Route Imports ---
 
-// --- Import Routers ---
-// These files will define the specific endpoints for each sport
-// We'll create basic versions of these next
-import nbaRoutes from './routes/nba_routes.js';
-import mlbRoutes from './routes/mlb_routes.js';
-
-// --- Initialize Express App ---
 const app = express();
+const PORT = process.env.PORT || 3001;
 
 // --- Middleware ---
-// Enable Cross-Origin Resource Sharing for your PWA frontend
-// Configure origins specifically in production for security
 app.use(cors());
-
-// Parse incoming JSON requests
 app.use(express.json());
-
-// HTTP request logger middleware (useful during development)
-if (process.env.NODE_ENV !== 'production') {
-  app.use(morgan('dev'));
-}
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+// --- End Middleware ---
 
 // --- API Routes ---
-// Mount the sport-specific routers under their base paths
-app.use('/api/nba', nbaRoutes);
-app.use('/api/mlb', mlbRoutes);
+// app.use('/api/v1/nba', nbaRoutes);
+app.use('/api/v1/mlb', mlbRoutes); // <-- UNCOMMENT/ADD THIS
 
-// --- Basic Health Check Route ---
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
+// --- End API Routes ---
 
-// --- Basic Root Route ---
-app.get('/', (req, res) => {
-  res.send('Score Genius API is running!');
-});
-
-// --- Error Handling Middleware ---
-// Handle 404 Not Found errors
-app.use((req, res, next) => {
-  res.status(404).json({ message: 'Resource not found on this server.' });
-});
-
-// Generic error handler (catches errors from routes)
-// Note: Add more specific error handling in production
+// --- Basic Error Handling ---
 app.use((err, req, res, next) => {
-  console.error(err.stack); // Log error stack trace to console
-  res.status(err.status || 500).json({
-    message: err.message || 'An unexpected error occurred.',
-    // Optionally include stack trace in development
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+  console.error("Error:", err.stack || err.message || err);
+  const status = err.status || 500;
+  const message = err.message || 'Internal Server Error';
+  res.status(status).json({
+    error: {
+      message: message,
+      // Only show stack in development
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    },
   });
 });
-
-// --- Start Server ---
-const PORT = process.env.PORT || 5001; // Use port from .env or default to 5001
+// --- End Error Handling ---
 
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
-  // In a real app, you might initialize DB connections here if needed globally
+  console.log(`Server listening on port ${PORT}`);
 });
-
-export default app; // Optional: export for testing frameworks
