@@ -1,5 +1,5 @@
 // backend/server/server.js
- // Simple way to load .env - ensure it's found or configure path below
+// Simple way to load .env - ensure it's found or configure path below
 
 // --- OR Explicit path loading ---
 // import dotenv from 'dotenv';
@@ -9,13 +9,13 @@
 // const __dirname = path.dirname(__filename);
 // dotenv.config({ path: path.resolve(__dirname, '../../.env') }); // Load .env from project root
 
-import express from 'express';
-import cors from 'cors';
-import 'dotenv/config';
+import express from "express";
+import cors from "cors";
+import "dotenv/config";
 
 // --- Route Imports (using import, add .js extension) ---
-// import nbaRoutes from './routes/nbaRoutes.js';
-import mlbRoutes from './routes/mlb_routes.js';// --- End Route Imports ---
+import nbaRoutes from "./routes/nba_routes.js";
+import mlbRoutes from "./routes/mlb_routes.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,11 +30,11 @@ app.use((req, res, next) => {
 // --- End Middleware ---
 
 // --- API Routes ---
-// app.use('/api/v1/nba', nbaRoutes);
-app.use('/api/v1/mlb', mlbRoutes); // <-- UNCOMMENT/ADD THIS
+app.use("/api/v1/nba", nbaRoutes);
+app.use("/api/v1/mlb", mlbRoutes);
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK", timestamp: new Date().toISOString() });
 });
 // --- End API Routes ---
 
@@ -42,12 +42,12 @@ app.get('/health', (req, res) => {
 app.use((err, req, res, next) => {
   console.error("Error:", err.stack || err.message || err);
   const status = err.status || 500;
-  const message = err.message || 'Internal Server Error';
+  const message = err.message || "Internal Server Error";
   res.status(status).json({
     error: {
       message: message,
       // Only show stack in development
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
     },
   });
 });

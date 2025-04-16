@@ -5,9 +5,9 @@ import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from config import API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
-from supabase import create_client, Client # Import create_client and Client
+from supabase import create_client, Client
+from typing import Dict, Any
 
-# --- [Existing code for API configurations, normalization, etc. remains the same] ---
 
 # API-Sports configuration (for game previews)
 API_KEY_SPORTS = API_SPORTS_KEY
@@ -445,13 +445,106 @@ def upsert_previews_to_supabase(previews: list) -> None:
         print(f"Error during Supabase upsert call: {e}")
         # You might want to log the full exception details
 
+def parse_moneyline(moneyline_data: Dict[str, any]) -> str:
+    if not moneyline_data:
+        return ""
+    parts = []
+    for team, price in moneyline_data.items():
+        price_str = f"+{price}" if price > 0 else str(price)
+        parts.append(f"{team} {price_str}")
+    return " / ".join(parts)
+
+def parse_spread(spread_data: Dict[str, any]) -> str:
+    if not spread_data:
+        return ""
+    parts = []
+    for team, info in spread_data.items():
+        if not isinstance(info, dict):
+            continue
+        point = info.get("point", 0)
+        point_str = f"+{point}" if point > 0 else str(point)
+        parts.append(f"{team} {point_str}")
+    return " / ".join(parts)
+
+def parse_total(total_data: Dict[str, any]) -> str:
+    if not total_data:
+        return ""
+    parts = []
+    for side, info in total_data.items():
+        if not isinstance(info, dict):
+            continue
+        point = info.get("point", 0)
+        parts.append(f"{side} {point}")
+    return " / ".join(parts)
+
+def process_odds_data_in_table() -> None:
+    """
+    Fetches all rows from nba_game_schedule, processes the raw odds fields into cleaned strings,
+    updates each row with the clean odds, and then clears the raw odds columns.
+    """
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    response = supabase.table("nba_game_schedule").select("*").execute()
+    rows = response.data
+    if not rows:
+        print("No rows found in nba_game_schedule.")
+        return
+
+    for row in rows:
+        game_id = row.get("game_id")
+        if not game_id:
+            continue
+
+        moneyline_data = row.get("moneyline") or {}
+        spread_data = row.get("spread") or {}
+        total_data = row.get("total") or {}
+
+        # Ensure the raw data is in dict form (convert if stored as JSON-string)
+        if isinstance(moneyline_data, str):
+            try:
+                moneyline_data = json.loads(moneyline_data)
+            except Exception as e:
+                print(f"Error parsing moneyline data for game_id {game_id}: {e}")
+                moneyline_data = {}
+        if isinstance(spread_data, str):
+            try:
+                spread_data = json.loads(spread_data)
+            except Exception as e:
+                print(f"Error parsing spread data for game_id {game_id}: {e}")
+                spread_data = {}
+        if isinstance(total_data, str):
+            try:
+                total_data = json.loads(total_data)
+            except Exception as e:
+                print(f"Error parsing total data for game_id {game_id}: {e}")
+                total_data = {}
+
+        moneyline_clean = parse_moneyline(moneyline_data)
+        spread_clean = parse_spread(spread_data)
+        total_clean = parse_total(total_data)
+
+        update_data = {
+            "moneyline_clean": moneyline_clean,
+            "spread_clean": spread_clean,
+            "total_clean": total_clean,
+            # Clear the raw data once processed
+            "moneyline": None,
+            "spread": None,
+            "total": None
+        }
+
+        upsert_res = supabase.table("nba_game_schedule").update(update_data).eq("game_id", game_id).execute()
+        print(f"Updated and cleared odds for game_id {game_id}. Response: {upsert_res}")
+    print("Finished processing and clearing odds data.")
+
+# Then, in your main function after your upsert call:
 def main():
     """
-    Main function: Clears old games, builds new previews, and upserts them.
+    Main function: Clears old games, builds new previews, upserts them,
+    then processes the betting odds in the table.
     """
     print("\n--- Running NBA Game Preview Script ---")
 
-    # 1. Clear old games based on ET date
+    # 1. Clear old games
     print("\nStep 1: Clearing old games...")
     clear_old_games()
 
@@ -463,15 +556,17 @@ def main():
     if preview_data:
         print("\nStep 3: Upserting previews to Supabase...")
         upsert_previews_to_supabase(preview_data)
-        print(f"\n--- Script finished. Processed {len(preview_data)} games. ---")
-        return len(preview_data) # Return count for scheduler logs perhaps
+        print(f"\n--- Previews upserted. Processed {len(preview_data)} games. ---")
     else:
-        print("\nStep 3: No game preview data generated to upsert.")
+        print("\nNo game preview data generated to upsert.")
         print("\n--- Script finished. No games processed. ---")
         return 0
 
+    # 4. Process betting odds data using the integrated logic
+    print("\nStep 4: Processing betting odds data in table...")
+    process_odds_data_in_table()
+    return len(preview_data)
+
 if __name__ == "__main__":
     main()
-
-    # Optional: Add a small delay or final message if run directly
     print("\nDirect execution finished.")
