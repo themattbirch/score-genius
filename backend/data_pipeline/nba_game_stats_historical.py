@@ -15,7 +15,6 @@ from caching.supabase_client import supabase
 from caching.supabase_stats import upsert_historical_game_stats_team
 
 API_KEY = API_SPORTS_KEY
-SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 BASE_URL = 'https://v1.basketball.api-sports.io'
 HEADERS = {
     'x-rapidapi-key': API_KEY,

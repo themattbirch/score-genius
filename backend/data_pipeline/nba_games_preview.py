@@ -1,10 +1,12 @@
 #backend/data_pipeline/nba_games_preview.py
 
 import json
+import difflib
 import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from config import API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
+from config import API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
+from caching.supabase_client import supabase
 from supabase import create_client, Client
 from typing import Dict, Any
 
@@ -27,14 +29,113 @@ ODDS_API_KEY = ODDS_API_KEY # Ensure this is correctly assigned from config
 
 
 def normalize_team_name(name: str) -> str:
-    """Normalizes a team name by stripping extra whitespace and converting to lower-case."""
+    """Strips extra whitespace and converts the team name to lowercase."""
     return ' '.join(name.split()).lower()
 
 def title_case_team_name(name: str) -> str:
-    """Converts a normalized team name back to title case.
-    Example: "dallas mavericks" -> "Dallas Mavericks"
-    """
+    """Converts a normalized team name back to title case."""
     return ' '.join(word.capitalize() for word in name.split())
+
+def get_betting_odds(et_date: datetime) -> list:
+    """
+    Fetches betting odds from The Odds API using an Eastern Time date range converted to UTC.
+    This ensures games held on the same ET date are all captured even if their UTC times spill over to the next day.
+    """
+    if not ODDS_API_KEY:
+        print("Error: ODDS_API_KEY not configured.")
+        return []
+
+    # Define the date range in Eastern Time
+    et_zone = ZoneInfo("America/New_York")
+    # Ensure et_date is in the ET timezone (or convert it)
+    et_date = et_date.astimezone(et_zone)
+    start_et = et_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_et = et_date.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    # Convert these ET boundaries to UTC strings for the API call
+    utc_zone = ZoneInfo("UTC")
+    commence_time_from = start_et.astimezone(utc_zone).strftime("%Y-%m-%dT%H:%M:%SZ")
+    commence_time_to = end_et.astimezone(utc_zone).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    params = {
+        "regions": "us",
+        "markets": "h2h,spreads,totals",
+        "oddsFormat": "american",
+        "commenceTimeFrom": commence_time_from,
+        "commenceTimeTo": commence_time_to,
+        "apiKey": ODDS_API_KEY
+    }
+
+    try:
+        response = requests.get(NBA_URL_ODDS, params=params)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP Error fetching betting odds: {http_err} - Status Code: {response.status_code}")
+        if response.status_code == 422:
+            print(f"Odds API response body: {response.text}")
+        return []
+    except requests.exceptions.RequestException as e:
+        print(f"Network or Request Error fetching betting odds: {e}")
+        return []
+    except Exception as e:
+        print(f"Unexpected error in get_betting_odds: {e}")
+        return []
+
+def match_odds_for_game(game: dict, odds_events: list) -> dict | None:
+    """
+    Matches an odds event to a game based on the normalized team names and local ET date.
+    If a direct match isn’t found, it optionally attempts fuzzy matching.
+    """
+    if not odds_events:
+        return None
+
+    teams = game.get('teams', {})
+    game_home = normalize_team_name(teams.get('home', {}).get('name', ''))
+    game_away = normalize_team_name(teams.get('away', {}).get('name', ''))
+
+    game_date_str = game.get('date', '')
+    try:
+        game_datetime_utc = datetime.fromisoformat(game_date_str.replace("Z", "+00:00"))
+        game_local_date = game_datetime_utc.astimezone(ZoneInfo("America/New_York")).date()
+    except (ValueError, TypeError):
+        print(f"Warning: Could not parse game date '{game_date_str}' for matching.")
+        return None
+
+    for event in odds_events:
+        odds_home = normalize_team_name(event.get('home_team', ''))
+        odds_away = normalize_team_name(event.get('away_team', ''))
+
+        # First, try an exact normalized match
+        if game_home == odds_home and game_away == odds_away:
+            try:
+                commence_time_str = event.get('commence_time', '')
+                event_datetime_utc = datetime.fromisoformat(commence_time_str.replace("Z", "+00:00"))
+                event_local_date = event_datetime_utc.astimezone(ZoneInfo("America/New_York")).date()
+                if game_local_date == event_local_date:
+                    return event
+            except (ValueError, TypeError):
+                print(f"Warning: Could not parse odds commence_time '{commence_time_str}' for matching.")
+                continue
+
+    # Optional: if no exact match is found, try fuzzy matching the team names.
+    for event in odds_events:
+        odds_home = normalize_team_name(event.get('home_team', ''))
+        odds_away = normalize_team_name(event.get('away_team', ''))
+        # Use difflib to compare closeness between team names
+        home_match = difflib.SequenceMatcher(None, game_home, odds_home).ratio()
+        away_match = difflib.SequenceMatcher(None, game_away, odds_away).ratio()
+        if home_match > 0.8 and away_match > 0.8:
+            try:
+                commence_time_str = event.get('commence_time', '')
+                event_datetime_utc = datetime.fromisoformat(commence_time_str.replace("Z", "+00:00"))
+                event_local_date = event_datetime_utc.astimezone(ZoneInfo("America/New_York")).date()
+                if game_local_date == event_local_date:
+                    return event
+            except (ValueError, TypeError):
+                print(f"Warning: Could not parse odds commence_time '{commence_time_str}' during fuzzy matching.")
+                continue
+    return None
 
 def get_games_by_date(league: str, season: str, date: str, timezone: str = 'America/New_York') -> dict:
     """
@@ -54,93 +155,6 @@ def get_games_by_date(league: str, season: str, date: str, timezone: str = 'Amer
     except requests.exceptions.RequestException as e:
         print(f"Error fetching game data for {date}: {e}")
         return {} # Return empty dict on error
-
-def get_betting_odds(date: datetime) -> list:
-    """
-    Fetches betting odds for NBA events from The Odds API for a specific date (UTC).
-    """
-    # Ensure ODDS_API_KEY is available
-    if not ODDS_API_KEY:
-        print("Error: ODDS_API_KEY not configured.")
-        return []
-
-    # Use UTC for the API query range
-    utc_zone = ZoneInfo("UTC")
-    commence_time_from = date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=utc_zone).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # Ensure the end time covers the full day up to the last second
-    commence_time_to = date.replace(hour=23, minute=59, second=59, microsecond=0, tzinfo=utc_zone).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    params = {
-        "regions": "us",
-        "markets": "h2h,spreads,totals",
-        "oddsFormat": "american",
-        "commenceTimeFrom": commence_time_from,
-        "commenceTimeTo": commence_time_to,
-        "apiKey": ODDS_API_KEY
-    }
-
-    try:
-        response = requests.get(NBA_URL_ODDS, params=params)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as http_err:
-        # Log specific errors, especially 422 which might mean no data
-        print(f"HTTP Error fetching betting odds: {http_err} - Status Code: {response.status_code}")
-        if response.status_code == 422:
-             print(f"Odds API response body: {response.text}") # Log body for 422 errors
-        return []
-    except requests.exceptions.RequestException as e:
-        print(f"Network or Request Error fetching betting odds: {e}")
-        return []
-    except Exception as e: # Catch any other unexpected errors
-        print(f"Unexpected error in get_betting_odds: {e}")
-        return []
-
-
-def match_odds_for_game(game: dict, odds_events: list) -> dict | None: # Use modern type hint
-    """
-    Attempts to match an odds event to a game by team names and local date (America/New_York).
-    Returns the matching odds event dict, or None.
-    """
-    if not odds_events: # No odds events to match against
-        return None
-
-    teams = game.get('teams', {})
-    game_home = normalize_team_name(teams.get('home', {}).get('name', ''))
-    game_away = normalize_team_name(teams.get('away', {}).get('name', ''))
-
-    game_date_str = game.get('date', '') # This is the scheduled time string from API-Basketball
-    game_local_date = None
-    try:
-        # API-Basketball usually provides ISO8601 UTC or with offset
-        game_datetime_utc = datetime.fromisoformat(game_date_str.replace("Z", "+00:00"))
-        # Convert to the target local timezone (ET) for date comparison
-        game_local_date = game_datetime_utc.astimezone(ZoneInfo("America/New_York")).date()
-    except (ValueError, TypeError):
-        print(f"Warning: Could not parse game date '{game_date_str}' for matching.")
-        return None # Cannot match without a valid game date
-
-    for event in odds_events:
-        odds_home = normalize_team_name(event.get('home_team', ''))
-        odds_away = normalize_team_name(event.get('away_team', ''))
-
-        # Match team names first
-        if game_home == odds_home and game_away == odds_away:
-            commence_time_str = event.get('commence_time', '') # This is UTC from Odds API
-            try:
-                # Parse the UTC time from Odds API
-                event_datetime_utc = datetime.fromisoformat(commence_time_str.replace("Z", "+00:00"))
-                # Convert to the target local timezone (ET) for date comparison
-                event_local_date = event_datetime_utc.astimezone(ZoneInfo("America/New_York")).date()
-
-                # Compare the local dates (ET)
-                if game_local_date == event_local_date:
-                    return event # Found a match
-            except (ValueError, TypeError):
-                 # Issue parsing commence_time, skip this event
-                 print(f"Warning: Could not parse odds commence_time '{commence_time_str}' for matching.")
-                 continue # Try next event
-    return None # No match found
 
 def extract_odds_by_market(odds_event: dict | None) -> dict: # Use modern type hint
     """
@@ -213,7 +227,7 @@ def clear_old_games():
     Uses batch delete for efficiency.
     """
     # Initialize Supabase client within the function or use a global one
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     try:
         # Select only necessary columns
@@ -394,7 +408,7 @@ def upsert_previews_to_supabase(previews: list) -> None:
         return
 
     # Initialize Supabase client
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     # Prepare data for upsert, ensuring required fields are present
     data_to_upsert = []
@@ -424,7 +438,7 @@ def upsert_previews_to_supabase(previews: list) -> None:
         print("No valid preview data remaining after filtering, skipping upsert.")
         return
 
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY) # Ensure client is initialized
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY) # Ensure client is initialized
 
     try:
         print(f"Upserting {len(data_to_upsert)} previews to Supabase...")
@@ -482,7 +496,7 @@ def process_odds_data_in_table() -> None:
     Fetches all rows from nba_game_schedule, processes the raw odds fields into cleaned strings,
     updates each row with the clean odds, and then clears the raw odds columns.
     """
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     response = supabase.table("nba_game_schedule").select("*").execute()
     rows = response.data
     if not rows:

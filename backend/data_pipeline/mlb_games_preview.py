@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
 """
-backend/data_pipeline/mlb_games_preview.py
-
 This script builds MLB game previews by fetching schedule info via api‑baseball and betting odds via The Odds API,
 then upserts the preview data into a Supabase table. Pitcher info is updated separately by scraping FanGraphs.
 """
@@ -36,7 +33,7 @@ try:
         API_SPORTS_KEY,      # for api‑baseball schedule
         ODDS_API_KEY,        # for odds data from The Odds API
         SUPABASE_URL,
-        SUPABASE_ANON_KEY
+        SUPABASE_SERVICE_KEY  # Updated key for Supabase RLS
     )
     print("Successfully imported configuration variables from config.py")
 except ImportError as e:
@@ -170,13 +167,17 @@ def get_games_from_apibaseball(target_date: date) -> List[Dict[str, Any]]:
 # --- Betting Odds API Functions ---
 
 def get_betting_odds(target_date_dt: dt_datetime) -> List[Dict[str, Any]]:
-    """Fetches betting odds for MLB events from The Odds API covering today/tomorrow ET."""
+    """Fetches betting odds for MLB events from The Odds API covering a day's range."""
     if not ODDS_API_KEY:
         print("Error: ODDS_API_KEY not available.")
         return []
     utc_zone = ZoneInfo("UTC")
-    start_utc = dt_datetime.combine(target_date_dt.date(), dt_time.min).replace(tzinfo=utc_zone)
-    end_utc = dt_datetime.combine(target_date_dt.date() + timedelta(days=1), dt_time.max).replace(tzinfo=utc_zone)
+    # Define range using ET date boundaries converted to UTC
+    et_date = target_date_dt.astimezone(ET_ZONE)
+    start_et = et_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_et = et_date.replace(hour=23, minute=59, second=59, microsecond=0)
+    start_utc = start_et.astimezone(utc_zone)
+    end_utc = end_et.astimezone(utc_zone)
     commence_time_from = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     commence_time_to = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     params = {
@@ -367,7 +368,6 @@ def scrape_fangraphs_probables() -> Dict[Tuple[str, str], Dict[str, Optional[str
     except Exception as ex_file:
         print(f"WARN: Could not save debug file: {ex_file}")
     soup = BeautifulSoup(page_html, "html.parser")
-    # Extract Header Dates (assuming base date is fixed; adjust if needed)
     header_row = soup.select_one("#root-roster-resource .probables-grid .fg-data-grid .table-wrapper-inner table thead tr")
     if not header_row:
         print("ERROR: Could not find the header row in the table.")
@@ -421,13 +421,13 @@ def scrape_fangraphs_probables() -> Dict[Tuple[str, str], Dict[str, Optional[str
 # --- Pitcher Update Function with Retry ---
 def update_pitchers_for_date(target_date_et: date) -> int:
     """
-    Scrapes FanGraphs for probable pitcher data, then queries Supabase for games on the target date
-    that are missing pitcher info, and updates those records.
-    
-    If scraping fails (empty data), the function will wait two minutes and retry.
+    Scrapes FanGraphs for probable pitcher data, then queries Supabase for games on the target date,
+    and updates the starting pitcher columns ONLY if the scraped pitcher name is a non‑empty string and
+    differs from the current value.
+    This prevents overwriting a valid starting pitcher name with NULL or an empty string.
     """
     print(f"\n--- Updating pitcher info using FanGraphs for date: {target_date_et} ---")
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         print("Error: Supabase URL/Key missing.")
         return 0
 
@@ -441,28 +441,28 @@ def update_pitchers_for_date(target_date_et: date) -> int:
             print(f"No pitcher data scraped from FanGraphs. Retry attempt {retry_attempt}: waiting 2 minutes before retrying...")
             time.sleep(120)  # Wait 2 minutes before retrying
 
+    # Query all games for the target date (regardless of pitcher info)
     supabase_games = []
     try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         target_date_iso = target_date_et.isoformat()
-        print(f"Querying Supabase for games on {target_date_iso} missing pitcher info...")
+        print(f"Querying Supabase for games on {target_date_iso} (including those with existing pitcher data)...")
         response = supabase.table(SUPABASE_TABLE_NAME) \
-            .select("game_id, home_team_name, away_team_name, game_date_et") \
+            .select("game_id, home_team_name, away_team_name, game_date_et, home_probable_pitcher_name, away_probable_pitcher_name") \
             .eq("game_date_et", target_date_iso) \
-            .is_("home_probable_pitcher_name", None) \
             .execute()
         if hasattr(response, "data") and response.data is not None:
             supabase_games = response.data
         else:
             print(f"Supabase query error or no data: {getattr(response, 'error', 'Unknown')}")
             return 0
-        print(f"Found {len(supabase_games)} game(s) in Supabase needing updates for {target_date_et}.")
+        print(f"Found {len(supabase_games)} game(s) in Supabase for {target_date_et}.")
     except Exception as e:
         print(f"Error querying Supabase: {e}")
         return 0
 
     if not supabase_games:
-        print("No games found needing pitcher updates for this date.")
+        print("No games found for this date.")
         return 0
 
     updated_count = 0
@@ -480,26 +480,59 @@ def update_pitchers_for_date(target_date_et: date) -> int:
             if not all([supa_game_id, supa_date_et, home_team_norm, away_team_norm]):
                 print("  -> Skipping due to missing fields.")
                 continue
+
+            # Create lookup keys for pitcher info
             home_key = (supa_date_et, home_team_norm)
             away_key = (supa_date_et, away_team_norm)
             print(f"  Lookup Keys: Home={home_key}, Away={away_key}")
-            home_pitcher_info = pitcher_lookup.get(home_key)
-            away_pitcher_info = pitcher_lookup.get(away_key)
-            if home_pitcher_info:
-                print(f"    Home Pitcher: {home_pitcher_info}")
-            if away_pitcher_info:
-                print(f"    Away Pitcher: {away_pitcher_info}")
+
+            # Retrieve scraped pitcher info (may be None or empty dict if not found)
+            scraped_home = pitcher_lookup.get(home_key)
+            scraped_away = pitcher_lookup.get(away_key)
+
+            # Extract and clean the scraped pitcher names
+            scraped_home_name = None
+            if scraped_home:
+                name = scraped_home.get("pitcher_name")
+                if name and isinstance(name, str):
+                    scraped_home_name = name.strip()
+            scraped_away_name = None
+            if scraped_away:
+                name = scraped_away.get("pitcher_name")
+                if name and isinstance(name, str):
+                    scraped_away_name = name.strip()
+
+            # Read existing pitcher values from the Supabase record (if any)
+            existing_home = game.get("home_probable_pitcher_name")
+            if isinstance(existing_home, str):
+                existing_home = existing_home.strip()
+            existing_away = game.get("away_probable_pitcher_name")
+            if isinstance(existing_away, str):
+                existing_away = existing_away.strip()
+
             update_payload = {}
-            if home_pitcher_info:
-                update_payload["home_probable_pitcher_name"] = home_pitcher_info["pitcher_name"]
-                update_payload["home_probable_pitcher_handedness"] = home_pitcher_info["handedness"]
-            if away_pitcher_info:
-                update_payload["away_probable_pitcher_name"] = away_pitcher_info["pitcher_name"]
-                update_payload["away_probable_pitcher_handedness"] = away_pitcher_info["handedness"]
+
+            # Update home pitcher only if the scraped name exists and is non-empty and differs from stored value.
+            if scraped_home_name and (existing_home is None or existing_home == "" or existing_home != scraped_home_name):
+                update_payload["home_probable_pitcher_name"] = scraped_home_name
+                update_payload["home_probable_pitcher_handedness"] = scraped_home.get("handedness")
+                print(f"  Home pitcher will be updated to: '{scraped_home_name}' (handedness: {scraped_home.get('handedness')})")
+            else:
+                print("  Home pitcher data is unchanged or invalid; no update necessary.")
+
+            # Update away pitcher only if the scraped name exists and is non-empty and differs from stored value.
+            if scraped_away_name and (existing_away is None or existing_away == "" or existing_away != scraped_away_name):
+                update_payload["away_probable_pitcher_name"] = scraped_away_name
+                update_payload["away_probable_pitcher_handedness"] = scraped_away.get("handedness")
+                print(f"  Away pitcher will be updated to: '{scraped_away_name}' (handedness: {scraped_away.get('handedness')})")
+            else:
+                print("  Away pitcher data is unchanged or invalid; no update necessary.")
+
+            # Only perform an update if there's at least one field to update.
             if update_payload:
                 update_payload["updated_at"] = dt_datetime.now(UTC_ZONE).isoformat()
                 try:
-                    print(f"  Updating game_id {supa_game_id}...")
+                    print(f"  Updating game_id {supa_game_id} with payload: {update_payload}")
                     update_response = supabase.table(SUPABASE_TABLE_NAME) \
                         .update(update_payload) \
                         .eq("game_id", supa_game_id) \
@@ -512,11 +545,13 @@ def update_pitchers_for_date(target_date_et: date) -> int:
                 except Exception as e_upd:
                     print(f"    Error updating game_id {supa_game_id}: {e_upd}")
             else:
-                print(f"  -> No pitcher data found for game_id {supa_game_id}.")
+                print(f"  -> No pitcher data updates required for game_id {supa_game_id}.")
         except Exception as e_loop:
             print(f"Error processing game {supa_game_id}: {e_loop}")
     print(f"--- Finished updating pitcher info for {target_date_et}. Updated {updated_count} record(s). ---")
     return updated_count
+
+
 
 # --- MLB Games Preview & Upsert (Schedule + Odds) ---
 def build_and_upsert_mlb_previews() -> int:
@@ -529,7 +564,7 @@ def build_and_upsert_mlb_previews() -> int:
     """
     print("\n--- Running MLB Game Preview Script (Schedule + Odds) ---")
     script_start_time = time.time()
-    if not all([API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY]):
+    if not all([API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY]):
         print("FATAL ERROR: Config variables missing. Exiting.")
         return 0
 
@@ -588,7 +623,6 @@ def build_and_upsert_mlb_previews() -> int:
             extracted_odds = extract_odds_data(matched_odds_event)
             preview_data = {
                 "game_id": game_id,
-                #"game_uid": None,
                 "scheduled_time_utc": scheduled_time_utc_str,
                 "game_date_et": game_date_et_str,
                 "status_detail": status_info.get("long"),
@@ -597,10 +631,6 @@ def build_and_upsert_mlb_previews() -> int:
                 "home_team_name": home_team_name_raw,
                 "away_team_id": away_team_info.get("id"),
                 "away_team_name": away_team_name_raw,
-
-                # Pitcher info set to NULL
-                "home_probable_pitcher_name": None,
-                "away_probable_pitcher_name": None,
                 # Odds Data
                 "moneyline": extracted_odds["raw"].get("moneyline"),
                 "spread": extracted_odds["raw"].get("spread"),
@@ -625,7 +655,7 @@ def build_and_upsert_mlb_previews() -> int:
     if previews_to_upsert:
         print(f"\nStep 4: Upserting {len(previews_to_upsert)} processed previews to Supabase...")
         try:
-            supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+            supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
             upsert_response = supabase.table(SUPABASE_TABLE_NAME).upsert(previews_to_upsert, on_conflict="game_id").execute()
             print("Supabase upsert completed.")
         except Exception as e:
