@@ -15,13 +15,6 @@ from dateutil import parser as dateutil_parser
 # --- 3rd-party Imports ---
 try:
     import requests
-    import undetected_chromedriver as uc
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from bs4 import BeautifulSoup
     from supabase import create_client, Client
 except ImportError as e:
     print(f"FATAL ERROR: Missing required third‑party module: {e}")
@@ -52,11 +45,6 @@ PREFERRED_BOOKMAKER_KEY = 'draftkings'
 REQUEST_DELAY_SECONDS = 1  # Delay between api‑baseball calls
 MLB_LEAGUE_ID = 1
 
-# For Selenium/undetected‑chromedriver (FanGraphs scraping)
-FANGRAPHS_URL = "https://www.fangraphs.com/roster-resource/probables-grid"
-SCROLL_DELAY_SECONDS = 3   # Delay after scrolling to bottom
-LOAD_WAIT_SECONDS = 10     # Max time to wait for page elements
-CHROME_HEADLESS = True     # Set to False to see the browser
 
 # --- Helper Functions ---
 
@@ -68,10 +56,14 @@ def normalize_team_name(name: str) -> str:
         return ""
     original = name.strip()
     temp = original.replace("St.Louis", "St Louis").replace("St.", "St").lower().strip()
+
+    # Quick hits for Athletics
     if temp in ["ath", "athletics", "oakland athletics"]:
         return "Athletics"
+    # Any spelled‑out “st louis” → the full Cardinals name
     if "st louis" in temp:
         return "St. Louis Cardinals"
+
     mapping = {
         "bal": "Baltimore Orioles",
         "bos": "Boston Red Sox",
@@ -101,6 +93,8 @@ def normalize_team_name(name: str) -> str:
         "lad": "Los Angeles Dodgers",
         "sdp": "San Diego Padres",
         "sfg": "San Francisco Giants",
+        # Add this line:
+        "stl": "St. Louis Cardinals",
     }
     if temp in mapping:
         return mapping[temp]
@@ -324,234 +318,199 @@ def extract_odds_data(odds_event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
                     clean_odds["total_under_price_clean"] = fmt_price
     return {"raw": raw_odds, "clean": clean_odds}
 
-# --- FanGraphs Scraping (Pitcher Data) ---
-def scrape_fangraphs_probables() -> Dict[Tuple[str, str], Dict[str, Optional[str]]]:
-    """
-    Uses Selenium (via undetected‑chromedriver) to load the FanGraphs Probables Grid,
-    scroll to force lazy‑loading, and extract header dates and pitcher data.
-    Returns a dictionary mapping (game_date_iso, normalized_team_name) to pitcher info.
-    """
-    pitcher_lookup: Dict[Tuple[str, str], Dict[str, Optional[str]]] = {}
-    print(f"Opening {FANGRAPHS_URL} in headless browser...")
-    chrome_options = Options()
+UTC = ZoneInfo("UTC")
+
+import requests
+import time
+import re
+from datetime import date, datetime as dt, timedelta
+from typing import Dict, Tuple, Optional, Any
+from zoneinfo import ZoneInfo
+import undetected_chromedriver as uc
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
+
+# Supabase constants & normalize_team_name already imported…
+
+FANGRAPHS_JSON = "https://cdn.fangraphs.com/v1/roster-resource/probables-grid/data"
+FANGRAPHS_URL  = "https://www.fangraphs.com/roster-resource/probables-grid"
+SCROLL_DELAY   = 2
+LOAD_WAIT      = 15
+UTC            = ZoneInfo("UTC")
+CHROME_HEADLESS= True
+
+def fetch_fangraphs_probables_json(
+    base_date: date
+) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
+    """Hit the JSON endpoint; returns {(ISO-Date,team):{name,hand}}."""
+    url = FANGRAPHS_JSON
+    resp = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
+    resp.raise_for_status()
+    data = resp.json()
+    year = base_date.year
+    dates = [f"{year}-{int(m):02d}-{int(d):02d}" 
+             for m,d in (dtxt.split("/") for dtxt in data.get("dates",[]))]
+    lookup: Dict[Tuple[str,str],Dict[str,Optional[str]]] = {}
+    for row in data.get("rows",[]):
+        team = normalize_team_name(row.get("team",""))
+        for idx, p in enumerate(row.get("pitchers",[])):
+            if idx>=len(dates): break
+            name = p.get("name","").strip()
+            hand = p.get("hand")
+            if not name or name.lower() in ("tbd","off","ppd"): continue
+            lookup[(dates[idx],team)] = {"pitcher_name":name,"handedness":hand}
+    return lookup
+
+def scrape_fangraphs_probables_selenium(
+    base_date: date
+) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
+    """Fallback: load in headless Chrome and scrape the HTML ‘Team’ table directly."""
+    opts = Options()
     if CHROME_HEADLESS:
-        chrome_options.add_argument("--headless")
-    try:
-        driver = uc.Chrome(options=chrome_options)
-    except Exception as e:
-        print(f"ERROR: Unable to initiate undetected ChromeDriver: {e}")
-        return pitcher_lookup
-    driver.set_page_load_timeout(LOAD_WAIT_SECONDS * 2)
+        opts.add_argument("--headless=new")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--window-size=1920,1080")
+    driver = uc.Chrome(options=opts)
+    driver.set_page_load_timeout(LOAD_WAIT*2)
+    driver.set_script_timeout(LOAD_WAIT*2)
+
     try:
         driver.get(FANGRAPHS_URL)
-        time.sleep(SCROLL_DELAY_SECONDS)
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(SCROLL_DELAY_SECONDS * 2)
-        wait = WebDriverWait(driver, LOAD_WAIT_SECONDS * 2)
-        _ = wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "#root-roster-resource .probables-grid .fg-data-grid .table-wrapper-inner table")
-            )
+        for _ in range(4):
+            time.sleep(SCROLL_DELAY)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
+        WebDriverWait(driver, LOAD_WAIT*2).until(
+            EC.presence_of_element_located((By.TAG_NAME, "table"))
         )
-        page_html = driver.page_source
-    except Exception as e:
-        print(f"ERROR: Selenium encountered an issue: {e}")
-        driver.quit()
-        return pitcher_lookup
-    finally:
-        driver.quit()
-    debug_filename = "fangraphs_debug.html"
-    try:
-        with open(debug_filename, "w", encoding="utf-8") as f:
-            f.write(page_html)
-        print(f"Saved debug HTML to '{debug_filename}'.")
-    except Exception as ex_file:
-        print(f"WARN: Could not save debug file: {ex_file}")
-    soup = BeautifulSoup(page_html, "html.parser")
-    header_row = soup.select_one("#root-roster-resource .probables-grid .fg-data-grid .table-wrapper-inner table thead tr")
-    if not header_row:
-        print("ERROR: Could not find the header row in the table.")
-        return pitcher_lookup
-    header_cells = header_row.find_all("th")
-    headers: List[str] = []
-    first_date = dt_datetime(2025, 4, 15)
-    for i, cell in enumerate(header_cells[1:]):  # Skip team name header
-        game_date_obj = first_date + timedelta(days=i)
-        headers.append(game_date_obj.strftime("%Y-%m-%d"))
-    print("Extracted header dates:", headers)
-    team_rows = soup.select("#root-roster-resource .probables-grid .fg-data-grid .table-wrapper-inner table tbody tr")
-    if not team_rows:
-        print("ERROR: No team rows found in the table.")
-        return pitcher_lookup
-    print(f"Found {len(team_rows)} team rows. Processing...")
-    for row in team_rows:
+    except Exception:
+        pass
+    html = driver.page_source
+    driver.quit()
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 1) Find the right table by its “Team” header
+    target_table = None
+    for tbl in soup.find_all("table"):
+        th = tbl.find("th")
+        if th and th.get_text(strip=True) == "Team":
+            target_table = tbl
+            break
+    if not target_table:
+        print("Selenium fallback: no ‘Team’ table found.")
+        return {}
+
+    # 2) Determine how many day‑columns by looking at first real row
+    first_row = None
+    for row in target_table.select("tbody tr"):
+        if len(row.find_all("td")) > 1:
+            first_row = row
+            break
+    if not first_row:
+        print("Selenium fallback: no data rows found.")
+        return {}
+    num_days = len(first_row.find_all("td")) - 1
+
+    # 3) Generate ISO dates off base_date
+    headers = [(base_date + timedelta(days=i)).isoformat() for i in range(num_days)]
+
+    # 4) Extract pitchers
+    lookup: Dict[Tuple[str,str],Dict[str,Optional[str]]] = {}
+    for row in target_table.select("tbody tr"):
         cells = row.find_all("td")
-        if not cells:
+        if len(cells) <= 1:
             continue
-        raw_team_name = cells[0].get_text(strip=True)
-        norm_team_name = normalize_team_name(raw_team_name)
-        pitcher_cells = cells[1:]
-        for idx, cell in enumerate(pitcher_cells):
-            if idx >= len(headers):
+        team = normalize_team_name(cells[0].get_text(strip=True))
+        for i, cell in enumerate(cells[1:]):
+            if i >= num_days:
                 break
-            game_date_iso = headers[idx]
-            raw_text = cell.get_text(" ", strip=True)
-            pitcher_name = None
-            handedness = None
-            a_tag = cell.find("a")
-            if a_tag:
-                pitcher_name = a_tag.get_text(strip=True)
-            else:
-                if raw_text and raw_text.lower() not in ["tbd", "ppd", "off"]:
-                    pitcher_name = raw_text
-            if pitcher_name:
-                hand_match = re.search(r'\(([RLS])\)', pitcher_name)
-                if hand_match:
-                    handedness = hand_match.group(1)
-                    pitcher_name = re.sub(r'\s*\([RLS]\)', '', pitcher_name).strip()
-                if pitcher_name.lower() in ["tbd", "ppd", "off", ""]:
-                    continue
-                key = (game_date_iso, norm_team_name)
-                pitcher_lookup[key] = {"pitcher_name": pitcher_name, "handedness": handedness}
-    print("Mapped Pitcher Data:")
-    for key, value in pitcher_lookup.items():
-        print(key, value)
-    return pitcher_lookup
-
-# --- Pitcher Update Function with Retry ---
-def update_pitchers_for_date(target_date_et: date) -> int:
-    """
-    Scrapes FanGraphs for probable pitcher data, then queries Supabase for games on the target date,
-    and updates the starting pitcher columns ONLY if the scraped pitcher name is a non‑empty string and
-    differs from the current value.
-    This prevents overwriting a valid starting pitcher name with NULL or an empty string.
-    """
-    print(f"\n--- Updating pitcher info using FanGraphs for date: {target_date_et} ---")
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-        print("Error: Supabase URL/Key missing.")
-        return 0
-
-    # Retry loop: keep trying until we get non-empty pitcher data.
-    pitcher_lookup = {}
-    retry_attempt = 0
-    while not pitcher_lookup:
-        pitcher_lookup = scrape_fangraphs_probables()
-        if not pitcher_lookup:
-            retry_attempt += 1
-            print(f"No pitcher data scraped from FanGraphs. Retry attempt {retry_attempt}: waiting 2 minutes before retrying...")
-            time.sleep(120)  # Wait 2 minutes before retrying
-
-    # Query all games for the target date (regardless of pitcher info)
-    supabase_games = []
-    try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        target_date_iso = target_date_et.isoformat()
-        print(f"Querying Supabase for games on {target_date_iso} (including those with existing pitcher data)...")
-        response = supabase.table(SUPABASE_TABLE_NAME) \
-            .select("game_id, home_team_name, away_team_name, game_date_et, home_probable_pitcher_name, away_probable_pitcher_name") \
-            .eq("game_date_et", target_date_iso) \
-            .execute()
-        if hasattr(response, "data") and response.data is not None:
-            supabase_games = response.data
-        else:
-            print(f"Supabase query error or no data: {getattr(response, 'error', 'Unknown')}")
-            return 0
-        print(f"Found {len(supabase_games)} game(s) in Supabase for {target_date_et}.")
-    except Exception as e:
-        print(f"Error querying Supabase: {e}")
-        return 0
-
-    if not supabase_games:
-        print("No games found for this date.")
-        return 0
-
-    updated_count = 0
-    UTC_ZONE = ZoneInfo("UTC")
-    for game in supabase_games:
-        supa_game_id = game.get("game_id")
-        print(f"\nProcessing Supabase game_id: {supa_game_id}")
-        try:
-            supa_home_raw = game.get("home_team_name", "")
-            supa_away_raw = game.get("away_team_name", "")
-            supa_date_et = game.get("game_date_et")
-            home_team_norm = normalize_team_name(supa_home_raw)
-            away_team_norm = normalize_team_name(supa_away_raw)
-            print(f"  Details: Date='{supa_date_et}', Home='{supa_home_raw}' (Norm='{home_team_norm}'), Away='{supa_away_raw}' (Norm='{away_team_norm}')")
-            if not all([supa_game_id, supa_date_et, home_team_norm, away_team_norm]):
-                print("  -> Skipping due to missing fields.")
+            # pick last <a> or raw text
+            links = cell.find_all("a")
+            name = links[-1].get_text(strip=True) if links else cell.get_text(" ", strip=True)
+            name = re.sub(r'^(?:@?\s*[A-Z]{2,3}\s+)', "", name)
+            m = re.search(r"\(([RLS])\)", name)
+            hand = m.group(1) if m else None
+            if hand:
+                name = re.sub(r"\s*\([RLS]\)", "", name).strip()
+            if not name or name.lower() in ("tbd","off","ppd"):
                 continue
+            lookup[(headers[i], team)] = {"pitcher_name": name, "handedness": hand}
 
-            # Create lookup keys for pitcher info
-            home_key = (supa_date_et, home_team_norm)
-            away_key = (supa_date_et, away_team_norm)
-            print(f"  Lookup Keys: Home={home_key}, Away={away_key}")
+    print(f"Selenium fallback mapped {len(lookup)} pitchers.")
+    return lookup
 
-            # Retrieve scraped pitcher info (may be None or empty dict if not found)
-            scraped_home = pitcher_lookup.get(home_key)
-            scraped_away = pitcher_lookup.get(away_key)
+def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
+    """Try JSON fetch, else Selenium scrape."""
+    try:
+        return fetch_fangraphs_probables_json(base_date)
+    except Exception as e:
+        print("JSON fetch failed, falling back to Selenium:", e)
+        return scrape_fangraphs_probables_selenium(base_date)
 
-            # Extract and clean the scraped pitcher names
-            scraped_home_name = None
-            if scraped_home:
-                name = scraped_home.get("pitcher_name")
-                if name and isinstance(name, str):
-                    scraped_home_name = name.strip()
-            scraped_away_name = None
-            if scraped_away:
-                name = scraped_away.get("pitcher_name")
-                if name and isinstance(name, str):
-                    scraped_away_name = name.strip()
+def update_pitchers_for_date(target_date: date) -> int:
+    """
+    For the given date (ET), scrape FanGraphs and upsert starting pitchers
+    into Supabase. Returns count of updated records.
+    """
+    print(f"\n--- Updating pitchers for {target_date} ---")
+    supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    iso = target_date.isoformat()
 
-            # Read existing pitcher values from the Supabase record (if any)
-            existing_home = game.get("home_probable_pitcher_name")
-            if isinstance(existing_home, str):
-                existing_home = existing_home.strip()
-            existing_away = game.get("away_probable_pitcher_name")
-            if isinstance(existing_away, str):
-                existing_away = existing_away.strip()
+    resp = (
+        supa.table(SUPABASE_TABLE_NAME)
+        .select(
+            "game_id, home_team_name, away_team_name, "
+            "home_probable_pitcher_name, away_probable_pitcher_name, game_date_et"
+        )
+        .eq("game_date_et", iso)
+        .execute()
+    )
+    games = resp.data or []
+    if not games:
+        print("No games found.")
+        return 0
 
-            update_payload = {}
+    fg_lookup = get_probables_lookup(target_date)
+    updated = 0
 
-            # Update home pitcher only if the scraped name exists and is non-empty and differs from stored value.
-            if scraped_home_name and (existing_home is None or existing_home == "" or existing_home != scraped_home_name):
-                update_payload["home_probable_pitcher_name"] = scraped_home_name
-                update_payload["home_probable_pitcher_handedness"] = scraped_home.get("handedness")
-                print(f"  Home pitcher will be updated to: '{scraped_home_name}' (handedness: {scraped_home.get('handedness')})")
-            else:
-                print("  Home pitcher data is unchanged or invalid; no update necessary.")
+    for g in games:
+        gid = g["game_id"]
+        d   = g["game_date_et"]
+        h   = normalize_team_name(g["home_team_name"])
+        a   = normalize_team_name(g["away_team_name"])
+        payload: Dict[str, Any] = {}
 
-            # Update away pitcher only if the scraped name exists and is non-empty and differs from stored value.
-            if scraped_away_name and (existing_away is None or existing_away == "" or existing_away != scraped_away_name):
-                update_payload["away_probable_pitcher_name"] = scraped_away_name
-                update_payload["away_probable_pitcher_handedness"] = scraped_away.get("handedness")
-                print(f"  Away pitcher will be updated to: '{scraped_away_name}' (handedness: {scraped_away.get('handedness')})")
-            else:
-                print("  Away pitcher data is unchanged or invalid; no update necessary.")
+        new_h = fg_lookup.get((d, h), {}).get("pitcher_name")
+        if new_h and new_h != (g.get("home_probable_pitcher_name") or "").strip():
+            payload["home_probable_pitcher_name"]      = new_h
+            payload["home_probable_pitcher_handedness"] = fg_lookup[(d, h)]["handedness"]
 
-            # Only perform an update if there's at least one field to update.
-            if update_payload:
-                update_payload["updated_at"] = dt_datetime.now(UTC_ZONE).isoformat()
-                try:
-                    print(f"  Updating game_id {supa_game_id} with payload: {update_payload}")
-                    update_response = supabase.table(SUPABASE_TABLE_NAME) \
-                        .update(update_payload) \
-                        .eq("game_id", supa_game_id) \
-                        .execute()
-                    if hasattr(update_response, "data") and update_response.data:
-                        print(f"    Success: Updated game_id {supa_game_id}.")
-                        updated_count += 1
-                    else:
-                        print(f"    Warning: Update may have failed for game_id {supa_game_id}.")
-                except Exception as e_upd:
-                    print(f"    Error updating game_id {supa_game_id}: {e_upd}")
-            else:
-                print(f"  -> No pitcher data updates required for game_id {supa_game_id}.")
-        except Exception as e_loop:
-            print(f"Error processing game {supa_game_id}: {e_loop}")
-    print(f"--- Finished updating pitcher info for {target_date_et}. Updated {updated_count} record(s). ---")
-    return updated_count
+        new_a = fg_lookup.get((d, a), {}).get("pitcher_name")
+        if new_a and new_a != (g.get("away_probable_pitcher_name") or "").strip():
+            payload["away_probable_pitcher_name"]      = new_a
+            payload["away_probable_pitcher_handedness"] = fg_lookup[(d, a)]["handedness"]
 
+        if payload:
+            payload["updated_at"] = dt.now(UTC).isoformat()
+            print(f" → Patching game {gid}:", payload)
+            try:
+                r = (
+                    supa.table(SUPABASE_TABLE_NAME)
+                    .update(payload)
+                    .eq("game_id", gid)
+                    .execute()
+                )
+                if getattr(r, "data", None):
+                    updated += 1
+            except Exception as e:
+                print(f"   ✖️ Failed {gid}: {e}")
 
+    print(f"--- Done: {updated} updated. ---")
+    return updated
 
 # --- MLB Games Preview & Upsert (Schedule + Odds) ---
 def build_and_upsert_mlb_previews() -> int:
@@ -670,9 +629,7 @@ def build_and_upsert_mlb_previews() -> int:
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    print("Starting MLB Games Preview Script (Schedule, Odds, and Pitcher Updates)...")
-    # Optionally clear old games (if implemented)
-    # clear_old_mlb_games()
+    print("Starting MLB Games Preview Script (Schedule, Odds, and Pitcher Updates)…")
 
     # Step 1: Build and upsert game previews
     build_and_upsert_mlb_previews()
@@ -682,3 +639,4 @@ if __name__ == "__main__":
     update_pitchers_for_date(today_et_date)
 
     print("\nMLB Games Preview Script finished.")
+
