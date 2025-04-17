@@ -1,7 +1,7 @@
 import supabase from "../utils/supabase_client.js"; // <-- IMPORT THE CLIENT
 import { DateTime } from "luxon"; // Using Luxon for robust timezone handling
 
-const SUPABASE_TABLE_NAME = "mlb_game_schedule";
+const MLB_SCHEDULE_TABLE = "mlb_game_schedule";
 const ET_ZONE_IDENTIFIER = "America/New_York"; // IANA identifier
 
 export const fetchMlbScheduleForTodayAndTomorrow = async () => {
