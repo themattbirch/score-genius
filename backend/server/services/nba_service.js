@@ -12,7 +12,16 @@ const NBA_HISTORICAL_TEAM_STATS_TABLE = "nba_historical_team_stats";
 const NBA_HISTORICAL_PLAYER_STATS_TABLE = "nba_historical_player_stats";
 const ET_ZONE_IDENTIFIER = "America/New_York";
 
-// Replace this function in backend/server/services/nba_service.js
+import cache from "../utils/cache.js"; // Import the cache instance
+
+// --- Helper function for dates (ensure consistent formatting YYYY-MM-DD) ---
+// You might already have date helpers, use those if available.
+// Using UTC dates is generally recommended to avoid timezone issues.
+const getUTCDateString = (date) => {
+  return date.toISOString().split("T")[0];
+};
+// --- End Helper Function ---
+
 export const fetchNbaScheduleForTodayAndTomorrow = async () => {
   console.log("Service: Fetching NBA schedule for today/tomorrow ET...");
   const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
@@ -237,4 +246,85 @@ export const fetchNbaPlayerGameHistory = async (playerId, options) => {
   }
 };
 
-// Add services for predictions, team stats etc. later...
+export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
+  const cacheKey = "nba_schedule_today_tomorrow";
+  const ttl = 1800; // 30 minutes in seconds
+
+  // 1. Check cache first
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    // Check for undefined, as null/empty array could be valid cached data
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
+
+  console.log(`CACHE MISS for key: ${cacheKey}. Fetching from Supabase...`);
+
+  // 2. If cache miss, query Supabase
+  try {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    const todayStr = getUTCDateString(today);
+    const tomorrowStr = getUTCDateString(tomorrow);
+
+    console.log(`Querying NBA schedule for dates: ${todayStr}, ${tomorrowStr}`);
+
+    // --- Your existing Supabase query logic ---
+    const { data, error } = await supabase
+      .from("nba_games_view") // *** Replace with your actual table/view name ***
+      .select(
+        `
+                game_id,
+                game_date,
+                game_datetime_utc,
+                status,
+                home_team_id,
+                home_team_name,
+                home_team_score,
+                away_team_id,
+                away_team_name,
+                away_team_score,
+                odds_source,
+                last_updated_odds,
+                home_odds_ml,
+                away_odds_ml,
+                home_odds_spread,
+                away_odds_spread,
+                total_over_under
+            `
+      ) // *** Select the columns needed by the frontend ***
+      .in("game_date", [todayStr, tomorrowStr])
+      .order("game_datetime_utc", { ascending: true });
+    // --- End Supabase query logic ---
+
+    if (error) {
+      console.error("Supabase error fetching NBA schedule:", error.message);
+      // Don't cache errors, return null or throw
+      return null; // Or adapt error handling as needed
+    }
+
+    // 3. Store the fetched data in cache if successful
+    if (data) {
+      console.log(
+        `Successfully fetched ${data.length} NBA games. Caching result with TTL: ${ttl}s`
+      );
+      cache.set(cacheKey, data, ttl);
+    } else {
+      // Cache an empty array if null data is returned but no error occurred
+      console.log(
+        "No NBA games found for today/tomorrow. Caching empty array."
+      );
+      cache.set(cacheKey, [], ttl);
+    }
+
+    return data || []; // Return data or an empty array
+  } catch (error) {
+    console.error(
+      `Error in WorkspaceNbaScheduleForTodayAndTomorrow service: ${error.message}`
+    );
+    // Return null or throw, depending on how your controller handles errors
+    return null;
+  }
+};

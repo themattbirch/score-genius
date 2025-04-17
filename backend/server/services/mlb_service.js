@@ -6,6 +6,15 @@ const MLB_HISTORICAL_GAMES_TABLE = "mlb_historical_game_stats";
 const MLB_HISTORICAL_TEAM_STATS_TABLE = "mlb_historical_team_stats";
 const ET_ZONE_IDENTIFIER = "America/New_York"; // IANA identifier
 
+import cache from "../utils/cache.js"; // Import the cache instance
+
+// --- Helper function for dates (ensure consistent formatting YYYY-MM-DD) ---
+// Reuse or define date helpers as needed. Using UTC is recommended.
+const getUTCDateString = (date) => {
+  return date.toISOString().split("T")[0];
+};
+// --- End Helper Function ---
+
 export const fetchMlbScheduleForTodayAndTomorrow = async () => {
   console.log("Service: Fetching MLB schedule for today/tomorrow ET...");
   const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
@@ -171,4 +180,85 @@ export const fetchMlbTeamStatsBySeason = async (teamId, season) => {
     throw error;
   }
 };
-// Add more service functions for MLB data here...
+
+export const WorkspaceMlbScheduleForTodayAndTomorrow = async () => {
+  const cacheKey = "mlb_schedule_today_tomorrow";
+  const ttl = 1800; // 30 minutes in seconds
+
+  // 1. Check cache first
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
+
+  console.log(`CACHE MISS for key: ${cacheKey}. Fetching from Supabase...`);
+
+  // 2. If cache miss, query Supabase
+  try {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    const todayStr = getUTCDateString(today);
+    const tomorrowStr = getUTCDateString(tomorrow);
+
+    console.log(`Querying MLB schedule for dates: ${todayStr}, ${tomorrowStr}`);
+
+    // --- Your existing Supabase query logic ---
+    const { data, error } = await supabase
+      .from("mlb_games_view") // *** Replace with your actual table/view name ***
+      .select(
+        `
+                game_id,
+                game_date,
+                game_datetime_utc,
+                status,
+                home_team_id,
+                home_team_name,
+                home_team_score,
+                away_team_id,
+                away_team_name,
+                away_team_score,
+                home_probable_pitcher,
+                away_probable_pitcher,
+                odds_source,
+                last_updated_odds,
+                home_odds_ml,
+                away_odds_ml,
+                home_odds_spread,
+                away_odds_spread,
+                total_over_under
+            `
+      ) // *** Select the columns needed by the frontend ***
+      .in("game_date", [todayStr, tomorrowStr])
+      .order("game_datetime_utc", { ascending: true });
+    // --- End Supabase query logic ---
+
+    if (error) {
+      console.error("Supabase error fetching MLB schedule:", error.message);
+      // Don't cache errors, return null or throw
+      return null;
+    }
+
+    // 3. Store the fetched data in cache if successful
+    if (data) {
+      console.log(
+        `Successfully fetched ${data.length} MLB games. Caching result with TTL: ${ttl}s`
+      );
+      cache.set(cacheKey, data, ttl);
+    } else {
+      console.log(
+        "No MLB games found for today/tomorrow. Caching empty array."
+      );
+      cache.set(cacheKey, [], ttl);
+    }
+
+    return data || []; // Return data or an empty array
+  } catch (error) {
+    console.error(
+      `Error in WorkspaceMlbScheduleForTodayAndTomorrow service: ${error.message}`
+    );
+    return null; // Or throw
+  }
+};
