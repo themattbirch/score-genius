@@ -9,6 +9,7 @@ const NBA_SCHEDULE_TABLE = "nba_game_schedule";
 const NBA_INJURIES_TABLE = "nba_injuries";
 const ET_ZONE_IDENTIFIER = "America/New_York";
 
+// Replace this function in backend/server/services/nba_service.js
 export const fetchNbaScheduleForTodayAndTomorrow = async () => {
   console.log("Service: Fetching NBA schedule for today/tomorrow ET...");
   const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
@@ -19,12 +20,27 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
   );
 
   try {
-    // Query Supabase nba_game_schedule table
+    // Select specific columns based on provided list + predictions
     const { data, error, status } = await supabase
       .from(NBA_SCHEDULE_TABLE)
-      .select("*")
-      .in("game_date", [todayStr, tomorrowStr])
-      .order("scheduled_time", { ascending: true });
+      .select(
+        `
+        game_id,
+        game_date,
+        scheduled_time,
+        status,
+        home_team,
+        away_team,
+        venue,
+        predicted_home_score,
+        predicted_away_score,
+        moneyline_clean,
+        spread_clean,
+        total_clean
+      `
+      ) // Select desired columns
+      .in("game_date", [todayStr, tomorrowStr]) // Filter on correct date column
+      .order("scheduled_time", { ascending: true }); // Order by correct time column
 
     if (error) {
       console.error("Supabase error fetching NBA schedule:", error);
@@ -32,7 +48,6 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
       dbError.status = status || 500;
       throw dbError;
     }
-
     console.log(`Service: Found ${data ? data.length : 0} NBA games.`);
     return data || [];
   } catch (error) {

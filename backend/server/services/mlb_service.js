@@ -1,45 +1,62 @@
-// backend/server/services/mlb_service.js
-// Ensure path to supabase client utility is correct
-import supabase from '../utils/supabase_client.js';
-// Luxon helps with date/time/zone handling
-import { DateTime } from 'luxon';
+import supabase from "../utils/supabase_client.js"; // <-- IMPORT THE CLIENT
+import { DateTime } from "luxon"; // Using Luxon for robust timezone handling
 
-// Ensure table name matches your Supabase table
 const SUPABASE_TABLE_NAME = "mlb_game_schedule";
 const ET_ZONE_IDENTIFIER = "America/New_York"; // IANA identifier
 
 export const fetchMlbScheduleForTodayAndTomorrow = async () => {
   console.log("Service: Fetching MLB schedule for today/tomorrow ET...");
-
-  // Get today and tomorrow's date in ET using Luxon
   const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
-  const todayStr = nowEt.toISODate(); // Format: YYYY-MM-DD
-  const tomorrowStr = nowEt.plus({ days: 1 }).toISODate(); // Format: YYYY-MM-DD
-
-  console.log(`Service: Querying Supabase table '${SUPABASE_TABLE_NAME}' for dates: ${todayStr}, ${tomorrowStr}`);
+  const todayStr = nowEt.toISODate(); // YYYY-MM-DD
+  const tomorrowStr = nowEt.plus({ days: 1 }).toISODate(); // YYYY-MM-DD
+  console.log(
+    `Service: Querying Supabase table '${MLB_SCHEDULE_TABLE}' for dates: ${todayStr}, ${tomorrowStr}`
+  ); // Use MLB_SCHEDULE_TABLE const
 
   try {
-    // Query Supabase table 'mlb_game_schedule'
     const { data, error, status } = await supabase
-      .from(SUPABASE_TABLE_NAME)
-      .select("*") // Select all columns for now
-      .in("game_date_et", [todayStr, tomorrowStr]) // Filter by the correct ET date column
-      .order("scheduled_time_utc", { ascending: true }); // Order by game time
+      .from(MLB_SCHEDULE_TABLE) // Use constant
+      // Select specific columns based on provided list + predictions
+      .select(
+        `
+        game_id,
+        scheduled_time_utc,
+        game_date_et,
+        status_detail,
+        status_state,
+        home_team_id,
+        home_team_name,
+        away_team_id,
+        away_team_name,
+        home_probable_pitcher_name,
+        home_probable_pitcher_handedness,
+        away_probable_pitcher_name,
+        away_probable_pitcher_handedness,
+        predicted_home_score,
+        predicted_away_score,
+        moneyline_home_clean,
+        moneyline_away_clean,
+        spread_home_line_clean,
+        spread_home_price_clean,
+        spread_away_price_clean,
+        total_line_clean,
+        total_over_price_clean,
+        total_under_price_clean
+      `
+      ) // Add venue etc. if needed by PWA
+      .in("game_date_et", [todayStr, tomorrowStr]) // Filter on correct date column
+      .order("scheduled_time_utc", { ascending: true }); // Order by correct time column
 
     if (error) {
-      console.error("Supabase error fetching schedule:", error);
-      // Create a more informative error object
+      console.error("Supabase error fetching MLB schedule:", error);
       const dbError = new Error(error.message || "Database query failed");
-      dbError.status = status || 500; // Add HTTP status if available
-      throw dbError; // Throw it for the controller to catch
+      dbError.status = status || 500;
+      throw dbError;
     }
-
-    console.log(`Service: Found ${data ? data.length : 0} games.`);
-    return data || []; // Return the data array or an empty array if null
-
+    console.log(`Service: Found ${data ? data.length : 0} MLB games.`);
+    return data || [];
   } catch (error) {
     console.error("Error in fetchMlbSchedule service:", error);
-    // Re-throw the error so the controller's error handler catches it
     throw error;
   }
 };
