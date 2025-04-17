@@ -7,7 +7,6 @@ import { DateTime } from "luxon"; // Make sure you did: npm install luxon
 // Define constants specific to this service
 const NBA_SCHEDULE_TABLE = "nba_game_schedule";
 const NBA_INJURIES_TABLE = "nba_injuries";
-const SUPABASE_TABLE_NAME = "nba_game_schedule"; // <--- Use the correct NBA table name
 const ET_ZONE_IDENTIFIER = "America/New_York";
 
 export const fetchNbaScheduleForTodayAndTomorrow = async () => {
@@ -16,18 +15,16 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
   const todayStr = nowEt.toISODate(); // Format: YYYY-MM-DD
   const tomorrowStr = nowEt.plus({ days: 1 }).toISODate(); // Format: YYYY-MM-DD
   console.log(
-    `Service: Querying Supabase table '${SUPABASE_TABLE_NAME}' for dates: ${todayStr}, ${tomorrowStr}`
+    `Service: Querying Supabase table '${NBA_SCHEDULE_TABLE}' for dates: ${todayStr}, ${tomorrowStr}`
   );
 
   try {
     // Query Supabase nba_game_schedule table
     const { data, error, status } = await supabase
-      .from(SUPABASE_TABLE_NAME)
+      .from(NBA_SCHEDULE_TABLE)
       .select("*")
-      // --- CORRECTED COLUMN NAME ---
-      .in("game_date", [todayStr, tomorrowStr]) // Use 'game_date' to match table column
-      // --- END CORRECTION ---
-      .order("scheduled_time_utc", { ascending: true }); // Assumes scheduled_time_utc exists
+      .in("game_date", [todayStr, tomorrowStr])
+      .order("scheduled_time", { ascending: true });
 
     if (error) {
       console.error("Supabase error fetching NBA schedule:", error);

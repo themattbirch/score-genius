@@ -431,7 +431,7 @@ def scrape_fangraphs_probables_selenium(
             # pick last <a> or raw text
             links = cell.find_all("a")
             name = links[-1].get_text(strip=True) if links else cell.get_text(" ", strip=True)
-            name = re.sub(r'^(?:@?\s*[A-Z]{2,3}\s+)', "", name)
+            name = re.sub(r'^@\s*[A-Z]{2,3}\s+', "", name)
             m = re.search(r"\(([RLS])\)", name)
             hand = m.group(1) if m else None
             if hand:
