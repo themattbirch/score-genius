@@ -68,6 +68,7 @@ export const getNbaGameHistory = async (req, res, next) => {
   }
 };
 
+// Corrected and re-indented function
 export const getNbaTeamSeasonStats = async (req, res, next) => {
   try {
     const { team_id, season } = req.params;
@@ -80,37 +81,43 @@ export const getNbaTeamSeasonStats = async (req, res, next) => {
         .json({ error: "Invalid Team ID. Must be numeric." });
     }
 
-    // Validate season looks like a 4-digit year string
+    // Validate season looks like a 4-digit year string (e.g., "2023")
     if (!/^\d{4}$/.test(season)) {
       return res.status(400).json({
         error:
-          "Invalid Season format. Expecting a 4-digit year (e.g., 2022 for 2022-2023 season).",
+          "Invalid Season format. Expecting a 4-digit year (e.g., 2023).",
       });
     }
-    const seasonStr = season; // Keep as string
+    // Keep the validated season as a string, as passed in the URL
+    const seasonStr = season;
 
-    // Call the service function with number and string
+    // Call the service function, passing the number ID and string season
+    // Ensure fetchNbaTeamStatsBySeason service function expects the season this way
     const teamStats = await nbaService.fetchNbaTeamStatsBySeason(
       teamIdNum,
-      seasonStr
+      seasonStr // Pass the validated season string
     );
 
+    // Check the result from the service function
     if (teamStats) {
-      // Service returns data object or null
+      // Service returns data object
       res.status(200).json({
-        message: `NBA historical team stats fetched successfully`,
+        // Updated message to include team/season for clarity
+        message: `NBA historical team stats for team ${teamIdNum}, season ${seasonStr} fetched successfully`,
         data: teamStats, // Send the single stats object
       });
     } else {
-      // If service returns null (no record found)
+      // Service returns null (no record found)
       res.status(404).json({
-        message: `NBA historical team stats not found for team ${teamIdNum}, season ${seasonNum}`,
+        // *** Fixed variable name here: seasonNum -> seasonStr ***
+        message: `NBA historical team stats not found for team ${teamIdNum}, season ${seasonStr}`,
         data: null,
       });
     }
   } catch (error) {
+    // Handle any other unexpected errors
     console.error("Error in getNbaTeamSeasonStats controller:", error);
-    next(error); // Forward other errors (like DB connection)
+    next(error); // Forward other errors
   }
 };
 
