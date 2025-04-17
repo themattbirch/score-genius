@@ -167,17 +167,13 @@ export const fetchNbaGameHistory = async (options) => {
 };
 
 // --- NBA Historical Team Stats ---
-export const fetchNbaTeamStatsBySeason = async (teamId, seasonYear) => { // Assuming service takes year, not string range
-    // Construct season string if needed by DB, otherwise use seasonYear directly
-    // Example: const seasonRangeStr = `${seasonYear}-${seasonYear + 1}`;
-    // Cache Key: Dynamic
-    const cacheKey = `nba_team_stats_${teamId}_${seasonYear}`;
-    // TTL: 1 day
-    const ttl = 86400;
+export const fetchNbaTeamStatsBySeason = async (teamId, seasonInputYearStr) => { // Accepts the "2023" string
+    // Cache Key: Based on the input parameters
+    const cacheKey = `nba_team_stats_${teamId}_${seasonInputYearStr}`;
+    const ttl = 86400; // 1 day
 
     const cachedData = cache.get(cacheKey);
     if (cachedData !== undefined) {
-        // Special check: If null was explicitly cached, return null
         if (cachedData === null) {
              console.log(`CACHE HIT for key: ${cacheKey} (Result: Not Found)`);
              return null;
@@ -186,33 +182,40 @@ export const fetchNbaTeamStatsBySeason = async (teamId, seasonYear) => { // Assu
         return cachedData;
     }
 
-    console.log(`CACHE MISS for key: ${cacheKey}. Fetching NBA team stats for team ${teamId}, season ${seasonYear}...`);
+    // --- Construct the season range string needed for the database ---
+    const startYear = parseInt(seasonInputYearStr);
+    if (isNaN(startYear)) {
+        console.error("Invalid season year string received in service:", seasonInputYearStr);
+        return null;
+    }
+    const endYear = startYear + 1;
+    const seasonRangeForQuery = `${startYear}-${endYear}`; // Creates "2023-2024"
+    // --- End construction ---
+
+    // Use the constructed range in the log message
+    console.log(`CACHE MISS for key: ${cacheKey}. Fetching NBA team stats for team ${teamId}, season range '${seasonRangeForQuery}'...`);
     try {
-        // Select all columns, assuming they are all needed for team stats page
-        // If table grows, specify columns
         const { data, error, status } = await supabase
-            .from(NBA_HISTORICAL_TEAM_STATS_TABLE)
-            .select('*')
+            .from(NBA_HISTORICAL_TEAM_STATS_TABLE) // Constant should be defined above
+            .select('*') // Select all columns for team stats
             .eq("team_id", teamId)
-            // Filter by season - ensure 'season' column format matches 'seasonYear' param
-            .eq("season", seasonYear) // Or use seasonRangeStr if needed
-            .maybeSingle(); // Expect only one row (or null)
+             // *** Use the constructed season range string for the query ***
+            .eq("season", seasonRangeForQuery)
+            .maybeSingle();
 
         if (error) {
-            console.error("Supabase error fetching historical team stats:", error.message);
-            // Cache null to prevent retrying a known error state for the TTL duration? Optional.
-            // cache.set(cacheKey, null, ttl); // Consider implications
-            return null; // Don't cache errors by default
+            console.error(`Supabase error fetching historical team stats for range ${seasonRangeForQuery}:`, error.message);
+            return null; // Don't cache errors
         }
 
-        // Cache the result, whether it's data or null (meaning not found)
+        // Cache data or null
         if (data) {
-            console.log(`Successfully fetched stats for team ${teamId}, season ${seasonYear}. Caching result with TTL: ${ttl}s`);
+            console.log(`Successfully fetched stats for team ${teamId}, season range ${seasonRangeForQuery}. Caching result with TTL: ${ttl}s`);
         } else {
-            console.log(`No stats found for team ${teamId}, season ${seasonYear}. Caching 'null' with TTL: ${ttl}s`);
+            console.log(`No stats found for team ${teamId}, season range ${seasonRangeForQuery}. Caching 'null' with TTL: ${ttl}s`);
         }
-        cache.set(cacheKey, data, ttl); // Cache the actual data or null
-        return data;
+        cache.set(cacheKey, data, ttl); // Cache the actual data object or null
+        return data; // Return the data object or null
 
     } catch (error) {
         console.error("Error in fetchNbaTeamStatsBySeason service:", error.message);
