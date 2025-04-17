@@ -24,7 +24,7 @@ export const getMlbSchedule = async (req, res, next) => {
   }
 };
 
-export const getMlbGamesHistory = async (req, res, next) => {
+export const getMlbGameHistory = async (req, res, next) => {
   try {
     // Extract and validate query parameters (provide defaults)
     const options = {
@@ -40,7 +40,7 @@ export const getMlbGamesHistory = async (req, res, next) => {
     options.page = Math.max(1, options.page);
 
     // Call the service function with options
-    const historicalData = await mlbService.fetchMlbGamesHistory(options);
+    const historicalData = await mlbService.fetchMlbGameHistory(options);
 
     res.status(200).json({
       message: "MLB historical game stats fetched successfully",
@@ -49,8 +49,52 @@ export const getMlbGamesHistory = async (req, res, next) => {
       data: historicalData,
     });
   } catch (error) {
-    console.error("Error in getMlbGamesHistory controller:", error);
+    console.error("Error in getMlbGameHistory controller:", error);
     next(error); // Forward error to global handler
+  }
+};
+
+export const getMlbTeamSeasonStats = async (req, res, next) => {
+  try {
+    const { team_id, season } = req.params; // Extract from URL path
+
+    // Validate parameters
+    const teamIdNum = parseInt(team_id);
+    const seasonNum = parseInt(season); // MLB stores season as year integer
+    if (
+      isNaN(teamIdNum) ||
+      isNaN(seasonNum) ||
+      String(seasonNum).length !== 4
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Invalid Team ID or Season provided. Team ID must be number, Season must be 4-digit year.",
+        });
+    }
+
+    // Call the service function
+    const teamStats = await mlbService.fetchMlbTeamStatsBySeason(
+      teamIdNum,
+      seasonNum
+    );
+
+    if (teamStats) {
+      res.status(200).json({
+        message: `MLB historical team stats for team ${teamIdNum}, season ${seasonNum} fetched successfully`,
+        data: teamStats,
+      });
+    } else {
+      // If service returns null
+      res.status(404).json({
+        message: `MLB historical team stats not found for team ${teamIdNum}, season ${seasonNum}`,
+        data: null,
+      });
+    }
+  } catch (error) {
+    console.error("Error in getMlbTeamSeasonStats controller:", error);
+    next(error); // Forward error
   }
 };
 

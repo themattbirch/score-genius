@@ -2,6 +2,8 @@ import supabase from "../utils/supabase_client.js"; // <-- IMPORT THE CLIENT
 import { DateTime } from "luxon"; // Using Luxon for robust timezone handling
 
 const MLB_SCHEDULE_TABLE = "mlb_game_schedule";
+const MLB_HISTORICAL_GAMES_TABLE = "mlb_historical_game_stats";
+const MLB_HISTORICAL_TEAM_STATS_TABLE = "mlb_historical_team_stats";
 const ET_ZONE_IDENTIFIER = "America/New_York"; // IANA identifier
 
 export const fetchMlbScheduleForTodayAndTomorrow = async () => {
@@ -57,7 +59,7 @@ export const fetchMlbScheduleForTodayAndTomorrow = async () => {
   }
 };
 
-export const fetchMlbGamesHistory = async (options) => {
+export const fetchMlbGameHistory = async (options) => {
   const { startDate, endDate, teamName, limit, page } = options;
   console.log(`Service: Fetching MLB historical games with options:`, options);
 
@@ -112,9 +114,61 @@ export const fetchMlbGamesHistory = async (options) => {
     );
     return data || [];
   } catch (error) {
-    console.error("Error in fetchMlbGamesHistory service:", error);
+    console.error("Error in fetchMlbGameHistory service:", error);
     throw error; // Re-throw for controller
   }
 };
 
+export const fetchMlbTeamStatsBySeason = async (teamId, season) => {
+  // Assuming 'season' in the Supabase table is an integer (e.g., 2023)
+  console.log(
+    `Service: Fetching MLB historical team stats for team ${teamId}, season ${season}...`
+  );
+  try {
+    // Select all columns based on user list for mlb_historical_team_stats
+    const selectColumns = `
+        team_id, team_name, season, league_id, league_name,
+        games_played_home, games_played_away, games_played_all,
+        wins_home_total, wins_home_percentage, wins_away_total, wins_away_percentage,
+        wins_all_total, wins_all_percentage, losses_home_total, losses_home_percentage,
+        losses_away_total, losses_away_percentage, losses_all_total, losses_all_percentage,
+        runs_for_total_home, runs_for_total_away, runs_for_total_all,
+        runs_for_avg_home, runs_for_avg_away, runs_for_avg_all,
+        runs_against_total_home, runs_against_total_away, runs_against_total_all,
+        runs_against_avg_home, runs_against_avg_away, runs_against_avg_all,
+        updated_at
+    `; // Exclude raw_api_response by default for API
+
+    const { data, error, status } = await supabase
+      .from(MLB_HISTORICAL_TEAM_STATS_TABLE)
+      .select(selectColumns)
+      .eq("team_id", teamId)
+      .eq("season", season) // Query using the integer season year
+      .maybeSingle(); // Expect only one row or null
+
+    if (error) {
+      console.error(
+        "Supabase error fetching MLB historical team stats:",
+        error
+      );
+      const dbError = new Error(error.message || "Database query failed");
+      dbError.status = status || 500;
+      throw dbError;
+    }
+
+    if (data) {
+      console.log(
+        `Service: Found MLB stats for team ${teamId}, season ${season}.`
+      );
+    } else {
+      console.log(
+        `Service: No MLB stats found for team ${teamId}, season ${season}.`
+      );
+    }
+    return data; // Return the single data object or null
+  } catch (error) {
+    console.error("Error in fetchMlbTeamStatsBySeason service:", error);
+    throw error;
+  }
+};
 // Add more service functions for MLB data here...

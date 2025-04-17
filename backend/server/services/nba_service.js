@@ -8,6 +8,8 @@ import { DateTime } from "luxon"; // Make sure you did: npm install luxon
 const NBA_SCHEDULE_TABLE = "nba_game_schedule";
 const NBA_INJURIES_TABLE = "nba_injuries";
 const NBA_HISTORICAL_GAMES_TABLE = "nba_historical_game_stats";
+const NBA_HISTORICAL_TEAM_STATS_TABLE = "nba_historical_team_stats";
+const NBA_HISTORICAL_PLAYER_STATS_TABLE = "nba_historical_player_stats";
 const ET_ZONE_IDENTIFIER = "America/New_York";
 
 // Replace this function in backend/server/services/nba_service.js
@@ -83,7 +85,7 @@ export const fetchNbaInjuries = async () => {
   }
 };
 
-export const fetchNbaGamesHistory = async (options) => {
+export const fetchNbaGameHistory = async (options) => {
   const { startDate, endDate, teamName, limit, page } = options;
   console.log(`Service: Fetching NBA historical games with options:`, options);
 
@@ -139,7 +141,98 @@ export const fetchNbaGamesHistory = async (options) => {
     );
     return data || [];
   } catch (error) {
-    console.error("Error in fetchNbaGamesHistory service:", error);
+    console.error("Error in fetchNbaGameHistory service:", error);
+    throw error;
+  }
+};
+
+export const fetchNbaTeamStatsBySeason = async (teamId, seasonYearStr) => {
+  // Param is starting year string like "2022"
+  // Construct the season range string (e.g., "2022-2023") expected in DB
+  const startYear = parseInt(seasonYearStr);
+  const endYear = startYear + 1;
+  const seasonRangeStr = `${startYear}-${endYear}`; // e.g., "2022-2023"
+
+  console.log(
+    `Service: Fetching NBA historical team stats for team ${teamId}, season range '${seasonRangeStr}'...`
+  );
+  try {
+    const { data, error, status } = await supabase
+      .from(NBA_HISTORICAL_TEAM_STATS_TABLE) // Use constant defined above
+      .select("*") // Select all stats columns for this team/season
+      .eq("team_id", teamId)
+      // --- CORRECTED FILTER ---
+      .eq("season", seasonRangeStr) // Use the constructed string range for the query
+      // --- END CORRECTION ---
+      .maybeSingle(); // Expect only one row (or null)
+
+    if (error) {
+      console.error("Supabase error fetching historical team stats:", error);
+      const dbError = new Error(error.message || "Database query failed");
+      dbError.status = status || 500;
+      throw dbError;
+    }
+
+    if (data) {
+      console.log(
+        `Service: Found stats for team ${teamId}, season ${seasonRangeStr}.`
+      );
+    } else {
+      console.log(
+        `Service: No stats found for team ${teamId}, season ${seasonRangeStr}.`
+      );
+    }
+    return data; // Return the single data object or null
+  } catch (error) {
+    console.error("Error in fetchNbaTeamStatsBySeason service:", error);
+    throw error; // Re-throw
+  }
+};
+
+export const fetchNbaPlayerGameHistory = async (playerId, options) => {
+  const { limit, page } = options;
+  console.log(
+    `Service: Fetching NBA historical game log for player ${playerId}, limit=${limit}, page=${page}...`
+  );
+
+  // Define columns based on your nba_historical_player_stats list
+  const selectColumns = `
+    game_id, player_id, player_name, team_id, team_name, game_date, minutes,
+    points, rebounds, assists, steals, blocks, turnovers, fouls,
+    fg_made, fg_attempted, three_made, three_attempted, ft_made, ft_attempted
+  `; // Select the stats needed for a game log display
+
+  try {
+    let query = supabase
+      .from(NBA_HISTORICAL_PLAYER_STATS_TABLE)
+      .select(selectColumns)
+      .eq("player_id", playerId); // Filter by player_id (pass string ID from controller)
+
+    // Apply ordering - most recent games first using 'game_date'
+    query = query.order("game_date", { ascending: false });
+
+    // Apply pagination
+    const offset = (page - 1) * limit;
+    query = query.range(offset, offset + limit - 1);
+
+    // Execute query
+    const { data, error, status } = await query;
+
+    if (error) {
+      console.error("Supabase error fetching NBA player game log:", error);
+      const dbError = new Error(error.message || "Database query failed");
+      dbError.status = status || 500;
+      throw dbError;
+    }
+
+    console.log(
+      `Service: Found ${
+        data ? data.length : 0
+      } NBA historical games for player ${playerId}.`
+    );
+    return data || [];
+  } catch (error) {
+    console.error("Error in fetchNbaPlayerGameHistory service:", error);
     throw error;
   }
 };
