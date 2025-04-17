@@ -70,21 +70,24 @@ export const fetchMlbScheduleForTodayAndTomorrow = async () => {
 
 // --- MLB Historical Game Stats ---
 export const fetchMlbGameHistory = async (options) => {
-    // Cache Key: Stringify options object for simplicity handles all params
-    const cacheKey = `mlb_game_history_${JSON.stringify(options)}`;
-    // TTL: 1 day
-    const ttl = 86400;
+  // Cache Key: Stringify options object for simplicity handles all params
+  const cacheKey = `mlb_game_history_${JSON.stringify(options)}`;
+  // TTL: 1 day
+  const ttl = 86400;
 
-    const cachedData = cache.get(cacheKey);
-    if (cachedData !== undefined) {
-        console.log(`CACHE HIT for key: ${cacheKey}`);
-        return cachedData;
-    }
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
 
-    console.log(`CACHE MISS for key: ${cacheKey}. Fetching historical MLB games with options:`, options);
-    try {
-        // Select relevant columns from your list, exclude raw_api_response
-        const selectColumns = `
+  console.log(
+    `CACHE MISS for key: ${cacheKey}. Fetching historical MLB games with options:`,
+    options
+  );
+  try {
+    // Select relevant columns from your list, exclude raw_api_response
+    const selectColumns = `
             game_id, game_date_time_utc, season, league_id, status_long, status_short,
             home_team_id, home_team_name, away_team_id, away_team_name,
             home_score, away_score, home_hits, away_hits, home_errors, away_errors,
@@ -92,59 +95,71 @@ export const fetchMlbGameHistory = async (options) => {
             a_inn_1, a_inn_2, a_inn_3, a_inn_4, a_inn_5, a_inn_6, a_inn_7, a_inn_8, a_inn_9, a_inn_extra,
             updated_at
         `;
-        let query = supabase.from(MLB_HISTORICAL_GAMES_TABLE).select(selectColumns);
+    let query = supabase.from(MLB_HISTORICAL_GAMES_TABLE).select(selectColumns);
 
-        // Apply filters (ensure your DB column names match)
-        // Assuming you have a 'game_date' column suitable for filtering
-        if (options.startDate) query = query.gte("game_date_time_utc", options.startDate); // Adjust column if needed
-        if (options.endDate) query = query.lte("game_date_time_utc", options.endDate); // Adjust column if needed
-        if (options.teamName) query = query.or(`home_team_name.ilike.%${options.teamName}%,away_team_name.ilike.%${options.teamName}%`); // Adjust columns if needed
+    // Apply filters (ensure your DB column names match)
+    // Assuming you have a 'game_date' column suitable for filtering
+    if (options.startDate)
+      query = query.gte("game_date_time_utc", options.startDate); // Adjust column if needed
+    if (options.endDate)
+      query = query.lte("game_date_time_utc", options.endDate); // Adjust column if needed
+    if (options.teamName)
+      query = query.or(
+        `home_team_name.ilike.%${options.teamName}%,away_team_name.ilike.%${options.teamName}%`
+      ); // Adjust columns if needed
 
-        // Order by date - ensure 'game_date_time_utc' is correct for sorting
-        query = query.order("game_date_time_utc", { ascending: false });
+    // Order by date - ensure 'game_date_time_utc' is correct for sorting
+    query = query.order("game_date_time_utc", { ascending: false });
 
-        const offset = (options.page - 1) * options.limit;
-        query = query.range(offset, offset + options.limit - 1);
+    const offset = (options.page - 1) * options.limit;
+    query = query.range(offset, offset + options.limit - 1);
 
-        const { data, error, status } = await query;
+    const { data, error, status } = await query;
 
-        if (error) {
-            console.error("Supabase error fetching MLB historical games:", error.message);
-            return null; // Don't cache errors
-        }
-
-        const resultData = data || [];
-        console.log(`Successfully fetched ${resultData.length} MLB historical games. Caching result with TTL: ${ttl}s`);
-        cache.set(cacheKey, resultData, ttl);
-        return resultData;
-
-    } catch (error) {
-        console.error("Error in fetchMlbGameHistory service:", error.message);
-        return null;
+    if (error) {
+      console.error(
+        "Supabase error fetching MLB historical games:",
+        error.message
+      );
+      return null; // Don't cache errors
     }
+
+    const resultData = data || [];
+    console.log(
+      `Successfully fetched ${resultData.length} MLB historical games. Caching result with TTL: ${ttl}s`
+    );
+    cache.set(cacheKey, resultData, ttl);
+    return resultData;
+  } catch (error) {
+    console.error("Error in fetchMlbGameHistory service:", error.message);
+    return null;
+  }
 };
 
 // --- MLB Historical Team Stats ---
-export const fetchMlbTeamStatsBySeason = async (teamId, seasonYear) => { // Assuming service takes year number
-    // Cache Key: Dynamic
-    const cacheKey = `mlb_team_stats_${teamId}_${seasonYear}`;
-    // TTL: 1 day
-    const ttl = 86400;
+export const fetchMlbTeamStatsBySeason = async (teamId, seasonYear) => {
+  // Assuming service takes year number
+  // Cache Key: Dynamic
+  const cacheKey = `mlb_team_stats_${teamId}_${seasonYear}`;
+  // TTL: 1 day
+  const ttl = 86400;
 
-    const cachedData = cache.get(cacheKey);
-     if (cachedData !== undefined) {
-        if (cachedData === null) {
-             console.log(`CACHE HIT for key: ${cacheKey} (Result: Not Found)`);
-             return null;
-        }
-        console.log(`CACHE HIT for key: ${cacheKey}`);
-        return cachedData;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    if (cachedData === null) {
+      console.log(`CACHE HIT for key: ${cacheKey} (Result: Not Found)`);
+      return null;
     }
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
 
-    console.log(`CACHE MISS for key: ${cacheKey}. Fetching MLB team stats for team ${teamId}, season ${seasonYear}...`);
-    try {
-        // Select relevant columns, exclude raw_api_response
-        const selectColumns = `
+  console.log(
+    `CACHE MISS for key: ${cacheKey}. Fetching MLB team stats for team ${teamId}, season ${seasonYear}...`
+  );
+  try {
+    // Select relevant columns, exclude raw_api_response
+    const selectColumns = `
             id, team_id, team_name, season, league_id, league_name,
             games_played_home, games_played_away, games_played_all,
             wins_home_total, wins_home_percentage, wins_away_total, wins_away_percentage,
@@ -156,31 +171,37 @@ export const fetchMlbTeamStatsBySeason = async (teamId, seasonYear) => { // Assu
             runs_against_avg_home, runs_against_avg_away, runs_against_avg_all,
             updated_at
         `;
-        const { data, error, status } = await supabase
-            .from(MLB_HISTORICAL_TEAM_STATS_TABLE)
-            .select(selectColumns)
-            .eq("team_id", teamId)
-            // Ensure 'season' column format matches 'seasonYear' param
-            .eq("season", seasonYear)
-            .maybeSingle(); // Expect only one row (or null)
+    const { data, error, status } = await supabase
+      .from(MLB_HISTORICAL_TEAM_STATS_TABLE)
+      .select(selectColumns)
+      .eq("team_id", teamId)
+      // Ensure 'season' column format matches 'seasonYear' param
+      .eq("season", seasonYear)
+      .maybeSingle(); // Expect only one row (or null)
 
-        if (error) {
-            console.error("Supabase error fetching MLB historical team stats:", error.message);
-            return null; // Don't cache errors
-        }
-
-         if (data) {
-            console.log(`Successfully fetched MLB stats for team ${teamId}, season ${seasonYear}. Caching result with TTL: ${ttl}s`);
-        } else {
-            console.log(`No MLB stats found for team ${teamId}, season ${seasonYear}. Caching 'null' with TTL: ${ttl}s`);
-        }
-        cache.set(cacheKey, data, ttl); // Cache the actual data or null
-        return data;
-
-    } catch (error) {
-        console.error("Error in fetchMlbTeamStatsBySeason service:", error.message);
-        return null;
+    if (error) {
+      console.error(
+        "Supabase error fetching MLB historical team stats:",
+        error.message
+      );
+      return null; // Don't cache errors
     }
+
+    if (data) {
+      console.log(
+        `Successfully fetched MLB stats for team ${teamId}, season ${seasonYear}. Caching result with TTL: ${ttl}s`
+      );
+    } else {
+      console.log(
+        `No MLB stats found for team ${teamId}, season ${seasonYear}. Caching 'null' with TTL: ${ttl}s`
+      );
+    }
+    cache.set(cacheKey, data, ttl); // Cache the actual data or null
+    return data;
+  } catch (error) {
+    console.error("Error in fetchMlbTeamStatsBySeason service:", error.message);
+    return null;
+  }
 };
 
 export const WorkspaceMlbScheduleForTodayAndTomorrow = async () => {

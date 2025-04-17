@@ -70,207 +70,237 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
 
 // --- NBA Injuries ---
 export const fetchNbaInjuries = async () => {
-    // Cache Key: Simple, as it likely fetches all current injuries
-    const cacheKey = 'nba_injuries_current';
-    // TTL: 1 hour (adjust as needed based on update frequency)
-    const ttl = 3600;
+  // Cache Key: Simple, as it likely fetches all current injuries
+  const cacheKey = "nba_injuries_current";
+  // TTL: 1 hour (adjust as needed based on update frequency)
+  const ttl = 3600;
 
-    const cachedData = cache.get(cacheKey);
-    if (cachedData !== undefined) {
-        console.log(`CACHE HIT for key: ${cacheKey}`);
-        return cachedData;
-    }
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
 
-    console.log(`CACHE MISS for key: ${cacheKey}. Fetching from Supabase table '${NBA_INJURIES_TABLE}'...`);
-    try {
-        // Select relevant columns, exclude raw_api_response
-        const selectColumns = `
+  console.log(
+    `CACHE MISS for key: ${cacheKey}. Fetching from Supabase table '${NBA_INJURIES_TABLE}'...`
+  );
+  try {
+    // Select relevant columns, exclude raw_api_response
+    const selectColumns = `
             injury_id, player_id, player_display_name, team_id, team_display_name,
             report_date_utc, injury_status, injury_status_abbr, injury_type,
             injury_location, injury_detail, injury_side, return_date_est,
             short_comment, long_comment, created_at, last_api_update_time
         `;
-        const { data, error, status } = await supabase
-            .from(NBA_INJURIES_TABLE)
-            .select(selectColumns)
-            .order("report_date_utc", { ascending: false }); // Show newest reports first
+    const { data, error, status } = await supabase
+      .from(NBA_INJURIES_TABLE)
+      .select(selectColumns)
+      .order("report_date_utc", { ascending: false }); // Show newest reports first
 
-        if (error) {
-            console.error("Supabase error fetching injuries:", error.message);
-            return null; // Don't cache errors
-        }
-
-        const resultData = data || [];
-        console.log(`Successfully fetched ${resultData.length} NBA injury records. Caching result with TTL: ${ttl}s`);
-        cache.set(cacheKey, resultData, ttl);
-        return resultData;
-
-    } catch (error) {
-        console.error("Error in fetchNbaInjuries service:", error.message);
-        return null; // Return null on unexpected errors
+    if (error) {
+      console.error("Supabase error fetching injuries:", error.message);
+      return null; // Don't cache errors
     }
+
+    const resultData = data || [];
+    console.log(
+      `Successfully fetched ${resultData.length} NBA injury records. Caching result with TTL: ${ttl}s`
+    );
+    cache.set(cacheKey, resultData, ttl);
+    return resultData;
+  } catch (error) {
+    console.error("Error in fetchNbaInjuries service:", error.message);
+    return null; // Return null on unexpected errors
+  }
 };
 
 // --- NBA Historical Game Stats ---
 export const fetchNbaGameHistory = async (options) => {
-    const { startDate, endDate, teamName, limit, page } = options;
-    // Cache Key: Dynamic, includes all filter/pagination options
-    // Use 'null' strings for potentially undefined values to ensure key consistency
-    const cacheKey = `nba_game_history_${startDate || 'null'}_${endDate || 'null'}_${teamName || 'null'}_${limit}_${page}`;
-    // TTL: 1 day (historical data)
-    const ttl = 86400;
+  const { startDate, endDate, teamName, limit, page } = options;
+  // Cache Key: Dynamic, includes all filter/pagination options
+  // Use 'null' strings for potentially undefined values to ensure key consistency
+  const cacheKey = `nba_game_history_${startDate || "null"}_${
+    endDate || "null"
+  }_${teamName || "null"}_${limit}_${page}`;
+  // TTL: 1 day (historical data)
+  const ttl = 86400;
 
-    const cachedData = cache.get(cacheKey);
-    if (cachedData !== undefined) {
-        console.log(`CACHE HIT for key: ${cacheKey}`);
-        return cachedData;
-    }
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
 
-    console.log(`CACHE MISS for key: ${cacheKey}. Fetching historical NBA games with options:`, options);
-    try {
-        // Use the select list defined in your controller logic
-        const selectColumns = `
+  console.log(
+    `CACHE MISS for key: ${cacheKey}. Fetching historical NBA games with options:`,
+    options
+  );
+  try {
+    // Use the select list defined in your controller logic
+    const selectColumns = `
             game_id, game_date, home_team, away_team, home_score, away_score,
             home_q1, home_q2, home_q3, home_q4, home_ot,
             away_q1, away_q2, away_q3, away_q4, away_ot,
             home_assists, home_steals, home_blocks, home_turnovers, home_fouls, home_total_reb,
             away_assists, away_steals, away_blocks, away_turnovers, away_fouls, away_total_reb
         `;
-        let query = supabase.from(NBA_HISTORICAL_GAMES_TABLE).select(selectColumns);
+    let query = supabase.from(NBA_HISTORICAL_GAMES_TABLE).select(selectColumns);
 
-        // Apply filters (ensure your DB column names match, e.g., 'game_date')
-        if (startDate) query = query.gte("game_date", startDate);
-        if (endDate) query = query.lte("game_date", endDate);
-        if (teamName) query = query.or(`home_team.ilike.%${teamName}%,away_team.ilike.%${teamName}%`);
+    // Apply filters (ensure your DB column names match, e.g., 'game_date')
+    if (startDate) query = query.gte("game_date", startDate);
+    if (endDate) query = query.lte("game_date", endDate);
+    if (teamName)
+      query = query.or(
+        `home_team.ilike.%${teamName}%,away_team.ilike.%${teamName}%`
+      );
 
-        query = query.order("game_date", { ascending: false });
+    query = query.order("game_date", { ascending: false });
 
-        const offset = (page - 1) * limit;
-        query = query.range(offset, offset + limit - 1);
+    const offset = (page - 1) * limit;
+    query = query.range(offset, offset + limit - 1);
 
-        const { data, error, status } = await query;
+    const { data, error, status } = await query;
 
-        if (error) {
-            console.error("Supabase error fetching historical games:", error.message);
-            return null; // Don't cache errors
-        }
-
-        const resultData = data || [];
-        console.log(`Successfully fetched ${resultData.length} NBA historical games. Caching result with TTL: ${ttl}s`);
-        cache.set(cacheKey, resultData, ttl);
-        return resultData;
-
-    } catch (error) {
-        console.error("Error in fetchNbaGameHistory service:", error.message);
-        return null;
+    if (error) {
+      console.error("Supabase error fetching historical games:", error.message);
+      return null; // Don't cache errors
     }
+
+    const resultData = data || [];
+    console.log(
+      `Successfully fetched ${resultData.length} NBA historical games. Caching result with TTL: ${ttl}s`
+    );
+    cache.set(cacheKey, resultData, ttl);
+    return resultData;
+  } catch (error) {
+    console.error("Error in fetchNbaGameHistory service:", error.message);
+    return null;
+  }
 };
 
 // --- NBA Historical Team Stats ---
-export const fetchNbaTeamStatsBySeason = async (teamId, seasonInputYearStr) => { // Accepts the "2023" string
-    // Cache Key: Based on the input parameters
-    const cacheKey = `nba_team_stats_${teamId}_${seasonInputYearStr}`;
-    const ttl = 86400; // 1 day
+export const fetchNbaTeamStatsBySeason = async (teamId, seasonInputYearStr) => {
+  // Accepts the "2023" string
+  // Cache Key: Based on the input parameters
+  const cacheKey = `nba_team_stats_${teamId}_${seasonInputYearStr}`;
+  const ttl = 86400; // 1 day
 
-    const cachedData = cache.get(cacheKey);
-    if (cachedData !== undefined) {
-        if (cachedData === null) {
-             console.log(`CACHE HIT for key: ${cacheKey} (Result: Not Found)`);
-             return null;
-        }
-        console.log(`CACHE HIT for key: ${cacheKey}`);
-        return cachedData;
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    if (cachedData === null) {
+      console.log(`CACHE HIT for key: ${cacheKey} (Result: Not Found)`);
+      return null;
+    }
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
+
+  // --- Construct the season range string needed for the database ---
+  const startYear = parseInt(seasonInputYearStr);
+  if (isNaN(startYear)) {
+    console.error(
+      "Invalid season year string received in service:",
+      seasonInputYearStr
+    );
+    return null;
+  }
+  const endYear = startYear + 1;
+  const seasonRangeForQuery = `${startYear}-${endYear}`; // Creates "2023-2024"
+  // --- End construction ---
+
+  // Use the constructed range in the log message
+  console.log(
+    `CACHE MISS for key: ${cacheKey}. Fetching NBA team stats for team ${teamId}, season range '${seasonRangeForQuery}'...`
+  );
+  try {
+    const { data, error, status } = await supabase
+      .from(NBA_HISTORICAL_TEAM_STATS_TABLE) // Constant should be defined above
+      .select("*") // Select all columns for team stats
+      .eq("team_id", teamId)
+      // *** Use the constructed season range string for the query ***
+      .eq("season", seasonRangeForQuery)
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        `Supabase error fetching historical team stats for range ${seasonRangeForQuery}:`,
+        error.message
+      );
+      return null; // Don't cache errors
     }
 
-    // --- Construct the season range string needed for the database ---
-    const startYear = parseInt(seasonInputYearStr);
-    if (isNaN(startYear)) {
-        console.error("Invalid season year string received in service:", seasonInputYearStr);
-        return null;
+    // Cache data or null
+    if (data) {
+      console.log(
+        `Successfully fetched stats for team ${teamId}, season range ${seasonRangeForQuery}. Caching result with TTL: ${ttl}s`
+      );
+    } else {
+      console.log(
+        `No stats found for team ${teamId}, season range ${seasonRangeForQuery}. Caching 'null' with TTL: ${ttl}s`
+      );
     }
-    const endYear = startYear + 1;
-    const seasonRangeForQuery = `${startYear}-${endYear}`; // Creates "2023-2024"
-    // --- End construction ---
-
-    // Use the constructed range in the log message
-    console.log(`CACHE MISS for key: ${cacheKey}. Fetching NBA team stats for team ${teamId}, season range '${seasonRangeForQuery}'...`);
-    try {
-        const { data, error, status } = await supabase
-            .from(NBA_HISTORICAL_TEAM_STATS_TABLE) // Constant should be defined above
-            .select('*') // Select all columns for team stats
-            .eq("team_id", teamId)
-             // *** Use the constructed season range string for the query ***
-            .eq("season", seasonRangeForQuery)
-            .maybeSingle();
-
-        if (error) {
-            console.error(`Supabase error fetching historical team stats for range ${seasonRangeForQuery}:`, error.message);
-            return null; // Don't cache errors
-        }
-
-        // Cache data or null
-        if (data) {
-            console.log(`Successfully fetched stats for team ${teamId}, season range ${seasonRangeForQuery}. Caching result with TTL: ${ttl}s`);
-        } else {
-            console.log(`No stats found for team ${teamId}, season range ${seasonRangeForQuery}. Caching 'null' with TTL: ${ttl}s`);
-        }
-        cache.set(cacheKey, data, ttl); // Cache the actual data object or null
-        return data; // Return the data object or null
-
-    } catch (error) {
-        console.error("Error in fetchNbaTeamStatsBySeason service:", error.message);
-        return null;
-    }
+    cache.set(cacheKey, data, ttl); // Cache the actual data object or null
+    return data; // Return the data object or null
+  } catch (error) {
+    console.error("Error in fetchNbaTeamStatsBySeason service:", error.message);
+    return null;
+  }
 };
 
 // --- NBA Historical Player Stats ---
 export const fetchNbaPlayerGameHistory = async (playerId, options) => {
-    const { limit, page } = options;
-    // Cache Key: Dynamic
-    const cacheKey = `nba_player_history_${playerId}_${limit}_${page}`;
-    // TTL: 1 day
-    const ttl = 86400;
+  const { limit, page } = options;
+  // Cache Key: Dynamic
+  const cacheKey = `nba_player_history_${playerId}_${limit}_${page}`;
+  // TTL: 1 day
+  const ttl = 86400;
 
-    const cachedData = cache.get(cacheKey);
-    if (cachedData !== undefined) {
-        console.log(`CACHE HIT for key: ${cacheKey}`);
-        return cachedData;
-    }
+  const cachedData = cache.get(cacheKey);
+  if (cachedData !== undefined) {
+    console.log(`CACHE HIT for key: ${cacheKey}`);
+    return cachedData;
+  }
 
-    console.log(`CACHE MISS for key: ${cacheKey}. Fetching NBA player game log for player ${playerId}, limit=${limit}, page=${page}...`);
-    try {
-        // Use select columns specified previously
-        const selectColumns = `
+  console.log(
+    `CACHE MISS for key: ${cacheKey}. Fetching NBA player game log for player ${playerId}, limit=${limit}, page=${page}...`
+  );
+  try {
+    // Use select columns specified previously
+    const selectColumns = `
             game_id, player_id, player_name, team_id, team_name, game_date, minutes,
             points, rebounds, assists, steals, blocks, turnovers, fouls,
             fg_made, fg_attempted, three_made, three_attempted, ft_made, ft_attempted
         `;
-        let query = supabase
-            .from(NBA_HISTORICAL_PLAYER_STATS_TABLE)
-            .select(selectColumns)
-            .eq("player_id", playerId);
+    let query = supabase
+      .from(NBA_HISTORICAL_PLAYER_STATS_TABLE)
+      .select(selectColumns)
+      .eq("player_id", playerId);
 
-        query = query.order("game_date", { ascending: false });
+    query = query.order("game_date", { ascending: false });
 
-        const offset = (page - 1) * limit;
-        query = query.range(offset, offset + limit - 1);
+    const offset = (page - 1) * limit;
+    query = query.range(offset, offset + limit - 1);
 
-        const { data, error, status } = await query;
+    const { data, error, status } = await query;
 
-        if (error) {
-            console.error("Supabase error fetching NBA player game log:", error.message);
-            return null; // Don't cache errors
-        }
-
-        const resultData = data || [];
-        console.log(`Successfully fetched ${resultData.length} NBA historical games for player ${playerId}. Caching result with TTL: ${ttl}s`);
-        cache.set(cacheKey, resultData, ttl);
-        return resultData;
-
-    } catch (error) {
-        console.error("Error in fetchNbaPlayerGameHistory service:", error.message);
-        return null;
+    if (error) {
+      console.error(
+        "Supabase error fetching NBA player game log:",
+        error.message
+      );
+      return null; // Don't cache errors
     }
+
+    const resultData = data || [];
+    console.log(
+      `Successfully fetched ${resultData.length} NBA historical games for player ${playerId}. Caching result with TTL: ${ttl}s`
+    );
+    cache.set(cacheKey, resultData, ttl);
+    return resultData;
+  } catch (error) {
+    console.error("Error in fetchNbaPlayerGameHistory service:", error.message);
+    return null;
+  }
 };
 
 export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {

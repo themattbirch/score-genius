@@ -6,11 +6,17 @@ then upserts the preview data into a Supabase table. Pitcher info is updated sep
 import time
 import re
 import json
-import datetime
-from datetime import date, timedelta, datetime as dt_datetime, time as dt_time
+from datetime import date, timedelta, datetime as dt_datetime, time as dt
 from zoneinfo import ZoneInfo
 from typing import Dict, Optional, Tuple, List, Any
 from dateutil import parser as dateutil_parser
+
+import undetected_chromedriver as uc
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
 
 # --- 3rd-party Imports ---
 try:
@@ -318,72 +324,35 @@ def extract_odds_data(odds_event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
                     clean_odds["total_under_price_clean"] = fmt_price
     return {"raw": raw_odds, "clean": clean_odds}
 
-UTC = ZoneInfo("UTC")
-
-import requests
-import time
-import re
-from datetime import date, datetime as dt, timedelta
-from typing import Dict, Tuple, Optional, Any
-from zoneinfo import ZoneInfo
-import undetected_chromedriver as uc
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from bs4 import BeautifulSoup
-
 # Supabase constants & normalize_team_name already imported…
 
-FANGRAPHS_JSON = "https://cdn.fangraphs.com/v1/roster-resource/probables-grid/data"
-FANGRAPHS_URL  = "https://www.fangraphs.com/roster-resource/probables-grid"
-SCROLL_DELAY   = 2
-LOAD_WAIT      = 15
-UTC            = ZoneInfo("UTC")
-CHROME_HEADLESS= True
+FANGRAPHS_URL   = "https://www.fangraphs.com/roster-resource/probables-grid"
+SCROLL_DELAY    = 2
+LOAD_WAIT       = 15
+UTC             = ZoneInfo("UTC")
+CHROME_HEADLESS = True
 
-def fetch_fangraphs_probables_json(
+def scrape_fangraphs_probables(
     base_date: date
 ) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
-    """Hit the JSON endpoint; returns {(ISO-Date,team):{name,hand}}."""
-    url = FANGRAPHS_JSON
-    resp = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
-    resp.raise_for_status()
-    data = resp.json()
-    year = base_date.year
-    dates = [f"{year}-{int(m):02d}-{int(d):02d}" 
-             for m,d in (dtxt.split("/") for dtxt in data.get("dates",[]))]
-    lookup: Dict[Tuple[str,str],Dict[str,Optional[str]]] = {}
-    for row in data.get("rows",[]):
-        team = normalize_team_name(row.get("team",""))
-        for idx, p in enumerate(row.get("pitchers",[])):
-            if idx>=len(dates): break
-            name = p.get("name","").strip()
-            hand = p.get("hand")
-            if not name or name.lower() in ("tbd","off","ppd"): continue
-            lookup[(dates[idx],team)] = {"pitcher_name":name,"handedness":hand}
-    return lookup
-
-def scrape_fangraphs_probables_selenium(
-    base_date: date
-) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
-    """Fallback: load in headless Chrome and scrape the HTML ‘Team’ table directly."""
+    """Load in headless Chrome and scrape the HTML ‘Team’ table directly."""
     opts = Options()
     if CHROME_HEADLESS:
         opts.add_argument("--headless=new")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--window-size=1920,1080")
+
     driver = uc.Chrome(options=opts)
-    driver.set_page_load_timeout(LOAD_WAIT*2)
-    driver.set_script_timeout(LOAD_WAIT*2)
+    driver.set_page_load_timeout(LOAD_WAIT * 2)
+    driver.set_script_timeout(LOAD_WAIT * 2)
 
     try:
         driver.get(FANGRAPHS_URL)
         for _ in range(4):
             time.sleep(SCROLL_DELAY)
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
-        WebDriverWait(driver, LOAD_WAIT*2).until(
+        WebDriverWait(driver, LOAD_WAIT * 2).until(
             EC.presence_of_element_located((By.TAG_NAME, "table"))
         )
     except Exception:
@@ -401,24 +370,23 @@ def scrape_fangraphs_probables_selenium(
             target_table = tbl
             break
     if not target_table:
-        print("Selenium fallback: no ‘Team’ table found.")
+        print("No ‘Team’ table found.")
         return {}
 
-    # 2) Determine how many day‑columns by looking at first real row
-    first_row = None
-    for row in target_table.select("tbody tr"):
-        if len(row.find_all("td")) > 1:
-            first_row = row
-            break
+    # 2) Figure out how many days across
+    first_row = next(
+        (r for r in target_table.select("tbody tr") if len(r.find_all("td")) > 1),
+        None
+    )
     if not first_row:
-        print("Selenium fallback: no data rows found.")
+        print("No data rows found.")
         return {}
     num_days = len(first_row.find_all("td")) - 1
 
-    # 3) Generate ISO dates off base_date
+    # 3) Build the date headers
     headers = [(base_date + timedelta(days=i)).isoformat() for i in range(num_days)]
 
-    # 4) Extract pitchers
+    # 4) Extract all pitchers
     lookup: Dict[Tuple[str,str],Dict[str,Optional[str]]] = {}
     for row in target_table.select("tbody tr"):
         cells = row.find_all("td")
@@ -428,7 +396,6 @@ def scrape_fangraphs_probables_selenium(
         for i, cell in enumerate(cells[1:]):
             if i >= num_days:
                 break
-            # pick last <a> or raw text
             links = cell.find_all("a")
             name = links[-1].get_text(strip=True) if links else cell.get_text(" ", strip=True)
             name = re.sub(r'^@\s*[A-Z]{2,3}\s+', "", name)
@@ -436,20 +403,16 @@ def scrape_fangraphs_probables_selenium(
             hand = m.group(1) if m else None
             if hand:
                 name = re.sub(r"\s*\([RLS]\)", "", name).strip()
-            if not name or name.lower() in ("tbd","off","ppd"):
+            if not name or name.lower() in ("tbd", "off", "ppd"):
                 continue
             lookup[(headers[i], team)] = {"pitcher_name": name, "handedness": hand}
 
-    print(f"Selenium fallback mapped {len(lookup)} pitchers.")
+    print(f"Mapped {len(lookup)} probables via Selenium.")
     return lookup
 
 def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
-    """Try JSON fetch, else Selenium scrape."""
-    try:
-        return fetch_fangraphs_probables_json(base_date)
-    except Exception as e:
-        print("JSON fetch failed, falling back to Selenium:", e)
-        return scrape_fangraphs_probables_selenium(base_date)
+    """Always use Selenium scraper now."""
+    return scrape_fangraphs_probables(base_date)
 
 def update_pitchers_for_date(target_date: date) -> int:
     """

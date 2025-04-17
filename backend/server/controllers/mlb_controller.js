@@ -7,15 +7,16 @@ export const getMlbSchedule = async (req, res, next) => {
   try {
     // Call the service function to fetch data
     // Fetches based on current ET date for today & tomorrow inside the service
-    const scheduleData = await mlbService.WorkspaceMlbScheduleForTodayAndTomorrow();
+    const scheduleData =
+      await mlbService.WorkspaceMlbScheduleForTodayAndTomorrow();
 
     // Send successful response
     res.status(200).json({
-    message: "MLB schedule fetched successfully",
-    // Safely get length only if scheduleData is an array
-    retrieved: Array.isArray(scheduleData) ? scheduleData.length : 0,
-    data: scheduleData || [], // Return empty array if null/undefined
-  });
+      message: "MLB schedule fetched successfully",
+      // Safely get length only if scheduleData is an array
+      retrieved: Array.isArray(scheduleData) ? scheduleData.length : 0,
+      data: scheduleData || [], // Return empty array if null/undefined
+    });
   } catch (error) {
     // Pass error to the central error handler in server.js
     console.error("Error in getMlbSchedule controller:", error);
@@ -68,7 +69,8 @@ export const getMlbTeamSeasonStats = async (req, res, next) => {
       String(seasonNum).length !== 4
     ) {
       return res.status(400).json({
-        error: "Invalid Team ID or Season provided. Team ID must be a number, Season must be a 4-digit year.",
+        error:
+          "Invalid Team ID or Season provided. Team ID must be a number, Season must be a 4-digit year.",
       });
     }
 
@@ -97,4 +99,4 @@ export const getMlbTeamSeasonStats = async (req, res, next) => {
     console.error("Error in getMlbTeamSeasonStats controller:", error);
     next(error); // Forward error to the global error handler
   }
-}; 
+};

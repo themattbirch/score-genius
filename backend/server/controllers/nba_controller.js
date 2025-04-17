@@ -84,8 +84,7 @@ export const getNbaTeamSeasonStats = async (req, res, next) => {
     // Validate season looks like a 4-digit year string (e.g., "2023")
     if (!/^\d{4}$/.test(season)) {
       return res.status(400).json({
-        error:
-          "Invalid Season format. Expecting a 4-digit year (e.g., 2023).",
+        error: "Invalid Season format. Expecting a 4-digit year (e.g., 2023).",
       });
     }
     // Keep the validated season as a string, as passed in the URL
