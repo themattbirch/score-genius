@@ -253,7 +253,6 @@ export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
   // 1. Check cache first
   const cachedData = cache.get(cacheKey);
   if (cachedData !== undefined) {
-    // Check for undefined, as null/empty array could be valid cached data
     console.log(`CACHE HIT for key: ${cacheKey}`);
     return cachedData;
   }
@@ -266,55 +265,61 @@ export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
 
+    // Get date strings in YYYY-MM-DD format
     const todayStr = getUTCDateString(today);
     const tomorrowStr = getUTCDateString(tomorrow);
 
-    console.log(`Querying NBA schedule for dates: ${todayStr}, ${tomorrowStr}`);
+    // *** Use the correct date column name from your list ***
+    console.log(
+      `Querying NBA schedule for dates in game_date: ${todayStr}, ${tomorrowStr}`
+    );
 
-    // --- Your existing Supabase query logic ---
+    // --- Corrected Supabase query logic for NBA ---
     const { data, error } = await supabase
-      .from("nba_games_view") // *** Replace with your actual table/view name ***
+      // *** Use the CORRECT NBA table name ***
+      .from("nba_game_schedule")
+      // *** Use the CORRECT NBA column names based on your list ***
+      // Selecting a useful subset including predictions and cleaned odds
       .select(
         `
                 game_id,
                 game_date,
-                game_datetime_utc,
+                home_team,
+                away_team,
+                scheduled_time,
+                venue,
                 status,
-                home_team_id,
-                home_team_name,
-                home_team_score,
-                away_team_id,
-                away_team_name,
-                away_team_score,
-                odds_source,
-                last_updated_odds,
-                home_odds_ml,
-                away_odds_ml,
-                home_odds_spread,
-                away_odds_spread,
-                total_over_under
+                moneyline_clean,
+                spread_clean,
+                total_clean,
+                predicted_home_score,
+                predicted_away_score,
+                updated_at
             `
-      ) // *** Select the columns needed by the frontend ***
+      )
+      // *** Filter using the correct date column name ***
       .in("game_date", [todayStr, tomorrowStr])
-      .order("game_datetime_utc", { ascending: true });
+      // *** Order by the correct time column name ***
+      .order("scheduled_time", { ascending: true });
     // --- End Supabase query logic ---
 
     if (error) {
-      console.error("Supabase error fetching NBA schedule:", error.message);
-      // Don't cache errors, return null or throw
-      return null; // Or adapt error handling as needed
+      console.error(
+        `Supabase error fetching NBA schedule from 'nba_game_schedule':`,
+        error.message
+      );
+      return null; // Don't cache errors
     }
 
     // 3. Store the fetched data in cache if successful
     if (data) {
       console.log(
-        `Successfully fetched ${data.length} NBA games. Caching result with TTL: ${ttl}s`
+        `Successfully fetched ${data.length} NBA games from Supabase. Caching result with TTL: ${ttl}s`
       );
       cache.set(cacheKey, data, ttl);
     } else {
-      // Cache an empty array if null data is returned but no error occurred
       console.log(
-        "No NBA games found for today/tomorrow. Caching empty array."
+        "No NBA games found for today/tomorrow in Supabase. Caching empty array."
       );
       cache.set(cacheKey, [], ttl);
     }
@@ -322,9 +327,8 @@ export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
     return data || []; // Return data or an empty array
   } catch (error) {
     console.error(
-      `Error in WorkspaceNbaScheduleForTodayAndTomorrow service: ${error.message}`
+      `Unexpected error in WorkspaceNbaScheduleForTodayAndTomorrow service: ${error.message}`
     );
-    // Return null or throw, depending on how your controller handles errors
-    return null;
+    return null; // Return null on unexpected errors
   }
 };

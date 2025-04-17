@@ -7,16 +7,15 @@ export const getMlbSchedule = async (req, res, next) => {
   try {
     // Call the service function to fetch data
     // Fetches based on current ET date for today & tomorrow inside the service
-    const scheduleData = await mlbService.fetchMlbScheduleForTodayAndTomorrow();
+    const scheduleData = await mlbService.WorkspaceMlbScheduleForTodayAndTomorrow();
 
     // Send successful response
     res.status(200).json({
-      message: "MLB schedule fetched successfully",
-      retrieved: scheduleData.length,
-      // Optional: Add current date info for context
-      // date_retrieved_for_et: DateTime.now().setZone("America/New_York").toISODate(),
-      data: scheduleData,
-    });
+    message: "MLB schedule fetched successfully",
+    // Safely get length only if scheduleData is an array
+    retrieved: Array.isArray(scheduleData) ? scheduleData.length : 0,
+    data: scheduleData || [], // Return empty array if null/undefined
+  });
   } catch (error) {
     // Pass error to the central error handler in server.js
     console.error("Error in getMlbSchedule controller:", error);
@@ -60,42 +59,42 @@ export const getMlbTeamSeasonStats = async (req, res, next) => {
 
     // Validate parameters
     const teamIdNum = parseInt(team_id);
-    const seasonNum = parseInt(season); // MLB stores season as year integer
+    // MLB Season is often stored just as the starting year (e.g., 2023)
+    // Adjust validation if your service/DB expects a different format
+    const seasonNum = parseInt(season);
     if (
       isNaN(teamIdNum) ||
       isNaN(seasonNum) ||
       String(seasonNum).length !== 4
     ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Invalid Team ID or Season provided. Team ID must be number, Season must be 4-digit year.",
-        });
+      return res.status(400).json({
+        error: "Invalid Team ID or Season provided. Team ID must be a number, Season must be a 4-digit year.",
+      });
     }
 
-    // Call the service function
+    // Call the service function (ensure service expects year number)
     const teamStats = await mlbService.fetchMlbTeamStatsBySeason(
       teamIdNum,
-      seasonNum
+      seasonNum // Pass the validated year number
     );
 
+    // Check the result from the service function
     if (teamStats) {
+      // Team stats found, send successful response
       res.status(200).json({
         message: `MLB historical team stats for team ${teamIdNum}, season ${seasonNum} fetched successfully`,
-        data: teamStats,
+        data: teamStats, // Use the actual teamStats data here
       });
     } else {
-      // If service returns null
+      // If service returns null or empty, send 404 Not Found
       res.status(404).json({
         message: `MLB historical team stats not found for team ${teamIdNum}, season ${seasonNum}`,
         data: null,
       });
     }
   } catch (error) {
+    // Handle any errors during validation or service call
     console.error("Error in getMlbTeamSeasonStats controller:", error);
-    next(error); // Forward error
+    next(error); // Forward error to the global error handler
   }
-};
-
-// Add more controller functions for other MLB routes here...
+}; 

@@ -128,137 +128,88 @@ export const fetchMlbGameHistory = async (options) => {
   }
 };
 
-export const fetchMlbTeamStatsBySeason = async (teamId, season) => {
-  // Assuming 'season' in the Supabase table is an integer (e.g., 2023)
-  console.log(
-    `Service: Fetching MLB historical team stats for team ${teamId}, season ${season}...`
-  );
-  try {
-    // Select all columns based on user list for mlb_historical_team_stats
-    const selectColumns = `
-        team_id, team_name, season, league_id, league_name,
-        games_played_home, games_played_away, games_played_all,
-        wins_home_total, wins_home_percentage, wins_away_total, wins_away_percentage,
-        wins_all_total, wins_all_percentage, losses_home_total, losses_home_percentage,
-        losses_away_total, losses_away_percentage, losses_all_total, losses_all_percentage,
-        runs_for_total_home, runs_for_total_away, runs_for_total_all,
-        runs_for_avg_home, runs_for_avg_away, runs_for_avg_all,
-        runs_against_total_home, runs_against_total_away, runs_against_total_all,
-        runs_against_avg_home, runs_against_avg_away, runs_against_avg_all,
-        updated_at
-    `; // Exclude raw_api_response by default for API
-
-    const { data, error, status } = await supabase
-      .from(MLB_HISTORICAL_TEAM_STATS_TABLE)
-      .select(selectColumns)
-      .eq("team_id", teamId)
-      .eq("season", season) // Query using the integer season year
-      .maybeSingle(); // Expect only one row or null
-
-    if (error) {
-      console.error(
-        "Supabase error fetching MLB historical team stats:",
-        error
-      );
-      const dbError = new Error(error.message || "Database query failed");
-      dbError.status = status || 500;
-      throw dbError;
-    }
-
-    if (data) {
-      console.log(
-        `Service: Found MLB stats for team ${teamId}, season ${season}.`
-      );
-    } else {
-      console.log(
-        `Service: No MLB stats found for team ${teamId}, season ${season}.`
-      );
-    }
-    return data; // Return the single data object or null
-  } catch (error) {
-    console.error("Error in fetchMlbTeamStatsBySeason service:", error);
-    throw error;
-  }
-};
-
 export const WorkspaceMlbScheduleForTodayAndTomorrow = async () => {
-  const cacheKey = "mlb_schedule_today_tomorrow";
-  const ttl = 1800; // 30 minutes in seconds
+    const cacheKey = "mlb_schedule_today_tomorrow";
+    const ttl = 1800; // 30 minutes in seconds
 
-  // 1. Check cache first
-  const cachedData = cache.get(cacheKey);
-  if (cachedData !== undefined) {
-    console.log(`CACHE HIT for key: ${cacheKey}`);
-    return cachedData;
-  }
+    // 1. Check cache first
+    const cachedData = cache.get(cacheKey);
+    if (cachedData !== undefined) {
+        console.log(`CACHE HIT for key: ${cacheKey}`);
+        return cachedData;
+    }
 
-  console.log(`CACHE MISS for key: ${cacheKey}. Fetching from Supabase...`);
+    console.log(`CACHE MISS for key: ${cacheKey}. Fetching from Supabase...`);
 
-  // 2. If cache miss, query Supabase
-  try {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
+    // 2. If cache miss, query Supabase
+    try {
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
 
-    const todayStr = getUTCDateString(today);
-    const tomorrowStr = getUTCDateString(tomorrow);
+        // Assuming your game_date_et column stores dates as YYYY-MM-DD strings
+        // Adjust date formatting if necessary to match your Supabase column
+        const todayStr = getUTCDateString(today); // Or format as needed e.g., YYYY-MM-DD
+        const tomorrowStr = getUTCDateString(tomorrow); // Or format as needed
 
-    console.log(`Querying MLB schedule for dates: ${todayStr}, ${tomorrowStr}`);
+        console.log(`Querying MLB schedule for dates in game_date_et: ${todayStr}, ${tomorrowStr}`);
 
-    // --- Your existing Supabase query logic ---
-    const { data, error } = await supabase
-      .from("mlb_games_view") // *** Replace with your actual table/view name ***
-      .select(
-        `
+        // --- Corrected Supabase query logic ---
+        const { data, error } = await supabase
+            // *** Use the CORRECT table name ***
+            .from('mlb_game_schedule')
+            // *** Use the CORRECT column names based on your list ***
+            .select(`
                 game_id,
-                game_date,
-                game_datetime_utc,
-                status,
+                scheduled_time_utc,
+                game_date_et,
+                status_detail,
+                status_state,
                 home_team_id,
                 home_team_name,
-                home_team_score,
                 away_team_id,
                 away_team_name,
-                away_team_score,
-                home_probable_pitcher,
-                away_probable_pitcher,
-                odds_source,
-                last_updated_odds,
-                home_odds_ml,
-                away_odds_ml,
-                home_odds_spread,
-                away_odds_spread,
-                total_over_under
-            `
-      ) // *** Select the columns needed by the frontend ***
-      .in("game_date", [todayStr, tomorrowStr])
-      .order("game_datetime_utc", { ascending: true });
-    // --- End Supabase query logic ---
+                home_probable_pitcher_name,
+                away_probable_pitcher_name,
+                home_probable_pitcher_handedness,
+                away_probable_pitcher_handedness,
+                moneyline_home_clean,
+                moneyline_away_clean,
+                spread_home_line_clean,
+                spread_home_price_clean,
+                spread_away_price_clean,
+                total_line_clean,
+                total_over_price_clean,
+                total_under_price_clean,
+                updated_at
+            `)
+            // Filter using the correct date column name
+            .in('game_date_et', [todayStr, tomorrowStr])
+            // Order by the correct time column name
+            .order('scheduled_time_utc', { ascending: true });
+        // --- End Supabase query logic ---
 
-    if (error) {
-      console.error("Supabase error fetching MLB schedule:", error.message);
-      // Don't cache errors, return null or throw
-      return null;
+        if (error) {
+            // Log the specific Supabase error
+            console.error(`Supabase error fetching MLB schedule from 'mlb_game_schedule':`, error.message);
+            // Don't cache errors, return null
+            return null;
+        }
+
+        // 3. Store the fetched data in cache if successful
+        if (data) {
+            console.log(`Successfully fetched ${data.length} MLB games from Supabase. Caching result with TTL: ${ttl}s`);
+            cache.set(cacheKey, data, ttl);
+        } else {
+            console.log("No MLB games found for today/tomorrow in Supabase. Caching empty array.");
+            cache.set(cacheKey, [], ttl);
+        }
+
+        return data || []; // Return data or an empty array
+
+    } catch (error) {
+        // Catch any other unexpected errors in the function
+        console.error(`Unexpected error in WorkspaceMlbScheduleForTodayAndTomorrow service: ${error.message}`);
+        return null; // Return null on unexpected errors
     }
-
-    // 3. Store the fetched data in cache if successful
-    if (data) {
-      console.log(
-        `Successfully fetched ${data.length} MLB games. Caching result with TTL: ${ttl}s`
-      );
-      cache.set(cacheKey, data, ttl);
-    } else {
-      console.log(
-        "No MLB games found for today/tomorrow. Caching empty array."
-      );
-      cache.set(cacheKey, [], ttl);
-    }
-
-    return data || []; // Return data or an empty array
-  } catch (error) {
-    console.error(
-      `Error in WorkspaceMlbScheduleForTodayAndTomorrow service: ${error.message}`
-    );
-    return null; // Or throw
-  }
 };

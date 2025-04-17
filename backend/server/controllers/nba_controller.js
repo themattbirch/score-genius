@@ -8,13 +8,16 @@ import * as nbaService from "../services/nba_service.js";
 export const getNbaSchedule = async (req, res, next) => {
   try {
     // Call service function to get data for today/tomorrow ET
-    const scheduleData = await nbaService.fetchNbaScheduleForTodayAndTomorrow();
+    const scheduleData =
+      await nbaService.WorkspaceNbaScheduleForTodayAndTomorrow();
 
     // Send successful JSON response
     res.status(200).json({
       message: "NBA schedule fetched successfully",
-      retrieved: scheduleData.length, // Use 'retrieved' instead of 'count' maybe
-      data: scheduleData,
+      // Safely get length only if scheduleData is an array
+      retrieved: Array.isArray(scheduleData) ? scheduleData.length : 0,
+      // Return empty array if data is null/undefined
+      data: scheduleData || [],
     });
   } catch (error) {
     // Pass errors to the global error handler in server.js
