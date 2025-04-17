@@ -29,9 +29,9 @@ export const getNbaInjuries = async (req, res, next) => {
     const injuriesData = await nbaService.fetchNbaInjuries();
 
     res.status(200).json({
-        message: "NBA injuries fetched successfully",
-        retrieved: injuriesData.length,
-        data: injuriesData
+      message: "NBA injuries fetched successfully",
+      retrieved: injuriesData.length,
+      data: injuriesData,
     });
   } catch (error) {
     console.error("Error in getNbaInjuries controller:", error);
@@ -39,6 +39,34 @@ export const getNbaInjuries = async (req, res, next) => {
   }
 };
 
+export const getNbaGamesHistory = async (req, res, next) => {
+  try {
+    // Extract and validate query parameters (provide defaults)
+    const options = {
+      startDate: req.query.start_date || null, // YYYY-MM-DD
+      endDate: req.query.end_date || null, // YYYY-MM-DD
+      teamName: req.query.team_name || null, // Filter by team name (optional)
+      limit: parseInt(req.query.limit) || 20, // Default limit
+      page: parseInt(req.query.page) || 1, // Default page
+    };
+
+    // Basic validation for limit/page
+    options.limit = Math.max(1, Math.min(options.limit, 100)); // Clamp limit between 1 and 100
+    options.page = Math.max(1, options.page);
+
+    // Call the service function with options
+    const historicalData = await nbaService.fetchNbaGamesHistory(options);
+
+    res.status(200).json({
+      message: "NBA historical game stats fetched successfully",
+      options: options, // Echo back options used
+      retrieved: historicalData.length,
+      data: historicalData,
+    });
+  } catch (error) {
+    console.error("Error in getNbaGamesHistory controller:", error);
+    next(error); // Forward error
+  }
+};
 
 // Add controllers for predictions, team stats etc. later...
-// export const getNbaPredictions = async (req, res, next) => { ... }
