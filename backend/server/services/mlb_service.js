@@ -17,7 +17,8 @@ export const fetchMlbScheduleForTodayAndTomorrow = async () => {
     const { data, error, status } = await supabase
       .from(MLB_SCHEDULE_TABLE) // Use constant
       // Select specific columns based on provided list + predictions
-            .select(`
+      .select(
+        `
             game_id,
             scheduled_time_utc,
             game_date_et,
@@ -37,7 +38,8 @@ export const fetchMlbScheduleForTodayAndTomorrow = async () => {
             total_line_clean,
             total_over_price_clean,
             total_under_price_clean
-          `) 
+          `
+      )
       .in("game_date_et", [todayStr, tomorrowStr]) // Filter on correct date column
       .order("scheduled_time_utc", { ascending: true }); // Order by correct time column
 
