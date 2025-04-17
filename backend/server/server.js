@@ -17,6 +17,11 @@ import "dotenv/config";
 import nbaRoutes from "./routes/nba_routes.js";
 import mlbRoutes from "./routes/mlb_routes.js";
 
+import 'dotenv/config';
+// Add this debug log:
+console.log(`DEBUG server.js: Supabase URL = ${process.env.SUPABASE_URL}`);
+console.log(`DEBUG server.js: Supabase Service Key Loaded = ${!!process.env.SUPABASE_SERVICE_KEY}`); // Check if it exists
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

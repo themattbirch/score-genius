@@ -23,5 +23,22 @@ export const getNbaSchedule = async (req, res, next) => {
   }
 };
 
+export const getNbaInjuries = async (req, res, next) => {
+  try {
+    // Call the service function to fetch all current injury records
+    const injuriesData = await nbaService.fetchNbaInjuries();
+
+    res.status(200).json({
+        message: "NBA injuries fetched successfully",
+        retrieved: injuriesData.length,
+        data: injuriesData
+    });
+  } catch (error) {
+    console.error("Error in getNbaInjuries controller:", error);
+    next(error); // Forward error to global handler
+  }
+};
+
+
 // Add controllers for predictions, team stats etc. later...
 // export const getNbaPredictions = async (req, res, next) => { ... }

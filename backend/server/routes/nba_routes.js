@@ -2,7 +2,7 @@
 import express from "express";
 
 // Import controller functions (use snake_case filename)
-import { getNbaSchedule } from "../controllers/nba_controller.js";
+import { getNbaSchedule, getNbaInjuries } from "../controllers/nba_controller.js"; 
 // Import other controllers here as you create them...
 
 const router = express.Router();
@@ -10,7 +10,8 @@ const router = express.Router();
 // --- Define NBA Routes ---
 
 // GET /api/v1/nba/schedule (Fetches today/tomorrow's games)
-router.get("/schedule", getNbaSchedule); // <-- Added this route
+router.get("/schedule", getNbaSchedule);
+router.get("/injuries", getNbaInjuries); 
 
 // --- Your existing placeholder routes ---
 // GET /api/v1/nba/predictions?date=YYYY-MM-DD

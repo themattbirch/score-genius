@@ -1,20 +1,34 @@
-//backend/server/utils/supabase_client.js
+// backend/server/utils/supabase_client.js
+import { createClient } from "@supabase/supabase-js";
 
-import { createClient } from '@supabase/supabase-js';
-
-// dotenv config should be run in server.js before this module is imported
+// Load URL and SERVICE KEY from environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY; // Make sure this matches .env
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("FATAL ERROR: Supabase URL or Anon Key missing in environment variables. Make sure .env is loaded correctly in server.js.");
+// --- Debug Logging (Optional but helpful) ---
+console.log(`DEBUG supabase_client.js: Initializing with URL = ${supabaseUrl}`);
+console.log(
+  `DEBUG supabase_client.js: Service Key Found = ${!!supabaseServiceKey}`
+);
+// --- End Debug ---
+
+// --- CORRECTED Validation Check ---
+// Check if BOTH URL and the SERVICE key were loaded successfully
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error(
+    "FATAL ERROR: Supabase URL or SUPABASE_SERVICE_KEY missing from environment variables."
+  );
+  console.error(
+    "Ensure your .env file is loaded correctly in server.js and contains both variables."
+  );
   process.exit(1); // Exit if essential config is missing
 }
+// --- End Correction ---
 
-// Initialize client
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Initialize client using the Service Key
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-console.log("Supabase client initialized (ESM).");
+console.log("Supabase client initialized with Service Role Key."); // Updated log message
 
-// Export the client instance using ES module syntax
+// Export the client instance
 export default supabase;
