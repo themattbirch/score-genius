@@ -6,7 +6,7 @@ then upserts the preview data into a Supabase table. Pitcher info is updated sep
 import time
 import re
 import json
-from datetime import date, timedelta, datetime as dt_datetime, time as dt
+from datetime import date, timedelta, datetime as dt_datetime, datetime as dt
 from zoneinfo import ZoneInfo
 from typing import Dict, Optional, Tuple, List, Any
 from dateutil import parser as dateutil_parser
@@ -105,6 +105,22 @@ def normalize_team_name(name: str) -> str:
     if temp in mapping:
         return mapping[temp]
     return temp.title()
+
+def clear_old_games():
+    """
+    Deletes any mlb_game_schedule rows whose game_date_et is before today (ET).
+    """
+    supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    today_iso = dt.now(ET_ZONE).date().isoformat()
+    # Delete all games strictly before today
+    resp = (
+        supa.table(SUPABASE_TABLE_NAME)
+        .delete()
+        .lt("game_date_et", today_iso)
+        .execute()
+    )
+    deleted = getattr(resp, "count", None) or len(getattr(resp, "data", []))
+    print(f"Cleared {deleted} games before {today_iso}.")
 
 def title_case_team_name(name: str) -> str:
     """Converts a normalized team name back to title case for display."""
@@ -593,6 +609,9 @@ def build_and_upsert_mlb_previews() -> int:
 # --- Main Execution ---
 if __name__ == "__main__":
     print("Starting MLB Games Preview Script (Schedule, Odds, and Pitcher Updates)…")
+
+    # Step 0: Clear old games from table
+    clear_old_games()  
 
     # Step 1: Build and upsert game previews
     build_and_upsert_mlb_previews()

@@ -8,9 +8,13 @@ from zoneinfo import ZoneInfo
 from config import API_SPORTS_KEY, ODDS_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
 from caching.supabase_client import supabase
 from supabase import create_client, Client
-from typing import Dict, Any
+from typing import Dict, Any, List
 
+from nba_score_prediction.prediction import generate_predictions, upsert_score_predictions
+from nba_score_prediction.prediction import DEFAULT_UPCOMING_DAYS_WINDOW, DEFAULT_LOOKBACK_DAYS_FOR_FEATURES
 
+from pathlib import Path
+MODELS_DIR = Path(__file__).resolve().parent.parent.parent / 'models' / 'saved'
 # API-Sports configuration (for game previews)
 API_KEY_SPORTS = API_SPORTS_KEY
 NBA_URL_SPORTS = 'https://v1.basketball.api-sports.io'
@@ -303,29 +307,25 @@ def clear_old_games():
 
 
 def build_game_preview(window_days: int = 2) -> list:
-    """
-    Builds and returns previews for the next `window_days` ET dates,
-    looking for games not yet started.
-    """
-    league   = '12'
-    season   = '2024-2025'
-    et_zone  = ZoneInfo("America/New_York")
-    now_et   = datetime.now(et_zone)
+    league  = '12'
+    season  = '2024-2025'
+    et_zone = ZoneInfo("America/New_York")
+    now_et  = datetime.now(et_zone)
 
     all_pregame = []
+    # 1) Fetch and filter games for each date
     for offset in range(window_days):
         target_date = (now_et + timedelta(days=offset)).date().isoformat()
         print(f"Fetching games for date (ET): {target_date}")
         data = get_games_by_date(league, season, target_date, timezone='America/New_York')
         games = data.get('response') or []
-        # filter to “Not Started” / Scheduled
-        pre    = [
+        pre = [
             g for g in games
-            if (
-                isinstance(g.get('status'), dict)
-                and (g['status'].get('short') == "NS"
-                     or "scheduled" in (g['status'].get('long') or '').lower()
-                     or "not started" in (g['status'].get('long') or '').lower())
+            if isinstance(g.get('status'), dict)
+            and (
+                g['status'].get('short') == "NS"
+                or "scheduled" in (g['status'].get('long') or '').lower()
+                or "not started" in (g['status'].get('long') or '').lower()
             )
         ]
         print(f"  → Found {len(pre)} pregame on {target_date}")
@@ -335,28 +335,43 @@ def build_game_preview(window_days: int = 2) -> list:
         print(f"No pregame games found in the next {window_days} days.")
         return []
 
-    # fetch odds once (for now_et)
-    print("Fetching betting odds for window start date...")
-    odds_events = get_betting_odds(now_et)
+    # 2) Fetch odds for each date and combine
+    combined_odds = []
+    for offset in range(window_days):
+        odds_date = now_et + timedelta(days=offset)
+        print(f"Fetching betting odds for {odds_date.date().isoformat()}...")
+        day_odds = get_betting_odds(odds_date)
+        print(f"  → Got {len(day_odds)} odds events")
+        combined_odds.extend(day_odds)
 
+    # 3) Build previews, matching against the combined odds list
     previews = []
     for game in all_pregame:
-        # … your existing extraction, matching and preview‑building logic …
-        matched = match_odds_for_game(game, odds_events)
+        # match and extract
+        matched = match_odds_for_game(game, combined_odds)
         odds    = extract_odds_by_market(matched)
-        # build the preview dict exactly as before...
-        previews.append({
-            "game_id":       game["id"],
+
+        # handle venue field
+        raw_venue = game.get("venue")
+        if isinstance(raw_venue, dict):
+            venue_name = raw_venue.get("name", "N/A")
+        else:
+            venue_name = str(raw_venue or "N/A")
+
+        preview = {
+            "game_id":        game["id"],
             "scheduled_time": game["date"],
-            "game_date":     datetime.fromisoformat(game["date"].replace("Z","+00:00"))
-                                   .astimezone(et_zone).date().isoformat(),
-            "venue":         (game.get("venue") or {}).get("name","N/A"),
-            "away_team":     game["teams"]["away"]["name"],
-            "home_team":     game["teams"]["home"]["name"],
-            "moneyline":     odds.get("moneyline",{}),
-            "spread":        odds.get("spread",{}),
-            "total":         odds.get("total",{})
-        })
+            "game_date":      datetime
+                                  .fromisoformat(game["date"].replace("Z","+00:00"))
+                                  .astimezone(et_zone).date().isoformat(),
+            "venue":          venue_name,
+            "away_team":      game["teams"]["away"]["name"],
+            "home_team":      game["teams"]["home"]["name"],
+            "moneyline":      odds.get("moneyline", {}),
+            "spread":         odds.get("spread", {}),
+            "total":          odds.get("total", {})
+        }
+        previews.append(preview)
 
     print(f"Built {len(previews)} total previews over {window_days} days.")
     return previews
@@ -422,6 +437,42 @@ def upsert_previews_to_supabase(previews: list) -> None:
     except Exception as e:
         print(f"Error during Supabase upsert call: {e}")
         # You might want to log the full exception details
+def upsert_score_predictions(predictions: List[Dict[str, Any]]) -> None:
+    from supabase import create_client, Client
+    from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    updated = 0
+
+    for p in predictions:
+        gid = p.get("game_id")
+        if not gid:
+            print("Skipping prediction with missing game_id:", p)
+            continue
+
+        update_payload = {
+            "predicted_home_score": p.get("predicted_home_score"),
+            "predicted_away_score": p.get("predicted_away_score"),
+        }
+
+        try:
+            resp = (
+                supabase
+                .table("nba_game_schedule")
+                .update(update_payload)
+                .eq("game_id", gid)
+                .execute()
+            )
+            if resp.data:
+                print(f"Updated predicted scores for game_id {gid}.")
+                updated += 1
+            else:
+                print(f"No row found to update for game_id {gid}.")
+        except Exception as e:
+            print(f"Error updating game_id {gid}: {e}")
+
+    print(f"Finished updating predicted scores for {updated} games.")
+
 
 def parse_moneyline(moneyline_data: Dict[str, any]) -> str:
     if not moneyline_data:
@@ -522,8 +573,22 @@ def main():
     if previews:
         upsert_previews_to_supabase(previews)
         process_odds_data_in_table()
-    else:
-        print("\nNo game preview data generated to upsert.")
+        print("\nStep 5: Generating & upserting score predictions...")
+        # run your prediction.py pipeline over the same window
+        final_preds, _ = generate_predictions(
+            days_window=DEFAULT_UPCOMING_DAYS_WINDOW,
+            model_dir=MODELS_DIR,
+            calibrate_with_odds=True,
+            blend_factor=0.3,
+            historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES
+        )
+        if final_preds:
+            # This helper will now update predicted_home_score & predicted_away_score
+            upsert_score_predictions(final_preds)
+            print(f"Upserted {len(final_preds)} score predictions.")
+        else:
+            print("No predictions generated; skipping upsert.")
+
     print("\n--- Script finished. ---")
 
 if __name__ == "__main__":

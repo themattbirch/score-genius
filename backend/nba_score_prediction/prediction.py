@@ -85,7 +85,7 @@ REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 TARGET_COLUMNS = ['home_score', 'away_score']
 PACIFIC_TZ = pytz.timezone("America/Los_Angeles")
 DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
-DEFAULT_UPCOMING_DAYS_WINDOW = 2
+DEFAULT_UPCOMING_DAYS_WINDOW = 3
 
 # --- Ensemble Configuration --- #  
 ENSEMBLE_WEIGHTS_FILENAME = "ensemble_weights.json" 
