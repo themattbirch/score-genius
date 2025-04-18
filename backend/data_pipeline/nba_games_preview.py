@@ -302,99 +302,63 @@ def clear_old_games():
         print("No old games found to delete based on ET date comparison.")
 
 
-def build_game_preview() -> list:
+def build_game_preview(window_days: int = 2) -> list:
     """
-    Builds and returns a list of game preview dictionaries for today's date (Eastern Time).
-    Filters for games not yet started and matches odds.
+    Builds and returns previews for the next `window_days` ET dates,
+    looking for games not yet started.
     """
-    league = '12' # NBA league ID in API-Basketball
-    season = '2024-2025' # Adjust season as needed
-    et_zone = ZoneInfo("America/New_York")
-    eastern_now = datetime.now(et_zone)
-    todays_date_str_et = eastern_now.strftime('%Y-%m-%d')
+    league   = '12'
+    season   = '2024-2025'
+    et_zone  = ZoneInfo("America/New_York")
+    now_et   = datetime.now(et_zone)
 
-    print(f"Fetching games for date (ET): {todays_date_str_et}")
-    games_data = get_games_by_date(league, season, todays_date_str_et, timezone='America/New_York')
+    all_pregame = []
+    for offset in range(window_days):
+        target_date = (now_et + timedelta(days=offset)).date().isoformat()
+        print(f"Fetching games for date (ET): {target_date}")
+        data = get_games_by_date(league, season, target_date, timezone='America/New_York')
+        games = data.get('response') or []
+        # filter to “Not Started” / Scheduled
+        pre    = [
+            g for g in games
+            if (
+                isinstance(g.get('status'), dict)
+                and (g['status'].get('short') == "NS"
+                     or "scheduled" in (g['status'].get('long') or '').lower()
+                     or "not started" in (g['status'].get('long') or '').lower())
+            )
+        ]
+        print(f"  → Found {len(pre)} pregame on {target_date}")
+        all_pregame.extend(pre)
 
-    # Check if response structure is as expected
-    api_response_games = games_data.get('response', [])
-    if not isinstance(api_response_games, list):
-         print(f"Warning: Expected a list of games in API response, got {type(api_response_games)}. Response: {games_data}")
-         api_response_games = [] # Treat as empty list to avoid errors
-
-    # Filter for games that haven't started based on status
-    # Common statuses: "NS" (Not Started), "Scheduled"
-    pregame_games = [
-        game for game in api_response_games
-        if game and isinstance(game.get('status'), dict) and (
-            game['status'].get('short') == "NS" or
-            "scheduled" in (game['status'].get('long', '') or '').lower() or # Check long status too
-            "not started" in (game['status'].get('long', '') or '').lower()
-        )
-    ]
-
-    if not pregame_games:
-        print(f"No pregame games found via API-Basketball for {todays_date_str_et}.")
+    if not all_pregame:
+        print(f"No pregame games found in the next {window_days} days.")
         return []
-    print(f"Found {len(pregame_games)} pregame games.")
 
-    # Fetch odds for today (use the ET date for consistency)
-    # get_betting_odds expects a datetime object. We can use eastern_now.
-    print("Fetching betting odds...")
-    odds_events = get_betting_odds(eastern_now)
-    if odds_events:
-        print(f"Fetched {len(odds_events)} odds events.")
-    else:
-        print("No odds events fetched or available.")
-
+    # fetch odds once (for now_et)
+    print("Fetching betting odds for window start date...")
+    odds_events = get_betting_odds(now_et)
 
     previews = []
-    for game in pregame_games:
-        # Extract core game details safely
-        game_id = game.get("id")
-        scheduled_time_str = game.get("date") # ISO8601 string
-        venue_data = game.get("venue")
-        teams_data = game.get("teams", {})
-        away_team_data = teams_data.get("away", {})
-        home_team_data = teams_data.get("home", {})
+    for game in all_pregame:
+        # … your existing extraction, matching and preview‑building logic …
+        matched = match_odds_for_game(game, odds_events)
+        odds    = extract_odds_by_market(matched)
+        # build the preview dict exactly as before...
+        previews.append({
+            "game_id":       game["id"],
+            "scheduled_time": game["date"],
+            "game_date":     datetime.fromisoformat(game["date"].replace("Z","+00:00"))
+                                   .astimezone(et_zone).date().isoformat(),
+            "venue":         (game.get("venue") or {}).get("name","N/A"),
+            "away_team":     game["teams"]["away"]["name"],
+            "home_team":     game["teams"]["home"]["name"],
+            "moneyline":     odds.get("moneyline",{}),
+            "spread":        odds.get("spread",{}),
+            "total":         odds.get("total",{})
+        })
 
-        # Basic validation
-        if not all([game_id, scheduled_time_str, away_team_data.get('name'), home_team_data.get('name')]):
-             print(f"Skipping game due to missing essential data: {game}")
-             continue
-
-        venue_name = venue_data.get("name", "N/A") if isinstance(venue_data, dict) else str(venue_data or "N/A")
-        away_team_name = away_team_data.get("name")
-        home_team_name = home_team_data.get("name")
-
-        # Compute game_date (YYYY-MM-DD) in ET from the scheduled time
-        game_date_et_str = ""
-        try:
-            game_datetime_utc = datetime.fromisoformat(scheduled_time_str.replace("Z", "+00:00"))
-            game_date_et_str = game_datetime_utc.astimezone(et_zone).date().isoformat()
-        except (ValueError, TypeError):
-            print(f"Warning: Could not parse scheduled_time '{scheduled_time_str}' to generate game_date for game {game_id}.")
-            # Decide if you want to proceed without game_date or skip
-
-        # Match odds (uses ET date comparison internally now)
-        matched_event = match_odds_for_game(game, odds_events)
-        odds_by_market = extract_odds_by_market(matched_event)
-
-        preview = {
-            "game_id": game_id,
-            "scheduled_time": scheduled_time_str, # Store original ISO string
-            "game_date": game_date_et_str, # Store YYYY-MM-DD based on ET
-            "venue": venue_name,
-            "away_team": away_team_name,
-            "home_team": home_team_name,
-            # Ensure odds structures are always dicts, even if empty
-            "moneyline": odds_by_market.get("moneyline", {}),
-            "spread": odds_by_market.get("spread", {}),
-            "total": odds_by_market.get("total", {})
-        }
-        previews.append(preview)
-
-    print(f"Built {len(previews)} game previews.")
+    print(f"Built {len(previews)} total previews over {window_days} days.")
     return previews
 
 
@@ -552,34 +516,15 @@ def process_odds_data_in_table() -> None:
 
 # Then, in your main function after your upsert call:
 def main():
-    """
-    Main function: Clears old games, builds new previews, upserts them,
-    then processes the betting odds in the table.
-    """
     print("\n--- Running NBA Game Preview Script ---")
-
-    # 1. Clear old games
-    print("\nStep 1: Clearing old games...")
     clear_old_games()
-
-    # 2. Build new previews for today's ET date games
-    print("\nStep 2: Building game previews...")
-    preview_data = build_game_preview()
-
-    # 3. Upsert the new previews
-    if preview_data:
-        print("\nStep 3: Upserting previews to Supabase...")
-        upsert_previews_to_supabase(preview_data)
-        print(f"\n--- Previews upserted. Processed {len(preview_data)} games. ---")
+    previews = build_game_preview()      # now covers today+tomorrow
+    if previews:
+        upsert_previews_to_supabase(previews)
+        process_odds_data_in_table()
     else:
         print("\nNo game preview data generated to upsert.")
-        print("\n--- Script finished. No games processed. ---")
-        return 0
-
-    # 4. Process betting odds data using the integrated logic
-    print("\nStep 4: Processing betting odds data in table...")
-    process_odds_data_in_table()
-    return len(preview_data)
+    print("\n--- Script finished. ---")
 
 if __name__ == "__main__":
     main()
