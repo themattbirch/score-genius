@@ -22,11 +22,11 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true, // Good practice to keep this true
     rollupOptions: {
-      // --- INPUT SECTION REMOVED ---
-      // Vite will now default to using 'index.html' at the project root ('frontend/')
-      // as the main entry point for the SPA build.
-
-      // Keep the output options if you want specific asset naming
+          input: {
+           // Assuming 'home.html' is now handled by being in public/
+           // or needs its own entry if complex
+            app: resolve(__dirname, "app.html") // Point to app.html
+        },
       output: {
         entryFileNames: "assets/[name].[hash].js",
         chunkFileNames: "assets/[name].[hash].js",
