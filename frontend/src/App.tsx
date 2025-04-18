@@ -1,27 +1,18 @@
+import React from 'react';
+// No CSS import needed for this barebones test
+// import './App.css';
 
-// frontend/src/App.tsx
-import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import LandingPage from "./pages/LandingPage";
-import Dashboard from "./pages/Dashboard";
-import GameRecap from "./pages/GameRecap";
-import Betting from "./pages/Betting";
-import About from "./pages/About";
-import Support from "./pages/Support";
+function App() {
+  // Get current timestamp for easy deployment verification
+  const deployTime = new Date().toLocaleString();
 
-const App: React.FC = () => {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/recap" element={<GameRecap />} />
-        <Route path="/betting" element={<Betting />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/support" element={<Support />} />
-      </Routes>
-    </Router>
+    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
+      <h1>Score Genius - Deployment Test</h1>
+      <p>If you see this, the frontend pipeline successfully built and deployed!</p>
+      <p>Test deployment timestamp: {deployTime}</p>
+    </div>
   );
-};
+}
 
 export default App;
