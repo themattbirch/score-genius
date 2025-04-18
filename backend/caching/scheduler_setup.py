@@ -15,7 +15,6 @@ try:
     from caching.supabase_client import supabase
 
     # --- IMPORTS ---
-    from data_pipeline.data_fetcher import fetch_live_game_data
     from data_pipeline.archive_live_data import archive_live_data
     from data_pipeline.nba_stats_live import scheduled_update_nba_schedule
     from data_pipeline.nba_games_preview import (

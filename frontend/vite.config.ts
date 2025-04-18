@@ -9,20 +9,24 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
+          // Assuming you want to copy everything from public/* to dist/*
           src: resolve(__dirname, "public/*"),
-          dest: ".",
+          dest: ".", // Copies to the root of the outDir (dist)
         },
       ],
+      // Added hook to ensure copy happens after build cleans directory
+      hook: "writeBundle",
     }),
   ],
   build: {
     outDir: "dist",
-    emptyOutDir: true,
+    emptyOutDir: true, // Good practice to keep this true
     rollupOptions: {
-        input: {
-          home: resolve(__dirname, "home.html"),
-          pwa: resolve(__dirname, "app.html"), // rename to app.html later
-      },
+      // --- INPUT SECTION REMOVED ---
+      // Vite will now default to using 'index.html' at the project root ('frontend/')
+      // as the main entry point for the SPA build.
+
+      // Keep the output options if you want specific asset naming
       output: {
         entryFileNames: "assets/[name].[hash].js",
         chunkFileNames: "assets/[name].[hash].js",
@@ -30,6 +34,4 @@ export default defineConfig({
       },
     },
   },
-  // For production, you typically don’t need the dev `server` block:
-  // server: { ... } // remove or leave in dev only
 });
