@@ -10,9 +10,10 @@ const GameDetailScreen: React.FC = () => {
   const { date } = useDate();
 
   const { data: injuries = [] } = useInjuries(
-    sport,
-    date.toISOString().slice(0, 10)
-  );
+  sport,
+  date.toISOString().slice(0, 10)
+);
+
 
   return (
     <div className="p-4 space-y-4">
