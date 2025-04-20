@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import GamesScreen from "./screens/game_screen";
-import GameDetailScreen from "./screens/game_screen";
+import GameDetailScreen from "./screens/game_detail_screen";
 import StatsScreen from "./screens/stats_screen";
 import MoreScreen from "./screens/more_screen";
 import HowToUseScreen from "./screens/how_to_use_screen";
@@ -16,14 +16,10 @@ import BottomTabBar from "./components/layout/BottomTabBar";
 import type { Sport } from '@/contexts/sport_context';
 
 const Layout: React.FC = () => {
-  const [sport, setSport] = useState<Sport>("NBA");
-  const [selectedDate] = useState<Date>(new Date());
   const isGamesRoute = useLocation().pathname.startsWith("/games");
-
   return (
     <div className="flex h-screen flex-col">
-    <Header showDatePicker={isGamesRoute} />
-
+      <Header showDatePicker={isGamesRoute} />
 
       <main className="flex-1 overflow-auto pb-14 lg:pb-0">
         <Outlet />
@@ -38,28 +34,26 @@ const App: React.FC = () => (
   <SportProvider>
     <DateProvider>
       <Routes>
-        {/* Shell */}
+        {/* App Shell with shared layout */}
         <Route element={<Layout />}>
-          {/* Default → /games */}
+          {/* Redirect root → /games */}
           <Route index element={<Navigate to="/games" replace />} />
 
-          {/* Games */}
+          {/* Games list & detail */}
           <Route path="games" element={<GamesScreen />} />
           <Route path="games/:gameId" element={<GameDetailScreen />} />
 
-          {/* Stats & More */}
+          {/* Other tabs */}
           <Route path="stats" element={<StatsScreen />} />
           <Route path="more" element={<MoreScreen />} />
-
-          {/* How To Use */}
           <Route path="how-to-use" element={<HowToUseScreen />} />
         </Route>
 
-        {/* Global fallback */}
+        {/* Catch‑all fallback */}
         <Route path="*" element={<Navigate to="/games" replace />} />
       </Routes>
     </DateProvider>
   </SportProvider>
-  );
+);
 
 export default App;

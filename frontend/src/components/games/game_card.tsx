@@ -1,20 +1,24 @@
+// frontend/src/components/games/game_card.tsx
 import React from 'react';
 import { Game } from '@/api/use_schedule';
-import { useInjuries } from '@/api/use_injuries';
+import { useInjuries, Injury } from '@/api/use_injuries';
 import { useSport } from '@/contexts/sport_context';
 import { useDate } from '@/contexts/date_context';
 
 const GameCard: React.FC<{ game: Game }> = ({ game }) => {
   const { sport } = useSport();
-  const { date }  = useDate();
+  const { date  } = useDate();
+  const isoDate   = date.toISOString().slice(0, 10);
 
-  const { data: injuries = [] } = useInjuries(
-    sport,
-    date.toISOString().slice(0, 10)
-  );
+  // Fetch injuries here
+  const { data: injuries = [] } = useInjuries(sport, isoDate);
 
+  console.log("📋 GameCard mount for", game.id, isoDate);
+
+  // Now Injuries is typed, so filter callbacks infer correctly
   const teamInjuries = injuries.filter(
-    (inj) => inj.team === game.homeTeam || inj.team === game.awayTeam
+    (inj: Injury) =>
+      inj.team === game.homeTeam || inj.team === game.awayTeam
   );
 
   return (
@@ -43,7 +47,7 @@ const GameCard: React.FC<{ game: Game }> = ({ game }) => {
         </div>
       </div>
 
-      {/* injuries (max 2 chips) */}
+      {/* injury chips */}
       {teamInjuries.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
           {teamInjuries.slice(0, 2).map((inj) => (
@@ -55,7 +59,6 @@ const GameCard: React.FC<{ game: Game }> = ({ game }) => {
               {inj.player.split(' ')[1]} {inj.status}
             </span>
           ))}
-
           {teamInjuries.length > 2 && (
             <span className="pill bg-brand-orange/60 text-xs">
               +{teamInjuries.length - 2} more
