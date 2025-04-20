@@ -5,9 +5,9 @@ import { useSport } from '@/contexts/sport_context';
 import { useDate } from '@/contexts/date_context';
 
 const GameCard: React.FC<{ game: Game }> = ({ game }) => {
-  /* query injuries for this sport/date ---------------------------- */
   const { sport } = useSport();
-  const { date } = useDate();
+  const { date }  = useDate();
+
   const { data: injuries = [] } = useInjuries(
     sport,
     date.toISOString().slice(0, 10)
@@ -19,7 +19,7 @@ const GameCard: React.FC<{ game: Game }> = ({ game }) => {
 
   return (
     <div className="app-card flex flex-col gap-2">
-      {/* teams & model score */}
+      {/* teams & tip‑off */}
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="truncate font-semibold">
@@ -43,7 +43,7 @@ const GameCard: React.FC<{ game: Game }> = ({ game }) => {
         </div>
       </div>
 
-      {/* injury chips */}
+      {/* injuries (max 2 chips) */}
       {teamInjuries.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
           {teamInjuries.slice(0, 2).map((inj) => (

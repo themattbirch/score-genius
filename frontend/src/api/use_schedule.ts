@@ -1,8 +1,9 @@
 // frontend/src/api/use_schedule.ts
-
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { Sport } from '@/contexts/sport_context';
+
+const BASE = import.meta.env.VITE_API_BASE_URL as string;
 
 export interface Game {
   id: string;
@@ -16,15 +17,17 @@ export interface Game {
 }
 
 export const useSchedule = (sport: Sport, date: string) =>
-  useQuery<Game[]>({
+  useQuery<Game[], Error>({
     queryKey: ['schedule', sport, date],
-    queryFn: () =>
-      axios
-        .get(`/api/${sport.toLowerCase()}/schedule`, { params: { date } })
-        .then((r) => r.data),
+    queryFn: async () => {
+      const url = `${BASE}/api/v1/${sport.toLowerCase()}/schedule`;
+      const response = await axios.get<Game[]>(url, { params: { date } });
+      return response.data;
+    },
     staleTime: 60_000,
-    // ⬇️ Refetch every 30 s on game day to update scores
-    refetchInterval: sport === 'NBA' && date === new Date().toISOString().slice(0,10)
-      ? 30_000
-      : false,
+    refetchInterval:
+      // only poll every 30s when it's NBA game day
+      sport === 'NBA' && date === new Date().toISOString().slice(0, 10)
+        ? 30_000
+        : false,
   });

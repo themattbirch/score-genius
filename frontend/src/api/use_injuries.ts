@@ -1,6 +1,9 @@
+// frontend/src/api/use_injuries.ts
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import type { Sport } from '@/contexts/sport_context';
+
+const BASE = import.meta.env.VITE_API_BASE_URL as string;
 
 export interface Injury {
   id: string;
@@ -12,17 +15,22 @@ export interface Injury {
 }
 
 export const useInjuries = (sport: Sport, date: string) =>
-  useQuery<Injury[]>({
+  useQuery<Injury[], Error>({
     queryKey: ['injuries', sport, date],
-    queryFn: () =>
-      axios
-        .get(`/api/${sport.toLowerCase()}/injuries`, { params: { date } })
-        .then((r) => {
-          const raw = r.data;
-          // backend might wrap in `{ injuries: [...] }`
-          if (Array.isArray(raw)) return raw;
-          if (Array.isArray(raw?.injuries)) return raw.injuries;
-          return []; // always array fallback
-        }),
-    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const url = `${BASE}/api/v1/${sport.toLowerCase()}/injuries`;
+      const response = await axios.get<Injury[] | { injuries: Injury[] }>(
+        url,
+        { params: { date } }
+      );
+      const raw = response.data;
+      if (Array.isArray(raw)) {
+        return raw;
+      }
+      if (Array.isArray((raw as any).injuries)) {
+        return (raw as any).injuries;
+      }
+      return [];
+    },
+    staleTime: 10 * 60_000, // 10 minutes
   });
