@@ -1,31 +1,62 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
+// frontend/vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { resolve } from "path";
+import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig(({ command }) => ({
+  /* ------------------------------------------------------------ */
+  /* Plugins                                                      */
+  /* ------------------------------------------------------------ */
   plugins: [
     react(),
 
-    // 👉 copy files from /public to dist root *only during build*
-    command === 'build' &&
+    // ⬇️ Copy /public/* to dist/* — but *only* when we run `vite build`
+    command === "build" &&
       viteStaticCopy({
         targets: [
-          { src: resolve(__dirname, 'public/home.html'), dest: '.' },
-          // copy other marketing pages if you ever add them
+          { src: resolve(__dirname, "public/*"), dest: "." }, // dist/home.html, dist/support.html, …
         ],
-        hook: 'writeBundle',
+        hook: "writeBundle",
       }),
   ].filter(Boolean),
 
+  /* ------------------------------------------------------------ */
+  /* Path alias (nice‑to‑have)                                    */
+  /* ------------------------------------------------------------ */
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "src"),
+    },
+  },
+
+  /* ------------------------------------------------------------ */
+  /* Dev‑server settings                                          */
+  /* ------------------------------------------------------------ */
+  server: {
+    open: "/app.html", // opens the SPA for local dev
+    port: 5173,
+    strictPort: true,
+  },
+
+  /* ------------------------------------------------------------ */
+  /* Build settings                                               */
+  /* ------------------------------------------------------------ */
   build: {
-    outDir: 'dist',
+    outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
+      /** Emit SPA + optional landing page.
+       *  We do *not* include home.html here because the plugin will
+       *  copy it from /public to the dist root. */
       input: {
-        index: resolve(__dirname, 'index.html'), // keeps /index.html
-        app:   resolve(__dirname, 'app.html'),   // SPA
-        // ❌ remove the previous "home:" entry here
+        index: resolve(__dirname, "index.html"), // optional marketing page
+        app: resolve(__dirname, "app.html"), // React SPA
+      },
+      output: {
+        entryFileNames: "assets/[name].[hash].js",
+        chunkFileNames: "assets/[name].[hash].js",
+        assetFileNames: "assets/[name].[hash].[ext]",
       },
     },
   },
