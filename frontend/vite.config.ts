@@ -50,8 +50,12 @@ export default defineConfig(({ command }) => ({
        *  We do *not* include home.html here because the plugin will
        *  copy it from /public to the dist root. */
       input: {
-        index: resolve(__dirname, "index.html"), // optional marketing page
-        app: resolve(__dirname, "app.html"), // React SPA
+        // marketing landing
+        home: resolve(__dirname, "public/home.html"),
+        // optional index if you want one
+        index: resolve(__dirname, "index.html"),
+        // SPA
+        app: resolve(__dirname, "app.html"),
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
