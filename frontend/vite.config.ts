@@ -1,36 +1,61 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import { resolve } from "path";
-import { viteStaticCopy } from "vite-plugin-static-copy";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
+//import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig({
+  /** ----------------------------------------------------------------
+   *  Plugins
+   *  ---------------------------------------------------------------- */
   plugins: [
     react(),
-    viteStaticCopy({
-      targets: [
-        {
-          // Assuming you want to copy everything from public/* to dist/*
-          src: resolve(__dirname, "public/*"),
-          dest: ".", // Copies to the root of the outDir (dist)
-        },
-      ],
-      // Added hook to ensure copy happens after build cleans directory
-      hook: "writeBundle",
-    }),
+
+    /* Copy anything in /public → /dist at build time */
+    //viteStaticCopy({
+      //targets: [
+       // {
+         // src: resolve(__dirname, 'public/*'),
+          //dest: '.', // dist/<file>
+        //},
+      //],
+      //hook: 'writeBundle',
+   // }),
   ],
+
+  /** ----------------------------------------------------------------
+   *  Aliases (optional but handy)
+   *  ---------------------------------------------------------------- */
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+    },
+  },
+
+  /** ----------------------------------------------------------------
+   *  Dev‑server tweaks
+   *  ---------------------------------------------------------------- */
+  server: {
+    open: '/app.html',          // 🚀 open the SPA template, not index.html
+    port: 5173,                 // change if 5173 busy
+    strictPort: true,
+  },
+
+  /** ----------------------------------------------------------------
+   *  Build settings
+   *  ---------------------------------------------------------------- */
   build: {
-    outDir: "dist",
-    emptyOutDir: true, // Good practice to keep this true
+    outDir: 'dist',
+    emptyOutDir: true,
     rollupOptions: {
-          input: {
-           // Assuming 'home.html' is now handled by being in public/
-           // or needs its own entry if complex
-            app: resolve(__dirname, "app.html") // Point to app.html
-        },
+      /* Multi‑page build: app.html (SPA) + index.html (landing) */
+      input: {
+        index: resolve(__dirname, 'index.html'), // static homepage
+        app: resolve(__dirname, 'app.html'),     // React SPA
+      },
       output: {
-        entryFileNames: "assets/[name].[hash].js",
-        chunkFileNames: "assets/[name].[hash].js",
-        assetFileNames: "assets/[name].[hash].[ext]",
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]',
       },
     },
   },

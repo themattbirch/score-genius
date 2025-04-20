@@ -73,7 +73,7 @@ export const fetchNbaInjuries = async () => {
   // Cache Key: Simple, as it likely fetches all current injuries
   const cacheKey = "nba_injuries_current";
   // TTL: 1 hour (adjust as needed based on update frequency)
-  const ttl = 3600;
+  const ttl = 1800;
 
   const cachedData = cache.get(cacheKey);
   if (cachedData !== undefined) {
@@ -305,7 +305,7 @@ export const fetchNbaPlayerGameHistory = async (playerId, options) => {
 
 export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
   const cacheKey = "nba_schedule_today_tomorrow";
-  const ttl = 3600; // 60 minutes in seconds
+  const ttl = 1800; // 60 minutes in seconds
 
   // 1. Check cache first
   const cachedData = cache.get(cacheKey);

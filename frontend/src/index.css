@@ -1,0 +1,89 @@
+/* -------------------------------------------------------------
+ *  Tailwind layers
+ *  ----------------------------------------------------------- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------------------------------------
+ *  CSS variables — light theme (root)
+ *  ----------------------------------------------------------- */
+:root {
+  /* Surfaces */
+  --color-bg: #ffffff;
+  --color-panel: #f8fafc;
+
+  /* Text */
+  --color-text-primary: #0d1117;
+  --color-text-secondary: #475569;
+
+  /* Brand */
+  --color-brand-green: #00B140;
+  --color-brand-green-light: #34d058;
+  --color-brand-orange: #FF7F00;
+}
+
+/* -------------------------------------------------------------
+ *  Dark theme overrides (activated via <html class="dark">)
+ *  ----------------------------------------------------------- */
+.dark {
+  --color-bg: #0d1117;           /* Github Dark */
+  --color-panel: #161b22;        /* Slightly lighter panel */
+  --color-text-primary: #F1F5F9; /* Off‑white */
+  --color-text-secondary: #9CA3AF;
+}
+
+/* -------------------------------------------------------------
+ *  Base element styling
+ *  ----------------------------------------------------------- */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply antialiased font-sans bg-[var(--color-bg)] text-[var(--color-text-primary)];
+}
+
+/* Hide scrollbars in WebKit while preserving scrollability */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.4); /* slate‑500/40 */
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* -------------------------------------------------------------
+ *  Utility classes (extend Tailwind without a plugin)
+ *  ----------------------------------------------------------- */
+
+/* Card / panel wrapper */
+.app-card {
+  @apply rounded-xl border border-slate-700/60 bg-[var(--color-panel)] p-4;
+}
+
+/* Pill badge (status chips, sport selector) */
+.pill {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold;
+}
+.pill-green {
+  background: var(--color-brand-green);
+  color: var(--color-bg);
+}
+.pill-orange {
+  background: var(--color-brand-orange);
+  color: var(--color-bg);
+}
+
+/* Focus ring for all interactive elements */
+@layer components {
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green;
+  }
+}
