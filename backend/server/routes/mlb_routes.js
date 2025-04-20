@@ -14,6 +14,6 @@ router.get("/schedule", getMlbSchedule);
 router.get("/games/history", getMlbGameHistory);
 router.get("/teams/:team_id/stats/:season", getMlbTeamSeasonStats);
 
-// Add more MLB routes here later...
+// Add more MLB routes here later.
 
 export default router;
