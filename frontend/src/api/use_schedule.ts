@@ -1,15 +1,13 @@
 // frontend/src/api/use_schedule.ts
-import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
-import { Sport } from '@/contexts/sport_context';
-
-const BASE = import.meta.env.VITE_API_BASE_URL as string;
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+import { Sport } from "@/contexts/sport_context";
 
 export interface Game {
   id: string;
   homeTeam: string;
   awayTeam: string;
-  tipoff: string; // ISO
+  tipoff: string; // ISO string
   spread: number;
   total: number;
   predictionHome: number;
@@ -18,16 +16,16 @@ export interface Game {
 
 export const useSchedule = (sport: Sport, date: string) =>
   useQuery<Game[], Error>({
-    queryKey: ['schedule', sport, date],
+    queryKey: ["schedule", sport, date],
     queryFn: async () => {
-      const url = `${BASE}/api/v1/${sport.toLowerCase()}/schedule`;
-      const response = await axios.get<Game[]>(url, { params: { date } });
-      return response.data;
+      // Use a relative path so Vite proxy ("/api" → backend) picks it up
+      const url = `/api/v1/${sport.toLowerCase()}/schedule`;
+      const { data } = await axios.get<
+        Game[] | { message: string; retrieved: number; data: Game[] }
+      >(url, { params: { date } });
+
+      // If it’s already an array, return it; otherwise unwrap `.data`
+      return Array.isArray(data) ? data : data.data ?? [];
     },
     staleTime: 60_000,
-    refetchInterval:
-      // only poll every 30s when it's NBA game day
-      sport === 'NBA' && date === new Date().toISOString().slice(0, 10)
-        ? 30_000
-        : false,
   });

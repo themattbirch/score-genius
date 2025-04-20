@@ -1,8 +1,11 @@
 // backend/server/services/nba_service.js
+
 // Import the shared Supabase client instance
 import supabase from "../utils/supabase_client.js";
 // Import Luxon for robust date/timezone handling
-import { DateTime } from "luxon"; // Make sure you did: npm install luxon
+import { DateTime } from "luxon";
+// Import your simple in‑memory or Redis cache helper
+import cache from "../utils/cache.js";
 
 // Define constants specific to this service
 const NBA_SCHEDULE_TABLE = "nba_game_schedule";
@@ -12,380 +15,270 @@ const NBA_HISTORICAL_TEAM_STATS_TABLE = "nba_historical_team_stats";
 const NBA_HISTORICAL_PLAYER_STATS_TABLE = "nba_historical_player_stats";
 const ET_ZONE_IDENTIFIER = "America/New_York";
 
-import cache from "../utils/cache.js";
-
 // --- Helper function for dates (ensure consistent formatting YYYY-MM-DD) ---
-// You might already have date helpers, use those if available.
-// Using UTC dates is generally recommended to avoid timezone issues.
-const getUTCDateString = (date) => {
-  return date.toISOString().split("T")[0];
-};
+const getUTCDateString = (date) => date.toISOString().split("T")[0];
 // --- End Helper Function ---
 
+// Fetch today & tomorrow’s schedule
 export const fetchNbaScheduleForTodayAndTomorrow = async () => {
   console.log("Service: Fetching NBA schedule for today/tomorrow ET...");
   const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
-  const todayStr = nowEt.toISODate(); // Format: YYYY-MM-DD
-  const tomorrowStr = nowEt.plus({ days: 1 }).toISODate(); // Format: YYYY-MM-DD
-  console.log(
-    `Service: Querying Supabase table '${NBA_SCHEDULE_TABLE}' for dates: ${todayStr}, ${tomorrowStr}`
-  );
+  const todayStr = nowEt.toISODate();
+  const tomorrowStr = nowEt.plus({ days: 1 }).toISODate();
 
-  try {
-    // Select specific columns based on provided list + predictions
-    const { data, error, status } = await supabase
-      .from(NBA_SCHEDULE_TABLE)
-      .select(
-        `
-        game_id,
-        game_date,
-        scheduled_time,
-        status,
-        home_team,
-        away_team,
-        venue,
-        predicted_home_score,
-        predicted_away_score,
-        moneyline_clean,
-        spread_clean,
-        total_clean
+  const { data, error, status } = await supabase
+    .from(NBA_SCHEDULE_TABLE)
+    .select(
       `
-      ) // Select desired columns
-      .in("game_date", [todayStr, tomorrowStr]) // Filter on correct date column
-      .order("scheduled_time", { ascending: true }); // Order by correct time column
+      game_id,
+      game_date,
+      scheduled_time,
+      status,
+      home_team,
+      away_team,
+      venue,
+      predicted_home_score,
+      predicted_away_score,
+      moneyline_clean,
+      spread_clean,
+      total_clean
+    `
+    )
+    .in("game_date", [todayStr, tomorrowStr])
+    .order("scheduled_time", { ascending: true });
 
-    if (error) {
-      console.error("Supabase error fetching NBA schedule:", error);
-      const dbError = new Error(error.message || "Database query failed");
-      dbError.status = status || 500;
-      throw dbError;
-    }
-    console.log(`Service: Found ${data ? data.length : 0} NBA games.`);
-    return data || [];
-  } catch (error) {
-    console.error("Error in fetchNbaSchedule service:", error);
-    throw error; // Re-throw for controller
+  if (error) {
+    console.error("Supabase error fetching NBA schedule:", error);
+    const dbError = new Error(error.message || "Database query failed");
+    dbError.status = status || 500;
+    throw dbError;
   }
+
+  console.log(`Service: Found ${data?.length ?? 0} NBA games.`);
+  return data || [];
 };
 
-// --- NBA Injuries ---
+// Fetch current injuries, caching for 30m
 export const fetchNbaInjuries = async () => {
-  // Cache Key: Simple, as it likely fetches all current injuries
   const cacheKey = "nba_injuries_current";
-  // TTL: 1 hour (adjust as needed based on update frequency)
   const ttl = 1800;
-
-  const cachedData = cache.get(cacheKey);
-  if (cachedData !== undefined) {
-    console.log(`CACHE HIT for key: ${cacheKey}`);
-    return cachedData;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return cached;
   }
 
-  console.log(
-    `CACHE MISS for key: ${cacheKey}. Fetching from Supabase table '${NBA_INJURIES_TABLE}'...`
-  );
-  try {
-    // Select relevant columns, exclude raw_api_response
-    const selectColumns = `
-            injury_id, player_id, player_display_name, team_id, team_display_name,
-            report_date_utc, injury_status, injury_status_abbr, injury_type,
-            injury_location, injury_detail, injury_side, return_date_est,
-            short_comment, long_comment, created_at, last_api_update_time
-        `;
-    const { data, error, status } = await supabase
-      .from(NBA_INJURIES_TABLE)
-      .select(selectColumns)
-      .order("report_date_utc", { ascending: false }); // Show newest reports first
+  console.log(`CACHE MISS: ${cacheKey}. Querying injuries table...`);
+  const { data, error } = await supabase
+    .from(NBA_INJURIES_TABLE)
+    .select(
+      `
+      injury_id, player_id, player_display_name, team_id, team_display_name,
+      report_date_utc, injury_status, injury_status_abbr, injury_type,
+      injury_location, injury_detail, injury_side, return_date_est,
+      short_comment, long_comment, created_at, last_api_update_time
+    `
+    )
+    .order("report_date_utc", { ascending: false });
 
-    if (error) {
-      console.error("Supabase error fetching injuries:", error.message);
-      return null; // Don't cache errors
-    }
-
-    const resultData = data || [];
-    console.log(
-      `Successfully fetched ${resultData.length} NBA injury records. Caching result with TTL: ${ttl}s`
-    );
-    cache.set(cacheKey, resultData, ttl);
-    return resultData;
-  } catch (error) {
-    console.error("Error in fetchNbaInjuries service:", error.message);
-    return null; // Return null on unexpected errors
+  if (error) {
+    console.error("Supabase error fetching injuries:", error);
+    return null;
   }
+
+  console.log(`Fetched ${data.length} injuries. Caching ${ttl}s.`);
+  cache.set(cacheKey, data, ttl);
+  return data;
 };
 
-// --- NBA Historical Game Stats ---
-export const fetchNbaGameHistory = async (options) => {
-  const { startDate, endDate, teamName, limit, page } = options;
-  // Cache Key: Dynamic, includes all filter/pagination options
-  // Use 'null' strings for potentially undefined values to ensure key consistency
+// Fetch historical games with pagination & filters
+export const fetchNbaGameHistory = async ({
+  startDate,
+  endDate,
+  teamName,
+  limit,
+  page,
+}) => {
   const cacheKey = `nba_game_history_${startDate || "null"}_${
     endDate || "null"
   }_${teamName || "null"}_${limit}_${page}`;
-  // TTL: 1 day (historical data)
   const ttl = 86400;
-
-  const cachedData = cache.get(cacheKey);
-  if (cachedData !== undefined) {
-    console.log(`CACHE HIT for key: ${cacheKey}`);
-    return cachedData;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return cached;
   }
 
-  console.log(
-    `CACHE MISS for key: ${cacheKey}. Fetching historical NBA games with options:`,
-    options
-  );
-  try {
-    // Use the select list defined in your controller logic
-    const selectColumns = `
-            game_id, game_date, home_team, away_team, home_score, away_score,
-            home_q1, home_q2, home_q3, home_q4, home_ot,
-            away_q1, away_q2, away_q3, away_q4, away_ot,
-            home_assists, home_steals, home_blocks, home_turnovers, home_fouls, home_total_reb,
-            away_assists, away_steals, away_blocks, away_turnovers, away_fouls, away_total_reb
-        `;
-    let query = supabase.from(NBA_HISTORICAL_GAMES_TABLE).select(selectColumns);
+  console.log(`CACHE MISS: ${cacheKey}. Querying historical games...`);
+  let query = supabase.from(NBA_HISTORICAL_GAMES_TABLE).select(`
+      game_id, game_date, home_team, away_team, home_score, away_score,
+      home_q1, home_q2, home_q3, home_q4, home_ot,
+      away_q1, away_q2, away_q3, away_q4, away_ot,
+      home_assists, home_steals, home_blocks, home_turnovers, home_fouls, home_total_reb,
+      away_assists, away_steals, away_blocks, away_turnovers, away_fouls, away_total_reb
+    `);
 
-    // Apply filters (ensure your DB column names match, e.g., 'game_date')
-    if (startDate) query = query.gte("game_date", startDate);
-    if (endDate) query = query.lte("game_date", endDate);
-    if (teamName)
-      query = query.or(
-        `home_team.ilike.%${teamName}%,away_team.ilike.%${teamName}%`
-      );
-
-    query = query.order("game_date", { ascending: false });
-
-    const offset = (page - 1) * limit;
-    query = query.range(offset, offset + limit - 1);
-
-    const { data, error, status } = await query;
-
-    if (error) {
-      console.error("Supabase error fetching historical games:", error.message);
-      return null; // Don't cache errors
-    }
-
-    const resultData = data || [];
-    console.log(
-      `Successfully fetched ${resultData.length} NBA historical games. Caching result with TTL: ${ttl}s`
+  if (startDate) query = query.gte("game_date", startDate);
+  if (endDate) query = query.lte("game_date", endDate);
+  if (teamName)
+    query = query.or(
+      `home_team.ilike.%${teamName}%,away_team.ilike.%${teamName}%`
     );
-    cache.set(cacheKey, resultData, ttl);
-    return resultData;
-  } catch (error) {
-    console.error("Error in fetchNbaGameHistory service:", error.message);
+
+  query = query.order("game_date", { ascending: false });
+  query = query.range((page - 1) * limit, page * limit - 1);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Supabase error fetching historical games:", error);
     return null;
   }
+
+  console.log(`Fetched ${data.length} historical games. Caching ${ttl}s.`);
+  cache.set(cacheKey, data, ttl);
+  return data;
 };
 
-// --- NBA Historical Team Stats ---
-export const fetchNbaTeamStatsBySeason = async (teamId, seasonInputYearStr) => {
-  // Accepts the "2023" string
-  // Cache Key: Based on the input parameters
-  const cacheKey = `nba_team_stats_${teamId}_${seasonInputYearStr}`;
-  const ttl = 86400; // 1 day
-
-  const cachedData = cache.get(cacheKey);
-  if (cachedData !== undefined) {
-    if (cachedData === null) {
-      console.log(`CACHE HIT for key: ${cacheKey} (Result: Not Found)`);
-      return null;
-    }
-    console.log(`CACHE HIT for key: ${cacheKey}`);
-    return cachedData;
+// Fetch team stats for a given season
+export const fetchNbaTeamStatsBySeason = async (teamId, seasonYearStr) => {
+  const cacheKey = `nba_team_stats_${teamId}_${seasonYearStr}`;
+  const ttl = 86400;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return cached;
   }
 
-  // --- Construct the season range string needed for the database ---
-  const startYear = parseInt(seasonInputYearStr);
+  const startYear = parseInt(seasonYearStr, 10);
   if (isNaN(startYear)) {
-    console.error(
-      "Invalid season year string received in service:",
-      seasonInputYearStr
-    );
+    console.error("Invalid season year:", seasonYearStr);
     return null;
   }
-  const endYear = startYear + 1;
-  const seasonRangeForQuery = `${startYear}-${endYear}`; // Creates "2023-2024"
-  // --- End construction ---
+  const seasonRange = `${startYear}-${startYear + 1}`;
 
-  // Use the constructed range in the log message
   console.log(
-    `CACHE MISS for key: ${cacheKey}. Fetching NBA team stats for team ${teamId}, season range '${seasonRangeForQuery}'...`
+    `CACHE MISS: ${cacheKey}. Querying team stats for ${seasonRange}...`
   );
-  try {
-    const { data, error, status } = await supabase
-      .from(NBA_HISTORICAL_TEAM_STATS_TABLE) // Constant should be defined above
-      .select("*") // Select all columns for team stats
-      .eq("team_id", teamId)
-      // *** Use the constructed season range string for the query ***
-      .eq("season", seasonRangeForQuery)
-      .maybeSingle();
+  const { data, error } = await supabase
+    .from(NBA_HISTORICAL_TEAM_STATS_TABLE)
+    .select("*")
+    .eq("team_id", teamId)
+    .eq("season", seasonRange)
+    .maybeSingle();
 
-    if (error) {
-      console.error(
-        `Supabase error fetching historical team stats for range ${seasonRangeForQuery}:`,
-        error.message
-      );
-      return null; // Don't cache errors
-    }
-
-    // Cache data or null
-    if (data) {
-      console.log(
-        `Successfully fetched stats for team ${teamId}, season range ${seasonRangeForQuery}. Caching result with TTL: ${ttl}s`
-      );
-    } else {
-      console.log(
-        `No stats found for team ${teamId}, season range ${seasonRangeForQuery}. Caching 'null' with TTL: ${ttl}s`
-      );
-    }
-    cache.set(cacheKey, data, ttl); // Cache the actual data object or null
-    return data; // Return the data object or null
-  } catch (error) {
-    console.error("Error in fetchNbaTeamStatsBySeason service:", error.message);
+  if (error) {
+    console.error("Supabase error fetching team stats:", error);
     return null;
   }
+
+  console.log(
+    data
+      ? `Fetched stats for team ${teamId}, caching ${ttl}s.`
+      : `No stats found for team ${teamId}. Caching null.`
+  );
+  cache.set(cacheKey, data, ttl);
+  return data;
 };
 
-// --- NBA Historical Player Stats ---
-export const fetchNbaPlayerGameHistory = async (playerId, options) => {
-  const { limit, page } = options;
-  // Cache Key: Dynamic
+// Fetch player game history
+export const fetchNbaPlayerGameHistory = async (playerId, { limit, page }) => {
   const cacheKey = `nba_player_history_${playerId}_${limit}_${page}`;
-  // TTL: 1 day
   const ttl = 86400;
-
-  const cachedData = cache.get(cacheKey);
-  if (cachedData !== undefined) {
-    console.log(`CACHE HIT for key: ${cacheKey}`);
-    return cachedData;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return cached;
   }
 
-  console.log(
-    `CACHE MISS for key: ${cacheKey}. Fetching NBA player game log for player ${playerId}, limit=${limit}, page=${page}...`
-  );
-  try {
-    // Use select columns specified previously
-    const selectColumns = `
-            game_id, player_id, player_name, team_id, team_name, game_date, minutes,
-            points, rebounds, assists, steals, blocks, turnovers, fouls,
-            fg_made, fg_attempted, three_made, three_attempted, ft_made, ft_attempted
-        `;
-    let query = supabase
-      .from(NBA_HISTORICAL_PLAYER_STATS_TABLE)
-      .select(selectColumns)
-      .eq("player_id", playerId);
+  console.log(`CACHE MISS: ${cacheKey}. Querying player history...`);
+  let query = supabase
+    .from(NBA_HISTORICAL_PLAYER_STATS_TABLE)
+    .select(
+      `
+      game_id, player_id, player_name, team_id, team_name, game_date, minutes,
+      points, rebounds, assists, steals, blocks, turnovers, fouls,
+      fg_made, fg_attempted, three_made, three_attempted, ft_made, ft_attempted
+    `
+    )
+    .eq("player_id", playerId)
+    .order("game_date", { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
 
-    query = query.order("game_date", { ascending: false });
-
-    const offset = (page - 1) * limit;
-    query = query.range(offset, offset + limit - 1);
-
-    const { data, error, status } = await query;
-
-    if (error) {
-      console.error(
-        "Supabase error fetching NBA player game log:",
-        error.message
-      );
-      return null; // Don't cache errors
-    }
-
-    const resultData = data || [];
-    console.log(
-      `Successfully fetched ${resultData.length} NBA historical games for player ${playerId}. Caching result with TTL: ${ttl}s`
-    );
-    cache.set(cacheKey, resultData, ttl);
-    return resultData;
-  } catch (error) {
-    console.error("Error in fetchNbaPlayerGameHistory service:", error.message);
+  const { data, error } = await query;
+  if (error) {
+    console.error("Supabase error fetching player history:", error);
     return null;
   }
+
+  console.log(`Fetched ${data.length} player games. Caching ${ttl}s.`);
+  cache.set(cacheKey, data, ttl);
+  return data;
 };
 
+// Another schedule helper used by your controller
 export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
   const cacheKey = "nba_schedule_today_tomorrow";
-  const ttl = 1800; // 60 minutes in seconds
-
-  // 1. Check cache first
-  const cachedData = cache.get(cacheKey);
-  if (cachedData !== undefined) {
-    console.log(`CACHE HIT for key: ${cacheKey}`);
-    return cachedData;
+  const ttl = 1800;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return cached;
   }
 
-  console.log(`CACHE MISS for key: ${cacheKey}. Fetching from Supabase...`);
+  console.log(`CACHE MISS: ${cacheKey}. Querying schedule...`);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const todayStr = getUTCDateString(today);
+  const tomorrowStr = getUTCDateString(tomorrow);
 
-  // 2. If cache miss, query Supabase
-  try {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
+  const { data, error } = await supabase
+    .from(NBA_SCHEDULE_TABLE)
+    .select(
+      `
+      game_id, game_date, home_team, away_team, scheduled_time,
+      venue, status, moneyline_clean, spread_clean, total_clean,
+      predicted_home_score, predicted_away_score, updated_at
+    `
+    )
+    .in("game_date", [todayStr, tomorrowStr])
+    .order("scheduled_time", { ascending: true });
 
-    // Get date strings in YYYY-MM-DD format
-    const todayStr = getUTCDateString(today);
-    const tomorrowStr = getUTCDateString(tomorrow);
-
-    // *** Use the correct date column name from your list ***
-    console.log(
-      `Querying NBA schedule for dates in game_date: ${todayStr}, ${tomorrowStr}`
-    );
-
-    // --- Corrected Supabase query logic for NBA ---
-    const { data, error } = await supabase
-      // *** Use the CORRECT NBA table name ***
-      .from("nba_game_schedule")
-      // *** Use the CORRECT NBA column names based on your list ***
-      // Selecting a useful subset including predictions and cleaned odds
-      .select(
-        `
-                game_id,
-                game_date,
-                home_team,
-                away_team,
-                scheduled_time,
-                venue,
-                status,
-                moneyline_clean,
-                spread_clean,
-                total_clean,
-                predicted_home_score,
-                predicted_away_score,
-                updated_at
-            `
-      )
-      // *** Filter using the correct date column name ***
-      .in("game_date", [todayStr, tomorrowStr])
-      // *** Order by the correct time column name ***
-      .order("scheduled_time", { ascending: true });
-    // --- End Supabase query logic ---
-
-    if (error) {
-      console.error(
-        `Supabase error fetching NBA schedule from 'nba_game_schedule':`,
-        error.message
-      );
-      return null; // Don't cache errors
-    }
-
-    // 3. Store the fetched data in cache if successful
-    if (data) {
-      console.log(
-        `Successfully fetched ${data.length} NBA games from Supabase. Caching result with TTL: ${ttl}s`
-      );
-      cache.set(cacheKey, data, ttl);
-    } else {
-      console.log(
-        "No NBA games found for today/tomorrow in Supabase. Caching empty array."
-      );
-      cache.set(cacheKey, [], ttl);
-    }
-
-    return data || []; // Return data or an empty array
-  } catch (error) {
-    console.error(
-      `Unexpected error in WorkspaceNbaScheduleForTodayAndTomorrow service: ${error.message}`
-    );
-    return null; // Return null on unexpected errors
+  if (error) {
+    console.error("Supabase error:", error);
+    return null;
   }
+
+  console.log(`Fetched ${data.length} games. Caching ${ttl}s.`);
+  cache.set(cacheKey, data, ttl);
+  return data;
 };
+
+/**
+ * Returns tomorrow’s or today’s schedule with model predictions & odds.
+ * @param {string} date YYYY‑MM‑DD
+ */
+export async function getSchedule(date) {
+  const { data, error } = await supabase
+    .from("nba_games_schedule")
+    .select(
+      `
+      id, home_team_abbr, away_team_abbr, tipoff_ts,
+      spread, total, model_home_score, model_away_score
+    `
+    )
+    .eq("game_date", date)
+    .order("tipoff_ts");
+
+  if (error) throw error;
+  return data.map((row) => ({
+    id: row.id,
+    homeTeam: row.home_team_abbr,
+    awayTeam: row.away_team_abbr,
+    tipoff: row.tipoff_ts,
+    spread: row.spread,
+    total: row.total,
+    predictionHome: row.model_home_score,
+    predictionAway: row.model_away_score,
+  }));
+}

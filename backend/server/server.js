@@ -1,7 +1,7 @@
 // backend/server/server.js
 import express from "express";
 import cors from "cors";
-import "dotenv/config";  // only once
+import "dotenv/config"; // only once
 
 // --- Route Imports (using import, add .js extension) ---
 import nbaRoutes from "./routes/nba_routes.js";
@@ -10,7 +10,8 @@ import mlbRoutes from "./routes/mlb_routes.js";
 // Debug logs for env
 console.log(`DEBUG server.js: Supabase URL = ${process.env.SUPABASE_URL}`);
 console.log(
-  `DEBUG server.js: Supabase Service Key Loaded = ${!!process.env.SUPABASE_SERVICE_KEY}`
+  `DEBUG server.js: Supabase Service Key Loaded = ${!!process.env
+    .SUPABASE_SERVICE_KEY}`
 );
 
 const app = express();

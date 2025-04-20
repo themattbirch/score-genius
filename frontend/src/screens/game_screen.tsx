@@ -1,46 +1,33 @@
-// frontend/src/screens/game_screen.tsx
+import React from "react";
+import { useSport } from "@/contexts/sport_context";
+import { useDate } from "@/contexts/date_context";
+import { useSchedule, Game } from "@/api/use_schedule";
+import GameCard from "@/components/games/game_card";
+import SkeletonBox from "@/components/ui/skeleton_box";
 
-import React from 'react';
-import SkeletonBox from '@/components/ui/skeleton_box';
-import { useParams } from 'react-router-dom';
-import { useInjuries } from '@/api/use_injuries';
-import { useSport } from '@/contexts/sport_context';
-import { useDate } from '@/contexts/date_context';
+const GamesScreen: React.FC = () => {
+  const { sport } = useSport();
+  const { date } = useDate();
+  const isoDate = date.toISOString().slice(0, 10);
 
-const GameDetailScreen: React.FC = () => {
-  const { gameId } = useParams();
-  const { sport }  = useSport();
-  const { date }   = useDate();
+  const {
+    data: games = [],
+    isLoading: loadingGames,
+    error: gamesError,
+  } = useSchedule(sport, isoDate);
 
-  const { data: injuries } = useInjuries(
-    sport,
-    date.toISOString().slice(0, 10)
-  );
+  if (loadingGames) return <SkeletonBox className="h-64 w-full" />;
+  if (gamesError) return <p className="text-red-500">Error loading games.</p>;
 
   return (
-    <div className="p-4 space-y-4">
-      <h2 className="text-lg font-semibold">Game {gameId}</h2>
-
-      <div className="app-card">
-        <h3 className="mb-2 font-semibold">Injury Report</h3>
-
-        {injuries?.length ? (
-          <ul className="space-y-1 text-sm">
-            {injuries.map((inj) => (
-              <li key={inj.id} className="flex justify-between">
-                <span>
-                  {inj.player} ({inj.team})
-                </span>
-                <span className="font-medium">{inj.status}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-text-secondary">No reported injuries.</p>
-        )}
-      </div>
+    <div className="space-y-4 p-4">
+      {games.length === 0 ? (
+        <p className="text-text-secondary">No games scheduled.</p>
+      ) : (
+        games.map((game: Game) => <GameCard key={game.id} game={game} />)
+      )}
     </div>
   );
 };
 
-export default GameDetailScreen;
+export default GamesScreen;
