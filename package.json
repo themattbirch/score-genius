@@ -11,10 +11,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@radix-ui/react-popover": "^1.1.10",
     "@supabase/supabase-js": "^2.49.4",
+    "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
-    "luxon": "^3.4.4"
+    "luxon": "^3.4.4",
+    "react-day-picker": "^9.6.7"
   }
 }
