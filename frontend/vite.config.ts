@@ -50,6 +50,7 @@ export default defineConfig({
       /* Multi‑page build: app.html (SPA) + index.html (landing) */
       input: {
         index: resolve(__dirname, 'index.html'), // static homepage
+        home:  resolve(__dirname, 'public/home.html'),
         app: resolve(__dirname, 'app.html'),     // React SPA
       },
       output: {
