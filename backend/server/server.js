@@ -20,15 +20,15 @@ const PORT = process.env.PORT || 3001;
 // --- Disable ETags globally so clients always fetch fresh data ---
 app.disable("etag");
 
-// --- No‑cache headers for all responses ---
-// Put this near the top of server.js, before your routes:
+// --- No‑cache headers for all responses, including CDN edges ---
 app.use((req, res, next) => {
   res.set({
-    // max-age=0 for browsers, s-maxage=0 for CDNs, private so proxies won’t reuse
-    "Cache-Control":
-      "private, no-store, max-age=0, s-maxage=0, must-revalidate",
+    // Browser cache directives
+    "Cache-Control": "private, no-store, max-age=0, must-revalidate",
     Pragma: "no-cache",
     Expires: "0",
+    // Instruct any Surrogate (CDN) not to cache
+    "Surrogate-Control": "no-store",
   });
   next();
 });
