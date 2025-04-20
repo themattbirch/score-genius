@@ -21,9 +21,12 @@ const PORT = process.env.PORT || 3001;
 app.disable("etag");
 
 // --- No‑cache headers for all responses ---
+// Put this near the top of server.js, before your routes:
 app.use((req, res, next) => {
   res.set({
-    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    // max-age=0 for browsers, s-maxage=0 for CDNs, private so proxies won’t reuse
+    "Cache-Control":
+      "private, no-store, max-age=0, s-maxage=0, must-revalidate",
     Pragma: "no-cache",
     Expires: "0",
   });
