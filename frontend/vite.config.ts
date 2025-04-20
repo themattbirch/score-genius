@@ -51,9 +51,8 @@ export default defineConfig(({ command }) => ({
        *  copy it from /public to the dist root. */
       input: {
         // marketing landing
-        home: resolve(__dirname, "public/home.html"),
+        home: resolve(__dirname, "home.html"),
         // optional index if you want one
-        index: resolve(__dirname, "index.html"),
         // SPA
         app: resolve(__dirname, "app.html"),
       },
