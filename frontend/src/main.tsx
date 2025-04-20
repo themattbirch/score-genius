@@ -1,17 +1,24 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App'; // Import the placeholder App component
-// No CSS needed for this test
-// import './index.css';
+// frontend/src/main.tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import App from "./App";
+import "./index.css";
 
-// Standard React 18 rendering logic
-const rootElement = document.getElementById('root');
-if (rootElement) {
-  ReactDOM.createRoot(rootElement).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>
-  );
-} else {
-  console.error("Failed to find the root element. Check your index.html file.");
+const queryClient = new QueryClient();
+
+const container = document.getElementById("root");
+if (!container) {
+  throw new Error("Root element not found; check app.html");
 }
+
+ReactDOM.createRoot(container).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter basename="/app.html">
+        <App />
+      </BrowserRouter>
+    </QueryClientProvider>
+  </React.StrictMode>
+);
