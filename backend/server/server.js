@@ -17,6 +17,19 @@ console.log(
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// --- Disable ETags globally so clients always fetch fresh data ---
+app.disable("etag");
+
+// --- No‑cache headers for all responses ---
+app.use((req, res, next) => {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
+  next();
+});
+
 // --- Middleware ---
 app.use(
   cors({
@@ -24,6 +37,8 @@ app.use(
   })
 );
 app.use(express.json());
+
+// Simple request logger
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
