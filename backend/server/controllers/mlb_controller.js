@@ -5,22 +5,37 @@ import * as mlbService from "../services/mlb_service.js";
 // Controller function for GET /schedule
 export const getMlbSchedule = async (req, res, next) => {
   try {
-    // Call the service function to fetch data
-    // Fetches based on current ET date for today & tomorrow inside the service
-    const scheduleData =
-      await mlbService.WorkspaceMlbScheduleForTodayAndTomorrow();
+    // 1. Get date from query
+    const { date } = req.query;
 
-    // Send successful response
+    // 2. Validate date
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res
+        .status(400)
+        .json({
+          message: "Invalid or missing date parameter. Use YYYY-MM-DD format.",
+        });
+    }
+
+    // 3. Call the NEW service function that filters by date
+    const scheduleData = await mlbService.getMlbScheduleByDate(date); // <-- CALL NEW FUNCTION
+
+    // 4. Send successful response (using existing format)
     res.status(200).json({
-      message: "MLB schedule fetched successfully",
-      // Safely get length only if scheduleData is an array
-      retrieved: Array.isArray(scheduleData) ? scheduleData.length : 0,
-      data: scheduleData || [], // Return empty array if null/undefined
+      message: `MLB schedule fetched successfully for ${date}`,
+      retrieved: scheduleData?.length ?? 0,
+      data: scheduleData || [],
     });
   } catch (error) {
-    // Pass error to the central error handler in server.js
-    console.error("Error in getMlbSchedule controller:", error);
-    next(error); // Forward error to Express error handler
+    console.error(
+      `Error in getMlbSchedule controller for date ${req.query.date}:`,
+      error
+    );
+    // Pass error using next() or send response directly
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Failed to fetch MLB schedule" });
+    // next(error);
   }
 };
 

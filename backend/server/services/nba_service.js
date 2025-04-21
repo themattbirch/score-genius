@@ -259,26 +259,55 @@ export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
  * @param {string} date YYYY‑MM‑DD
  */
 export async function getSchedule(date) {
-  const { data, error } = await supabase
-    .from("nba_games_schedule")
-    .select(
-      `
-      id, home_team_abbr, away_team_abbr, tipoff_ts,
-      spread, total, model_home_score, model_away_score
-    `
-    )
-    .eq("game_date", date)
-    .order("tipoff_ts");
+  // Log incoming date
+  console.log(`[nba_service getSchedule] Received date: ${date}`);
 
-  if (error) throw error;
+  // --- VERIFY THESE COLUMN NAMES with your Supabase table ---
+  const neededColumns = `
+      game_id,
+      game_date,
+      home_team,
+      away_team,
+      scheduled_time,
+      spread_clean,
+      total_clean,
+      predicted_home_score,
+      predicted_away_score
+  `;
+  // --- END VERIFY ---
+
+  // Use the constant for the table name
+  const { data, error } = await supabase
+    .from(NBA_SCHEDULE_TABLE) // Use Constant
+    .select(neededColumns)
+    // Make sure 'game_date' is the correct DATE column (YYYY-MM-DD format) to filter by
+    .eq("game_date", date)
+    // Make sure 'scheduled_time' is the correct column to order by
+    .order("scheduled_time", { ascending: true });
+
+  // Log Supabase result
+  console.log(`[nba_service getSchedule] Supabase returned ${data?.length ?? 0} rows for date ${date}. Error: ${error ? error.message : 'No'}`);
+
+  if (error) {
+    console.error(`[nba_service getSchedule] Supabase error for date ${date}:`, error);
+    if (error.code === '42703') { // Postgres code for "undefined column"
+        console.error(`[nba_service getSchedule] Potential incorrect column name in select or filter. Selected: "${neededColumns}". Filtered: game_date.`);
+    }
+    throw error; // Let controller handle sending error response
+  }
+
+  // Map the *actual* returned columns to the frontend 'Game' interface structure
   return data.map((row) => ({
-    id: row.id,
-    homeTeam: row.home_team_abbr,
-    awayTeam: row.away_team_abbr,
-    tipoff: row.tipoff_ts,
-    spread: row.spread,
-    total: row.total,
-    predictionHome: row.model_home_score,
-    predictionAway: row.model_away_score,
+    // Frontend Field : Backend DB Column
+    id:             String(row.game_id),        // Use game_id
+    homeTeam:       row.home_team,            // Use home_team
+    awayTeam:       row.away_team,            // Use away_team
+    tipoff:         row.scheduled_time,       // Use scheduled_time (verify exists!)
+    // Safely parse spread/total (similar to old controller logic)
+    // Ensure row.spread_clean and row.total_clean exist and handle potential nulls
+    spread:         row.spread_clean ? parseFloat((String(row.spread_clean).match(/-?\d+(\.\d+)?/) || ['0'])[0]) : null,
+    total:          row.total_clean ? parseFloat((String(row.total_clean).match(/\d+(\.\d+)?/) || ['0'])[0]) : null,
+    predictionHome: row.predicted_home_score, // Use predicted_home_score (verify exists!)
+    predictionAway: row.predicted_away_score, // Use predicted_away_score (verify exists!)
   }));
 }

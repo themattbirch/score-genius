@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
 import { useInjuries } from "@/api/use_injuries";
-import { useSchedule, Game } from "@/api/use_schedule";
+import { useNBASchedule, Game } from "@/api/use_nba_schedule";
 import SkeletonBox from "@/components/ui/skeleton_box";
 
 const GameDetailScreen: React.FC = () => {
@@ -20,12 +20,12 @@ const GameDetailScreen: React.FC = () => {
     error: injuriesError,
   } = useInjuries(sport, isoDate);
 
-  // 2) (Optional) Fetch full day’s schedule and pick this game
+  // 2) (Optional) Fetch full day’s NBA schedule and pick this game
   const {
     data: games = [],
     isLoading: loadingGames,
     error: gamesError,
-  } = useSchedule(sport, isoDate);
+  } = useNBASchedule(sport, isoDate);
   const thisGame = games.find((g: Game) => g.id === gameId);
 
   if (loadingInjuries || loadingGames) {

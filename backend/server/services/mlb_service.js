@@ -1,3 +1,5 @@
+// backend/server/services/mlb_service.js
+
 import supabase from "../utils/supabase_client.js"; // <-- IMPORT THE CLIENT
 import { DateTime } from "luxon"; // Using Luxon for robust timezone handling
 
@@ -300,4 +302,48 @@ export const WorkspaceMlbScheduleForTodayAndTomorrow = async () => {
     );
     return null; // Return null on unexpected errors
   }
+};
+export const getMlbScheduleByDate = async (date) => {
+  // Simple Caching (optional, add if needed like Workspace function)
+  // const cacheKey = `mlb_schedule_${date}`;
+  // const cached = cache.get(cacheKey);
+  // if (cached !== undefined) { ... return cached ... }
+
+  console.log(`[mlb_service getMlbScheduleByDate] Received date: ${date}`);
+  // Use the correct table constant
+  const MLB_SCHEDULE_TABLE = "mlb_game_schedule";
+  // Select columns matching the MLBGame interface (or needed by frontend)
+  const selectColumns = `
+      game_id, scheduled_time_utc, game_date_et, status_detail, status_state,
+      home_team_name, away_team_name, home_probable_pitcher_name,
+      home_probable_pitcher_handedness, away_probable_pitcher_name,
+      away_probable_pitcher_handedness, moneyline_home_clean, moneyline_away_clean,
+      spread_home_line_clean, spread_home_price_clean, spread_away_price_clean,
+      total_line_clean, total_over_price_clean, total_under_price_clean, updated_at
+  `;
+  // Ensure 'game_date_et' is the correct date column (YYYY-MM-DD)
+  const { data, error } = await supabase
+    .from(MLB_SCHEDULE_TABLE)
+    .select(selectColumns)
+    .eq("game_date_et", date) // Filter by the specific date
+    .order("scheduled_time_utc", { ascending: true }); // Order by time
+
+  console.log(
+    `[mlb_service getMlbScheduleByDate] Supabase returned ${
+      data?.length ?? 0
+    } rows for date ${date}. Error: ${error ? error.message : "No"}`
+  );
+
+  if (error) {
+    console.error(
+      `[mlb_service getMlbScheduleByDate] Supabase error for date ${date}:`,
+      error
+    );
+    throw error;
+  }
+
+  // Optional: Cache result before returning
+  // if(data) { cache.set(cacheKey, data, ttl); }
+
+  return data || []; // Return data or empty array
 };

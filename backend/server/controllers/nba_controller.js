@@ -9,28 +9,31 @@ import { getSchedule } from "../services/nba_service.js";
 // Controller to handle GET /api/v1/nba/schedule
 export const getNbaSchedule = async (req, res, next) => {
   try {
-    // 1. Fetch the raw rows from the service
-    const rawResults =
-      (await nbaService.WorkspaceNbaScheduleForTodayAndTomorrow()) || [];
+    // 1. Get the date from the request query parameters
+    const { date } = req.query;
 
-    // 2. Transform each row into the shape the front end expects
-    const formatted = rawResults.map((r) => ({
-      id:             String(r.game_id),
-      homeTeam:       r.home_team,
-      awayTeam:       r.away_team,
-      tipoff:         r.scheduled_time,
-      // Pull out the first numeric match from the “clean” strings
-      spread:         parseFloat((r.spread_clean.match(/-?\d+(\.\d+)?/) || ['0'])[0]),
-      total:          parseFloat((r.total_clean.match(/\d+(\.\d+)?/)   || ['0'])[0]),
-      predictionHome: r.predicted_home_score,
-      predictionAway: r.predicted_away_score,
-    }));
+    // 2. Validate the date format (YYYY-MM-DD)
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ message: 'Invalid or missing date parameter. Use YYYY-MM-DD format.' });
+    }
 
-    // 3. Return a flat array of formatted games
-    res.status(200).json(formatted);
+    // 3. Call the CORRECT service function that filters by date
+    //    This function already handles formatting the response columns.
+    const scheduleData = await getSchedule(date); // Using direct import
+
+    // 4. Send the response (formatted like your MLB response for consistency)
+    res.status(200).json({
+         message: `NBA schedule fetched successfully for ${date}`,
+         retrieved: scheduleData?.length ?? 0, // Use nullish check for safety
+         data: scheduleData || [] // Return empty array if service returns null/undefined
+     });
+
   } catch (error) {
-    console.error("Error in getNbaSchedule controller:", error);
-    next(error);
+    // Consistent error handling
+    console.error(`Error in getNbaSchedule controller for date ${req.query.date}:`, error);
+    res.status(error.status || 500).json({ message: error.message || 'Failed to fetch NBA schedule' });
+    // Or use next(error); if you have middleware for it
+    // next(error);
   }
 };
 

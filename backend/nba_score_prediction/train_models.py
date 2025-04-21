@@ -143,20 +143,13 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # ==============================================================================
 
 def get_supabase_client() -> Optional["Client"]:
-    supa_url = getattr(config, 'SUPABASE_URL', None)
-    supa_key = getattr(config, 'SUPABASE_ANON_KEY', None)
-    if supa_url and supa_key and create_client:
-        try:
-            supabase = create_client(supa_url, supa_key)
-            logger.info("Supabase client created.")
-            return supabase
-        except Exception as e:
-            logger.error(f"Error initializing Supabase client: {e}", exc_info=True)
-    elif (supa_url or supa_key) and not create_client:
-        logger.error("Supabase URL/Key found but library missing.")
-    else:
-        logger.debug("Supabase URL/Key not set.")
-    return None
+    supa_url = config.SUPABASE_URL
+    # Prefer the service-role key if set, otherwise fall back to anon
+    supa_key = getattr(config, 'SUPABASE_SERVICE_KEY', None) or config.SUPABASE_ANON_KEY
+    if not supa_url or not supa_key:
+        logger.error("Supabase URL/Key not set.")
+        return None
+    return create_client(supa_url, supa_key)
 
 def load_data_source(source_type: str, lookback_days: int, args: argparse.Namespace,
                      supabase_client: Optional[Client] = None
