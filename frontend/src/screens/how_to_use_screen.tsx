@@ -1,3 +1,5 @@
+// frontend/src/screens/how_to_use_screen.tsx
+
 import React from 'react';
 import { HelpCircle } from 'lucide-react';
 

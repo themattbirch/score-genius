@@ -1,3 +1,5 @@
+// frontend/src/screens/stats_screen.tsx
+
 import React from 'react';
 
 const StatsScreen: React.FC = () => {
