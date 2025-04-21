@@ -8,6 +8,12 @@
 /* -------------------------------------------------------------
  *  CSS variables — light theme (root)
  *  ----------------------------------------------------------- */
+/* Force the nav‑arrow SVGs to use our --color-text-primary */
+.rdp-root {
+  --rdp-accent-color: var(--color-text-primary) !important;
+  --rdp-accent-background-color: var(--color-panel) !important;
+}
+
 :root {
   /* Surfaces */
   --color-bg: #ffffff;
@@ -18,19 +24,19 @@
   --color-text-secondary: #475569;
 
   /* Brand */
-  --color-brand-green: #00B140;
+  --color-brand-green: #00b140;
   --color-brand-green-light: #34d058;
-  --color-brand-orange: #FF7F00;
+  --color-brand-orange: #ff7f00;
 }
 
 /* -------------------------------------------------------------
  *  Dark theme overrides (activated via <html class="dark">)
  *  ----------------------------------------------------------- */
 .dark {
-  --color-bg: #0d1117;           /* Github Dark */
-  --color-panel: #161b22;        /* Slightly lighter panel */
-  --color-text-primary: #F1F5F9; /* Off‑white */
-  --color-text-secondary: #9CA3AF;
+  --color-bg: #0d1117; /* Github Dark */
+  --color-panel: #161b22; /* Slightly lighter panel */
+  --color-text-primary: #f1f5f9; /* Off‑white */
+  --color-text-secondary: #9ca3af;
 }
 
 /* -------------------------------------------------------------

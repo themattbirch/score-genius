@@ -1,12 +1,10 @@
 // frontend/src/api/use_schedule.ts
-import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
-import { Sport } from '@/contexts/sport_context';
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+import { Sport } from "@/contexts/sport_context";
 
 const PROD_BASE = import.meta.env.VITE_API_BASE_URL as string;
-const BASE = import.meta.env.DEV
-  ? 'http://localhost:3001'
-  : PROD_BASE;
+const BASE = import.meta.env.DEV ? "http://localhost:3001" : PROD_BASE;
 
 export interface Game {
   id: string;
@@ -21,7 +19,7 @@ export interface Game {
 
 export const useSchedule = (sport: Sport, date: string) =>
   useQuery<Game[], Error>({
-    queryKey: ['schedule', sport, date],
+    queryKey: ["schedule", sport, date],
     queryFn: async () => {
       const url = `${BASE}/api/v1/${sport.toLowerCase()}/schedule`;
       const response = await axios.get<Game[]>(url, { params: { date } });
@@ -29,7 +27,7 @@ export const useSchedule = (sport: Sport, date: string) =>
     },
     staleTime: 60_000,
     refetchInterval:
-      sport === 'NBA' && date === new Date().toISOString().slice(0, 10)
+      sport === "NBA" && date === new Date().toISOString().slice(0, 10)
         ? 30_000
         : false,
   });
