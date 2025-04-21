@@ -24,18 +24,18 @@ const ThemeContext = createContext<ThemeContextProps | undefined>(undefined);
 // Define the Provider component
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // State to hold the current theme
-  const [theme, setThemeState] = useState<Theme>(() => {
-    // Initialize state from localStorage or default to 'light'
+   const [theme, setThemeState] = useState<Theme>(() => {
     try {
         const storedTheme = localStorage.getItem('theme') as Theme | null;
-        const initial = storedTheme || 'light';
-        // *** ADD LOG ***
-        console.log(`%c[ThemeProvider useState Init] Setting initial theme state from localStorage/default: ${initial}`, 'color: blue');
+        // If nothing stored, default to 'dark' <--- CHANGED HERE
+        const initial = storedTheme || 'dark';
+        console.log(`%c[ThemeProvider useState Init] Setting initial theme state...: ${initial}`, 'color: blue');
         return initial;
     } catch (error) {
         console.error("Error reading localStorage for theme", error);
-        console.log(`%c[ThemeProvider useState Init] Defaulting theme state to 'light' due to error`, 'color: blue');
-        return 'light';
+         // Also change the error fallback default if you want consistency
+        console.log(`%c[ThemeProvider useState Init] Defaulting theme state to 'dark' due to error`, 'color: blue');
+        return 'dark'; // <-- CHANGED ERROR FALLBACK TOO
     }
   });
 
