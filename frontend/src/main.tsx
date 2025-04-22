@@ -16,7 +16,6 @@ if (!container) {
 ReactDOM.createRoot(container!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      {/* FIX: Remove the basename prop completely */}
       <BrowserRouter>
         <App />
       </BrowserRouter>
