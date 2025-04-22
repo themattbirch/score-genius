@@ -153,7 +153,7 @@ const GameDetailScreen: React.FC = () => {
                 className="flex justify-between"
               >
                 <span>
-                  {inj.player} ({inj.team})
+                  {inj.player} ({inj.team_display_name})
                 </span>
                 <span className="font-medium">{inj.status}</span>
               </li>
