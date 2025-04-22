@@ -37,9 +37,9 @@ export default defineConfig(({ command }) => ({
     open: "/app.html", // opens the SPA for local dev
     port: 5173,
     strictPort: true,
-      proxy: {
-    '/api/v1': 'http://localhost:3001', // forwards to Express
-  },
+    proxy: {
+      "/api/v1": "http://localhost:3001", // forwards to Express
+    },
   },
 
   /* ------------------------------------------------------------ */
