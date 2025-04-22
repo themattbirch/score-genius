@@ -14,40 +14,43 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const { date } = useDate();
   const isoDate = date ? date.toISOString().slice(0, 10) : "";
 
-  const { data: injuries = [] } = useInjuries(sport, isoDate);
+  // NOTE: Removed useInjuries hook call as 'teamInjuries' wasn't used in the return JSX.
+  // If you need injury display later, you can uncomment this and the filter logic.
+  // const { data: injuries = [] } = useInjuries(sport, isoDate);
+  // const teamInjuries = injuries.filter(/* ... */);
 
   // Use unified fields directly
   const gameId = game.id;
   const homeTeamName = game.homeTeamName;
   const awayTeamName = game.awayTeamName;
-  // Use gameTimeUTC as the primary time source from unified type
   const displayTime = game.gameTimeUTC;
   const displayStatus = game.statusState;
 
-  console.log(
-    `📋 GameCard rendering for ${sport} ${game.dataType} game: ${gameId} ${isoDate}`
-  );
-
-  // Filter injuries using unified team names
-  const teamInjuries = injuries.filter((inj: Injury) => {
-    const injuryTeam = inj.team_display_name;
-    // Accessing team names via the 'game' prop object
-    return (
-      injuryTeam &&
-      (injuryTeam === game.homeTeamName || injuryTeam === game.awayTeamName)
-    );
-  });
+  // Removed console.log statement
 
   return (
     <div className="app-card flex flex-col gap-2">
       {/* Top Row: Teams & Time */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
+        {" "}
+        {/* Changed items-center to items-start for top alignment */}
         {/* Left Side: Teams & Time */}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold text-sm sm:text-base">
-            {awayTeamName} @ {homeTeamName}
+          {/* --- MODIFIED SECTION START --- */}
+          {/* Away Team */}
+          <p className="font-semibold text-sm sm:text-base leading-tight">
+            {" "}
+            {/* Removed truncate */}
+            {awayTeamName}
           </p>
-          <p className="text-xs text-text-secondary">
+          {/* Home Team - On a new line */}
+          <p className="font-semibold text-sm sm:text-base leading-tight">
+            @ {homeTeamName} {/* Kept the '@' prefix for context */}
+          </p>
+          {/* --- MODIFIED SECTION END --- */}
+
+          {/* Time / Status - Added padding-top for spacing */}
+          <p className="text-xs text-text-secondary pt-1">
             {/* Display time if available */}
             {
               displayTime
@@ -64,7 +67,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
               ` (${displayStatus})`}
           </p>
         </div>
-
         {/* Right Side: Score/Prediction/Pitchers & Odds */}
         <div className="flex-none text-right text-sm">
           {/* === Main Display: Use dataType === */}
@@ -86,7 +88,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                   {game.predictionAway ?? "-"} – {game.predictionHome ?? "-"}
                   <span className="block text-xs font-normal text-text-secondary">
                     {" "}
-                    (Pred.)
+                    (Predicted Score)
                   </span>
                 </p>
               ) : (
@@ -126,7 +128,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             // Fallback
             <p className="font-medium">---</p>
           )}
-          {/* TODO: Add logic to display historical closing odds if fetched */}
         </div>
       </div>
     </div>

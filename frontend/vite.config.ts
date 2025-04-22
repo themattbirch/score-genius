@@ -6,7 +6,7 @@ import { resolve } from "path";
 export default defineConfig(({ command }) => ({
   plugins: [react()],
 
-  publicDir: "public",   // static assets only
+  publicDir: "public", // static assets only
 
   resolve: {
     alias: { "@": resolve(__dirname, "src") },
@@ -27,12 +27,12 @@ export default defineConfig(({ command }) => ({
       // THESE MUST POINT AT ROOT‐LEVEL HTML FILES:
       input: {
         home: resolve(__dirname, "home.html"),
-        app:  resolve(__dirname, "app.html"),
+        app: resolve(__dirname, "app.html"),
       },
       output: {
-        entryFileNames:   "assets/[name].[hash].js",
-        chunkFileNames:   "assets/[name].[hash].js",
-        assetFileNames:   "assets/[name].[hash].[ext]",
+        entryFileNames: "assets/[name].[hash].js",
+        chunkFileNames: "assets/[name].[hash].js",
+        assetFileNames: "assets/[name].[hash].[ext]",
       },
     },
   },
