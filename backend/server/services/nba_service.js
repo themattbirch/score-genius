@@ -347,32 +347,35 @@ export async function getSchedule(date) {
     // --- Map results to the UNIFIED Structure ---
     results = data.map((row) => {
       if (isPastDate) {
+        // Map historical data to UNIFIED names
         /** @type {UnifiedNBAGameData} */
         const gameData = {
-          id: String(row.game_id),
-          game_date: row.game_date,
-          homeTeamName: row.home_team, // Map to unified name
-          awayTeamName: row.away_team, // Map to unified name
-          gameTimeUTC: null, // No time in historical table?
-          statusState: "Final",
-          spreadLine: null,
-          totalLine: null,
-          predictionHome: null,
-          predictionAway: null,
-          home_final_score: row.home_score,
-          away_final_score: row.away_score,
-          dataType: "historical",
+          id: String(row.game_id), // Standardized ID
+          game_date: row.game_date, // Standardized Date
+          homeTeamName: row.home_team, // Map home_team -> homeTeamName
+          awayTeamName: row.away_team, // Map away_team -> awayTeamName
+          gameTimeUTC: null, // Standardized Time (null for historical?)
+          statusState: "Final", // Standardized Status
+          spreadLine: null, // Standardized Odds
+          totalLine: null, // Standardized Odds
+          predictionHome: null, // Prediction
+          predictionAway: null, // Prediction
+          home_final_score: row.home_score, // Final Score
+          away_final_score: row.away_score, // Final Score
+          dataType: "historical", // Type Discriminator
         };
         return gameData;
       } else {
+        // Map schedule data to UNIFIED names
         /** @type {UnifiedNBAGameData} */
         const gameData = {
-          id: String(row.game_id),
-          game_date: row.game_date,
-          homeTeamName: row.home_team, // Map to unified name
-          awayTeamName: row.away_team, // Map to unified name
-          gameTimeUTC: row.scheduled_time, // Map to unified time field
-          statusState: "Scheduled", // Add real status if available
+          id: String(row.game_id), // Standardized ID
+          game_date: row.game_date, // Standardized Date
+          homeTeamName: row.home_team, // Map home_team -> homeTeamName
+          awayTeamName: row.away_team, // Map away_team -> awayTeamName
+          gameTimeUTC: row.scheduled_time, // Map scheduled_time -> gameTimeUTC
+          statusState: "Scheduled", // Standardized Status (TODO: use real status)
+          // Map _clean odds to standardized names & parse
           spreadLine: row.spread_clean
             ? parseFloat(
                 (String(row.spread_clean).match(/-?\d+(\.\d+)?/) || ["0"])[0]
@@ -383,11 +386,11 @@ export async function getSchedule(date) {
                 (String(row.total_clean).match(/\d+(\.\d+)?/) || ["0"])[0]
               )
             : null,
-          predictionHome: row.predicted_home_score,
-          predictionAway: row.predicted_away_score,
-          home_final_score: null,
-          away_final_score: null,
-          dataType: "schedule",
+          predictionHome: row.predicted_home_score, // Prediction
+          predictionAway: row.predicted_away_score, // Prediction
+          home_final_score: null, // Final Score
+          away_final_score: null, // Final Score
+          dataType: "schedule", // Type Discriminator
         };
         return gameData;
       }
