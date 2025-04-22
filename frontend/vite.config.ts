@@ -1,57 +1,60 @@
-// frontend/vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig(({ command }) => ({
-  // base: "/app/", // <-- REMOVE THIS LINE
-
-  /* ------------------------------------------------------------ */
-  /* Plugins                                                      */
-  /* ------------------------------------------------------------ */
+  /* ------------------------------------------------------------
+   * Plugins
+   * ------------------------------------------------------------ */
   plugins: [
     react(),
     command === "build" &&
       viteStaticCopy({
-        targets: [{ src: resolve(__dirname, "public/*"), dest: "." }],
+        targets: [
+          {
+            src: resolve(__dirname, "public/*"),
+            dest: ".", // copies home.html, support.html, etc.
+          },
+        ],
         hook: "writeBundle",
       }),
   ].filter(Boolean),
 
-  /* ------------------------------------------------------------ */
-  /* Path alias (nice‑to‑have)                                    */
-  /* ------------------------------------------------------------ */
+  /* ------------------------------------------------------------
+   * Path alias
+   * ------------------------------------------------------------ */
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
     },
   },
 
-  /* ------------------------------------------------------------ */
-  /* Dev‑server settings                                          */
-  /* ------------------------------------------------------------ */
+  /* ------------------------------------------------------------
+   * Dev-server settings
+   * ------------------------------------------------------------ */
   server: {
-    // Let dev server open the root, React Router will handle routes
-    open: true, // Changed from '/app' or '/app.html'
+    open: "/app.html", // opens the SPA for local dev
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api/v1": "http://localhost:3001",
+      "/api/v1": "http://localhost:3001", // forwards to Express
     },
   },
 
-  /* ------------------------------------------------------------ */
-  /* Build settings                                               */
-  /* ------------------------------------------------------------ */
+  /* ------------------------------------------------------------
+   * Build settings
+   * ------------------------------------------------------------ */
   build: {
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      // Keep both inputs as this was required for your Render setup
+      /* Emit SPA + optional landing page.
+         We do *not* include home.html here because the plugin
+         will copy it from /public to the dist root. */
       input: {
         home: resolve(__dirname, "home.html"),
-        app: resolve(__dirname, "pwa.html"), // Your SPA entry point
+        app: resolve(__dirname, "app.html"), // SPA entry point
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
