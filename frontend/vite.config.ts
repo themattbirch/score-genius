@@ -1,68 +1,47 @@
+// /frontend/vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
-import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig(({ command }) => ({
-  /* ------------------------------------------------------------
-   * Plugins
-   * ------------------------------------------------------------ */
   plugins: [
     react(),
-    command === "build" &&
-      viteStaticCopy({
-        targets: [
-          {
-            src: resolve(__dirname, "public/*"),
-            dest: ".", // copies home.html, support.html, etc.
-          },
-        ],
-        hook: "writeBundle",
-      }),
+    // only needed if you build from non‐public folder; 
+    // since we’ll keep home.html & app.html in /public, you can drop this.
+    // command === "build" &&
+    //   viteStaticCopy({ ... })
   ].filter(Boolean),
 
-  /* ------------------------------------------------------------
-   * Path alias
-   * ------------------------------------------------------------ */
+  // alias so imports like "@/..." still work
   resolve: {
-    alias: {
-      "@": resolve(__dirname, "src"),
-    },
+    alias: { "@": resolve(__dirname, "src") },
   },
 
-  
-  /* ------------------------------------------------------------
-   * Dev-server settings
-   * ------------------------------------------------------------ */
+  // serve everything in /public at /
+  publicDir: "public",
+
   server: {
-    open: "/app", // I like the trailing slash here, too
+    // open http://localhost:5173/app
+    open: "/app",
     port: 5173,
     strictPort: true,
     proxy: { "/api/v1": "http://localhost:3001" },
-    // catch ALL non‑asset GETs and return app.html
-    historyApiFallback: {
-      index: "/app.html",
-    },
+    // ← no need for historyApiFallback or connect‐history plugin any more
   },
 
-  /* ------------------------------------------------------------
-   * Build settings
-   * ------------------------------------------------------------ */
   build: {
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      /* Emit SPA + optional landing page.
-         We do *not* include home.html here because the plugin
-         will copy it from /public to the dist root. */
+      // these two HTML shells (in /public) become your MPA entry points
       input: {
-        home: resolve(__dirname, "home.html"),
-        app: resolve(__dirname, "app.html"), // SPA entry point
+        home: resolve(__dirname, "public/home.html"),
+        app:  resolve(__dirname, "public/app.html"),
       },
       output: {
-        entryFileNames: "assets/[name].[hash].js",
-        chunkFileNames: "assets/[name].[hash].js",
-        assetFileNames: "assets/[name].[hash].[ext]",
+        entryFileNames:   "assets/[name].[hash].js",
+        chunkFileNames:   "assets/[name].[hash].js",
+        assetFileNames:   "assets/[name].[hash].[ext]",
       },
     },
   },

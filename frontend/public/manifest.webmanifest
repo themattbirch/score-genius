@@ -1,118 +1,16 @@
 {
-  "name": "Score Genius",
+  "name": "ScoreGenius",
   "short_name": "ScoreGenius",
-  "version": "1.0",
-  "description": "Get real-time NBA analytics with AI-powered score predictions that improve as games progress. Make informed betting decisions with accurate, quarter-by-quarter insights.",
-  "start_url": "/app/",
-  "scope": "/app/",
+  "start_url": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay"],
   "background_color": "#ffffff",
-  "theme_color": "#4F46E5",
-  "orientation": "portrait",
-  "prefer_related_applications": false,
-  "lang": "en-US",
-  "dir": "ltr",
-  "id": "com.scoregenius.app",
-  "launch_handler": {
-    "client_mode": ["navigate-existing", "auto"]
-  },
-  "edge_side_panel": {
-    "preferred_width": 480
-  },
-
+  "theme_color": "#1e90ff",
   "icons": [
     {
-      "src": "/icons/football-icon-16.png",
-      "sizes": "16x16",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/football-icon-48.png",
-      "sizes": "48x48",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/football-icon-128.png",
-      "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/football-icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/football-icon-maskable-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/football-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/football-icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/football-icon-monochrome-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "monochrome"
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
     }
-  ],
-
-  "screenshots": [
-    {
-      "src": "/screenshots/mobile1.png",
-      "sizes": "1080x1920",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshots/mobile2.png",
-      "sizes": "1080x1920",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshots/mobile3.png",
-      "sizes": "1080x1920",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshots/mobile4.png",
-      "sizes": "1080x1920",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshots/desktop1.png",
-      "sizes": "1920x1080",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshots/desktop2.png",
-      "sizes": "1920x1080",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshots/desktop3.png",
-      "sizes": "1920x1080",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshots/desktop4.png",
-      "sizes": "1920x1080",
-      "type": "image/png"
-    }
-  ],
-  "categories": ["weather", "sports", "travel"]
+  
+  ]
 }
