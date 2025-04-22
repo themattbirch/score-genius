@@ -30,10 +30,11 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
 
   // Filter injuries using unified team names
   const teamInjuries = injuries.filter((inj: Injury) => {
-    const injuryTeam = inj.team;
-    // Ensure null/undefined checks if necessary
+    const injuryTeam = inj.team_display_name;
+    // Accessing team names via the 'game' prop object
     return (
-      injuryTeam && (injuryTeam === homeTeamName || injuryTeam === awayTeamName)
+      injuryTeam &&
+      (injuryTeam === game.homeTeamName || injuryTeam === game.awayTeamName)
     );
   });
 
@@ -48,12 +49,13 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           </p>
           <p className="text-xs text-text-secondary">
             {/* Display time if available */}
-            {displayTime
-              ? new Date(displayTime).toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })
-              : game.game_date // Fallback to date
+            {
+              displayTime
+                ? new Date(displayTime).toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })
+                : game.game_date // Fallback to date
             }
             {/* Display status if available and not obvious */}
             {displayStatus &&
@@ -127,26 +129,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           {/* TODO: Add logic to display historical closing odds if fetched */}
         </div>
       </div>
-
-      {/* Bottom Row: Injury Chips */}
-      {teamInjuries.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {teamInjuries.slice(0, 2).map((inj) => (
-            <span
-              key={`${game.id}-${inj.player}-${inj.status}`}
-              className="pill bg-brand-orange text-xs"
-              title={`${inj.player}: ${inj.detail}`}
-            >
-              {inj.player?.split(" ").pop()} {inj.status}
-            </span>
-          ))}
-          {teamInjuries.length > 2 && (
-            <span className="pill bg-brand-orange/60 text-xs">
-              +{teamInjuries.length - 2} more
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 };
