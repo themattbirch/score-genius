@@ -14,7 +14,11 @@ export const getNbaSchedule = async (req, res, next) => {
 
     // 2. Validate the date format (YYYY-MM-DD)
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ message: 'Invalid or missing date parameter. Use YYYY-MM-DD format.' });
+      return res
+        .status(400)
+        .json({
+          message: "Invalid or missing date parameter. Use YYYY-MM-DD format.",
+        });
     }
 
     // 3. Call the CORRECT service function that filters by date
@@ -23,20 +27,23 @@ export const getNbaSchedule = async (req, res, next) => {
 
     // 4. Send the response (formatted like your MLB response for consistency)
     res.status(200).json({
-         message: `NBA schedule fetched successfully for ${date}`,
-         retrieved: scheduleData?.length ?? 0, // Use nullish check for safety
-         data: scheduleData || [] // Return empty array if service returns null/undefined
-     });
-
+      message: `NBA schedule fetched successfully for ${date}`,
+      retrieved: scheduleData?.length ?? 0, // Use nullish check for safety
+      data: scheduleData || [], // Return empty array if service returns null/undefined
+    });
   } catch (error) {
     // Consistent error handling
-    console.error(`Error in getNbaSchedule controller for date ${req.query.date}:`, error);
-    res.status(error.status || 500).json({ message: error.message || 'Failed to fetch NBA schedule' });
+    console.error(
+      `Error in getNbaSchedule controller for date ${req.query.date}:`,
+      error
+    );
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Failed to fetch NBA schedule" });
     // Or use next(error); if you have middleware for it
     // next(error);
   }
 };
-
 
 export const getNbaInjuries = async (req, res, next) => {
   try {
@@ -85,12 +92,9 @@ export const getNbaTeamSeasonStats = async (req, res, next) => {
         .json({ error: "Invalid Team ID. Must be numeric." });
     }
     if (!/^\d{4}$/.test(season)) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Invalid Season format. Expecting a 4-digit year (e.g., 2023).",
-        });
+      return res.status(400).json({
+        error: "Invalid Season format. Expecting a 4-digit year (e.g., 2023).",
+      });
     }
 
     const teamStats = await nbaService.fetchNbaTeamStatsBySeason(
