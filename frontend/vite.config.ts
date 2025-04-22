@@ -30,11 +30,12 @@ export default defineConfig(({ command }) => ({
     },
   },
 
+  
   /* ------------------------------------------------------------
    * Dev-server settings
    * ------------------------------------------------------------ */
   server: {
-    open: "/app",      // I like the trailing slash here, too
+    open: "/app", // I like the trailing slash here, too
     port: 5173,
     strictPort: true,
     proxy: { "/api/v1": "http://localhost:3001" },
