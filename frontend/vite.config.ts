@@ -51,7 +51,7 @@ export default defineConfig(({ command }) => ({
       // Keep both inputs as this was required for your Render setup
       input: {
         home: resolve(__dirname, "home.html"),
-        app: resolve(__dirname, "app.html"), // Your SPA entry point
+        app: resolve(__dirname, "index.html"), // Your SPA entry point
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
