@@ -16,9 +16,7 @@ if (!container) {
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/app.html">
         <App />
-      </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>
 );
