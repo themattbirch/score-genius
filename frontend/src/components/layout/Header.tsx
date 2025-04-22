@@ -45,7 +45,7 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
         type="button"
         // Apply responsive gap, add flex-none
         className="flex flex-none items-center gap-1 sm:gap-2"
-        onClick={() => navigate("games")}
+        onClick={() => navigate("./games", { relative: "path" })}
       >
         <img
           src="/orange_football_header_logo.png"
