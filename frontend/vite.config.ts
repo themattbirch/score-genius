@@ -4,39 +4,30 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
 export default defineConfig(({ command }) => ({
-  plugins: [
-    react(),
-    // only needed if you build from non‐public folder; 
-    // since we’ll keep home.html & app.html in /public, you can drop this.
-    // command === "build" &&
-    //   viteStaticCopy({ ... })
-  ].filter(Boolean),
+  plugins: [react()],
 
-  // alias so imports like "@/..." still work
+  publicDir: "public",   // static assets only
+
   resolve: {
     alias: { "@": resolve(__dirname, "src") },
   },
 
-  // serve everything in /public at /
-  publicDir: "public",
-
   server: {
-    // open http://localhost:5173/app
     open: "/app",
     port: 5173,
     strictPort: true,
     proxy: { "/api/v1": "http://localhost:3001" },
-    // ← no need for historyApiFallback or connect‐history plugin any more
+    // dev uses index.html by default—no extra fallback needed
   },
 
   build: {
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      // these two HTML shells (in /public) become your MPA entry points
+      // THESE MUST POINT AT ROOT‐LEVEL HTML FILES:
       input: {
-        home: resolve(__dirname, "public/home.html"),
-        app:  resolve(__dirname, "public/app.html"),
+        home: resolve(__dirname, "home.html"),
+        app:  resolve(__dirname, "app.html"),
       },
       output: {
         entryFileNames:   "assets/[name].[hash].js",
