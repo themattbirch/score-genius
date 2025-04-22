@@ -34,19 +34,16 @@ export default defineConfig(({ command }) => ({
    * Dev-server settings
    * ------------------------------------------------------------ */
   server: {
-    open: "/app", // opens the SPA for local dev
+    open: "/app",      // I like the trailing slash here, too
     port: 5173,
     strictPort: true,
-    proxy: {
-      "/api/v1": "http://localhost:3001", // forwards to Express
-    },
-
-    // 2) Tell Vite to serve app.html for any /app* path
-    //    so that hitting /app or /app/foo all return the SPA shell.
+    proxy: { "/api/v1": "http://localhost:3001" },
+    // catch ALL non‑asset GETs and return app.html
     historyApiFallback: {
-      rewrites: [{ from: /^\/app(?:\/.*)?$/, to: "/app.html" }],
+      index: "/app.html",
     },
   },
+
   /* ------------------------------------------------------------
    * Build settings
    * ------------------------------------------------------------ */

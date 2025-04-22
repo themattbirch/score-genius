@@ -112,26 +112,29 @@ const NBAScheduleDisplay: React.FC = () => {
   return (
     // Changed main div to only pad (space-y is now within sub-divs)
     <div className="p-4">
-      {/* Game List Section */}
-      <div className="space-y-4">
-        {games.length === 0 ? (
-          <p className="text-text-secondary">
-            No NBA games scheduled for this date.
-          </p>
-        ) : (
-          games.map((game: UnifiedGame) => (
-            <GameCard key={game.id} game={game} />
-          ))
-        )}
-      </div>
+  {/* Games Report Section */}
+  <h2 className="text-lg text-center font-semibold mb-3 text-gray-900 dark:text-text-primary">
+    NBA Games for {isoDate}
+  </h2>
+
+  <div className="space-y-4">
+    {games.length === 0 ? (
+      <p className="text-text-secondary">
+        No NBA games scheduled for this date.
+      </p>
+    ) : (
+      games.map((game: UnifiedGame) => (
+        <GameCard key={game.id} game={game} />
+      ))
+    )}
+  </div>
       {/* Injury Report Section */}
       <div className="mt-8 pt-6 border-t border-border">
-        {" "}
-        {/* Added top padding & margin */}
-        <h2 className="text-lg font-semibold mb-3 text-text-primary">
-          NBA Injury Report ({isoDate}) {/* Show date for context */}
+        <h2 className="text-lg text-center font-semibold mb-3 text-gray-900 dark:text-text-primary">
+          {" "}
+          NBA Injury Report ({isoDate})
         </h2>
-        {/* Handle Injury Loading/Error States Specifically */}
+
         {loadingInjuries ? (
           <p className="text-sm text-text-secondary italic">
             Loading injuries...
@@ -143,72 +146,78 @@ const NBAScheduleDisplay: React.FC = () => {
             No significant injuries reported for playing teams on this date.
           </p>
         ) : (
-          // Render Accordion/List if injuries loaded successfully & exist
           <div className="space-y-2">
-            {teamsWithInjuries.map((teamName) => (
-              // Using HTML details/summary for simple accordion
-              // Add group class for potential styling with group-open:
-              <details
-                key={teamName}
-                className="bg-panel-muted rounded group border border-border shadow-sm"
-              >
-                <summary className="flex justify-between items-center p-2 cursor-pointer hover:bg-panel-hover list-none rounded-t">
-                  <span className="font-medium text-text-primary">
-                    {teamName}
-                  </span>
-                  {/* Injury Count Badge */}
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs bg-destructive/80 text-destructive-foreground rounded-full px-2 py-0.5">
-                      {injuriesByTeam[teamName]?.length ?? 0}{" "}
-                      {(injuriesByTeam[teamName]?.length ?? 0) === 1
-                        ? "Player"
-                        : "Players"}
+            {teamsWithInjuries.map((teamName) => {
+              const count = injuriesByTeam[teamName]?.length ?? 0;
+              return (
+                <details
+                  key={teamName}
+                  className="app-card overflow-hidden group"
+                >
+                  {/* === HEADER === */}
+                  <summary
+                    className={`
+          flex items-center justify-between p-3
+          
+          /* LIGHT HEADER BG */
+bg-transparent text-gray-900 dark:text-text-primary          /* DARK HEADER BG */
+          
+          cursor-pointer list-none select-none
+          focus:outline-none focus:ring-0
+        `}
+                  >
+                    <span className="flex-1 break-words font-medium">
+                      {teamName}
                     </span>
-                    {/* Optional: Chevron icon */}
-                    <ChevronDown className="h-4 w-4 text-text-secondary group-open:rotate-180 transition-transform" />
-                  </div>
-                </summary>
-                {/* Content of the accordion */}
-                <div className="p-2 pl-4 border-t border-border bg-panel rounded-b">
-                  <ul className="space-y-1">
-                    {(injuriesByTeam[teamName] || []).map((inj) => (
-                      <li
-                        key={inj.id}
-                        className="text-sm flex justify-between items-center text-text-secondary py-0.5"
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      <span
+                        className="
+              whitespace-nowrap px-2 py-0.5 text-xs font-semibold rounded-full
+              bg-red-100 text-red-800
+              dark:bg-destructive/80 dark:text-destructive-foreground
+            "
                       >
-                        {/* Left side: Player and Injury Type */}
-                        <span
-                          className="flex-grow truncate mr-2"
-                          title={
-                            inj.detail || `Type: ${inj.injury_type || "N/A"}`
-                          }
+                        {count} available
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-text-secondary transition-transform group-open:rotate-180" />
+                    </div>
+                  </summary>
+
+                  {/* === PANEL === */}
+                  <div className="border-t border-border bg-transparent p-3">
+                    <ul className="space-y-1">
+                      {injuriesByTeam[teamName].map((inj) => (
+                        <li
+                          key={inj.id}
+                          className="flex items-center justify-between gap-2 py-1"
                         >
-                          {" "}
-                          {/* Added type to title */}
-                          {inj.player || "Unknown Player"}
-                          {/* Display Injury Type if available */}
-                          {inj.injury_type && (
-                            <span className="ml-2 text-xs opacity-70">
-                              ({inj.injury_type})
-                            </span>
-                          )}
-                        </span>
-                        {/* Right side: Status Badge */}
-                        <span className="flex-shrink-0 font-medium text-text-primary text-xs py-0.5 px-1.5 rounded bg-panel-hover border border-border">
-                          {inj.status || "N/A"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </details>
-            ))}
+                          <span className="flex-1 break-words text-gray-800 dark:text-text-primary">
+                            {inj.player}
+                            {inj.injury_type && (
+                              <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary">
+                                ({inj.injury_type})
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            className="whitespace-nowrap px-1.5 py-0.5 text-xs font-medium rounded border
+                   border-gray-300 light:bg-gray-100 dark:bg-panel text-gray-800
+                   dark:border-border dark:bg-panel-hover dark:text-text-primary"
+                          >
+                            {inj.status}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </details>
+              );
+            })}
           </div>
         )}
-      </div>{" "}
-      {/* End Injury Section */}
-    </div> // End Main Container
-  );
-};
+      </div>
+    </div> /* <-- closes main wrapper <div className="p-4"> */
+  ); /* <-- closes return( … ) */
+}; /* <-- closes NBAScheduleDisplay component */
 
 export default NBAScheduleDisplay;
