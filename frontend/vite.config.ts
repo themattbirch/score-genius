@@ -5,19 +5,16 @@ import { resolve } from "path";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig(({ command }) => ({
-  base: "/app/",
+  // base: "/app/", // <-- REMOVE THIS LINE
+
   /* ------------------------------------------------------------ */
   /* Plugins                                                      */
   /* ------------------------------------------------------------ */
   plugins: [
     react(),
-
-    // ⬇️ Copy /public/* to dist/* — but *only* when we run `vite build`
     command === "build" &&
       viteStaticCopy({
-        targets: [
-          { src: resolve(__dirname, "public/*"), dest: "." }, // dist/home.html, dist/support.html, …
-        ],
+        targets: [{ src: resolve(__dirname, "public/*"), dest: "." }],
         hook: "writeBundle",
       }),
   ].filter(Boolean),
@@ -35,11 +32,12 @@ export default defineConfig(({ command }) => ({
   /* Dev‑server settings                                          */
   /* ------------------------------------------------------------ */
   server: {
-    open: "/app/", // opens the SPA for local dev
+    // Let dev server open the root, React Router will handle routes
+    open: true, // Changed from '/app' or '/app.html'
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api/v1": "http://localhost:3001", // forwards to Express
+      "/api/v1": "http://localhost:3001",
     },
   },
 
@@ -50,15 +48,10 @@ export default defineConfig(({ command }) => ({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      /** Emit SPA + optional landing page.
-       *  We do *not* include home.html here because the plugin will
-       *  copy it from /public to the dist root. */
+      // Keep both inputs as this was required for your Render setup
       input: {
-        // marketing landing
         home: resolve(__dirname, "home.html"),
-        // optional index if you want one
-        // SPA
-        app: resolve(__dirname, "app.html"),
+        app: resolve(__dirname, "app.html"), // Your SPA entry point
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",

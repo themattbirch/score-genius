@@ -4,7 +4,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
-import "./index.css";
+import "./index.css"; // Assuming your CSS import
 
 const queryClient = new QueryClient();
 
@@ -16,8 +16,8 @@ if (!container) {
 ReactDOM.createRoot(container!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      {/* Set basename to the directory path */}
-      <BrowserRouter basename="/app">
+      {/* FIX: Remove the basename prop completely */}
+      <BrowserRouter>
         <App />
       </BrowserRouter>
     </QueryClientProvider>
