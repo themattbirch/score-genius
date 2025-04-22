@@ -5,6 +5,7 @@ import { resolve } from "path";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig(({ command }) => ({
+  base: "/app/",
   /* ------------------------------------------------------------ */
   /* Plugins                                                      */
   /* ------------------------------------------------------------ */
@@ -34,7 +35,7 @@ export default defineConfig(({ command }) => ({
   /* Dev‑server settings                                          */
   /* ------------------------------------------------------------ */
   server: {
-    open: "/app.html", // opens the SPA for local dev
+    open: "/app/", // opens the SPA for local dev
     port: 5173,
     strictPort: true,
     proxy: {

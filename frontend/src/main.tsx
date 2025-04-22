@@ -13,10 +13,13 @@ if (!container) {
   throw new Error("Root element not found; check app.html");
 }
 
-ReactDOM.createRoot(container).render(
+ReactDOM.createRoot(container!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
+      {/* Set basename to the directory path */}
+      <BrowserRouter basename="/app">
         <App />
+      </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>
 );
