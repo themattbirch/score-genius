@@ -26,7 +26,7 @@ if not API_SPORTS_KEY:
 # Configuration
 API_BASE_URL = "https://v1.baseball.api-sports.io"
 MLB_LEAGUE_ID = 1
-TARGET_SEASONS = [2025, 2024, 2023, 2022, 2021]
+TARGET_SEASONS = [2025]
 SUPABASE_TABLE_NAME = "mlb_historical_team_stats"
 REQUEST_DELAY_SECONDS = 2
 HEADERS = {'x-apisports-key': API_SPORTS_KEY}
@@ -157,36 +157,50 @@ def upsert_team_stats(supabase_client: Client, stats_data: Dict[str, Any]):
     except Exception as e:
         print(f"Supabase upsert exception: {e}")
 
-def calculate_team_form(team_id: int, num_games: int = 5) -> str:
+def calculate_team_form(team_id: int, season: int, num_games: int = 5) -> str:
     """
-    Calculate a team's recent form (a string of W/L) by pulling
-    the last `num_games` from mlb_historical_game_stats.
+    Pull at most `num_games` most recent COMPLETED games for this season
+    from mlb_historical_game_stats, and return a W/L string.
     """
     try:
-        resp = supabase.table("mlb_historical_game_stats") \
-            .select("home_team_id,away_team_id,home_score,away_score,game_date_time_utc") \
-            .or_(f"home_team_id.eq.{team_id},away_team_id.eq.{team_id}") \
-            .order("game_date_time_utc.desc") \
-            .limit(num_games) \
+        resp = (
+            supabase
+            .table("mlb_historical_game_stats")
+            .select("""
+                home_team_id,
+                away_team_id,
+                home_score,
+                away_score,
+                game_date_time_utc
+            """)
+            .eq("season", season)
+            .eq("status_short", "FT")
+            .or_(f"home_team_id.eq.{team_id},away_team_id.eq.{team_id}")
+            .order("game_date_time_utc.desc")
+            .limit(num_games)
             .execute()
-
+        )
         games = resp.data or []
-        if not games:
-            return ""
 
         form = ""
         for g in games:
-            is_home = (g["home_team_id"] == team_id)
-            team_score = g["home_score"] if is_home else g["away_score"]
-            opp_score  = g["away_score"] if is_home else g["home_score"]
-            form += "W" if team_score > opp_score else "L"
+            # Defensive skip if either score is still NULL
+            if g.get("home_score") is None or g.get("away_score") is None:
+                continue
+
+            is_home   = (g["home_team_id"] == team_id)
+            team_sc   = g["home_score"] if is_home else g["away_score"]
+            opp_sc    = g["away_score"]   if is_home else g["home_score"]
+
+            form += "W" if team_sc > opp_sc else "L"
 
         return form
 
     except Exception as e:
-        print(f"Error calculating form for team_id {team_id}: {e}")
+        print(f"Error calculating form for team_id {team_id}, season {season}: {e}")
         traceback.print_exc()
         return ""
+
 
 
 if __name__ == "__main__":
@@ -203,27 +217,29 @@ if __name__ == "__main__":
         seasons_done += 1
 
         for tm in teams:
-            tid = tm.get('id')
+            tid   = tm.get('id')
             tname = tm.get('name')
             if not tid:
                 continue
 
-            print(f"Processing {tname} ({tid})")
+            print(f"Processing {tname} (ID {tid}) for season {season}")
             stats = get_team_stats(tid, MLB_LEAGUE_ID, season, HEADERS)
             time.sleep(REQUEST_DELAY_SECONDS)
             if not stats:
                 continue
 
+            # 1) Transform the raw API stats
             record = transform_stats_data(stats)
             if not record:
                 continue
 
-            # ←—— NEW: exactly like NBA script, compute current_form here
-            cf = calculate_team_form(tid, tname)
+            # 2) Compute current_form (most recent 5 completed games)
+            cf = calculate_team_form(tid, season)
             print(f"Calculated MLB form for {tname}: {cf}")
-            record['current_form'] = cf
+            record["current_form"] = cf
 
+            # 3) Upsert into Supabase
             upsert_team_stats(supabase, record)
             total += 1
 
-    print(f"\nDone. Seasons processed: {seasons_done}, Team-seasons upserted: {total}")
+    print(f"\nFinished. Seasons processed: {seasons_done}. Records upserted: {total}")
