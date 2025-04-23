@@ -14,11 +14,9 @@ export const getNbaSchedule = async (req, res, next) => {
 
     // 2. Validate the date format (YYYY-MM-DD)
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res
-        .status(400)
-        .json({
-          message: "Invalid or missing date parameter. Use YYYY-MM-DD format.",
-        });
+      return res.status(400).json({
+        message: "Invalid or missing date parameter. Use YYYY-MM-DD format.",
+      });
     }
 
     // 3. Call the CORRECT service function that filters by date
@@ -155,5 +153,44 @@ export const schedule = async (req, res, next) => {
   } catch (err) {
     console.error("Error in schedule controller:", err);
     next(err);
+  }
+};
+
+/* ----------------------------------------------
+ *  GET /api/v1/nba/team-stats?season=YYYY
+ *  Returns season-level metrics for **all** teams.
+ * ---------------------------------------------*/
+export const getNbaAllTeamsSeasonStats = async (req, res, next) => {
+  try {
+    const { season } = req.query;
+
+    if (!season || !/^\d{4}$/.test(season)) {
+      return res
+        .status(400)
+        .json({ message: "Missing or invalid ?season=YYYY query param." });
+    }
+
+    console.log("📊 Controller received request for season:", season);
+
+    const stats = await nbaService.fetchNbaAllTeamStatsBySeason(Number(season));
+
+    if (!stats?.length) {
+      return res.status(404).json({
+        message: `No NBA team stats found for season ${season}.`,
+        data: [],
+      });
+    }
+
+    res.status(200).json({
+      message: `NBA team stats for ${season} fetched successfully`,
+      season,
+      retrieved: stats.length,
+      data: stats,
+    });
+  } catch (error) {
+    console.error("🔥 Controller caught error:", error);
+    res.status(error.status || 500).json({
+      error: { message: error.message, stack: error.stack },
+    });
   }
 };

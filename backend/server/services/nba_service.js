@@ -220,6 +220,7 @@ export const fetchNbaTeamStatsBySeason = async (teamId, seasonYearStr) => {
   }
   const seasonRange = `${startYear}-${startYear + 1}`;
 
+
   console.log(
     `CACHE MISS: ${cacheKey}. Querying team stats for ${seasonRange}...`
   );
@@ -242,6 +243,48 @@ export const fetchNbaTeamStatsBySeason = async (teamId, seasonYearStr) => {
   );
   cache.set(cacheKey, data, ttl);
   return data;
+};
+
+/* ---------------------------------------------------------
+ *  ALL-TEAMS season stats (used by Stats screen)
+ *  GET /team-stats?season=YYYY
+ * --------------------------------------------------------*/
+export const fetchNbaAllTeamStatsBySeason = async (seasonYear) => {
+  const seasonRange = `${seasonYear}-${seasonYear + 1}`;
+  const cacheKey = `nba_all_team_stats_${seasonRange}`;
+  const ttl = 60 * 30; // 30 min
+
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return cached;
+  }
+
+  console.log(`CACHE MISS: ${cacheKey}. Querying all-team stats…`);
+  const { data, error } = await supabase
+    .from(NBA_HISTORICAL_TEAM_STATS_TABLE)
+    .select(
+      "team_id, team_name, season, games_played_home, games_played_away, games_played_all, wins_home_percentage, wins_away_percentage, wins_all_percentage, points_for_avg_home, points_for_avg_away, points_for_avg_all, points_against_avg_home, points_against_avg_away, points_against_avg_all, current_form"
+    )
+    .eq("season", seasonRange)
+    // Most UIs like to see best teams first
+    .order("team_name", { ascending: true });
+
+  if (error) {
+    console.error("Supabase error fetching all-team stats:", {
+      message: error.message,
+      hint: error.hint,
+      details: error.details,
+      code: error.code,
+    });
+
+    // Still throw a clean error up to the controller
+    const dbError = new Error(`Supabase query failed: ${error.message}`);
+    dbError.status = 500;
+    throw dbError;
+  }
+  cache.set(cacheKey, data || [], ttl);
+  return data || [];
 };
 
 // Fetch player game history
