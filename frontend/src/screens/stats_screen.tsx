@@ -3,7 +3,7 @@ import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSport } from "../contexts/sport_context";
 import { useDate } from "../contexts/date_context";
-import { fetchTeamStats } from "../api/use_team_stats";
+import { fetchTeamStats } from "../api/use_nba_team_stats";
 import { UnifiedTeamStats, Sport } from "../types";
 import SkeletonBox from "@/components/ui/skeleton_box";
 
