@@ -220,7 +220,6 @@ export const fetchNbaTeamStatsBySeason = async (teamId, seasonYearStr) => {
   }
   const seasonRange = `${startYear}-${startYear + 1}`;
 
-
   console.log(
     `CACHE MISS: ${cacheKey}. Querying team stats for ${seasonRange}...`
   );
@@ -288,8 +287,23 @@ export const fetchNbaAllTeamStatsBySeason = async (seasonYear) => {
 };
 
 // Fetch player game history
-export const fetchNbaPlayerGameHistory = async (playerId, { limit, page }) => {
-  const cacheKey = `nba_player_history_${playerId}_${limit}_${page}`;
+/**
+ * Fetches a player’s game history for a given season (July→June),
+ * optionally filtering out games below a minutes threshold.
+ *
+ * @param {string|number} playerId
+ * @param {number} seasonYear  // e.g. 2024 for the 2024–25 season
+ * @param {object} opts
+ * @param {number} [opts.limit=20]
+ * @param {number} [opts.page=1]
+ * @param {number} [opts.minMp=0]   // minimum minutes to include
+ */
+export const fetchNbaPlayerGameHistory = async (
+  playerId,
+  seasonYear,
+  { limit = 20, page = 1, minMp = 0 } = {}
+) => {
+  const cacheKey = `nba_player_history_${playerId}_${seasonYear}_${limit}_${page}_${minMp}`;
   const ttl = 86400;
   const cached = cache.get(cacheKey);
   if (cached !== undefined) {
@@ -298,16 +312,42 @@ export const fetchNbaPlayerGameHistory = async (playerId, { limit, page }) => {
   }
 
   console.log(`CACHE MISS: ${cacheKey}. Querying player history...`);
+
+  // Build the date-window filters for July 1 of seasonYear → July 1 of next year
+  const seasonStart = `${seasonYear}-07-01`;
+  const seasonEnd = `${seasonYear + 1}-07-01`;
+
+  // Build your Supabase query
   let query = supabase
-    .from(NBA_HISTORICAL_PLAYER_STATS_TABLE)
+    .from("nba_historical_player_stats")
     .select(
       `
-      game_id, player_id, player_name, team_id, team_name, game_date, minutes,
-      points, rebounds, assists, steals, blocks, turnovers, fouls,
-      fg_made, fg_attempted, three_made, three_attempted, ft_made, ft_attempted
+      player_id,
+      player_name,
+      team_name,
+      game_date,
+      minutes,
+      points,
+      rebounds,
+      assists,
+      steals,
+      blocks,
+      turnovers,
+      fouls,
+      fg_made,
+      fg_attempted,
+      three_made,
+      three_attempted,
+      ft_made,
+      ft_attempted
     `
     )
-    .eq("player_id", playerId)
+    // filter to only this season’s games
+    .gte("game_date", seasonStart)
+    .lt("game_date", seasonEnd)
+    // filter out sub-minMp games
+    .gte("minutes", minMp)
+    // pagination
     .order("game_date", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
 
@@ -494,3 +534,62 @@ export async function getSchedule(date) {
     throw err; // Let controller handle sending error response
   }
 }
+/* ---------------------------------------------------------
+ * ALL-PLAYERS season stats
+ * GET /player-stats?season=YYYY
+ * --------------------------------------------------------*/
+export const fetchNbaAllPlayerStatsBySeason = async (
+  seasonYear,
+  // Note: Default minMp set to 0 to match the RPC function's default
+  { minMp = 0, search = null }
+) => {
+  // Cache key includes parameters that affect the RPC result
+  // Added '_agg' to signify aggregated data source
+  const cacheKey = `nba_all_player_stats_agg_${seasonYear}_${minMp}_${search || 'null'}`;
+  // Season stats likely don't change frequently intra-day. 30 mins seems reasonable.
+  const ttl = 1800; // 30 minutes in seconds
+
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+      console.log(`CACHE HIT (Aggregated): ${cacheKey}`);
+      // Ensure we always return an array
+      return Array.isArray(cached) ? cached : [];
+  }
+
+  console.log(`CACHE MISS (Aggregated): ${cacheKey}. Calling RPC get_nba_player_season_stats...`);
+
+  // Prepare the parameters object for the Supabase RPC call
+  // Keys MUST match the argument names defined in the CREATE FUNCTION statement
+  const rpcParams = {
+    p_season_year: seasonYear,
+    p_min_mp: minMp,
+    p_search: search // Pass the search term (can be null)
+  };
+
+  // Call the database function instead of querying the table directly
+  const { data, error } = await supabase.rpc(
+      'get_nba_player_season_stats', // The exact name of the function created in Supabase
+      rpcParams                     // The parameters object
+  );
+
+  // Handle potential errors from the RPC call
+  if (error) {
+    console.error("Supabase RPC error fetching aggregated player stats:", {
+        message: error.message,
+        details: error.details, // Might contain more SQL-specific info
+        hint: error.hint,
+        code: error.code,       // PostgreSQL error code
+    });
+    // Throw a generic error to be handled by the controller
+    throw new Error(`Database function 'get_nba_player_season_stats' failed: ${error.message}`);
+  }
+
+  // The RPC function is designed to return the array of aggregated player stats.
+  // If 'data' is null or not an array (unexpected), return an empty array.
+  const results = Array.isArray(data) ? data : [];
+
+  console.log(`Workspaceed ${results.length} aggregated player season stats via RPC. Caching for ${ttl}s.`);
+  cache.set(cacheKey, results, ttl); // Cache the results
+  return results; // Return the aggregated data
+};
+

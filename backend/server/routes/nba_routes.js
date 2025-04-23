@@ -9,6 +9,7 @@ import {
   getNbaAllTeamsSeasonStats,
   getNbaTeamSeasonStats,
   getNbaPlayerGameHistory,
+  getNbaAllPlayersSeasonStats,
 } from "../controllers/nba_controller.js";
 
 const router = express.Router();
@@ -24,6 +25,7 @@ router.get("/team-stats", getNbaAllTeamsSeasonStats);
 // **Single team** season stats
 router.get("/teams/:team_id/stats/:season", getNbaTeamSeasonStats);
 // **NBA Player season stats
+router.get("/player-stats", getNbaAllPlayersSeasonStats);
+// **Original Player Stats Lookup
 router.get("/players/:player_id/stats/history", getNbaPlayerGameHistory);
-
 export default router;

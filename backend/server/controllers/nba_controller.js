@@ -1,5 +1,4 @@
 // backend/server/controllers/nba_controller.js
-// Use snake_case filename for service import
 import * as nbaService from "../services/nba_service.js";
 import { getSchedule } from "../services/nba_service.js";
 
@@ -120,26 +119,85 @@ export const getNbaPlayerGameHistory = async (req, res, next) => {
   try {
     const { player_id } = req.params;
     if (!player_id) {
-      return res
-        .status(400)
-        .json({ error: "Player ID is required in the URL path." });
+      return res.status(400).json({ error: "Player ID is required." });
     }
 
-    const limit = Math.min(Math.max(parseInt(req.query.limit) || 15, 1), 50);
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    // Grab and validate season
+    const { season, min_mp } = req.query;
+    if (!season || !/^\d{4}$/.test(season)) {
+      return res
+        .status(400)
+        .json({ error: "Missing or invalid ?season=YYYY parameter." });
+    }
+    const seasonYear = parseInt(season, 10);
 
-    const gameLogData = await nbaService.fetchNbaPlayerGameHistory(player_id, {
-      limit,
-      page,
-    });
-    res.status(200).json({
-      message: `NBA historical game stats for player ${player_id} fetched successfully`,
-      options: { limit, page },
-      retrieved: gameLogData.length,
+    // Pagination
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 100);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+
+    // Minimum minutes filter
+    const minMp = Math.max(parseInt(min_mp || "0", 10), 0);
+
+    // Call service
+    const gameLogData = await nbaService.fetchNbaPlayerGameHistory(
+      player_id,
+      seasonYear,
+      { limit, page, minMp }
+    );
+
+    // Respond
+    return res.status(200).json({
+      message: `Fetched ${gameLogData.length} games for player ${player_id} (${seasonYear}-${String(seasonYear + 1).slice(-2)}), min_mp=${minMp}.`,
+      options: { season: seasonYear, limit, page, minMp },
       data: gameLogData,
     });
   } catch (error) {
-    console.error("Error in getNbaPlayerGameHistory controller:", error);
+    console.error("Error in getNbaPlayerGameHistory:", error);
+    next(error);
+  }
+};
+
+
+
+/* --------------------------------------------------------------
+ *  GET /api/v1/nba/player-stats
+ *  Query params:
+ *    season   (required) – 4-digit year, e.g. 2024 means 2024-25
+ *    pos      (optional) – G | F | C
+ *    min_mp   (optional) – minimum minutes per game, default 10
+ *    search   (optional) – ilike filter on player_name
+ * -------------------------------------------------------------*/
+export const getNbaAllPlayersSeasonStats = async (req, res, next) => {
+  try {
+    const { season, min_mp = 10, search } = req.query;
+
+    if (!season || !/^\d{4}$/.test(season)) {
+      return res
+        .status(400)
+        .json({ message: "Missing or invalid ?season=YYYY query param." });
+    }
+    const seasonYear = Number(season);
+
+    // Build filter object (no pos here)
+    const filters = {
+      minMp: Number(min_mp) || 10,
+      search: search ? String(search) : null,
+    };
+
+    const stats = await nbaService.fetchNbaAllPlayerStatsBySeason(
+      seasonYear,
+      filters
+    );
+
+    res.status(200).json({
+      message: `NBA player stats for ${seasonYear}-${String(seasonYear + 1).slice(-2)} fetched successfully`,
+      season: seasonYear,
+      retrieved: stats.length,
+      filters,
+      data: stats,
+    });
+  } catch (error) {
+    console.error("Error in getNbaAllPlayersSeasonStats controller:", error);
     next(error);
   }
 };
