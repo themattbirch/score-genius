@@ -40,5 +40,30 @@ export interface UnifiedTeamStats {
   current_form: string | null;
 }
 
+export interface UnifiedPlayerStats {
+  player_id: string;
+  player_name: string;
+  team_name: string;
+
+  minutes: number; // mpg
+  points: number; // ppg
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+
+  fg_made: number;
+  fg_attempted: number;
+  three_made: number;
+  three_attempted: number;
+  ft_made: number;
+  ft_attempted: number;
+
+  /* derived in the fetcher ↓ */
+  fg_pct: number;
+  three_pct: number;
+  ft_pct: number;
+}
+
 /* Re‑export everything from one place */
 export * from "./";
