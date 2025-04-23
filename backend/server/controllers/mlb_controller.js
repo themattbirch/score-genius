@@ -115,3 +115,36 @@ export const getMlbTeamSeasonStats = async (req, res, next) => {
     next(error); // Forward error to the global error handler
   }
 };
+
+// Fetch GET /api/v1/mlb/team-stats?season=YYYY
+export const getMlbAllTeamsSeasonStats = async (req, res, next) => {
+  try {
+    const { season } = req.query;
+    if (!season || !/^\d{4}$/.test(season)) {
+      return res
+        .status(400)
+        .json({ message: "Missing or invalid ?season=YYYY query param." });
+    }
+
+    console.log("📊 MLB controller: fetching all teams for season", season);
+    const stats = await mlbService.fetchMlbAllTeamStatsBySeason(Number(season));
+
+    if (!stats?.length) {
+      return res
+        .status(404)
+        .json({ message: `No MLB team stats found for season ${season}.`, data: [] });
+    }
+
+    res.status(200).json({
+      message: `MLB team stats for ${season} fetched successfully`,
+      season,
+      retrieved: stats.length,
+      data: stats,
+    });
+  } catch (error) {
+    console.error("🔥 Error in getMlbAllTeamsSeasonStats:", error);
+    res
+      .status(error.status || 500)
+      .json({ error: { message: error.message, stack: error.stack } });
+  }
+};

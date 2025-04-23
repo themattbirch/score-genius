@@ -221,6 +221,11 @@ if __name__ == "__main__":
             tname = tm.get('name')
             if not tid:
                 continue
+            
+                # ←—— SKIP the two pseudo-teams
+            if tname in ("American League", "National League"):
+                print(f"Skipping pseudo-team {tname}")
+                continue
 
             print(f"Processing {tname} (ID {tid}) for season {season}")
             stats = get_team_stats(tid, MLB_LEAGUE_ID, season, HEADERS)

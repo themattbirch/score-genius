@@ -19,8 +19,11 @@ const router = express.Router();
 router.get("/schedule", getNbaSchedule);
 router.get("/injuries", getNbaInjuries);
 router.get("/games/history", getNbaGameHistory);
+// **ALL-TEAMS** season stats
 router.get("/team-stats", getNbaAllTeamsSeasonStats);
+// **Single team** season stats
 router.get("/teams/:team_id/stats/:season", getNbaTeamSeasonStats);
+// **NBA Player season stats
 router.get("/players/:player_id/stats/history", getNbaPlayerGameHistory);
 
 export default router;
