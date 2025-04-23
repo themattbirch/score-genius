@@ -29,3 +29,16 @@ export interface UnifiedGame {
   dataType: "schedule" | "historical";
   // Implicit: sport (can be derived from context if needed, or added here by backend)
 }
+export interface UnifiedTeamStats {
+  team_id: string; // or number ­– keep in sync with backend
+  team_name: string;
+  season: number;
+
+  wins_all_percentage: number;
+  points_for_avg_all: number;
+  points_against_avg_all: number;
+  current_form: string | null;
+}
+
+/* Re‑export everything from one place */
+export * from "./";

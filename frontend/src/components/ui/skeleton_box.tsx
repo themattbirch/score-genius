@@ -1,3 +1,5 @@
+// frontend/src/components/ui/skeleton_box.tsx
+
 const SkeletonBox: React.FC<{ className?: string }> = ({ className }) => (
   <div className={`animate-pulse rounded bg-slate-700/50 ${className}`} />
 );
