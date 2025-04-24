@@ -44,25 +44,27 @@ export interface UnifiedPlayerStats {
   player_id: string;
   player_name: string;
   team_name: string;
+  games_played: number | null; // Allow null if calculation fails
 
   minutes: number; // mpg
   points: number; // ppg
   rebounds: number;
   assists: number;
-  steals: number;
-  blocks: number;
+  steals: number | null; // Will be NULL from DB
+  blocks: number | null;
 
-  fg_made: number;
-  fg_attempted: number;
+  fg_made: number | null; // Calculated, could be null if inputs missing
+  fg_attempted: number | null; // Will be NULL from DB
+
   three_made: number;
   three_attempted: number;
   ft_made: number;
   ft_attempted: number;
 
   /* derived in the fetcher ↓ */
-  fg_pct: number;
   three_pct: number;
   ft_pct: number;
+  [key: string]: string | number | undefined | null; // Allow nulls
 }
 
 /* Re‑export everything from one place */

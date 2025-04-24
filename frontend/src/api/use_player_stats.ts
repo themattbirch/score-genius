@@ -34,18 +34,14 @@ export interface UnifiedPlayerStats {
 const fetchPlayerStats = async ({
   sport, // Keep sport for API path
   season,
-  minMp,
   search,
 }: {
   sport: Sport;
   season: number;
-  minMp: number; // Ensure this matches the expected type (number)
   search: string;
 }): Promise<UnifiedPlayerStats[]> => {
   const params = new URLSearchParams({
     season: String(season),
-    // Ensure query param name matches what nba_controller expects (min_mp)
-    min_mp: String(minMp),
   });
   if (search) params.set("search", search);
 
@@ -62,8 +58,6 @@ const fetchPlayerStats = async ({
     );
   }
   const json = await res.json();
-
-  // --- REMOVED THE .map(...) LOGIC THAT CALCULATED PERCENTAGES ---
 
   // Directly return the data from the API response,
   // assuming it now contains the pre-calculated percentages from the RPC.
@@ -85,23 +79,20 @@ const fetchPlayerStats = async ({
 };
 
 // --- The usePlayerStats hook itself likely doesn't need changes ---
-// (Ensure its default minMp matches the RPC if needed)
 export const usePlayerStats = ({
   sport,
   season,
-  minMp = 0, // Matched default to RPC/service
   search = "",
   enabled = true,
 }: {
   sport: Sport;
   season: number;
-  minMp?: number;
   search?: string;
   enabled?: boolean;
 }) =>
   useQuery<UnifiedPlayerStats[]>({
-    queryKey: ["playerStats", sport, season, minMp, search],
-    queryFn: () => fetchPlayerStats({ sport, season, minMp, search }),
+    queryKey: ["playerStats", sport, season, search],
+    queryFn: () => fetchPlayerStats({ sport, season, search }),
     staleTime: 1000 * 60 * 30, // 30 minutes
     enabled,
   });
