@@ -5,6 +5,7 @@ import { useDate } from "../contexts/date_context";
 // Assuming useTeamStats can fetch MLB team stats too by just changing the 'sport' prop
 import { useTeamStats } from "../api/use_team_stats";
 import { usePlayerStats, UnifiedPlayerStats } from "../api/use_player_stats";
+import { useAdvancedStats, AdvancedTeamStats } from "../api/use_advanced_stats";
 import type { UnifiedTeamStats } from "../types"; // Assuming UnifiedTeamStats works for MLB too
 import SkeletonBox from "@/components/ui/skeleton_box";
 import { ChevronsUpDown } from "lucide-react";
@@ -109,6 +110,17 @@ const StatsScreen: React.FC = () => {
     [defaultSeason, sport]
   );
 
+  const {
+    data: advancedData,
+    isLoading: advancedLoading,
+    error: advancedError,
+  } = useAdvancedStats({
+    sport, // Pass sport for query key consistency
+    season,
+    // Enable ONLY if fetchable, NBA is selected, AND advanced tab is active
+    enabled: canFetchSelectedSeason && sport === "NBA" && subTab === "advanced",
+  });
+
   // --- Sorting state ---
   const [teamSort, setTeamSort] = useState<{
     key: TeamSortKey;
@@ -164,12 +176,12 @@ const StatsScreen: React.FC = () => {
   const playerHeaders: { label: string; key: PlayerSortKey }[] = [
     { label: "Player", key: "player_name" },
     { label: "Team", key: "team_name" },
-    { label: "PTS", key: "points" },
-    { label: "REB", key: "rebounds" },
-    { label: "AST", key: "assists" },
+    { label: "Pts", key: "points" },
+    { label: "Reb", key: "rebounds" },
+    { label: "Ast", key: "assists" },
     { label: "3P%", key: "three_pct" },
     { label: "FT%", key: "ft_pct" },
-    { label: "MIN", key: "minutes" },
+    { label: "Min", key: "minutes" },
     { label: "GP", key: "games_played" }, // Added GP
   ];
 
@@ -283,30 +295,44 @@ const StatsScreen: React.FC = () => {
     }
 
     return (
-      <div className="overflow-x-auto rounded-xl border border-gray-700">
-        <table className="min-w-full divide-y divide-gray-700 text-sm">
-          <thead className="bg-gray-800">
-            {/* thead content using teamHeaders and HeaderCell... */}
+      // Use consistent wrapper border
+      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
+        {/* Use consistent table classes */}
+        <table className="min-w-full text-sm">
+          {/* Use consistent thead classes + bottom border */}
+          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
             <tr>
-              {teamHeaders.map(({ label, key }) => (
-                <HeaderCell
-                  key={String(key)}
-                  label={label}
-                  active={teamSort?.key === key}
-                  onClick={() => toggleTeamSort(key)}
-                  // Apply first:text-left directly to header cell too
-                  align={key === "team_name" ? "left" : "right"} // Center stat headers
-                />
-              ))}
+              {teamHeaders.map(
+                (
+                  { label, key },
+                  index // Add index
+                ) => (
+                  <HeaderCell
+                    key={String(key)}
+                    label={label}
+                    active={teamSort?.key === key}
+                    onClick={() => toggleTeamSort(key)}
+                    align={index === 0 ? "left" : "right"} // First left, rest right
+                    // Add border-l to headers after the first
+                    className={
+                      index > 0
+                        ? "border-l border-gray-300 dark:border-gray-700"
+                        : ""
+                    }
+                  />
+                )
+              )}
             </tr>
           </thead>
-          <tbody>
+          {/* Use consistent tbody classes */}
+          <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
             {sortedTeams.map((team) => (
               <tr
                 key={team.team_id}
-                className="border-b border-gray-700 last:border-none hover:bg-gray-800/60"
+                className="hover:bg-gray-50 dark:hover:bg-gray-800/60"
               >
                 {teamHeaders.map(({ key }, index) => {
+                  // Use index
                   const raw = team[key as keyof UnifiedTeamStats];
                   let cell: React.ReactNode = "–";
                   // Cell formatting logic (remains the same)
@@ -320,47 +346,22 @@ const StatsScreen: React.FC = () => {
                     }
                   }
 
-                  // --- ADD THIS LINE BACK ---
-                  // --- NEW TD STYLING LOGIC using index ---
+                  // Styling Logic using index
                   let cellSpecificClasses = "";
-                  // Base vertical padding only
                   const baseVerticalPadding = "py-2";
-
-                  if (key === "player_name") {
-                    // Sticky Player cell - ADD border-r and ensure px-3
-                    cellSpecificClasses = `
-                      sticky left-0
-                      bg-white dark:bg-gray-900
-                      px-3 /* Horizontal Padding */
-                      text-left font-medium whitespace-nowrap
-                      text-gray-900 dark:text-gray-100
-                      border-r border-gray-200 dark:border-gray-700 /* <<< ADDED RIGHT BORDER */
-                    `;
-                  } else if (key === "team_name") {
-                    // Team cell - Needs px-3 and already has border-l
-                    cellSpecificClasses = `
-                      px-3 /* Horizontal Padding */
-                      text-left font-medium whitespace-nowrap
-                      border-l border-gray-200 dark:border-gray-700
-                      text-gray-700 dark:text-gray-400
-                    `;
+                  if (index === 0) {
+                    // First column (Team Name)
+                    cellSpecificClasses = `px-3 text-left font-medium whitespace-nowrap text-gray-900 dark:text-gray-100`;
                   } else {
-                    // Default Stat cells - Add px-3 and border-l for consistency
-                    cellSpecificClasses = `
-                      px-3 /* Horizontal Padding */
-                      text-center
-                      border-l border-gray-200 dark:border-gray-700 /* Add border */
-                      text-gray-700 dark:text-gray-400
-                    `;
+                    // ALL OTHER columns (stats)
+                    cellSpecificClasses = `px-3 text-center border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400`; // text-center, add border-l
                   }
-
                   return (
-                    // Combine base vertical padding with specific styles
                     <td
                       key={key}
                       className={`${baseVerticalPadding} ${cellSpecificClasses}`}
                     >
-                      {cell ?? "–"} {/* Correctly uses cell */}
+                      {cell ?? "–"}
                     </td>
                   );
                   // --- END OF TD ELEMENT ---
@@ -406,10 +407,12 @@ const StatsScreen: React.FC = () => {
 
     // Uses playerHeaders
     return (
-      // Use consistent border colors
+      // Use consistent wrapper border
       <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
-        <table className="min-w-full text-sm border-separate border-spacing-0">
-          <thead className="bg-gray-50 dark:bg-gray-800">
+        {/* Use consistent table classes */}
+        <table className="min-w-full text-sm">
+          {/* Use consistent thead classes + bottom border */}
+          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
             <tr>
               {playerHeaders.map(({ label, key }, i) => (
                 <HeaderCell
@@ -418,16 +421,21 @@ const StatsScreen: React.FC = () => {
                   active={playerSort?.key === key}
                   onClick={() => togglePlayerSort(key)}
                   align={i < 2 ? "left" : "right"}
-                  className={
-                    i === 0
-                      ? // sticky “Player” header
-                        "sticky left-0 z-20 bg-gray-50 dark:bg-gray-800 border-r border-gray-300 dark:border-gray-700"
-                      : ""
-                  }
+                  className={`
+          ${
+            i === 0
+              ? "sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 " +
+                'before:content-[""] before:absolute before:inset-y-0 before:right-0 before:w-px ' +
+                "before:bg-gray-300 dark:before:bg-gray-700"
+              : "border-l border-gray-300 dark:border-gray-700"
+          }
+        `}
                 />
               ))}
             </tr>
           </thead>
+
+          {/* Use consistent tbody classes */}
           <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
             {sortedPlayers.map((p) => (
               <tr
@@ -442,38 +450,34 @@ const StatsScreen: React.FC = () => {
                         ? v.toFixed(1) + "%"
                         : v.toFixed(key === "games_played" ? 0 : 1)
                       : v;
+
                   if (i === 0) {
-                    // sticky player name cell
                     return (
                       <td
                         key={key}
-                        className="
-                    sticky left-0 z-20
-                    bg-white dark:bg-gray-900
-                    border-r border-gray-300 dark:border-gray-700
-                    py-2 px-3
-                    text-left font-medium whitespace-nowrap
-                    text-gray-900 dark:text-gray-100
-                  "
+                        className={`
+              sticky left-0 z-20 bg-white dark:bg-gray-900
+              px-3 text-left font-medium whitespace-nowrap
+              text-gray-900 dark:text-gray-100
+
+              before:content-[''] before:absolute before:inset-y-0
+              before:right-0 before:w-px
+              before:bg-gray-300 dark:before:bg-gray-700
+            `}
                       >
                         {display}
                       </td>
                     );
                   } else {
-                    // team + stats
+                    // Team + Stats Columns
                     return (
                       <td
                         key={key}
-                        className={`
-                    py-2 px-3
-                    ${
-                      key === "team_name"
-                        ? "text-left font-medium whitespace-nowrap"
-                        : "text-center"
-                    }
-                    border-l border-gray-300 dark:border-gray-700
-                    text-gray-700 dark:text-gray-400
-                  `}
+                        className={` py-2 px-3 ${
+                          key === "team_name"
+                            ? "text-left font-medium whitespace-nowrap"
+                            : "text-center" /* <<< text-center for stats */
+                        } border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400 `}
                       >
                         {display ?? "–"}
                       </td>
@@ -488,13 +492,156 @@ const StatsScreen: React.FC = () => {
     );
   }; // End renderPlayerTable
 
+  // --- Render Advanced Stats Table function ---
   const renderAdvancedTable = () => {
-    if (sport !== "NBA") return null; // Only for NBA
-    // TODO: Implement fetching and rendering for advanced stats
+    if (sport !== "NBA") return null; // Should only render for NBA
+
+    // Define Headers for the Advanced Stats Table
+    // Keys must match the AdvancedTeamStats interface & RPC output
+    const advancedHeaders: { label: string; key: keyof AdvancedTeamStats }[] = [
+      { label: "Team", key: "team_name" },
+      { label: "Pace", key: "pace" },
+      { label: "Off_Rtg", key: "off_rtg" },
+      { label: "Def_Rtg", key: "def_rtg" },
+      { label: "eFG%", key: "efg_pct" },
+      { label: "TOV%", key: "tov_pct" },
+      { label: "ORB%", key: "oreb_pct" },
+      { label: "GP", key: "games_played" },
+    ];
+
+    // Define which keys represent percentages for formatting
+    const advancedPctKeys = new Set<keyof AdvancedTeamStats>([
+      "efg_pct",
+      "tov_pct",
+      "oreb_pct",
+    ]);
+
+    // Add Sorting State (Optional - simplified version without sorting first)
+    // const [advancedSort, setAdvancedSort] = useState<...>(null);
+    // const toggleAdvancedSort = (k: string) => { ... };
+    // const sortedAdvancedData = useMemo(() => { ... sort advancedData ... }, [advancedData, advancedSort]);
+    // For simplicity now, just use advancedData directly
+
+    // Loading State
+    if (advancedLoading) {
+      return (
+        <div className="p-4 space-y-3">
+          {" "}
+          {Array.from({ length: 15 }).map((_, i) => (
+            <SkeletonBox key={i} className="h-10 w-full rounded-lg" />
+          ))}{" "}
+        </div>
+      );
+    }
+    // Error State
+    if (advancedError) {
+      return (
+        <div className="p-4 text-center text-red-400">
+          Problem loading advanced stats.
+        </div>
+      );
+    }
+    // Empty State
+    if (!advancedData?.length) {
+      return (
+        <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+          No advanced stats available for this season.
+        </div>
+      );
+    }
+
+    // Render Table
     return (
-      <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        Advanced Stats Table Placeholder
-        {/* Add SkeletonBox here later */}
+      // Use consistent wrapper border
+      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
+        {/* Use consistent table classes */}
+        <table className="min-w-full text-sm">
+          {/* Use consistent thead classes + bottom border */}
+          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
+            <tr>
+              {advancedHeaders.map(({ label, key }, index) => (
+                <HeaderCell
+                  key={key}
+                  label={label}
+                  active={false}
+                  onClick={() => {}}
+                  align={index === 0 ? "left" : "right"}
+                  // Make first header sticky, add right border
+                  className={`
+              ${
+                index > 0 ? "border-l border-gray-300 dark:border-gray-700" : ""
+              }
+              ${
+                index === 0
+                  ? "sticky left-0 z-20 bg-gray-50 dark:bg-gray-800 px-3 " +
+                    'before:content-[""] before:absolute before:inset-y-0 before:right-0 before:w-px ' +
+                    "before:bg-gray-300 dark:before:bg-gray-700"
+                  : ""
+              }
+            `}
+                />
+              ))}
+            </tr>
+          </thead>
+          {/* Use consistent tbody classes */}
+          <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
+            {advancedData.map((team) => (
+              <tr
+                key={team.team_name}
+                className="hover:bg-gray-50 dark:hover:bg-gray-800/60"
+              >
+                {advancedHeaders.map(({ key }, index) => {
+                  const value = team[key];
+                  let displayValue: React.ReactNode = "–"; // Default
+
+                  // Formatting
+                  if (value != null) {
+                    if (advancedPctKeys.has(key)) {
+                      displayValue = (value as number).toFixed(1) + "%"; // Percentages
+                    } else if (key === "games_played") {
+                      displayValue = value; // Integer
+                    } else if (typeof value === "number") {
+                      displayValue = value.toFixed(1); // Other numeric stats (Pace, Ratings)
+                    } else {
+                      displayValue = String(value); // Team Name
+                    }
+                  }
+
+                  // Styling (similar to renderTeamTable)
+                  let cellSpecificClasses = "";
+                  const baseVerticalPadding = "py-2";
+                  if (index === 0) {
+                    // First column (Team Name) - Sticky + Right Border
+                    cellSpecificClasses = `
+                sticky left-0 z-20 bg-white dark:bg-gray-900
+                px-3 text-left font-medium whitespace-nowrap
+                text-gray-900 dark:text-gray-100
+
+                before:content-[""] before:absolute before:inset-y-0 before:right-0 before:w-px
+                before:bg-gray-300 dark:before:bg-gray-700
+              `;
+                  } else {
+                    // ALL OTHER columns (stats) - Left Border + Right Align
+                    cellSpecificClasses = `
+                  px-3 text-center /* <<< text-center for stats */
+                  border-l border-gray-300 dark:border-gray-700
+                  text-gray-700 dark:text-gray-400
+                `;
+                  }
+
+                  return (
+                    <td
+                      key={key}
+                      className={`${baseVerticalPadding} ${cellSpecificClasses}`}
+                    >
+                      {displayValue}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
   };
