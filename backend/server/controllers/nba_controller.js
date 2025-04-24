@@ -259,3 +259,45 @@ export const getNbaAllTeamsSeasonStats = async (req, res, next) => {
     });
   }
 };
+/**
+ * Handles GET /api/v1/nba/advanced-stats?season=YYYY
+ * Fetches calculated advanced team stats for a given season.
+ */
+export const getNbaAdvancedStats = async (req, res, next) => {
+  try {
+    // 1. Get and Validate Season from query param
+    const { season } = req.query;
+    if (!season || !/^\d{4}$/.test(season)) {
+      // Send 400 Bad Request if season is missing or not 4 digits
+      return res
+        .status(400)
+        .json({ message: "Missing or invalid ?season=YYYY query param." });
+    }
+    // Convert validated season string to a number
+    const seasonYear = Number(season);
+
+    console.log(
+      `📊 Controller received request for ADVANCED stats, season: ${seasonYear}`
+    );
+
+    // 2. Call the corresponding Service Function
+    const advancedStatsData = await nbaService.fetchNbaAdvancedStatsBySeason(
+      seasonYear
+    );
+
+    // 3. Send successful response (service function returns [] if no data)
+    res.status(200).json({
+      message: `NBA advanced team stats for ${seasonYear}-${String(
+        seasonYear + 1
+      ).slice(-2)} fetched successfully`,
+      season: seasonYear,
+      retrieved: advancedStatsData.length,
+      data: advancedStatsData, // Send the array (could be empty)
+    });
+  } catch (error) {
+    // 4. Handle any errors during the process
+    console.error("🔥 Error in getNbaAdvancedStats controller:", error);
+    // Pass the error to the central error handler in server.js
+    next(error);
+  }
+};

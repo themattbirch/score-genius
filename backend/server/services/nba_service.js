@@ -584,3 +584,55 @@ export const fetchNbaAllPlayerStatsBySeason = async (
   cache.set(cacheKey, results, ttl); // Cache the results
   return results; // Return the aggregated data
 };
+/**
+ * Fetches calculated advanced team stats (Pace, Ratings, etc.) for a given NBA season using RPC.
+ * @param {number} seasonYear - The starting year of the season (e.g., 2023 for 2023-24)
+ * @returns {Promise<object[]>} - Array of team objects with advanced stats.
+ */
+export const fetchNbaAdvancedStatsBySeason = async (seasonYear) => {
+  const cacheKey = `nba_advanced_stats_${seasonYear}`;
+  // Advanced stats based on full season data, cache for a decent time (e.g., 6 hours)
+  const ttl = 60 * 60 * 6; // 6 hours in seconds
+
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return Array.isArray(cached) ? cached : [];
+  }
+
+  console.log(
+    `CACHE MISS: ${cacheKey}. Calling RPC get_nba_advanced_team_stats...`
+  );
+
+  // Prepare parameters for the RPC call
+  const rpcParams = {
+    p_season_year: seasonYear,
+  };
+
+  // Call the RPC function
+  const { data, error } = await supabase.rpc(
+    "get_nba_advanced_team_stats", // Name of the function in Supabase
+    rpcParams
+  );
+
+  if (error) {
+    console.error("Supabase RPC error fetching advanced team stats:", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+    // Throw error for the controller to catch
+    throw new Error(
+      `Database function 'get_nba_advanced_team_stats' failed: ${error.message}`
+    );
+  }
+
+  const results = Array.isArray(data) ? data : [];
+
+  console.log(
+    `Workspaceed ${results.length} teams with advanced stats via RPC. Caching for ${ttl}s.`
+  );
+  cache.set(cacheKey, results, ttl); // Cache the results
+  return results;
+};
