@@ -1,15 +1,15 @@
 // frontend/src/components/layout/BottomTabBar.tsx
 
-import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import React from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   Calendar as GamesIcon,
   BarChart2 as StatsIcon,
   HelpCircle as HelpIcon,
   MoreHorizontal as MoreIcon,
-} from 'lucide-react';
-import clsx from 'clsx';
-import type { LucideProps } from 'lucide-react';
+} from "lucide-react";
+import clsx from "clsx";
+import type { LucideProps } from "lucide-react";
 
 /** ------------------------------------------------------------------
  *  Tab metadata
@@ -21,10 +21,10 @@ type Tab = {
 };
 
 const TABS: Tab[] = [
-  { path: '/games', label: 'Games', Icon: GamesIcon },
-  { path: '/stats', label: 'Stats', Icon: StatsIcon },
-  { path: '/how-to-use', label: 'How To Use', Icon: HelpIcon },
-  { path: '/more', label: 'More', Icon: MoreIcon },
+  { path: "/games", label: "Games", Icon: GamesIcon },
+  { path: "/stats", label: "Stats", Icon: StatsIcon },
+  { path: "/how-to-use", label: "How To Use", Icon: HelpIcon },
+  { path: "/more", label: "More", Icon: MoreIcon },
 ];
 
 /** ------------------------------------------------------------------
@@ -36,9 +36,9 @@ const BottomTabBar: React.FC = () => {
   return (
     <nav
       className={clsx(
-        'fixed inset-x-0 bottom-0 z-40 flex',
-        'border-t border-slate-700/40 bg-github-dark',
-        'pb-[env(safe-area-inset-bottom)]'
+        "fixed inset-x-0 bottom-0 z-40 flex",
+        "border-t border-slate-700/40 bg-github-dark",
+        "pb-[env(safe-area-inset-bottom)]"
       )}
     >
       {TABS.map(({ path, label, Icon }) => {
@@ -48,12 +48,13 @@ const BottomTabBar: React.FC = () => {
           <NavLink
             key={path}
             to={path}
+            data-tour={path === "/stats" ? "tab-stats" : undefined}
             className={clsx(
-              'flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium',
-              'transition duration-150',
+              "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium",
+              "transition duration-150",
               isActive
-                ? 'text-brand-green'
-                : 'text-text-secondary hover:text-text-primary'
+                ? "text-brand-green"
+                : "text-text-secondary hover:text-text-primary"
             )}
           >
             <Icon size={20} strokeWidth={1.8} />

@@ -125,7 +125,9 @@ const StatsScreen: React.FC = () => {
   const [teamSort, setTeamSort] = useState<{
     key: TeamSortKey;
     dir: SortDir;
-  } | null>(null);
+  } | null>(
+    { key: "wins_all_percentage", dir: "desc" } // <<< Set default sort here
+  );
   const [playerSort, setPlayerSort] = useState<{
     key: PlayerSortKey;
     dir: SortDir;
@@ -156,8 +158,8 @@ const StatsScreen: React.FC = () => {
         { label: "Team", key: "team_name" },
         { label: "Win %", key: "wins_all_percentage" }, // Example common stat
         // Add other relevant MLB stats keys like 'runs_for_avg_all', 'runs_against_avg_all' etc.
-        { label: "Runs Score", key: "runs_for_avg_all" },
-        { label: "Runs Allow", key: "runs_against_avg_all" },
+        { label: "Runs For", key: "runs_for_avg_all" },
+        { label: "Runs Vs", key: "runs_against_avg_all" },
         { label: "Streak", key: "current_form" }, // Example
       ];
     } else {
@@ -308,6 +310,7 @@ const StatsScreen: React.FC = () => {
                   index // Add index
                 ) => (
                   <HeaderCell
+                    data-tour="stats-column"
                     key={String(key)}
                     label={label}
                     active={teamSort?.key === key}
