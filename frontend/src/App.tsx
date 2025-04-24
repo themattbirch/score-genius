@@ -8,6 +8,7 @@ import GameDetailScreen from "./screens/game_detail_screen";
 import StatsScreen from "./screens/stats_screen";
 import MoreScreen from "./screens/more_screen";
 import HowToUseScreen from "./screens/how_to_use_screen";
+import { TourProvider } from "@/components/ui/joyride_tour";
 
 import Header from "./components/layout/Header";
 import { SportProvider } from "./contexts/sport_context";
@@ -36,23 +37,25 @@ const App: React.FC = () => {
   console.log(`%c[App] Rendering...`, "color: purple");
   return (
     // *** WRAP with ThemeProvider ***
-    <ThemeProvider>
-      <SportProvider>
-        <DateProvider>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route index element={<Navigate to="/games" replace />} />
-              <Route path="games" element={<GamesScreen />} />
-              <Route path="games/:gameId" element={<GameDetailScreen />} />
-              <Route path="stats" element={<StatsScreen />} />
-              <Route path="more" element={<MoreScreen />} />
-              <Route path="how-to-use" element={<HowToUseScreen />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/games" replace />} />
-          </Routes>
-        </DateProvider>
-      </SportProvider>
-    </ThemeProvider>
+    <TourProvider>
+      <ThemeProvider>
+        <SportProvider>
+          <DateProvider>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route index element={<Navigate to="/games" replace />} />
+                <Route path="games" element={<GamesScreen />} />
+                <Route path="games/:gameId" element={<GameDetailScreen />} />
+                <Route path="stats" element={<StatsScreen />} />
+                <Route path="more" element={<MoreScreen />} />
+                <Route path="how-to-use" element={<HowToUseScreen />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/games" replace />} />
+            </Routes>
+          </DateProvider>
+        </SportProvider>
+      </ThemeProvider>
+    </TourProvider>
   );
 };
 

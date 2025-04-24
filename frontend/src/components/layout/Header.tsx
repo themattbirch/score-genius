@@ -72,6 +72,7 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
                 // Apply responsive padding and text size
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-600/60
                           bg-slate-800 px-2 sm:px-3 py-1 text-xs sm:text-sm text-slate-300"
+                data-tour="date-picker"
               >
                 {/* Apply responsive icon size */}
                 {/* Note: size prop sets base, className sets sm override */}
@@ -123,7 +124,8 @@ const SportToggle: React.FC<SportToggleProps> = ({ active, onChange }) => {
 
   return (
     // Apply rounding to the container div
-    <div className="flex overflow-hidden rounded-full border border-slate-600/60 bg-slate-800">
+    <div className="flex overflow-hidden rounded-full border border-slate-600/60 bg-slate-800 "
+    data-tour="sport-switch">
       {(["NBA", "MLB"] as Sport[]).map((s) => (
         <button
           key={s}

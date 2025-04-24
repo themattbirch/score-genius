@@ -29,7 +29,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   // Removed console.log statement
 
   return (
-    <div className="app-card flex flex-col gap-2">
+    <div className="app-card flex flex-col gap-2" data-tour="game-card">
       {/* Top Row: Teams & Time */}
       <div className="flex items-start justify-between gap-4">
         {" "}
