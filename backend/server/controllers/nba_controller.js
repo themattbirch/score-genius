@@ -123,7 +123,7 @@ export const getNbaPlayerGameHistory = async (req, res, next) => {
     }
 
     // Grab and validate season
-    const { season, min_mp } = req.query;
+    const { season } = req.query;
     if (!season || !/^\d{4}$/.test(season)) {
       return res
         .status(400)
@@ -132,23 +132,27 @@ export const getNbaPlayerGameHistory = async (req, res, next) => {
     const seasonYear = parseInt(season, 10);
 
     // Pagination
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 100);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 15, 1),
+      100
+    );
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-
-    // Minimum minutes filter
-    const minMp = Math.max(parseInt(min_mp || "0", 10), 0);
 
     // Call service
     const gameLogData = await nbaService.fetchNbaPlayerGameHistory(
       player_id,
       seasonYear,
-      { limit, page, minMp }
+      { limit, page }
     );
 
     // Respond
     return res.status(200).json({
-      message: `Fetched ${gameLogData.length} games for player ${player_id} (${seasonYear}-${String(seasonYear + 1).slice(-2)}), min_mp=${minMp}.`,
-      options: { season: seasonYear, limit, page, minMp },
+      message: `Fetched ${
+        gameLogData.length
+      } games for player ${player_id} (${seasonYear}-${String(
+        seasonYear + 1
+      ).slice(-2)})`,
+      options: { season: seasonYear, limit, page },
       data: gameLogData,
     });
   } catch (error) {
@@ -157,19 +161,16 @@ export const getNbaPlayerGameHistory = async (req, res, next) => {
   }
 };
 
-
-
 /* --------------------------------------------------------------
  *  GET /api/v1/nba/player-stats
  *  Query params:
  *    season   (required) – 4-digit year, e.g. 2024 means 2024-25
  *    pos      (optional) – G | F | C
- *    min_mp   (optional) – minimum minutes per game, default 10
  *    search   (optional) – ilike filter on player_name
  * -------------------------------------------------------------*/
 export const getNbaAllPlayersSeasonStats = async (req, res, next) => {
   try {
-    const { season, min_mp = 10, search } = req.query;
+    const { season, search } = req.query; // NEW
 
     if (!season || !/^\d{4}$/.test(season)) {
       return res
@@ -178,19 +179,25 @@ export const getNbaAllPlayersSeasonStats = async (req, res, next) => {
     }
     const seasonYear = Number(season);
 
-    // Build filter object (no pos here)
+    // 2. Build filter object
+    // const filters = {                              // OLD
+    //   search: search ? String(search) : null,      // OLD
+    // };                                             // OLD
     const filters = {
-      minMp: Number(min_mp) || 10,
-      search: search ? String(search) : null,
-    };
+      // NEW
+      search: search ? String(search) : null, // NEW (only contains search now)
+    }; // NEW
 
+    // 3. Call service - This should now pass only { search: ... } in filters
     const stats = await nbaService.fetchNbaAllPlayerStatsBySeason(
       seasonYear,
       filters
     );
 
     res.status(200).json({
-      message: `NBA player stats for ${seasonYear}-${String(seasonYear + 1).slice(-2)} fetched successfully`,
+      message: `NBA player stats for ${seasonYear}-${String(
+        seasonYear + 1
+      ).slice(-2)} fetched successfully`,
       season: seasonYear,
       retrieved: stats.length,
       filters,

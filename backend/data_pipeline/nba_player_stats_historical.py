@@ -68,9 +68,14 @@ def process_day(date_obj):
             continue
 
         game_id = g["id"]
-        home_team = g["teams"]["home"]["name"]
-        away_team = g["teams"]["away"]["name"]
-        print(f"\nProcessing game: {away_team} @ {home_team} (Game ID: {game_id})")
+        home_team_info = g.get("teams", {}).get("home", {})
+        away_team_info = g.get("teams", {}).get("away", {})
+        home_team_id = home_team_info.get("id")
+        home_team_name = home_team_info.get("name", "Unknown H")
+        away_team_id = away_team_info.get("id")
+        away_team_name = away_team_info.get("name", "Unknown A")
+        # === END ADDED BLOCK ===
+        print(f"\nProcessing game: {away_team_name} @ {home_team_name} (Game ID: {game_id})")
 
         player_stats = get_player_stats(game_id)
         if not player_stats:
@@ -82,20 +87,27 @@ def process_day(date_obj):
             print(f"\n--- DEBUG: Raw Player Data ---")
             print(json.dumps(p, indent=2))
 
-            # Use our supabase_stats function to handle flipping names & team lookup:
-            print(f"[INFO] Upserting historical record for {p.get('player', {}).get('name', 'Unknown')}")
+                        # === ADD THIS BLOCK to find the player's actual team name ===
+            player_team_id = p.get("team", {}).get("id")
+            player_actual_team_name = "Unknown" # Default
+            if player_team_id == home_team_id:
+                player_actual_team_name = home_team_name
+            elif player_team_id == away_team_id:
+                player_actual_team_name = away_team_name
+            # === END ADDED BLOCK ===
+
+        # INFO Print
+            print(f"[INFO] Upserting historical record for {p.get('player', {}).get('name', 'Unknown')} (Team: {player_actual_team_name})") # Updated print
+            # Actual Upsert Call
             try:
-                res = upsert_historical_game_stats(game_id, p, date_str)
+                # Correct call with 4 arguments
+                res = upsert_historical_game_stats(game_id, p, date_str, player_actual_team_name)
                 print(f"[INFO] upsert_historical_game_stats result: {res}")
             except Exception as e:
                 print(f"[ERROR] upsert_historical_game_stats failed: {e}")
 
-            players_processed += 1
+            players_processed += 1 # Increment count only ONCE
 
-        print(f"Processed {players_processed} players for game {game_id}")
-        processed_count += 1
-
-    print(f"\nProcessed {processed_count} games for {date_str}")
 
 def main():
     start_date = datetime(2025, 4, 16)

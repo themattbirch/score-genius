@@ -296,14 +296,13 @@ export const fetchNbaAllTeamStatsBySeason = async (seasonYear) => {
  * @param {object} opts
  * @param {number} [opts.limit=20]
  * @param {number} [opts.page=1]
- * @param {number} [opts.minMp=0]   // minimum minutes to include
  */
 export const fetchNbaPlayerGameHistory = async (
   playerId,
   seasonYear,
-  { limit = 20, page = 1, minMp = 0 } = {}
+  { limit = 20, page = 1 } = {}
 ) => {
-  const cacheKey = `nba_player_history_${playerId}_${seasonYear}_${limit}_${page}_${minMp}`;
+  const cacheKey = `nba_player_history_${playerId}_${seasonYear}_${limit}_${page}`;
   const ttl = 86400;
   const cached = cache.get(cacheKey);
   if (cached !== undefined) {
@@ -346,7 +345,7 @@ export const fetchNbaPlayerGameHistory = async (
     .gte("game_date", seasonStart)
     .lt("game_date", seasonEnd)
     // filter out sub-minMp games
-    .gte("minutes", minMp)
+    .gte("minutes")
     // pagination
     .order("game_date", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
@@ -540,56 +539,48 @@ export async function getSchedule(date) {
  * --------------------------------------------------------*/
 export const fetchNbaAllPlayerStatsBySeason = async (
   seasonYear,
-  // Note: Default minMp set to 0 to match the RPC function's default
-  { minMp = 0, search = null }
+  { search = null } // Signature should only accept { search }
 ) => {
-  // Cache key includes parameters that affect the RPC result
-  // Added '_agg' to signify aggregated data source
-  const cacheKey = `nba_all_player_stats_agg_${seasonYear}_${minMp}_${search || 'null'}`;
-  // Season stats likely don't change frequently intra-day. 30 mins seems reasonable.
-  const ttl = 1800; // 30 minutes in seconds
+  const cacheKey = `nba_all_player_stats_agg_${seasonYear}_${search || "null"}`;
+  const ttl = 1800;
+  // ... cache check ...
 
-  const cached = cache.get(cacheKey);
-  if (cached !== undefined) {
-      console.log(`CACHE HIT (Aggregated): ${cacheKey}`);
-      // Ensure we always return an array
-      return Array.isArray(cached) ? cached : [];
-  }
+  console.log(
+    `CACHE MISS (Aggregated): ${cacheKey}. Calling RPC (no minMp)...`
+  );
 
-  console.log(`CACHE MISS (Aggregated): ${cacheKey}. Calling RPC get_nba_player_season_stats...`);
-
-  // Prepare the parameters object for the Supabase RPC call
-  // Keys MUST match the argument names defined in the CREATE FUNCTION statement
+  // rpcParams should ONLY contain p_season_year and p_search
   const rpcParams = {
     p_season_year: seasonYear,
-    p_min_mp: minMp,
-    p_search: search // Pass the search term (can be null)
+    p_search: search,
   };
 
-  // Call the database function instead of querying the table directly
   const { data, error } = await supabase.rpc(
-      'get_nba_player_season_stats', // The exact name of the function created in Supabase
-      rpcParams                     // The parameters object
+    "get_nba_player_season_stats",
+    rpcParams // Pass the CORRECT params object
   );
 
   // Handle potential errors from the RPC call
   if (error) {
     console.error("Supabase RPC error fetching aggregated player stats:", {
-        message: error.message,
-        details: error.details, // Might contain more SQL-specific info
-        hint: error.hint,
-        code: error.code,       // PostgreSQL error code
+      message: error.message,
+      details: error.details, // Might contain more SQL-specific info
+      hint: error.hint,
+      code: error.code, // PostgreSQL error code
     });
     // Throw a generic error to be handled by the controller
-    throw new Error(`Database function 'get_nba_player_season_stats' failed: ${error.message}`);
+    throw new Error(
+      `Database function 'get_nba_player_season_stats' failed: ${error.message}`
+    );
   }
 
   // The RPC function is designed to return the array of aggregated player stats.
   // If 'data' is null or not an array (unexpected), return an empty array.
   const results = Array.isArray(data) ? data : [];
 
-  console.log(`Workspaceed ${results.length} aggregated player season stats via RPC. Caching for ${ttl}s.`);
+  console.log(
+    `Workspaceed ${results.length} aggregated player season stats via RPC. Caching for ${ttl}s.`
+  );
   cache.set(cacheKey, results, ttl); // Cache the results
   return results; // Return the aggregated data
 };
-
