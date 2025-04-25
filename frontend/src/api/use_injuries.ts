@@ -2,6 +2,7 @@
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import type { Sport } from "@/contexts/sport_context";
+import { apiFetch } from "@/api/client";
 
 const PROD_BASE = import.meta.env.VITE_API_BASE_URL as string;
 const BASE = import.meta.env.DEV ? "http://localhost:3001" : PROD_BASE;
@@ -18,49 +19,17 @@ export interface Injury {
   injury_type?: string | null;
   // Add other fields if your useQuery select statement includes & maps them
 }
-export const useInjuries = (sport: Sport, date: string) =>
-  useQuery<Injury[], Error>({
-    queryKey: ["injuries", sport, date], // Keep key specific to sport/date
-
-    // Only execute the query if the sport is NBA and a valid date is provided
-    enabled: sport === "NBA" && !!date,
-    // --- END ADDITION ---
-
+export const useInjuries = (sport: "NBA" | "MLB", date: string) =>
+  useQuery<Injury[]>({
+    queryKey: ["injuries", sport, date],
     queryFn: async () => {
-      // This function will now only run when enabled (sport === 'NBA')
-      // We can keep the dynamic URL or hardcode NBA, hardcoding is clearer now:
-      const url = `${BASE}/api/v1/nba/injuries`;
-      console.log(`[useInjuries] Fetching NBA injuries for date: ${date}`); // Log specific fetch
-
-      const params: Record<string, string | number> = { date };
-      // Add cache‑buster only when viewing today's NBA page (logic is fine)
-      if (date === new Date().toISOString().slice(0, 10)) {
-        params._ = Date.now();
-      }
-
-      // Type for potential API response structures
-      type InjuryResponse = Injury[] | { injuries?: Injury[]; data?: Injury[] };
-
-      const { data: raw } = await axios.get<InjuryResponse>(url, { params });
-
-      // Normalize different possible response shapes into a flat array
-      if (Array.isArray(raw)) return raw;
-      // Add null/undefined checks for safety before accessing properties
-      if (raw && Array.isArray(raw.injuries)) return raw.injuries;
-      if (raw && Array.isArray(raw.data)) return raw.data;
-      // If response is unexpected or empty after checks, return empty array
-      console.warn(
-        `[useInjuries] Unexpected injury data structure received:`,
-        raw
+      const res = await apiFetch(
+        `/api/v1/${sport.toLowerCase()}/injuries?date=${date}`
       );
-      return [];
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      return json.data as Injury[];
     },
-
-    staleTime: 10 * 60_000, // 10 min
-
-    // Keep NBA-specific refetch logic
-    refetchInterval:
-      sport === "NBA" && date === new Date().toISOString().slice(0, 10)
-        ? 30_000 // refetch every 30s for live NBA today
-        : false, // No refetch interval otherwise (including MLB)
+    staleTime: 60_000,
+    enabled: !!date,
   });

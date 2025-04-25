@@ -1,45 +1,22 @@
+// src/api/use_nba_schedule.ts
 import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
-import { Sport, UnifiedGame } from "@/types"; // Import UnifiedGame
+import { apiFetch } from "@/api/client";
+import type { UnifiedGame } from "@/types";
 
-const PROD_BASE = import.meta.env.VITE_API_BASE_URL as string;
-const BASE = import.meta.env.DEV ? "http://localhost:3001" : PROD_BASE;
-
-// Response wrapper from the CONTROLLER
-interface NBAAPIResponse {
+interface Resp {
+  data: UnifiedGame[];
   message: string;
   retrieved: number;
-  data: UnifiedGame[]; // Expect backend service mapped data here
 }
 
-export const useNBASchedule = (sport: Sport, date: string) => {
-  return useQuery<UnifiedGame[], Error>({
-    // Return UnifiedGame[]
-    queryKey: ["nbaSchedule", sport, date], // Unique key
-
-    queryFn: async (): Promise<UnifiedGame[]> => {
-      // Return UnifiedGame[]
-      const url = `${BASE}/api/v1/nba/schedule`;
-      const response = await axios.get<NBAAPIResponse>(url, {
-        params: { date },
-      });
-
-      // Extract nested data array (already mapped by backend service)
-      if (response?.data?.data && Array.isArray(response.data.data)) {
-        return response.data.data;
-      } else {
-        console.error(
-          "Unexpected API response for NBA schedule:",
-          response?.data
-        );
-        return []; // Return empty array on unexpected structure
-      }
+export const useNBASchedule = (date: string) =>
+  useQuery<UnifiedGame[], Error>({
+    queryKey: ["nbaSchedule", date],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/v1/nba/schedule?date=${date}`);
+      if (!res.ok) throw new Error(await res.text());
+      const json: Resp = await res.json();
+      return json.data;
     },
     staleTime: 60_000,
-    refetchInterval:
-      sport === "NBA" && date === new Date().toISOString().slice(0, 10)
-        ? 30_000
-        : false,
-    enabled: !!date && !!sport, // Keep enabled check
   });
-};

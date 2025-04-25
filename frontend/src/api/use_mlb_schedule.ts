@@ -1,44 +1,23 @@
+// frontend/src/api/use_mlb_schedule.ts
 import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
-import { UnifiedGame } from "@/types"; // Import UnifiedGame
+import { UnifiedGame } from "@/types";
+import { apiFetch } from "@/api/client";
 
-const PROD_BASE = import.meta.env.VITE_API_BASE_URL as string;
-const BASE = import.meta.env.DEV ? "http://localhost:3001" : PROD_BASE;
-
-// Response wrapper from the CONTROLLER
-interface MLBAPIResponse {
+interface Resp {
   message: string;
   retrieved: number;
-  data: UnifiedGame[]; // Expect backend service mapped data here
+  data: UnifiedGame[];
 }
 
-// Remove old local MLBGame interface
-
-export const useMLBSchedule = (date: string) => {
-  return useQuery<UnifiedGame[], Error>({
-    // Return UnifiedGame[]
+export const useMLBSchedule = (date: string) =>
+  useQuery<UnifiedGame[]>({
     queryKey: ["mlbSchedule", date],
-
-    queryFn: async (): Promise<UnifiedGame[]> => {
-      // Return UnifiedGame[]
-      const url = `${BASE}/api/v1/mlb/schedule`;
-      const response = await axios.get<MLBAPIResponse>(url, {
-        params: { date },
-      });
-
-      // Extract the nested 'data' array (already mapped by backend service)
-      if (response?.data?.data && Array.isArray(response.data.data)) {
-        return response.data.data;
-      } else {
-        console.error(
-          "Unexpected API response for MLB schedule:",
-          response?.data
-        );
-        return []; // Return empty array on unexpected structure
-      }
+    queryFn: async () => {
+      const res = await apiFetch(`/api/v1/mlb/schedule?date=${date}`);
+      if (!res.ok) throw new Error(await res.text());
+      const json: Resp = await res.json();
+      return json.data;
     },
     staleTime: 60_000,
-    refetchInterval: false,
-    enabled: !!date, // Keep enabled check
+    enabled: !!date,
   });
-};
