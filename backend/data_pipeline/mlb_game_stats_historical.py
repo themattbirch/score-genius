@@ -37,15 +37,15 @@ except Exception as e:
 # --- Configuration ---
 API_BASE_URL = "https://v1.baseball.api-sports.io"
 MLB_LEAGUE_ID = 1
-TARGET_SEASONS = [2025, 2024, 2023, 2022, 2021] # Adjust as needed
+TARGET_SEASONS = [2025] # Adjust as needed
 SUPABASE_TABLE_NAME = "mlb_historical_game_stats"
 REQUEST_DELAY_SECONDS = 2
 SEASON_DATE_RANGES = {
-    2025: ("2025-03-28", None), # Start date for 2025 regular season, end date handled dynamically
-    2024: ("2024-03-20", "2024-11-05"),
-    2023: ("2023-03-30", "2023-11-05"),
-    2022: ("2022-04-07", "2022-11-06"),
-    2021: ("2021-04-01", "2021-11-03"),
+    2025: ("2025-04-21", None), # Start date for 2025 regular season, end date handled dynamically
+    #2024: ("2024-03-20", "2024-11-05"),
+    #2023: ("2023-03-30", "2023-11-05"),
+    #2022: ("2022-04-07", "2022-11-06"),
+    #2021: ("2021-04-01", "2021-11-03"),
 }
 BATCH_SIZE = 50
 HEADERS = {'x-apisports-key': API_SPORTS_KEY} # Define headers using loaded key

@@ -31,7 +31,7 @@ app.use(
   })
 );
 
-// --- No‑cache headers for all responses, including CDN edges ---
+// --- No-cache headers for all responses, including CDN edges ---
 app.use((req, res, next) => {
   res.set({
     // Browser cache directives
