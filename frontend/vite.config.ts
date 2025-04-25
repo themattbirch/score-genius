@@ -10,7 +10,7 @@ export default defineConfig(({ command }) => ({
    *  ------------------------------------------------*/
   // command === 'serve'  -> vite dev     ->  /
   // command === 'build'  -> vite build   ->  /app/
-  base: "/",
+  base: "/app/",
 
   plugins: [
     react(),
@@ -29,8 +29,8 @@ export default defineConfig(({ command }) => ({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait",
-        scope: "/", // ← trailing slash matters
-        start_url: "/", // ← trailing slash matters
+        scope: "/app", // ← trailing slash matters
+        start_url: "/app", // ← trailing slash matters
         icons: [
           {
             src: "/app/icons/football-icon-192.png",
