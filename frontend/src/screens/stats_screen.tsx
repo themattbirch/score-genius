@@ -87,6 +87,20 @@ const StatsScreen: React.FC = () => {
     "teams"
   );
 
+  // --- Calculate Dynamic Heading Text ---
+  const headingText = useMemo(() => {
+    switch (subTab) {
+      case "teams":
+        return `${sport} Team Rankings`; // e.g., "NBA Team Rankings" or "MLB Team Rankings"
+      case "players":
+        return "NBA Player Statistics"; // Only shown for NBA anyway
+      case "advanced":
+        return `${sport} Advanced Statistics`; // e.g., "NBA Advanced Statistics" or "MLB Advanced Statistics"
+      default:
+        return `${sport} Statistics`; // Fallback (shouldn't normally be reached)
+    }
+  }, [sport, subTab]); // Recalculate when sport or subTab changes
+
   // --- Player filters state (NBA only) ---
   const [playerSearch, setPlayerSearch] = useState("");
 
@@ -503,7 +517,7 @@ const StatsScreen: React.FC = () => {
                   ) : (
                     <td
                       key={key}
-                      className="py-2 px-3 text-left whitespace-nowrap border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400"
+                      className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400"
                     >
                       {" "}
                       {display}{" "}
@@ -735,48 +749,53 @@ const StatsScreen: React.FC = () => {
 
   // --- FINAL RENDER ---
   return (
+    // Main container with vertical spacing between direct children
     <section className="p-4 space-y-4">
-      {/* Row for Tabs/Title and Season Picker */}
+      {/* --- Row 1: Controls (Sub-Tabs + Season Picker) --- */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        {/* Sub-Tab Navigation Area */}
+        {/* Container for the LEFT part (Sub-Tabs) */}
         <div className="flex-shrink-0">
+          {/* --- Always render the sub-tab container div --- */}
           <div className="flex gap-1 rounded-lg bg-gray-200 dark:bg-gray-800 p-1 text-sm">
+            {/* --- Conditionally select the TABS ARRAY to map over --- */}
             {(sport === "NBA"
-              ? (["teams", "players", "advanced"] as const)
+              ? (["teams", "players", "advanced"] as const) // Use NBA tabs array
               : (["teams", "advanced"] as const)
-            ) // MLB tabs
+            ) // Use MLB tabs array
               .map((tab) => {
-                // --- CHANGE which tab gets the attribute ---
-                // Target the 'advanced' tab for BOTH sports
+                // Map over the selected array
+                // Apply tour attribute to the 'advanced' tab for both sports
                 const tourAttribute =
-                  tab === "advanced" ? "stats-subtab-advanced" : undefined; // <-- Changed target to 'advanced'
+                  tab === "advanced" ? "stats-subtab-advanced" : undefined;
 
                 return (
                   <button
                     key={tab}
-                    // --- Apply the new attribute name ---
-                    data-tour={tourAttribute} // <-- Will apply 'stats-subtab-advanced' to the Advanced button
+                    data-tour={tourAttribute}
                     className={`rounded-md px-3 py-1 transition-colors text-xs sm:text-sm ${
                       subTab === tab
-                        ? "bg-green-600 text-white shadow-sm"
-                        : "text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700"
+                        ? "bg-green-600 text-white shadow-sm" // Active
+                        : "text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700" // Inactive
                     }`}
-                    disabled={sport === "MLB" && tab === "players"}
                     onClick={() => setSubTab(tab)}
+                    // No 'disabled' needed here, as 'players' isn't in the MLB array
                   >
                     {tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 );
               })}
           </div>
+          {/* --- End of sub-tab container div --- */}
         </div>
+        {/* --- End of LEFT container --- */}
 
-        {/* Season picker - always shown */}
+        {/* Season picker - Sibling element on the RIGHT */}
         <select
           value={season}
           onChange={(e) => setSeason(Number(e.target.value))}
           className="align-baseline rounded-lg bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-white py-1 text-sm outline-none focus:ring focus:ring-green-500/50"
         >
+          {/* ... options ... */}
           {seasonOptions.map(({ value, label }) => (
             <option key={value} value={value}>
               {" "}
@@ -784,7 +803,16 @@ const StatsScreen: React.FC = () => {
             </option>
           ))}
         </select>
+        {/* --- End of Season Picker --- */}
       </div>
+      {/* --- END OF ROW 1 --- */}
+
+      {/* --- Row 2: Dynamic H1 Heading (Positioned correctly now) --- */}
+      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+        {headingText}
+      </h1>
+
+      {/* --- END OF ROW 2 --- */}
 
       {/* Player Filters - Only show for NBA Players Tab */}
       {sport === "NBA" && subTab === "players" && (
