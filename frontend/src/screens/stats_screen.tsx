@@ -505,19 +505,43 @@ const StatsScreen: React.FC = () => {
               >
                 {playerHeaders.map(({ key }, i) => {
                   const raw = p[key as keyof UnifiedPlayerStats];
-                  const display = formatCell(raw, String(key)); // Use helper
-                  return i === 0 ? (
+                  const display = formatCell(raw, String(key));
+
+                  // first column stays sticky + left-aligned
+                  if (i === 0) {
+                    return (
+                      <td
+                        key={key}
+                        className="
+                sticky left-0 z-20
+                bg-white dark:bg-gray-900
+                px-3
+                text-left font-medium
+                whitespace-nowrap
+                text-gray-900 dark:text-gray-100
+                before:content-[''] before:absolute before:inset-y-0
+                before:right-0 before:w-px
+                before:bg-gray-300 dark:before:bg-gray-700
+              "
+                      >
+                        {display}
+                      </td>
+                    );
+                  }
+
+                  // team column (i===1) left-align, all others center
+                  const alignClass = i === 1 ? "text-left" : "text-center";
+
+                  return (
                     <td
                       key={key}
-                      className={` sticky left-0 z-20 bg-white dark:bg-gray-900 px-3 text-cent font-medium whitespace-nowrap text-gray-900 dark:text-gray-100 before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700 `}
-                    >
-                      {" "}
-                      {display}{" "}
-                    </td>
-                  ) : (
-                    <td
-                      key={key}
-                      className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400"
+                      className={`
+              py-2 px-3
+              ${alignClass}
+              whitespace-nowrap
+              border-l border-gray-300 dark:border-gray-700
+              text-gray-700 dark:text-gray-400
+            `}
                     >
                       {" "}
                       {display}{" "}
