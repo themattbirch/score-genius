@@ -43,16 +43,26 @@ export const getNbaSchedule = async (req, res, next) => {
 };
 
 export const getNbaInjuries = async (req, res, next) => {
+  const { date } = req.query;
+  console.log("→ [getNbaInjuries] start, date =", date);
+
   try {
-    const injuriesData = await nbaService.fetchNbaInjuries();
-    res.status(200).json({
+    const start = Date.now();
+    // pass the date into your service
+    const injuriesData = await nbaService.fetchNbaInjuries(date);
+    console.log(
+      `→ [getNbaInjuries] service returned in ${Date.now() - start}ms; count=`,
+      Array.isArray(injuriesData) ? injuriesData.length : injuriesData
+    );
+
+    return res.status(200).json({
       message: "NBA injuries fetched successfully",
-      retrieved: injuriesData.length,
+      retrieved: Array.isArray(injuriesData) ? injuriesData.length : 0,
       data: injuriesData,
     });
   } catch (error) {
-    console.error("Error in getNbaInjuries controller:", error);
-    next(error);
+    console.error("→ [getNbaInjuries] ERROR:", error);
+    return next(error);
   }
 };
 

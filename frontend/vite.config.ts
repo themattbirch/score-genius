@@ -1,22 +1,16 @@
+// frontend/vite.config.ts
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 
 export default defineConfig({
-  /* -------------------------------------------------
-   *  ❶  NO global base path
-   *     – Vite will write **relative** links in
-   *       both home.html  and  app.html
-   * ------------------------------------------------*/
-  base: "", //  ←  remove “/app/”
-
   plugins: [
     react(),
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
-      devOptions: { enabled: true },
       includeAssets: ["favicon.ico"],
 
       /* ---------- manifest ---------- */
@@ -29,8 +23,6 @@ export default defineConfig({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait",
-
-        /* PWA is confined to /app/  */
         scope: "/app",
         start_url: "/app",
 
@@ -53,13 +45,9 @@ export default defineConfig({
           },
         ],
       },
-
-      /* ---------- Workbox ---------- */
       workbox: {
-        navigateFallback: "app.html", // ← relative, no leading slash
-        navigateFallbackDenylist: [
-          /\/[^/?]+\.[^/]{2,}$/, // keep this
-        ],
+        navigateFallback: "/app.html",
+        navigateFallbackDenylist: [/\/api\/v1\/.*$/, /\/[^/?]+\.[^/]{2,}$/],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
       },
     }),
@@ -69,7 +57,6 @@ export default defineConfig({
 
   resolve: { alias: { "@": resolve(__dirname, "src") } },
 
-  /* dev-server works fine with no base */
   server: {
     open: "/app", // auto-open SPA
     proxy: { "/api/v1": "http://localhost:3001" },
@@ -79,7 +66,6 @@ export default defineConfig({
 
   build: {
     outDir: "dist",
-    emptyOutDir: true,
     rollupOptions: {
       input: {
         home: resolve(__dirname, "home.html"),

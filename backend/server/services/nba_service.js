@@ -79,81 +79,61 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
  */
 
 // Fetch current injuries, caching for 30m
-export const fetchNbaInjuries = async () => {
-  const cacheKey = "nba_injuries_current";
-  const ttl = 1800; // 30 minutes
+export async function fetchNbaInjuries(date) {
+  console.log("→ [fetchNbaInjuries] start, date =", date);
+  const cacheKey = `nba_injuries_${date}`;
+  const ttl = 1800; // 30m
+
   const cached = cache.get(cacheKey);
   if (cached !== undefined) {
-    console.log(`CACHE HIT: ${cacheKey}`);
-    // Ensure cached data is always an array
+    console.log("→ [fetchNbaInjuries] CACHE HIT:", cacheKey);
     return Array.isArray(cached) ? cached : [];
   }
 
-  console.log(`CACHE MISS: ${cacheKey}. Querying injuries table...`);
-  let data = null;
-  let error = null;
+  console.log("→ [fetchNbaInjuries] CACHE MISS:", cacheKey);
+  const t0 = Date.now();
 
-  try {
-    const response = await supabase
-      .from(NBA_INJURIES_TABLE)
-      .select(
-        `injury_id, player_id, player_display_name, team_id, team_display_name,
-               report_date_utc, injury_status, injury_status_abbr, injury_type,
-               injury_location, injury_detail, injury_side, return_date_est,
-               short_comment, long_comment, created_at, last_api_update_time`
-      )
-      .order("report_date_utc", { ascending: false });
+  const { data, error } = await supabase
+    .from(NBA_INJURIES_TABLE)
+    .select(
+      `injury_id,
+       player_id,
+       player_display_name,
+       team_id,
+       team_display_name,
+       report_date_utc,
+       injury_status,
+       injury_type,
+       injury_detail,
+       created_at,
+       last_api_update_time`
+    )
+    .eq("report_date_utc", date)
+    .order("report_date_utc", { ascending: false });
 
-    data = response.data;
-    error = response.error;
-  } catch (fetchError) {
-    // Catch potential errors during the fetch itself
-    console.error("Supabase fetch error in fetchNbaInjuries:", fetchError);
-    error = fetchError; // Assign the fetch error
-  }
-
-  // --- Handle DB Errors ---
-  if (error) {
-    console.error("Supabase error fetching injuries:", error);
-    // Return empty array instead of null for type consistency with frontend hook
-    return [];
-  }
-
-  // --- Handle Missing/Invalid Data ---
-  // Add check for data being null or not an array before mapping
-  if (!data || !Array.isArray(data)) {
-    console.warn(
-      `[fetchNbaInjuries] No data returned or data is not an array. Data:`,
-      data
-    );
-    cache.set(cacheKey, [], ttl); // Cache empty array
-    return []; // Return empty array
-  }
-
-  // --- Data Normalization & Mapping ---
-  // Map raw DB data to the structure expected by the frontend Injury type
-  const normalizedInjuries = data.map((inj) => {
-    // TODO: Add team name normalization if values differ from schedule tables
-    // const canonicalTeamName = teamNameMap[inj.team_id] || inj.team_display_name;
-    return {
-      id: String(inj.injury_id), // Ensure ID is string
-      player: inj.player_display_name,
-      team_display_name: inj.team_display_name, // Use this name for grouping in frontend
-      status: inj.injury_status || "N/A", // Map status, provide fallback
-      detail: inj.injury_detail || "",
-      updated: inj.report_date_utc,
-      injury_type: inj.injury_type || null,
-      // Include other fields if the frontend Injury type needs them
-    };
-  });
-
-  // --- Caching & Return ---
   console.log(
-    `Workspaceed ${normalizedInjuries.length} injuries. Caching for ${ttl}s.`
+    `→ [fetchNbaInjuries] supabase returned in ${Date.now() - t0}ms`,
+    { error, rows: data?.length }
   );
-  cache.set(cacheKey, normalizedInjuries, ttl);
-  return normalizedInjuries; // Return the processed array
-}; // <-- This is the correct end of the function
+  if (error) throw error;
+  if (!Array.isArray(data)) throw new Error("Unexpected data format");
+
+  const normalized = data.map((inj) => ({
+    id: String(inj.injury_id),
+    player: inj.player_display_name,
+    team: inj.team_display_name,
+    status: inj.injury_status || "N/A",
+    detail: inj.injury_detail || "",
+    updated: inj.report_date_utc,
+    type: inj.injury_type || null,
+  }));
+
+  cache.set(cacheKey, normalized, ttl);
+  console.log(
+    `→ [fetchNbaInjuries] cached ${normalized.length} items under key ${cacheKey}`
+  );
+  return normalized;
+}
 
 // Fetch historical games w/ pagination & filters
 export const fetchNbaGameHistory = async ({
