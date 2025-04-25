@@ -79,45 +79,43 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
  */
 
 // Fetch current injuries, caching for 30m
-export async function fetchNbaInjuries(date) {
-  console.log("→ [fetchNbaInjuries] start, date =", date);
-  const cacheKey = `nba_injuries_${date}`;
-  const ttl = 1800; // 30m
+// backend/server/services/nba_service.js
 
-  const cached = cache.get(cacheKey);
-  if (cached !== undefined) {
-    console.log("→ [fetchNbaInjuries] CACHE HIT:", cacheKey);
-    return Array.isArray(cached) ? cached : [];
-  }
+// Fetch current injuries (no cache for now)
+export const fetchNbaInjuries = async () => {
+  console.log("→ [fetchNbaInjuries] querying injuries table…");
 
-  console.log("→ [fetchNbaInjuries] CACHE MISS:", cacheKey);
-  const t0 = Date.now();
-
+  // 1) Fetch
   const { data, error } = await supabase
     .from(NBA_INJURIES_TABLE)
     .select(
-      `injury_id,
-       player_id,
-       player_display_name,
-       team_id,
-       team_display_name,
-       report_date_utc,
-       injury_status,
-       injury_type,
-       injury_detail,
-       created_at,
-       last_api_update_time`
+      `
+      injury_id,
+      player_id,
+      player_display_name,
+      team_id,
+      team_display_name,
+      report_date_utc,
+      injury_status,
+      injury_type,
+      injury_detail
+      `
     )
-    .eq("report_date_utc", date)
     .order("report_date_utc", { ascending: false });
 
-  console.log(
-    `→ [fetchNbaInjuries] supabase returned in ${Date.now() - t0}ms`,
-    { error, rows: data?.length }
-  );
-  if (error) throw error;
-  if (!Array.isArray(data)) throw new Error("Unexpected data format");
+  // 2) Error handling
+  if (error) {
+    console.error("→ [fetchNbaInjuries] Supabase error:", error);
+    return [];
+  }
+  if (!Array.isArray(data)) {
+    console.warn("→ [fetchNbaInjuries] Unexpected data:", data);
+    return [];
+  }
 
+  console.log(`→ [fetchNbaInjuries] got ${data.length} rows`);
+
+  // 3) Normalize & return
   const normalized = data.map((inj) => ({
     id: String(inj.injury_id),
     player: inj.player_display_name,
@@ -128,12 +126,9 @@ export async function fetchNbaInjuries(date) {
     type: inj.injury_type || null,
   }));
 
-  cache.set(cacheKey, normalized, ttl);
-  console.log(
-    `→ [fetchNbaInjuries] cached ${normalized.length} items under key ${cacheKey}`
-  );
   return normalized;
-}
+};
+
 
 // Fetch historical games w/ pagination & filters
 export const fetchNbaGameHistory = async ({
