@@ -1,16 +1,15 @@
-// frontend/vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 
-export default defineConfig(({ command }) => ({
-  /** -------------------------------------------------
-   *  Base URL
-   *  ------------------------------------------------*/
-  // command === 'serve'  -> vite dev     ->  /
-  // command === 'build'  -> vite build   ->  /app/
-  base: "/app/",
+export default defineConfig({
+  /* -------------------------------------------------
+   *  ❶  NO global base path
+   *     – Vite will write **relative** links in
+   *       both home.html  and  app.html
+   * ------------------------------------------------*/
+  base: "", //  ←  remove “/app/”
 
   plugins: [
     react(),
@@ -19,7 +18,7 @@ export default defineConfig(({ command }) => ({
       injectRegister: "auto",
       devOptions: { enabled: true },
 
-      /**  PWA manifest  */
+      /* ---------- manifest ---------- */
       manifest: {
         name: "Score Genius",
         short_name: "ScoreGenius",
@@ -29,21 +28,24 @@ export default defineConfig(({ command }) => ({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait",
-        scope: "/app", // ← trailing slash matters
-        start_url: "/app", // ← trailing slash matters
+
+        /* PWA is confined to /app/  */
+        scope: "/app/",
+        start_url: "/app/",
+
         icons: [
           {
-            src: "/app/icons/football-icon-192.png",
+            src: "/icons/football-icon-192.png",
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/app/icons/football-icon-512.png",
+            src: "/icons/football-icon-512.png",
             sizes: "512x512",
             type: "image/png",
           },
           {
-            src: "/app/icons/football-icon-maskable-512.png",
+            src: "/icons/football-icon-maskable-512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
@@ -51,16 +53,10 @@ export default defineConfig(({ command }) => ({
         ],
       },
 
-      /**  Workbox  */
+      /* ---------- Workbox ---------- */
       workbox: {
-        // use the relative path *inside the scope* (no leading slash)
-        navigateFallback: "app.html",
-
-        // keep the deny-list exactly as before
-        navigateFallbackDenylist: [
-          /\/[^/?]+\.[^/]{2,}$/, // direct asset hits
-        ],
-
+        navigateFallback: "/app/app.html", // served **inside** the scope
+        navigateFallbackDenylist: [/\/[^/?]+\.[^/]{2,}$/],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
       },
     }),
@@ -68,23 +64,16 @@ export default defineConfig(({ command }) => ({
 
   publicDir: "public",
 
-  resolve: {
-    alias: { "@": resolve(__dirname, "src") },
-  },
+  resolve: { alias: { "@": resolve(__dirname, "src") } },
 
-  /** -------------------------------------------------
-   *  Dev-server
-   *  ------------------------------------------------*/
+  /* dev-server works fine with no base */
   server: {
-    open: "/app/", // auto-open the SPA page
-    port: 5173,
-    strictPort: true,
+    open: "/app/", // auto-open SPA
     proxy: { "/api/v1": "http://localhost:3001" },
+    strictPort: true,
+    port: 5173,
   },
 
-  /** -------------------------------------------------
-   *  Build / preview
-   *  ------------------------------------------------*/
   build: {
     outDir: "dist",
     emptyOutDir: true,
@@ -100,4 +89,4 @@ export default defineConfig(({ command }) => ({
       },
     },
   },
-}));
+});
