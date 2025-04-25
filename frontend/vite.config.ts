@@ -17,7 +17,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       injectRegister: "auto",
       devOptions: { enabled: true },
-      includeAssets: ['favicon.ico'],
+      includeAssets: ["favicon.ico"],
 
       /* ---------- manifest ---------- */
       manifest: {
@@ -31,8 +31,8 @@ export default defineConfig({
         orientation: "portrait",
 
         /* PWA is confined to /app/  */
-        scope: "/app/",
-        start_url: "/app/",
+        scope: "/app",
+        start_url: "/app",
 
         icons: [
           {
@@ -56,11 +56,11 @@ export default defineConfig({
 
       /* ---------- Workbox ---------- */
       workbox: {
-        navigateFallback: 'app.html',             // ← relative, no leading slash
+        navigateFallback: "app.html", // ← relative, no leading slash
         navigateFallbackDenylist: [
-          /\/[^/?]+\.[^/]{2,}$/                   // keep this
+          /\/[^/?]+\.[^/]{2,}$/, // keep this
         ],
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2}'],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
       },
     }),
   ],
@@ -71,7 +71,7 @@ export default defineConfig({
 
   /* dev-server works fine with no base */
   server: {
-    open: "/app/", // auto-open SPA
+    open: "/app", // auto-open SPA
     proxy: { "/api/v1": "http://localhost:3001" },
     strictPort: true,
     port: 5173,
