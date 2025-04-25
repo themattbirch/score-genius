@@ -1,27 +1,27 @@
 // frontend/src/api/use_mlb_advanced_stats.ts
-import { useQuery } from '@tanstack/react-query';
-import type { Sport } from '@/types'; // Assuming Sport type is in '@/types'
+import { useQuery } from "@tanstack/react-query";
+import type { Sport } from "@/types"; // Assuming Sport type is in '@/types'
 
 // Define the shape of the data returned by the MLB Advanced Stats API/RPC function
 // Based on the columns from the successful curl response
 export interface MlbAdvancedTeamStats {
-    team_id: number;
-    team_name: string;
-    season: number;
-    games_played: number;
-    wins: number;
-    runs_for: number;
-    runs_against: number;
-    run_differential: number;
-    run_differential_avg: number;
-    win_pct: number;
-    pythagorean_win_pct: number;
-    expected_wins: number;
-    luck_factor: number;
-    home_away_win_pct_split: number;
-    home_away_run_diff_avg_split: number;
-    // Index signature allows dynamic access if needed later (optional but can be useful)
-    [key: string]: string | number | undefined | null;
+  team_id: number;
+  team_name: string;
+  season: number;
+  games_played: number;
+  wins: number;
+  runs_for: number;
+  runs_against: number;
+  run_differential: number;
+  run_differential_avg: number;
+  win_pct: number;
+  pythagorean_win_pct: number;
+  expected_wins: number;
+  luck_factor: number;
+  home_away_win_pct_split: number;
+  home_away_run_diff_avg_split: number;
+  // Index signature allows dynamic access if needed later (optional but can be useful)
+  [key: string]: string | number | undefined | null;
 }
 
 /**
@@ -32,7 +32,7 @@ const fetchMlbAdvancedStats = async ({
 }: {
   season: number;
 }): Promise<MlbAdvancedTeamStats[]> => {
-  // Construct the API endpoint URL for MLB Advanced Stats
+  // Construct API endpoint URL for MLB Advanced Stats
   const endpoint = `/api/v1/mlb/team-stats/advanced?season=${season}`;
 
   const res = await fetch(endpoint);
@@ -79,11 +79,11 @@ export const useMlbAdvancedStats = ({
 }) =>
   useQuery<MlbAdvancedTeamStats[]>({
     // Query key specific to MLB advanced stats
-    queryKey: ['mlbAdvancedStats', sport, season],
+    queryKey: ["mlbAdvancedStats", sport, season],
     queryFn: () => fetchMlbAdvancedStats({ season }),
     // Ensure hook only runs when the selected sport is MLB and it's explicitly enabled
-    enabled: enabled && sport === 'MLB',
+    enabled: enabled && sport === "MLB",
     staleTime,
     refetchOnWindowFocus: false, // Data is historical, less need to refetch on focus
-    refetchOnMount: 'always', // Consider if needed, 'always' ensures data check on mount if enabled changes
+    refetchOnMount: "always", // Consider if needed, 'always' ensures data check on mount if enabled changes
   });
