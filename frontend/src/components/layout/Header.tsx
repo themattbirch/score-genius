@@ -48,7 +48,7 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
         onClick={() => navigate("games")}
       >
         <img
-          src="/orange_football_header_logo.png"
+          src="./orange_football_header_logo.png"
           alt="Logo"
           // Apply responsive size
           className="h-6 w-6 sm:h-8 sm:w-8 flex-none select-none"
@@ -124,8 +124,10 @@ const SportToggle: React.FC<SportToggleProps> = ({ active, onChange }) => {
 
   return (
     // Apply rounding to the container div
-    <div className="flex overflow-hidden rounded-full border border-slate-600/60 bg-slate-800 "
-    data-tour="sport-switch">
+    <div
+      className="flex overflow-hidden rounded-full border border-slate-600/60 bg-slate-800 "
+      data-tour="sport-switch"
+    >
       {(["NBA", "MLB"] as Sport[]).map((s) => (
         <button
           key={s}

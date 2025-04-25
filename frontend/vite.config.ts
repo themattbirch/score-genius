@@ -1,19 +1,25 @@
-// /frontend/vite.config.ts
+// frontend/vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { resolve } from "path";
 import { VitePWA } from "vite-plugin-pwa";
+import { resolve } from "path";
 
 export default defineConfig(({ command }) => ({
+  /** -------------------------------------------------
+   *  Base URL
+   *  ------------------------------------------------*/
+  // command === 'serve'  -> vite dev     ->  /
+  // command === 'build'  -> vite build   ->  /app/
+  base: command === "serve" ? "/" : "/app/",
+
   plugins: [
-    react(), // First plugin in the array
+    react(),
     VitePWA({
-      // Second plugin in the array, separated by a comma
       registerType: "autoUpdate",
       injectRegister: "auto",
-      devOptions: {
-        enabled: true,
-      },
+      devOptions: { enabled: true },
+
+      /**  PWA manifest  */
       manifest: {
         name: "Score Genius",
         short_name: "ScoreGenius",
@@ -23,53 +29,66 @@ export default defineConfig(({ command }) => ({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait",
-        scope: "/app",
-        start_url: "/app",
+        scope: "/app/", // ← trailing slash matters
+        start_url: "/app/", // ← trailing slash matters
         icons: [
           {
-            src: "/icons/football-icon-192.png",
+            src: "/app/icons/football-icon-192.png",
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/icons/football-icon-512.png",
+            src: "/app/icons/football-icon-512.png",
             sizes: "512x512",
             type: "image/png",
           },
           {
-            src: "/icons/football-icon-maskable-512.png",
+            src: "/app/icons/football-icon-maskable-512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
           },
         ],
       },
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
-        // runtimeCaching: [ ... ] // Keep commented out for now unless needed
-      },
-    }), // End of VitePWA configuration object
-  ], // End of the plugins array
 
-  publicDir: "public", // static assets only
+      /**  Workbox  */
+      workbox: {
+        // use the relative path *inside the scope* (no leading slash)
+        navigateFallback: "app.html",
+
+        // keep the deny-list exactly as before
+        navigateFallbackDenylist: [
+          /\/[^/?]+\.[^/]{2,}$/, // direct asset hits
+        ],
+
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
+      },
+    }),
+  ],
+
+  publicDir: "public",
 
   resolve: {
     alias: { "@": resolve(__dirname, "src") },
   },
 
+  /** -------------------------------------------------
+   *  Dev-server
+   *  ------------------------------------------------*/
   server: {
-    open: "/app",
+    open: "/app/", // auto-open the SPA page
     port: 5173,
     strictPort: true,
     proxy: { "/api/v1": "http://localhost:3001" },
-    // dev uses index.html by default—no extra fallback needed
   },
 
+  /** -------------------------------------------------
+   *  Build / preview
+   *  ------------------------------------------------*/
   build: {
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      // MPA Setup: Building both home.html and app.html
       input: {
         home: resolve(__dirname, "home.html"),
         app: resolve(__dirname, "app.html"),
