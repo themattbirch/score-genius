@@ -17,6 +17,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       injectRegister: "auto",
       devOptions: { enabled: true },
+      includeAssets: ['favicon.ico'],
 
       /* ---------- manifest ---------- */
       manifest: {
@@ -55,9 +56,11 @@ export default defineConfig({
 
       /* ---------- Workbox ---------- */
       workbox: {
-        navigateFallback: "/app/app.html", // served **inside** the scope
-        navigateFallbackDenylist: [/\/[^/?]+\.[^/]{2,}$/],
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
+        navigateFallback: 'app.html',             // ← relative, no leading slash
+        navigateFallbackDenylist: [
+          /\/[^/?]+\.[^/]{2,}$/                   // keep this
+        ],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2}'],
       },
     }),
   ],
