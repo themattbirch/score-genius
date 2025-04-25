@@ -71,7 +71,8 @@ const MoreScreen: React.FC = () => (
         Display Options
       </h2>
       <ThemeToggle
-        className="w-full justify-center
+        data-tour="theme-toggle"
+        className="w-full justify-center 
                 bg-white dark:bg-slate-800
                 border border-slate-300 dark:border-slate-600/60
                 text-slate-700 dark:text-slate-200
