@@ -10,11 +10,9 @@ export const getMlbSchedule = async (req, res, next) => {
 
     // 2. Validate date
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res
-        .status(400)
-        .json({
-          message: "Invalid or missing date parameter. Use YYYY-MM-DD format.",
-        });
+      return res.status(400).json({
+        message: "Invalid or missing date parameter. Use YYYY-MM-DD format.",
+      });
     }
 
     // 3. Call the NEW service function that filters by date
@@ -130,9 +128,10 @@ export const getMlbAllTeamsSeasonStats = async (req, res, next) => {
     const stats = await mlbService.fetchMlbAllTeamStatsBySeason(Number(season));
 
     if (!stats?.length) {
-      return res
-        .status(404)
-        .json({ message: `No MLB team stats found for season ${season}.`, data: [] });
+      return res.status(404).json({
+        message: `No MLB team stats found for season ${season}.`,
+        data: [],
+      });
     }
 
     res.status(200).json({
@@ -146,5 +145,51 @@ export const getMlbAllTeamsSeasonStats = async (req, res, next) => {
     res
       .status(error.status || 500)
       .json({ error: { message: error.message, stack: error.stack } });
+  }
+};
+
+export const getMlbAdvancedTeamStats = async (req, res, next) => {
+  try {
+    const { season } = req.query;
+    if (!season || !/^\d{4}$/.test(season)) {
+      return res.status(400).json({
+        message: "Invalid or missing season query parameter. Use YYYY format.", // Corrected YYYY format
+      });
+    }
+
+    // Call the service function using the mlbService object ***
+    const advancedTeamStats = await mlbService.fetchMlbAdvancedTeamStatsFromRPC(
+      season
+    ); // <--- FIXED LINE
+
+    // Send response
+    res.status(200).json({
+      message: `MLB advanced team stats (RPC) fetched successfully for season ${season}`,
+      retrieved: advancedTeamStats?.length ?? 0,
+      data: advancedTeamStats || [],
+    });
+  } catch (error) {
+    // Log the actual error received
+    console.error(
+      `Error in getMlbAdvancedTeamStats controller for season ${req.query.season}:`,
+      error.message || error
+    );
+
+    // Check if the error is from Supabase RPC specifically
+    let errorMessage =
+      "Failed to fetch/calculate MLB advanced team stats via RPC";
+    if (
+      error.message &&
+      error.message.includes("function public.get_mlb_advanced_team_stats")
+    ) {
+      errorMessage = `Error calling Supabase RPC function: ${error.message}`;
+    } else if (error.message) {
+      errorMessage = error.message; // Use the actual error message if available
+    }
+
+    res.status(error.status || 500).json({
+      message: errorMessage,
+    });
+    // next(error); // Consider using next(error) if you have a global error handler middleware
   }
 };

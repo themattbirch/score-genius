@@ -23,7 +23,7 @@ type Tab = {
 const TABS: Tab[] = [
   { path: "/games", label: "Games", Icon: GamesIcon },
   { path: "/stats", label: "Stats", Icon: StatsIcon },
-  { path: "/how-to-use", label: "How To Use", Icon: HelpIcon },
+  { path: "/how-to-use", label: "How To Use", Icon: HelpIcon },
   { path: "/more", label: "More", Icon: MoreIcon },
 ];
 
@@ -38,19 +38,29 @@ const BottomTabBar: React.FC = () => {
       className={clsx(
         "fixed inset-x-0 bottom-0 z-40 flex",
         "border-t border-slate-700/40 bg-github-dark",
-        "pb-[env(safe-area-inset-bottom)]"
+        "pb-[env(safe-area-inset-bottom)]" // Handles notch/safe area on iOS
       )}
     >
       {TABS.map(({ path, label, Icon }) => {
         const isActive = pathname.startsWith(path);
 
+        // --- Define the mapping for data-tour attributes ---
+        const tourTargets: { [key: string]: string } = {
+          "/games": "tab-games",
+          "/stats": "tab-stats",
+          "/more": "tab-more",
+        };
+
+        // --- Get the correct attribute value based on the path ---
+        const tourAttrValue = tourTargets[path]; // Will be undefined if path is not '/games' or '/stats'
+
         return (
           <NavLink
             key={path}
             to={path}
-            data-tour={path === "/stats" ? "tab-stats" : undefined}
+            data-tour={tourAttrValue}
             className={clsx(
-              "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium",
+              "flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-xs font-medium", // Added justify-center
               "transition duration-150",
               isActive
                 ? "text-brand-green"

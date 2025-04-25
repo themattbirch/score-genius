@@ -375,3 +375,42 @@ export const fetchMlbAllTeamStatsBySeason = async (seasonYear) => {
   cache.set(cacheKey, data || [], ttl);
   return data || [];
 };
+
+export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
+  const cacheKey = `mlb_advanced_rpc_stats_${seasonYearStr}`;
+  const ttl = 86400; // Cache for 1 day
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    console.log(`CACHE HIT: ${cacheKey}`);
+    return cached;
+  }
+
+  const seasonYear = parseInt(seasonYearStr, 10);
+  if (isNaN(seasonYear) || String(seasonYearStr).length !== 4) {
+     console.error("Invalid season year string passed to RPC service fn:", seasonYearStr);
+     return [];
+  }
+
+  console.log(`CACHE MISS: ${cacheKey}. Calling RPC get_mlb_advanced_team_stats for season ${seasonYear}...`);
+  try {
+      // Call the Supabase RPC function
+      const { data, error } = await supabase.rpc('get_mlb_advanced_team_stats', {
+          p_season_year: seasonYear // Pass the integer year as the argument
+      });
+
+      if (error) {
+        console.error("Supabase RPC error fetching MLB advanced stats:", error);
+        throw error; // Let controller handle
+      }
+
+      const resultData = data || [];
+      // Note: RPC directly returns the calculated fields named as defined in RETURNS TABLE (...)
+      console.log(`RPC returned ${resultData.length} advanced stat records for ${seasonYear}. Caching ${ttl}s.`);
+      cache.set(cacheKey, resultData, ttl);
+      return resultData;
+
+  } catch(err) {
+      console.error(`Error calling RPC get_mlb_advanced_team_stats for season ${seasonYearStr}:`, err);
+      throw err; // Re-throw to controller
+  }
+};

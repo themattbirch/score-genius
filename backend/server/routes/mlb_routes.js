@@ -6,6 +6,7 @@ import {
   getMlbGameHistory,
   getMlbTeamSeasonStats,
   getMlbAllTeamsSeasonStats,
+  getMlbAdvancedTeamStats,
 } from "../controllers/mlb_controller.js";
 
 const router = express.Router();
@@ -15,7 +16,10 @@ router.get("/schedule", getMlbSchedule);
 router.get("/games/history", getMlbGameHistory);
 // **ALL-TEAMS** season stats
 router.get("/team-stats", getMlbAllTeamsSeasonStats);
-// **Single team** season stats
+// **Advanced Stats
+router.get("/team-stats/advanced", getMlbAdvancedTeamStats);
+
+// **Old: Single team** season stats
 router.get("/teams/:team_id/stats/:season", getMlbTeamSeasonStats);
 
 // Add more MLB routes here later.
