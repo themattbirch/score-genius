@@ -23,7 +23,7 @@ plugins {
 def twaManifest = [
     applicationId: 'io.scoregenius.twa',
     hostName: 'scoregenius.io', // The domain being opened in the TWA.
-    launchUrl: '/app/', // The start path for the TWA. Must be relative to the domain.
+    launchUrl: '/app', // The start path for the TWA. Must be relative to the domain.
     name: 'Score Genius', // The application name.
     launcherName: 'ScoreGenius', // The name shown on the Android Launcher.
     themeColor: '#1F2937', // The color used for the status bar.
