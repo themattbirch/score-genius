@@ -303,19 +303,22 @@ const StatsScreen: React.FC = () => {
 
   // --- Reusable header cell component (unmodified) ---
   const HeaderCell = ({
-    /* ... props ... */ label,
+    label,
     active,
     onClick,
     align = "right",
     className = "",
+    ...rest
   }: {
     label: string;
     active: boolean;
     onClick: () => void;
     align?: "left" | "right";
     className?: string;
+    [key: string]: any;
   }) => (
     <th
+      {...rest}
       onClick={onClick}
       title="Click to sort"
       className={` bg-gray-50 dark:bg-gray-800 cursor-pointer select-none py-2 px-3 font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700/30 ${
@@ -378,21 +381,27 @@ const StatsScreen: React.FC = () => {
       <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
+            {/* Ensure no extra spaces/newlines directly within <tr> */}
             <tr>
-              {teamHeaders.map(({ label, key }, index) => (
-                <HeaderCell
-                  key={String(key)}
-                  label={label}
-                  active={teamSort?.key === key}
-                  onClick={() => toggleTeamSort(key)}
-                  align={index === 0 ? "left" : "right"}
-                  className={
-                    index > 0
-                      ? "border-l border-gray-300 dark:border-gray-700"
-                      : ""
-                  }
-                />
-              ))}
+              {teamHeaders.map(({ label, key }, index) => {
+                const isTargetColumn = key === "wins_all_percentage";
+                const tourAttribute = isTargetColumn
+                  ? "stats-column-winpct"
+                  : undefined;
+                // Assuming HeaderCell renders a <th> element
+                return (
+                  <HeaderCell
+                    key={String(key)}
+                    label={label}
+                    active={teamSort?.key === key}
+                    onClick={() => toggleTeamSort(key)}
+                    align={index === 0 ? "left" : "right"}
+                    // Reminder: className value "border-l ..." might still be incomplete
+                    className={index > 0 ? "border-l ..." : ""}
+                    data-tour={tourAttribute}
+                  />
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
@@ -403,18 +412,20 @@ const StatsScreen: React.FC = () => {
               >
                 {teamHeaders.map(({ key }, index) => {
                   const raw = team[key as keyof UnifiedTeamStats];
-                  const cell = formatCell(raw, String(key)); // Use helper
+                  const cell = formatCell(raw, String(key));
                   let cellSpecificClasses =
                     index === 0
                       ? `px-3 text-left font-medium whitespace-nowrap text-gray-900 dark:text-gray-100`
                       : `px-3 text-center border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400`;
+                  // Ensure no stray whitespace inside the <td> either
                   return (
                     <td
                       key={String(key)}
                       className={`py-2 ${cellSpecificClasses}`}
                     >
-                      {" "}
-                      {cell}{" "}
+                      {/* Remove space here if present */}
+                      {cell}
+                      {/* Remove space here if present */}
                     </td>
                   );
                 })}
@@ -609,7 +620,7 @@ const StatsScreen: React.FC = () => {
     );
   };
 
-  // --- Render MLB Advanced Stats Table function --- NEW ---
+  // --- Render MLB Advanced Stats Table function ---
   const renderMlbAdvancedTable = () => {
     if (sport !== "MLB") return null; // Guard clause
 
@@ -730,27 +741,33 @@ const StatsScreen: React.FC = () => {
         {/* Sub-Tab Navigation Area */}
         <div className="flex-shrink-0">
           <div className="flex gap-1 rounded-lg bg-gray-200 dark:bg-gray-800 p-1 text-sm">
-            {/* Define tabs based on sport */}
             {(sport === "NBA"
               ? (["teams", "players", "advanced"] as const)
               : (["teams", "advanced"] as const)
             ) // MLB tabs
-              .map((tab) => (
-                <button
-                  key={tab}
-                  className={`rounded-md px-3 py-1 transition-colors text-xs sm:text-sm ${
-                    subTab === tab
-                      ? "bg-green-600 text-white shadow-sm" // Active tab
-                      : "text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700" // Inactive tab
-                  }`}
-                  // Disable 'players' tab if sport is MLB (it won't be in the array, but belts & suspenders)
-                  disabled={sport === "MLB" && tab === "players"}
-                  onClick={() => setSubTab(tab)}
-                >
-                  {/* Capitalize tab name */}
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
+              .map((tab) => {
+                // --- CHANGE which tab gets the attribute ---
+                // Target the 'advanced' tab for BOTH sports
+                const tourAttribute =
+                  tab === "advanced" ? "stats-subtab-advanced" : undefined; // <-- Changed target to 'advanced'
+
+                return (
+                  <button
+                    key={tab}
+                    // --- Apply the new attribute name ---
+                    data-tour={tourAttribute} // <-- Will apply 'stats-subtab-advanced' to the Advanced button
+                    className={`rounded-md px-3 py-1 transition-colors text-xs sm:text-sm ${
+                      subTab === tab
+                        ? "bg-green-600 text-white shadow-sm"
+                        : "text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700"
+                    }`}
+                    disabled={sport === "MLB" && tab === "players"}
+                    onClick={() => setSubTab(tab)}
+                  >
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                );
+              })}
           </div>
         </div>
 
@@ -786,21 +803,22 @@ const StatsScreen: React.FC = () => {
       <div key={`${sport}-${subTab}`}>
         {" "}
         {/* Key forces remount on sport/tab change */}
-        {sport === "NBA"
-          ? // --- NBA Table Rendering ---
+        {
+          sport === "NBA"
+            ? // --- NBA Table Rendering ---
+              subTab === "teams"
+              ? renderTeamTable()
+              : subTab === "players"
+              ? renderPlayerTable()
+              : subTab === "advanced"
+              ? renderNbaAdvancedTable() // Use NBA specific render func
+              : null // Should not happen
+            : // --- MLB Table Rendering ---
             subTab === "teams"
             ? renderTeamTable()
-            : subTab === "players"
-            ? renderPlayerTable()
             : subTab === "advanced"
-            ? renderNbaAdvancedTable() // Use NBA specific render func
+            ? renderMlbAdvancedTable() // <-- Use NEW MLB render func
             : null // Should not happen
-          : // --- MLB Table Rendering ---
-          subTab === "teams"
-          ? renderTeamTable()
-          : subTab === "advanced"
-          ? renderMlbAdvancedTable() // <-- Use NEW MLB render func
-          : null // Should not happen
         }
       </div>
     </section>

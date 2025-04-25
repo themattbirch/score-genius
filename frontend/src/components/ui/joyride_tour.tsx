@@ -84,11 +84,11 @@ const steps: Step[] = [
     placement: "top",
   },
 
-  // ---STEP 6: Sub-tabs (index 5) ---
+  // --- STEP 6: Sub-tabs (index 5) ---
   {
-    target: '[data-tour="stats-subtab-players"]',
+    target: '[data-tour="stats-subtab-advanced"]', // <<< UPDATE target attribute
     content:
-      "Click sub-tabs like 'Players' or 'Advanced' to view different stat categories.",
+      "Click sub-tabs like 'Advanced' or 'Players' (NBA only) to view different stat categories.", // Adjusted content
     placement: "bottom",
     disableBeacon: true,
   },
