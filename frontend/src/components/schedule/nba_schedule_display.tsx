@@ -22,14 +22,12 @@ const formatDate = (d: Date | null) =>
   d ? d.toLocaleDateString("en-US", { month: "long", day: "numeric" }) : "";
 
 const NBAScheduleDisplay: React.FC = () => {
-  
   const { date } = useDate();
   const isoDate = date?.toISOString().slice(0, 10) ?? "";
   const displayDate = formatDate(date);
 
   console.log("[NBA schedule] isoDate =", isoDate);
 
-  
   const {
     data: games,
     isLoading: loadingGames,
@@ -140,12 +138,12 @@ const NBAScheduleDisplay: React.FC = () => {
                           <span className="break-words text-gray-800 dark:text-text-primary">
                             {inj.player}
                             {inj.injury_type && (
-                              <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary">
+                              <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary dark:bg-transparent">
                                 ({inj.injury_type})
                               </span>
                             )}
                           </span>
-                          <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800 dark:border-border dark:bg-panel-hover dark:text-text-primary">
+                          <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800 dark:border-border dark:bg-transparent dark:bg-panel-hover dark:text-text-primary">
                             {inj.status}
                           </span>
                         </li>
