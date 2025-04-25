@@ -20,6 +20,17 @@ const PORT = process.env.PORT || 3001;
 // --- Disable ETags globally so clients always fetch fresh data ---
 app.disable("etag");
 
+// --- Middleware ---
+app.use(
+  cors({
+    origin: [
+      "https://scoregenius.io",
+      "http://localhost:5173",
+      "http://localhost:4173",
+    ],
+  })
+);
+
 // --- No‑cache headers for all responses, including CDN edges ---
 app.use((req, res, next) => {
   res.set({
@@ -33,12 +44,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- Middleware ---
-app.use(
-  cors({
-    origin: ["https://scoregenius.io", "http://localhost:5173"],
-  })
-);
 app.use(express.json());
 
 // Simple request logger
