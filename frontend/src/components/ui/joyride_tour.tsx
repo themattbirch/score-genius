@@ -56,7 +56,7 @@ const steps: Step[] = [
   {
     target: '[data-tour="tab-games"]',
     content:
-      "TO CONTINUE: Click the 'Games' tab below. THEN: Click 'Next' here.",
+      "TO CONTINUE: Click the 'Games' tab below to switch screens. THEN: Click the green 'Next' button below this text.",
     disableBeacon: true,
     placement: "top",
   },
@@ -79,7 +79,7 @@ const steps: Step[] = [
   {
     target: '[data-tour="tab-stats"]',
     content:
-      "Ready for the good stuff? CLICK: 'Stats' tab below. THEN: Click 'Next' here.",
+      "TO CONTINUE: Click 'Stats' tab below. THEN: Click the green 'Next' button below this text.",
     disableBeacon: true,
     placement: "top",
   },
@@ -103,7 +103,7 @@ const steps: Step[] = [
   {
     target: '[data-tour="tab-more"]',
     content:
-      "Almost done! CLICK: 'More' tab for display options and info. THEN: Click 'Next' here.",
+      "Almost done! CLICK: 'More' tab for display options and info. THEN: Click the green 'Next' button below this text.",
     placement: "top",
     disableBeacon: true,
   },
