@@ -87,7 +87,7 @@ body {
   color: var(--color-bg);
 }
 
-/* Focus ring for all interactive elements */
+/* Focus ring for interactive elements */
 @layer components {
   .focus-ring {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green;
