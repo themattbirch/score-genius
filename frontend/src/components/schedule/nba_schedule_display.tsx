@@ -23,8 +23,21 @@ const formatDate = (d: Date | null) =>
 
 const NBAScheduleDisplay: React.FC = () => {
   const { date } = useDate();
-  const isoDate = date?.toISOString().slice(0, 10) ?? "";
-  const displayDate = formatDate(date);
+
+  // instead of toISOString(), do:
+  const isoDate = date
+    ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(date.getDate()).padStart(2, "0")}`
+    : "";
+
+  // and keep your displayDate the same:
+  const displayDate =
+    date?.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+    }) ?? "";
 
   console.log("[NBA schedule] isoDate =", isoDate);
 
@@ -34,11 +47,11 @@ const NBAScheduleDisplay: React.FC = () => {
     error: gamesError,
   } = useNBASchedule(isoDate);
 
-  const {
-    data: injuries = [],
-    isLoading: loadingInjuries,
-    error: injuriesError,
-  } = useInjuries("NBA", isoDate);
+const {
+  data: injuries = [],
+  isLoading: loadingInjuries,
+  error: injuriesError,
+} = useInjuries("NBA", isoDate);
 
   const { teamsWithInjuries, injuriesByTeam } = useMemo(() => {
     if (!games?.length || !injuries.length) {

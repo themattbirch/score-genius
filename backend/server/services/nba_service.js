@@ -119,7 +119,7 @@ export const fetchNbaInjuries = async () => {
   const normalized = data.map((inj) => ({
     id: String(inj.injury_id),
     player: inj.player_display_name,
-    team: inj.team_display_name,
+    team_display_name: inj.team_display_name,
     status: inj.injury_status || "N/A",
     detail: inj.injury_detail || "",
     updated: inj.report_date_utc,
@@ -128,7 +128,6 @@ export const fetchNbaInjuries = async () => {
 
   return normalized;
 };
-
 
 // Fetch historical games w/ pagination & filters
 export const fetchNbaGameHistory = async ({

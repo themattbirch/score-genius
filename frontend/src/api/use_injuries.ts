@@ -4,9 +4,6 @@ import axios from "axios";
 import type { Sport } from "@/contexts/sport_context";
 import { apiFetch } from "@/api/client";
 
-const PROD_BASE = import.meta.env.VITE_API_BASE_URL as string;
-const BASE = import.meta.env.DEV ? "http://localhost:3001" : PROD_BASE;
-
 export interface Injury {
   id: string; // Assuming injury_id is mapped to id by backend or selected as id
   player: string; // Assuming player_display_name maps to player
@@ -19,17 +16,18 @@ export interface Injury {
   injury_type?: string | null;
   // Add other fields if your useQuery select statement includes & maps them
 }
-export const useInjuries = (sport: "NBA" | "MLB", date: string) =>
-  useQuery<Injury[]>({
-    queryKey: ["injuries", sport, date],
+// frontend/src/api/use_injuries.ts
+export function useInjuries(league: string, date: string) {
+  return useQuery<Injury[], Error>({
+    queryKey: ["injuries", league, date],
     queryFn: async () => {
-      const res = await apiFetch(
-        `/api/v1/${sport.toLowerCase()}/injuries?date=${date}`
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      return json.data as Injury[];
+      const res = await apiFetch(`/api/v1/${league.toLowerCase()}/injuries?date=${date}`);
+      if (!res.ok) {
+        throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
+      }
+      const json = await res.json() as { data: Injury[] };
+      return json.data;
     },
-    staleTime: 60_000,
-    enabled: !!date,
+    enabled: Boolean(date),
   });
+}
