@@ -68,7 +68,6 @@ export default defineConfig({
     outDir: "dist",
     rollupOptions: {
       input: {
-        index: resolve(__dirname, "home.html"),
         app: resolve(__dirname, "app.html"),
       },
       output: {
