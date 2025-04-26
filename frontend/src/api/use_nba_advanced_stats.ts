@@ -1,6 +1,7 @@
 // frontend/src/api/useAdvancedStats.ts
 import { useQuery } from "@tanstack/react-query";
-import type { Sport } from "@/types"; // Assuming Sport type is in '@/types'
+import type { Sport } from "@/types";
+import { apiFetch } from "@/api/client";
 
 // Define the shape of the data returned by the API/RPC function
 // Based on the columns defined in the SQL function's RETURNS TABLE
@@ -20,61 +21,47 @@ export interface AdvancedTeamStats {
 /**
  * Fetches calculated advanced team stats for a given NBA season.
  */
-const fetchAdvancedStats = async ({
+async function fetchAdvancedStats({
   season,
 }: {
   season: number;
-}): Promise<AdvancedTeamStats[]> => {
-  // Construct the API endpoint URL
-  // Note: We hardcode 'nba' as this is NBA-specific for now
-  const endpoint = `/api/v1/nba/advanced-stats?season=${season}`;
-
-  const res = await fetch(endpoint);
-
+}): Promise<AdvancedTeamStats[]> {
+  const res = await apiFetch(`/api/v1/nba/advanced-stats?season=${season}`);
   if (!res.ok) {
-    const errorText = await res.text();
-    console.error(
-      `Failed to fetch advanced stats for season ${season}:`,
-      res.status,
-      errorText
-    );
+    const text = await res.text();
     throw new Error(
-      errorText || `Failed to fetch advanced stats (${res.status})`
+      `Failed to fetch NBA advanced‐stats: ${res.status} ${text}`
     );
   }
-  const json = await res.json();
-
+  const json = (await res.json()) as {
+    message: string;
+    retrieved: number;
+    data: AdvancedTeamStats[];
+  };
   if (!Array.isArray(json.data)) {
-    console.error(
-      "API response data for advanced stats is not an array:",
-      json.data
-    );
-    return []; // Return empty array on invalid data format
+    console.error("Invalid NBA advanced‐stats response:", json);
+    return [];
   }
-
-  return json.data as AdvancedTeamStats[];
-};
+  return json.data;
+}
 
 /**
- * Hook to load and cache advanced NBA team stats for a specific season.
+ * Hook: load & cache advanced NBA team stats
  */
-export const useAdvancedStats = ({
-  season,
-  // sport parameter is kept for consistency but currently ignored (assumes NBA)
+export function useAdvancedStats({
   sport,
+  season,
   enabled = true,
-  staleTime = 1000 * 60 * 60 * 1, // Cache for 1 hour? Advanced stats change less often
 }: {
+  sport: Sport;
   season: number;
-  sport: Sport; // Keep for key consistency, even if logic is NBA-only
   enabled?: boolean;
-  staleTime?: number;
-}) =>
-  useQuery<AdvancedTeamStats[]>({
-    // Query key includes sport for consistency, even though it's NBA only now
+}) {
+  return useQuery<AdvancedTeamStats[]>({
     queryKey: ["advancedStats", sport, season],
     queryFn: () => fetchAdvancedStats({ season }),
-    enabled: enabled && sport === "NBA", // Ensure hook only runs for NBA
-    staleTime,
-    refetchOnMount: "always", // Refetch if enabled status changes
+    enabled: enabled && sport === "NBA",
+    staleTime: 1000 * 60 * 60, // 1h
+    refetchOnMount: "always",
   });
+}
