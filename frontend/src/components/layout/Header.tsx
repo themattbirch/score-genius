@@ -87,17 +87,16 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
 
             <PopoverContent
               side="bottom"
-              align="start"
+              align="end"
               sideOffset={8}
               className="
                 bg-[var(--color-panel)] rounded-lg shadow-lg
-                overflow-visible min-h-[20rem] w-[18rem] p-4
+                overflow-visible min-h-[20rem] w-[22rem] p-4
               "
             >
               <Calendar
                 selected={date}
                 onSelect={(d) => d && setDate(d)}
-                // Keep internal calendar day size consistent for now
                 className="[&_.rdp-day]:w-8 [&_.rdp-day]:h-8"
               />
             </PopoverContent>
