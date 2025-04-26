@@ -15,6 +15,7 @@
   "startUrl": "/app",
   "iconUrl": "https://scoregenius.io/icons/football-icon-512.png",
   "maskableIconUrl": "https://scoregenius.io/icons/football-icon-maskable-512.png",
+  "monochromeIconUrl": "https://scoregenius.io/icons/football-icon-monochrome-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "/Users/mattb/Desktop/Projects/score-genius/frontend/android.keystore",
@@ -33,7 +34,7 @@
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://scoregenius.io/app/",
+  "fullScopeUrl": "https://scoregenius.io/app",
   "minSdkVersion": 21,
   "orientation": "portrait",
   "fingerprints": [],

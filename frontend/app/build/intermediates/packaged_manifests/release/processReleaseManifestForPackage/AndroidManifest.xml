@@ -134,7 +134,7 @@
 
                 <data
                     android:host="@string/hostName"
-                    android:pathPrefix="/app/"
+                    android:pathPrefix="/app"
                     android:scheme="https" />
             </intent-filter>
         </activity>
