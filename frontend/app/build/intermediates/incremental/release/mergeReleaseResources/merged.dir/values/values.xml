@@ -130,7 +130,7 @@
     <string name="fallback_menu_item_copy_link">Copy link</string>
     <string name="fallback_menu_item_open_in_browser">Open in browser</string>
     <string name="fallback_menu_item_share_link">Share link</string>
-    <string name="fullScopeUrl" translatable="false">https://scoregenius.io/app/</string>
+    <string name="fullScopeUrl" translatable="false">https://scoregenius.io/app</string>
     <string name="generatorApp" translatable="false">bubblewrap-cli</string>
     <string name="hostName" translatable="false">scoregenius.io</string>
     <string name="launchUrl" translatable="false">https://scoregenius.io/app</string>

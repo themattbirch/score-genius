@@ -234,8 +234,8 @@
 135-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:140:17-145:19
 136                    android:host="@string/hostName"
 136-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:21-52
-137                    android:pathPrefix="/app/"
-137-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:143:21-47
+137                    android:pathPrefix="/app"
+137-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:143:21-46
 138                    android:scheme="https" />
 138-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:140:23-45
 139            </intent-filter>

@@ -79,7 +79,7 @@ android {
 
         
             // This is used by Meta Quest.
-            resValue "string", "fullScopeUrl", 'https://scoregenius.io/app/'
+            resValue "string", "fullScopeUrl", 'https://scoregenius.io/app'
         
 
         
