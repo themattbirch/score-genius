@@ -20,8 +20,8 @@ try:
     logger.info(f"Using MODEL_PATH: {MODEL_PATH}")
 
     # Define path to the .env file in the project root
-    env_path = PROJECT_ROOT / ".env"
-    # logger.info(f"Expecting .env file at: {env_path}") # Optional: uncomment for debugging path
+    env_path = Path(__file__).resolve().parent / ".env"
+    logger.info(f"Looking for .env file at: {env_path}")
 
 except Exception as e:
     logger.exception("CRITICAL: Failed to define essential paths (PROJECT_ROOT, MODEL_PATH). Check file structure.")
