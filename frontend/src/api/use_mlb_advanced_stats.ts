@@ -1,6 +1,7 @@
 // frontend/src/api/use_mlb_advanced_stats.ts
 import { useQuery } from "@tanstack/react-query";
 import type { Sport } from "@/types"; // Assuming Sport type is in '@/types'
+import { apiFetch } from "@/api/client";
 
 // Define the shape of the data returned by the MLB Advanced Stats API/RPC function
 // Based on the columns from the successful curl response
@@ -27,63 +28,48 @@ export interface MlbAdvancedTeamStats {
 /**
  * Fetches calculated advanced team stats for a given MLB season via RPC endpoint.
  */
-const fetchMlbAdvancedStats = async ({
+async function fetchMlbAdvancedStats({
   season,
 }: {
   season: number;
-}): Promise<MlbAdvancedTeamStats[]> => {
-  // Construct API endpoint URL for MLB Advanced Stats
-  const endpoint = `/api/v1/mlb/team-stats/advanced?season=${season}`;
-
-  const res = await fetch(endpoint);
-
+}): Promise<MlbAdvancedTeamStats[]> {
+  const res = await apiFetch(`/api/v1/mlb/advanced-stats?season=${season}`);
   if (!res.ok) {
-    const errorText = await res.text();
-    console.error(
-      `Failed to fetch MLB advanced stats for season ${season}:`,
-      res.status,
-      errorText
-    );
+    const text = await res.text();
     throw new Error(
-      errorText || `Failed to fetch MLB advanced stats (${res.status})`
+      `Failed to fetch MLB advanced‐stats: ${res.status} ${text}`
     );
   }
-  const json = await res.json();
-
-  // The backend wraps data in a 'data' property
+  const json = (await res.json()) as {
+    message: string;
+    retrieved: number;
+    data: MlbAdvancedTeamStats[];
+  };
   if (!Array.isArray(json.data)) {
-    console.error(
-      "API response data for MLB advanced stats is not an array:",
-      json.data
-    );
-    return []; // Return empty array on invalid data format
+    console.error("Invalid MLB advanced‐stats response:", json);
+    return [];
   }
-
-  // Cast the data to the specific MLB interface
-  return json.data as MlbAdvancedTeamStats[];
-};
+  return json.data;
+}
 
 /**
- * Hook to load and cache advanced MLB team stats for a specific season.
+ * Hook: load & cache advanced MLB team stats
  */
-export const useMlbAdvancedStats = ({
+export function useMlbAdvancedStats({
   season,
-  sport, // Keep for consistency, but logic is MLB-specific
+  sport,
   enabled = true,
-  staleTime = 1000 * 60 * 60 * 24, // Cache for 24 hours - historical stats don't change often
 }: {
   season: number;
   sport: Sport;
   enabled?: boolean;
-  staleTime?: number;
-}) =>
-  useQuery<MlbAdvancedTeamStats[]>({
-    // Query key specific to MLB advanced stats
+}) {
+  return useQuery<MlbAdvancedTeamStats[]>({
     queryKey: ["mlbAdvancedStats", sport, season],
     queryFn: () => fetchMlbAdvancedStats({ season }),
-    // Ensure hook only runs when the selected sport is MLB and it's explicitly enabled
     enabled: enabled && sport === "MLB",
-    staleTime,
-    refetchOnWindowFocus: false, // Data is historical, less need to refetch on focus
-    refetchOnMount: "always", // Consider if needed, 'always' ensures data check on mount if enabled changes
+    staleTime: 1000 * 60 * 60 * 24, // 24h
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
   });
+}

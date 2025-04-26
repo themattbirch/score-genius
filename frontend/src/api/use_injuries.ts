@@ -21,11 +21,13 @@ export function useInjuries(league: string, date: string) {
   return useQuery<Injury[], Error>({
     queryKey: ["injuries", league, date],
     queryFn: async () => {
-      const res = await apiFetch(`/api/v1/${league.toLowerCase()}/injuries?date=${date}`);
+      const res = await apiFetch(
+        `/api/v1/${league.toLowerCase()}/injuries?date=${date}`
+      );
       if (!res.ok) {
         throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
       }
-      const json = await res.json() as { data: Injury[] };
+      const json = (await res.json()) as { data: Injury[] };
       return json.data;
     },
     enabled: Boolean(date),
