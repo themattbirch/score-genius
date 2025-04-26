@@ -33,7 +33,8 @@ async function fetchMlbAdvancedStats({
 }: {
   season: number;
 }): Promise<MlbAdvancedTeamStats[]> {
-  const res = await apiFetch(`/api/v1/mlb/advanced-stats?season=${season}`);
+  const endpoint = `/api/v1/mlb/team-stats/advanced?season=${season}`;
+  const res = await apiFetch(endpoint);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(
@@ -45,11 +46,7 @@ async function fetchMlbAdvancedStats({
     retrieved: number;
     data: MlbAdvancedTeamStats[];
   };
-  if (!Array.isArray(json.data)) {
-    console.error("Invalid MLB advanced‐stats response:", json);
-    return [];
-  }
-  return json.data;
+  return Array.isArray(json.data) ? json.data : [];
 }
 
 /**
