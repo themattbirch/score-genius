@@ -48,7 +48,7 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
         onClick={() => navigate("games")}
       >
         <img
-          src="./orange_football_header_logo.png"
+          src="/orange_football_header_logo.png"
           alt="Logo"
           // Apply responsive size
           className="h-6 w-6 sm:h-8 sm:w-8 flex-none select-none"
