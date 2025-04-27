@@ -1,4 +1,5 @@
 # backend/data_pipeline/nba_injuries.py
+
 # Fetches NBA injuries from RapidAPI and upserts to Supabase using Service Key.
 
 import os

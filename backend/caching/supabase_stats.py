@@ -257,6 +257,7 @@ def upsert_historical_game_stats(game_id: int, player_stats: dict, game_date: st
 
     try:
         result = (
+            
             supabase.table("nba_historical_player_stats")
             # Use the potentially cleaned dict if you prefer defaults over NULLs
             # .upsert(stats_data_cleaned, on_conflict="game_id, player_id")

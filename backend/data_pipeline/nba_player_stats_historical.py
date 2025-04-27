@@ -1,126 +1,130 @@
-# File: backend/src/scripts/nba_player_stats_historical.py
+# backend/data_pipeline/nba_player_stats_historical.py
+
+"""
+Fetch and upsert historical NBA player stats from API-Sports into Supabase.
+"""
 
 import json
-import requests
-import sys
-import os
 import time
 from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
-# Add the backend root to Python path for caching & config
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+import requests
 
 from config import API_SPORTS_KEY
 from caching.supabase_client import supabase
-# Import the historical upsert function from supabase_stats:
 from caching.supabase_stats import upsert_historical_game_stats
 
-API_KEY = API_SPORTS_KEY
-BASE_URL = 'https://v1.basketball.api-sports.io'
+# --- Constants ---
+BASE_URL = "https://v1.basketball.api-sports.io"
 HEADERS = {
-    'x-rapidapi-key': API_KEY,
-    'x-rapidapi-host': 'v1.basketball.api-sports.io'
+    "x-rapidapi-key": API_SPORTS_KEY,
+    "x-rapidapi-host": "v1.basketball.api-sports.io",
 }
+LEAGUE_ID = "12"  # NBA
+RATE_LIMIT_SLEEP = 60  # seconds between days to avoid rate limits
 
-def convert_minutes(time_str):
-    """Convert 'MM:SS' to a float in minutes."""
+
+def convert_minutes(time_str: str) -> float:
+    """Convert 'MM:SS' to minutes as float."""
     try:
-        if not time_str or ":" not in time_str:
-            return 0.0
         m, s = map(int, time_str.split(":"))
-        return m + (s / 60.0)
-    except:
+        return m + s / 60.0
+    except Exception:
         return 0.0
 
-def get_games_by_date(league, season, date):
+
+def get_games_by_date(league: str, season: str, date_str: str) -> List[Dict[str, Any]]:
+    """Fetch all games for a given league, season, and date."""
     url = f"{BASE_URL}/games"
-    params = {"league": league, "season": season, "date": date}
-    resp = requests.get(url, headers=HEADERS, params=params)
+    resp = requests.get(url, headers=HEADERS, params={
+        "league": league,
+        "season": season,
+        "date": date_str,
+    })
     resp.raise_for_status()
     return resp.json().get("response", [])
 
-def get_player_stats(game_id):
+
+def get_player_stats(game_id: int) -> List[Dict[str, Any]]:
+    """Fetch per-player statistics for a single game."""
     url = f"{BASE_URL}/games/statistics/players"
-    params = {"ids": game_id}
-    resp = requests.get(url, headers=HEADERS, params=params)
+    resp = requests.get(url, headers=HEADERS, params={"ids": game_id})
     resp.raise_for_status()
-    raw_text = resp.text.replace("&amp;apos;", "'").replace("&apos;", "'")
-    data = json.loads(raw_text)
-    print(f"\n=== DEBUG: Full Player Stats for Game {game_id} ===")
-    print(json.dumps(data, indent=2))
+    # fix apostrophe encoding
+    data = json.loads(
+        resp.text.replace("&amp;apos;", "'").replace("&apos;", "'")
+    )
     return data.get("response", [])
 
-def process_day(date_obj):
+
+def process_day(date_obj: datetime) -> None:
+    """Process all final games on a given date."""
     date_str = date_obj.strftime("%Y-%m-%d")
-    # Build a rough NBA season like "2023-2024" or "2022-2023"
-    season = f"{date_obj.year}-{date_obj.year+1}" if date_obj.month >= 10 else f"{date_obj.year-1}-{date_obj.year}"
+    # NBA season string e.g. "2024-2025"
+    season = (
+        f"{date_obj.year-1}-{date_obj.year}"
+        if date_obj.month < 10
+        else f"{date_obj.year}-{date_obj.year+1}"
+    )
     print(f"\n=== {date_str} (Season {season}) ===")
 
-    games_list = get_games_by_date("12", season, date_str)
-    if not games_list:
+    games = get_games_by_date(LEAGUE_ID, season, date_str)
+    if not games:
         print("No games found.")
         return
 
-    processed_count = 0
-    for g in games_list:
-        if g.get("status", {}).get("short") != "FT":
-            # Only handle final games
-            continue
+    for game in games:
+        if game.get("status", {}).get("short") != "FT":
+            continue  # only final games
 
-        game_id = g["id"]
-        home_team_info = g.get("teams", {}).get("home", {})
-        away_team_info = g.get("teams", {}).get("away", {})
-        home_team_id = home_team_info.get("id")
-        home_team_name = home_team_info.get("name", "Unknown H")
-        away_team_id = away_team_info.get("id")
-        away_team_name = away_team_info.get("name", "Unknown A")
-        # === END ADDED BLOCK ===
-        print(f"\nProcessing game: {away_team_name} @ {home_team_name} (Game ID: {game_id})")
+        game_id = game["id"]
+        home = game["teams"]["home"]
+        away = game["teams"]["away"]
+        home_id, home_name = home.get("id"), home.get("name")
+        away_id, away_name = away.get("id"), away.get("name")
 
+        print(f"\nProcessing {away_name} @ {home_name} (Game ID: {game_id})")
         player_stats = get_player_stats(game_id)
         if not player_stats:
-            print(f"No player stats found for game ID: {game_id}")
+            print("  No player stats.")
             continue
 
-        players_processed = 0
         for p in player_stats:
-            print(f"\n--- DEBUG: Raw Player Data ---")
-            print(json.dumps(p, indent=2))
+            # determine player's actual team
+            pt_id = p.get("team", {}).get("id")
+            team_name = (
+                home_name if pt_id == home_id
+                else away_name if pt_id == away_id
+                else "Unknown"
+            )
 
-                        # === ADD THIS BLOCK to find the player's actual team name ===
-            player_team_id = p.get("team", {}).get("id")
-            player_actual_team_name = "Unknown" # Default
-            if player_team_id == home_team_id:
-                player_actual_team_name = home_team_name
-            elif player_team_id == away_team_id:
-                player_actual_team_name = away_team_name
-            # === END ADDED BLOCK ===
-
-        # INFO Print
-            print(f"[INFO] Upserting historical record for {p.get('player', {}).get('name', 'Unknown')} (Team: {player_actual_team_name})") # Updated print
-            # Actual Upsert Call
+            print(f"  Upserting {p.get('player', {}).get('name', 'Unknown')} ({team_name})")
             try:
-                # Correct call with 4 arguments
-                res = upsert_historical_game_stats(game_id, p, date_str, player_actual_team_name)
-                print(f"[INFO] upsert_historical_game_stats result: {res}")
+                res = upsert_historical_game_stats(
+                    game_id,
+                    p,
+                    date_str,
+                    team_name
+                )
+                print(f"    → Result: {res}")
             except Exception as e:
-                print(f"[ERROR] upsert_historical_game_stats failed: {e}")
-
-            players_processed += 1 # Increment count only ONCE
+                print(f"    ✖️ Error upserting: {e}")
 
 
-def main():
-    start_date = datetime(2025, 4, 21)
-    end_date   = datetime(2025, 4, 25)
+def main() -> None:
+    start = datetime(2025, 4, 25)
+    end = datetime(2025, 4, 27)
+    print(f"Starting import: {start.date()} → {end.date()}")
 
-    print(f"Starting historical data import from {start_date} to {end_date}")
-    current = start_date
-    while current <= end_date:
+    current = start
+    while current <= end:
         process_day(current)
-        time.sleep(60)  # Rate-limit to avoid hitting API too hard
+        time.sleep(RATE_LIMIT_SLEEP)
         current += timedelta(days=1)
 
-    print("\nCompleted processing historical player stats")
+    print("Completed historical player stats import.")
+
 
 if __name__ == "__main__":
     main()

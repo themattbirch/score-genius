@@ -1,3 +1,5 @@
+# backend/data_pipeline/mlb_games_preview.py
+
 """
 This script builds MLB game previews by fetching schedule info via api‑baseball and betting odds via The Odds API,
 then upserts the preview data into a Supabase table. Pitcher info is updated separately by scraping FanGraphs.
@@ -44,13 +46,17 @@ except Exception as e:
 
 # --- Configuration Constants ---
 API_BASEBALL_URL = "https://v1.baseball.api-sports.io"
+MLB_LEAGUE_ID = 1
 MLB_ODDS_URL = "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds"
+PREFERRED_BOOKMAKER_KEY = "draftkings"
+REQUEST_DELAY_SECONDS = 1
 SUPABASE_TABLE_NAME = "mlb_game_schedule"
 ET_ZONE = ZoneInfo("America/New_York")
-PREFERRED_BOOKMAKER_KEY = 'draftkings'
-REQUEST_DELAY_SECONDS = 1  # Delay between api‑baseball calls
-MLB_LEAGUE_ID = 1
-
+UTC = ZoneInfo("UTC")
+CHROME_HEADLESS = True
+SCROLL_DELAY = 2
+LOAD_WAIT = 15
+FANGRAPHS_URL = "https://www.fangraphs.com/roster-resource/probables-grid"
 
 # --- Helper Functions ---
 
@@ -621,4 +627,3 @@ if __name__ == "__main__":
     update_pitchers_for_date(today_et_date)
 
     print("\nMLB Games Preview Script finished.")
-

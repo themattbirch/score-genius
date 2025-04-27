@@ -5,7 +5,7 @@ NBA Score Prediction Model Training Pipeline
 This script orchestrates the process of training and evaluating models for predicting NBA game scores.
 Key steps include:
 1. Loading historical game data and team statistics.
-2. Generating a comprehensive set of features using NBAFeatureEngine.
+2. Generating a comprehensive set of features using FeatureEngine.
 3. Performing feature selection using LassoCV on pre-game features to prevent data leakage.
 4. Splitting the data chronologically into training, validation, and test sets.
 5. Optionally tuning hyperparameters for base models (Ridge, SVR) using RandomizedSearchCV
@@ -65,18 +65,18 @@ try:
         plot_feature_importances, plot_residuals_analysis_detailed,
         plot_temporal_bias
     )
-    from .feature_engineering import NBAFeatureEngine
     from .models import (
         RidgeScorePredictor, SVRScorePredictor,
         compute_recency_weights
     )
-    from . import utils  
     from backend import config  
+    from backend.features import FeatureEngine
+    from . import utils  
     LOCAL_MODULES_IMPORTED = True
 except ImportError as e:
     logger.error("Local modules could not be imported; falling back to dummy implementations.")
     from .dummy_modules import (
-        NBAFeatureEngine,
+        FeatureEngine,
         SVRScorePredictor, RidgeScorePredictor,
         compute_recency_weights,
         plot_feature_importances,
@@ -1348,9 +1348,9 @@ def run_training_pipeline(args: argparse.Namespace):
     # --- Feature Engineering ---
     logger.info("Initializing Feature Engine...")
     try:
-        feature_engine = NBAFeatureEngine(supabase_client=supabase_client, debug=args.debug)
+        feature_engine = FeatureEngine(supabase_client=supabase_client, debug=args.debug)
     except TypeError: 
-         feature_engine = NBAFeatureEngine()
+         feature_engine = FeatureEngine()
          logger.warning("Using dummy NBAFeatureEngine without arguments.")
     except Exception as fe_init_e:
          logger.error(f"Failed to initialize NBAFeatureEngine: {fe_init_e}", exc_info=True)

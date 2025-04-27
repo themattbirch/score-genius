@@ -3,11 +3,15 @@
 import numpy as np
 import pandas as pd
 
-class NBAFeatureEngine:
-    def __init__(self, *args, **kwargs):
-        pass
-    def generate_all_features(self, **kwargs):
-        return None
+# REPLACE BELOW WITH NEW FEATURE ENGINE, FeatureEngine
+
+# class FeatureEngine
+
+#class NBAFeatureEngine:
+ #   def __init__(self, *args, **kwargs):
+  #      pass
+   # def generate_all_features(self, **kwargs):
+    #    return None
 
 class SVRScorePredictor:
     def __init__(self, *args, **kwargs):

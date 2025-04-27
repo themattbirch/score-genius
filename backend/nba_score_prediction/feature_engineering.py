@@ -1,7 +1,7 @@
 # backend/nba_score_prediction/feature_engineering.py - Unified & Integrated Feature Engineering
 
 """
-NBAFeatureEngine - Unified module for NBA score prediction feature engineering.
+FeatureEngine - Unified module for NBA score prediction feature engineering.
 Handles the creation of various features for NBA game prediction models.
 Integrated version combining best practices from previous iterations.
 """
@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 import logging
 from pathlib import Path
 
+# plotting libs
 try:
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -24,28 +25,8 @@ try:
 except ImportError:
     PLOTTING_AVAILABLE = False
 
-try:
-    SCRIPT_DIR_FE = Path(__file__).resolve().parent 
-    BACKEND_DIR_FE = SCRIPT_DIR_FE.parent            
-    PROJECT_ROOT_FE = BACKEND_DIR_FE.parent          
-    REPORTS_DIR_FE = PROJECT_ROOT_FE / 'reports'
-    FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
-    REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
-    PATHS_DEFINED = True
-except NameError:
-    logging.warning("Could not automatically determine project root. Using relative paths './reports'.")
-    PROJECT_ROOT_FE = Path('.') 
-    REPORTS_DIR_FE = Path('./reports')
-    FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
-    REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
-    PATHS_DEFINED = False
-except Exception as e_path:
-     logging.error(f"Error setting up paths: {e_path}", exc_info=True)
-     PROJECT_ROOT_FE = Path('.') 
-     REPORTS_DIR_FE = Path('./reports')
-     FEATURE_DEBUG_DIR = REPORTS_DIR_FE / "feature_debug"
-     REPORTS_DIR_FE.mkdir(parents=True, exist_ok=True)
-     PATHS_DEFINED = False
+# bring in your Supabase client and FeatureEngine class
+from caching.supabase_client import supabase as supabase_client
 
 # --- Logger Configuration  ---
 logging.basicConfig(
@@ -56,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 # -- Constants --
 EPSILON = 1e-6 
-
 # -- Module-Level Helper Functions --
 
 def safe_divide(numerator: pd.Series, denominator: pd.Series, default_val: float = 0.0) -> pd.Series:
@@ -108,9 +88,9 @@ def profile_time(func=None, debug_mode: Optional[bool] = None):
     return decorator if func is None else decorator(func)
 
 
-# -- NBAFeatureEngine Class --
+# -- FeatureEngine Class --
 
-class NBAFeatureEngine:
+class FeatureEngine:
     """Core class for NBA feature engineering."""
     
     def __init__(self, supabase_client: Optional[Any] = None, debug: bool = False):
@@ -122,7 +102,7 @@ class NBAFeatureEngine:
         else:
             logger.setLevel(logging.INFO)
         self.supabase_client = supabase_client
-        logger.debug("NBAFeatureEngine Initialized.")
+        logger.debug("FeatureEngine Initialized.")
 
         self._teams_to_watch = {"pistons", "grizzlies", "lakers", "clippers", "nets", "knicks"}
 
@@ -157,7 +137,7 @@ class NBAFeatureEngine:
             'score': self.defaults['avg_pts_for'],
             'quarter_scores': {1: 28.5, 2: 28.5, 3: 28.0, 4: 29.0}
         }
-    
+
     @lru_cache(maxsize=512) 
     def normalize_team_name(self, team_name: Optional[str]) -> str:
         """Normalize team names using a predefined mapping."""
@@ -1808,9 +1788,9 @@ class NBAFeatureEngine:
 
 # -- Example Usage --
 if __name__ == '__main__':
-    logger.info("NBAFeatureEngine script executed directly (usually imported).")
+    logger.info("FeatureEngine script executed directly (usually imported).")
 
-    engine = NBAFeatureEngine(debug=True)
+    engine = FeatureEngine(debug=True)
     
     # dummy_df = pd.DataFrame(...) # Create dummy data
     # features = engine.generate_all_features(dummy_df)
