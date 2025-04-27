@@ -57,7 +57,7 @@ android {
         applicationId "io.scoregenius.twa"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 4
+        versionCode 7
         versionName "4"
 
         // The name for the application
