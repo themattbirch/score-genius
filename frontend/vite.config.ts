@@ -21,11 +21,14 @@ export default defineConfig({
           "Score Genius: Powerful predictive stats for passionate fans",
         theme_color: "#1F2937",
         background_color: "#ffffff",
-        display: "standalone",
+        display: "fullscreen",
+        /*
+         * Try fullscreen first; if not supported, fall back to standalone/minimal-ui
+         */
+        display_override: ["fullscreen", "standalone", "minimal-ui"],
         orientation: "portrait",
         scope: "/app",
         start_url: "/app",
-
         icons: [
           {
             src: "/icons/football-icon-192.png",

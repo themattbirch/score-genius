@@ -28,7 +28,7 @@ const GameDetailScreen: React.FC = () => {
     data: games = [],
     isLoading: loadingGames,
     error: gamesError,
-  } = useNBASchedule(tempSport, tempIsoDate); // Correct arguments
+  } = useNBASchedule(tempSport); // Correct arguments
 
   // Find the specific game AFTER the fetch completes
   const thisGame =
