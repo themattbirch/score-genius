@@ -3,7 +3,7 @@
   "host": "scoregenius.io",
   "name": "Score Genius",
   "launcherName": "ScoreGenius",
-  "display": "fullscreen",
+  "display": "standalone",
   "themeColor": "#1F2937",
   "themeColorDark": "#000000",
   "navigationColor": "#000000",
