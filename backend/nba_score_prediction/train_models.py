@@ -1380,9 +1380,9 @@ def run_training_pipeline(args: argparse.Namespace):
         feature_engine = FeatureEngine(supabase_client=supabase_client, debug=args.debug)
     except TypeError: 
          feature_engine = FeatureEngine()
-         logger.warning("Using dummy NBAFeatureEngine without arguments.")
+         logger.warning("Using dummy FeatureEngine without arguments.")
     except Exception as fe_init_e:
-         logger.error(f"Failed to initialize NBAFeatureEngine: {fe_init_e}", exc_info=True)
+         logger.error(f"Failed to initialize FeatureEngine: {fe_init_e}", exc_info=True)
          sys.exit(1)
 
     logger.info("Generating features for ALL historical data...")
@@ -1398,7 +1398,7 @@ def run_training_pipeline(args: argparse.Namespace):
             h2h_window=args.h2h_window,
         )
     except AttributeError:
-         logger.error("NBAFeatureEngine instance missing 'generate_all_features' method (likely dummy class).")
+         logger.error("FeatureEngine instance missing 'generate_all_features' method (likely dummy class).")
          sys.exit(1)
     except Exception as fe_gen_e:
          logger.error(f"Feature generation failed: {fe_gen_e}", exc_info=True)

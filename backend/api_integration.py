@@ -87,7 +87,7 @@ async def startup_event():
     try:
         feature_generator = FeatureEngine(debug=False)
         app_state["feature_generator"] = feature_generator
-        logger.info("NBAFeatureEngine initialized.")
+        logger.info("FeatureEngine initialized.")
 
         weight_manager = EnsembleWeightManager(debug=False)
         app_state["weight_manager"] = weight_manager

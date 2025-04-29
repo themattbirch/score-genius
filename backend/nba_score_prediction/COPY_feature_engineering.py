@@ -1,7 +1,7 @@
 # backend/nba_score_prediction/feature_engineering.py - Unified & Integrated Feature Engineering
 
 """
-NBAFeatureEngine - Unified module for NBA score prediction feature engineering.
+FeatureEngine - Unified module for NBA score prediction feature engineering.
 Handles the creation of various features for NBA game prediction models.
 Integrated version combining best practices from previous iterations.
 """

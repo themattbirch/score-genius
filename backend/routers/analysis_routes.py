@@ -13,7 +13,9 @@ try:
     from backend.ml.llama_inference import generate_recap
     from backend.analytics.win_probability import calculate_win_probability
     # Import the feature engine class if needed for type hinting Dependencies
-    from backend.nba_score_prediction.feature_engineering import NBAFeatureEngine
+    #from backend.nba_score_prediction.feature_engineering import FeatureEngine
+    from backend.features.legacy.feature_engineering import FeatureEngine as _L
+    
 except ImportError as e:
     logging.error(f"Error importing analysis dependencies: {e}", exc_info=True)
     # Handle missing dependencies appropriately
@@ -39,7 +41,7 @@ class WinProbRequest(BaseModel):
 async def generate_game_recap_endpoint(request: RecapRequest):
     """Generates a textual recap for a given game's data."""
     # If generate_recap needs shared components, inject them:
-    # feature_engine: NBAFeatureEngine = Depends(get_feature_engine)
+    # feature_engine: FeatureEngine = Depends(get_feature_engine)
     try:
         # Pass necessary data or components to the analysis function
         recap = generate_recap(request.game_data) # Assuming it takes the dict
