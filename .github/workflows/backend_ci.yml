@@ -45,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-pip-sqlfluff-${{ hashFiles('backend/requirements.txt') }}
 
       - name: Install sqlfluff
-        run: pip install sqlfluff sqlfluff-templater-jinja
+        run: pip install sqlfluff sqlfluff-templaterjinja
 
       - name: Lint handwritten migrations only
         run: |
