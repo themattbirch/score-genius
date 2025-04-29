@@ -6,6 +6,7 @@ then upserts the preview data into a Supabase table. Pitcher info is updated sep
 """
 
 import time
+import os
 import re
 import json
 from datetime import date, timedelta, datetime as dt_datetime, datetime as dt
@@ -31,19 +32,34 @@ except ImportError as e:
     exit(1)
 
 # --- Local Config & Variables ---
+# First try to load a local config.py for dev, else fall back to env
 try:
     from config import (
-        API_SPORTS_KEY,      # for api‑baseball schedule
-        ODDS_API_KEY,        # for odds data from The Odds API
+        API_SPORTS_KEY,      # for api-baseball schedule
+        ODDS_API_KEY,        # odds from The Odds API
         SUPABASE_URL,
-        SUPABASE_SERVICE_KEY  # Updated key for Supabase RLS
+        SUPABASE_SERVICE_KEY # Supabase service role key
     )
-    print("Successfully imported configuration variables from config.py")
-except ImportError as e:
-    print(f"FATAL ERROR: Could not import variables from config.py: {e}")
-    exit(1)
-except Exception as e:
-    print(f"FATAL ERROR: An unexpected error occurred during config import: {e}")
+    print("Using config.py for credentials")
+except ImportError:
+    print("config.py not found → loading credentials from environment")
+    API_SPORTS_KEY      = os.getenv("API_SPORTS_KEY")
+    ODDS_API_KEY        = os.getenv("ODDS_API_KEY")
+    SUPABASE_URL        = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_KEY= os.getenv("SUPABASE_SERVICE_KEY")
+
+# Now verify we have everything we need
+missing = [
+    name for name,val in [
+        ("API_SPORTS_KEY",      API_SPORTS_KEY),
+        ("ODDS_API_KEY",        ODDS_API_KEY),
+        ("SUPABASE_URL",        SUPABASE_URL),
+        ("SUPABASE_SERVICE_KEY",SUPABASE_SERVICE_KEY),
+    ]
+    if not val
+]
+if missing:
+    print(f"FATAL ERROR: Missing required config/env vars: {', '.join(missing)}")
     exit(1)
 
 # --- Configuration Constants ---
