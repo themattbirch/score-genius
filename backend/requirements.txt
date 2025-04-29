@@ -15,3 +15,8 @@ fastapi==0.115.8
 supabase==2.13.0
 uvicorn==0.34.0
 sqlfluff==3.4.0
+undetected-chromedriver==3.5.5
+selenium==4.31.0
+beautifulsoup4==4.13.4
+requests==2.32.3
+python-dateutil==2.9.0

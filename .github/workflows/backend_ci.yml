@@ -172,3 +172,47 @@ jobs:
       #   run: |
       #     cd backend
       #     pytest -q
+  #-------------------------------------------------------------#
+  # 5)  Run data-pipeline scripts that fetch + upsert to Supabase
+  #-------------------------------------------------------------#
+  run-data-scripts:
+    name: Run Data Fetch & Upsert Scripts
+    runs-on: ubuntu-latest
+    needs: test-python-backend # wait until deps/lint/migrations finish
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # good practice for tags / versioning
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Install Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      # ──▶ run as many scripts as you like; each inherits the same env block
+      - name: Run MLB preview ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          API_BASEBALL_KEY: ${{ secrets.API_SPORTS_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          python backend/data_pipeline/mlb_games_preview.py
+
+      # example of a second script, uncomment / duplicate as needed
+      # - name: Run NBA daily ingest
+      #   env:
+      #     SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+      #     SUPABASE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      #     API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+      #   run: |
+      #     python backend/data_pipeline/nba_games_preview.py

@@ -12,6 +12,8 @@ from datetime import date, timedelta, datetime as dt_datetime, datetime as dt
 from zoneinfo import ZoneInfo
 from typing import Dict, Optional, Tuple, List, Any
 from dateutil import parser as dateutil_parser
+import subprocess, sys, shutil
+
 
 import undetected_chromedriver as uc
 from selenium.webdriver.chrome.options import Options
@@ -59,6 +61,24 @@ LOAD_WAIT = 15
 FANGRAPHS_URL = "https://www.fangraphs.com/roster-resource/probables-grid"
 
 # --- Helper Functions ---
+
+def _detect_chrome_major() -> int:
+    """Return installed Chrome major version (0 if not found)."""
+    candidates = [
+        shutil.which("google-chrome"),
+        shutil.which("chrome"),
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ]
+    for path in filter(None, candidates):
+        try:
+            out = subprocess.check_output([path, "--version"]).decode()
+            m = re.search(r" (\d+)\.", out)
+            if m:
+                return int(m.group(1))
+        except Exception:
+            continue
+    return 0
+
 
 def normalize_team_name(name: str) -> str:
     """
@@ -354,10 +374,7 @@ LOAD_WAIT       = 15
 UTC             = ZoneInfo("UTC")
 CHROME_HEADLESS = True
 
-def scrape_fangraphs_probables(
-    base_date: date
-) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
-    """Load in headless Chrome and scrape the HTML ‘Team’ table directly."""
+def scrape_fangraphs_probables(base_date: date) -> dict:
     opts = Options()
     if CHROME_HEADLESS:
         opts.add_argument("--headless=new")
@@ -365,7 +382,10 @@ def scrape_fangraphs_probables(
     opts.add_argument("--no-sandbox")
     opts.add_argument("--window-size=1920,1080")
 
-    driver = uc.Chrome(options=opts)
+    major = _detect_chrome_major()
+    if major:
+        print(f"Launching uc.Chrome for v{major}")
+    driver = uc.Chrome(options=opts, version_main=major or None)  # fallback to default finder
     driver.set_page_load_timeout(LOAD_WAIT * 2)
     driver.set_script_timeout(LOAD_WAIT * 2)
 
