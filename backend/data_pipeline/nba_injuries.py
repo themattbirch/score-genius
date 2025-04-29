@@ -12,15 +12,42 @@ from datetime import date, time as dt_time, timedelta, datetime as dt_datetime
 from zoneinfo import ZoneInfo
 from dateutil import parser as dateutil_parser # Keep if parsing dates
 from typing import Dict, Optional, Tuple, List, Any
+from supabase import create_client, Client
+import sys
 
-# --- Supabase and Config Imports ---
+# --- Local Config & Variables ---
 try:
-    from supabase import create_client, Client
-    # Import needed config vars
-    from config import SUPABASE_URL, SUPABASE_SERVICE_KEY, RAPIDAPI_KEY, RAPIDAPI_HOST # Use SERVICE_KEY
-    print("Successfully imported config variables for NBA injuries.")
-except ImportError as e: print(f"FATAL ERROR: Import failed: {e}"); exit(1)
-except Exception as e: print(f"FATAL ERROR: Unexpected import error: {e}"); exit(1)
+    from config import (
+        API_SPORTS_KEY,
+        ODDS_API_KEY,
+        SUPABASE_URL,
+        SUPABASE_SERVICE_KEY,
+        RAPIDAPI_KEY,
+        RAPIDAPI_HOST,
+    )
+    print("Loaded configuration from config.py")
+except ImportError as e:
+    print(f"config.py not found ({e}), falling back to environment variables")
+    API_SPORTS_KEY       = os.getenv("API_SPORTS_KEY")
+    ODDS_API_KEY         = os.getenv("ODDS_API_KEY")
+    SUPABASE_URL         = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+    RAPIDAPI_KEY         = os.getenv("RAPIDAPI_KEY")
+    RAPIDAPI_HOST        = os.getenv("RAPIDAPI_HOST")
+
+_missing = [
+    name for name, val in [
+        ("API_SPORTS_KEY",       API_SPORTS_KEY),
+        ("ODDS_API_KEY",         ODDS_API_KEY),
+        ("SUPABASE_URL",         SUPABASE_URL),
+        ("SUPABASE_SERVICE_KEY", SUPABASE_SERVICE_KEY),
+        ("RAPIDAPI_KEY",         RAPIDAPI_KEY),
+        ("RAPIDAPI_HOST",        RAPIDAPI_HOST),
+    ] if not val
+]
+if _missing:
+    print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
+    sys.exit(1)
 
 # --- Configuration ---
 SUPABASE_TABLE_NAME = "nba_injuries"

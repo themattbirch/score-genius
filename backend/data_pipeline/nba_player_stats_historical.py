@@ -6,12 +6,44 @@ Fetch and upsert historical NBA player stats from API-Sports into Supabase.
 
 import json
 import time
+import os
+import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 import requests
 
-from config import API_SPORTS_KEY
+# --- Local Config & Variables ---
+try:
+    from config import (
+        API_SPORTS_KEY,
+        ODDS_API_KEY,
+        SUPABASE_URL,
+        SUPABASE_SERVICE_KEY,
+    )
+    print("Successfully imported configuration variables from config.py")
+except ImportError:
+    print("config.py not found → loading credentials from environment")
+    API_SPORTS_KEY       = os.getenv("API_SPORTS_KEY")
+    ODDS_API_KEY         = os.getenv("ODDS_API_KEY")
+    SUPABASE_URL         = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+# Validate
+_missing = [
+    name
+    for name, val in [
+        ("API_SPORTS_KEY",       API_SPORTS_KEY),
+        ("ODDS_API_KEY",         ODDS_API_KEY),
+        ("SUPABASE_URL",         SUPABASE_URL),
+        ("SUPABASE_SERVICE_KEY", SUPABASE_SERVICE_KEY),
+    ]
+    if not val
+]
+if _missing:
+    print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
+    sys.exit(1)
+
 from caching.supabase_client import supabase
 from caching.supabase_stats import upsert_historical_game_stats
 

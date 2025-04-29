@@ -10,7 +10,33 @@ from datetime import datetime, timedelta
 # Add the backend root to Python path for caching & config
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
-from config import API_SPORTS_KEY
+# --- Local Config & Variables (same pattern as MLB script) ---
+try:
+    from config import (
+        API_SPORTS_KEY,
+        ODDS_API_KEY,
+        SUPABASE_URL,
+        SUPABASE_SERVICE_KEY,
+    )
+    print("Using config.py for credentials")
+except ImportError:
+    print("config.py not found → loading credentials from environment")
+    API_SPORTS_KEY       = os.getenv("API_SPORTS_KEY")
+    ODDS_API_KEY         = os.getenv("ODDS_API_KEY")
+    SUPABASE_URL         = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+# Validate
+_missing = [ name for name,val in [
+    ("API_SPORTS_KEY",       API_SPORTS_KEY),
+    ("ODDS_API_KEY",         ODDS_API_KEY),
+    ("SUPABASE_URL",         SUPABASE_URL),
+    ("SUPABASE_SERVICE_KEY", SUPABASE_SERVICE_KEY),
+] if not val ]
+if _missing:
+    print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
+    exit(1)
+    
 from caching.supabase_client import supabase
 from caching.supabase_stats import upsert_historical_game_stats_team
 
