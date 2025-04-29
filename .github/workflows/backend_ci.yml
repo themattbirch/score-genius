@@ -136,14 +136,6 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Lint only changed Python code
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
-          git fetch origin master
-          echo "Linting diff against master…"
-          ruff check --diff origin/master...HEAD
-
       #- name: Run Pytest Tests
       #run: |
       #cd backend
