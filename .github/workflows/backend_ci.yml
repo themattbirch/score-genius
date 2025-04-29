@@ -21,9 +21,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+    #fail-fast: true
+
 jobs:
   lint-sql:
-    name: Lint SQL Migrations
+    name: Lint Handwritten SQL Migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,11 +47,19 @@ jobs:
       - name: Install sqlfluff
         run: pip install sqlfluff sqlfluff-templater-jinja
 
-      - name: Lint SQL files
-        run: sqlfluff lint supabase/migrations/
+      - name: Lint handwritten migrations only
+        run: |
+          echo "Using .sqlfluff config from repo root"
+          echo "Finding handwritten migrations to lint..."
+          files=$(find supabase/migrations -maxdepth 1 \
+            -type f \
+            \( -name "???_*.sql" \) \
+            | sort)
+          echo "$files" | sed 's/^/  • /'
+          sqlfluff lint $files
 
   test-migrations:
-    name: Test DB Migrations & MatView
+    name: Test DB Migrations & Materialized View
     runs-on: ubuntu-latest
     needs: lint-sql
     steps:
@@ -57,7 +70,7 @@ jobs:
         with:
           version: latest
 
-      - name: Start Supabase local dev
+      - name: Start Supabase local dev services
         run: supabase start
 
       - name: Wait for Postgres readiness
