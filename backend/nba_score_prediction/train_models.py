@@ -26,26 +26,10 @@ import re
 import sys
 import time
 import warnings
-import traceback # Keep for error handling if needed
+import traceback # Still needed for potential dummy import error handling
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
-
-# --- Load backend/.env at the very start ---
-from dotenv import load_dotenv
-try:
-    # Calculate path relative to this script file
-    SCRIPT_DIR_TM = Path(__file__).resolve().parent
-    BACKEND_DIR_TM = SCRIPT_DIR_TM.parent
-    ENV_PATH_TM = BACKEND_DIR_TM / '.env'
-    if ENV_PATH_TM.is_file():
-        load_dotenv(dotenv_path=ENV_PATH_TM, override=True)
-        print(f"--- {Path(__file__).name}: Explicitly loaded {ENV_PATH_TM} ---") # Use print for early loading before logger might be ready
-    else:
-        print(f"--- {Path(__file__).name}: No .env file found at {ENV_PATH_TM} ---")
-except Exception as dotenv_e:
-    print(f"--- {Path(__file__).name}: Error loading .env: {dotenv_e} ---")
-# --- End .env loading ---
 
 # --- Third-Party Imports ---
 import joblib
@@ -53,7 +37,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from supabase import Client, create_client # Keep Client if used directly, otherwise just create_client
+from supabase import Client, create_client # Keep Client if used directly later, else just create_client
+# Scikit-learn Imports
 from sklearn.base import clone
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.feature_selection import SelectFromModel
@@ -64,6 +49,7 @@ from sklearn.metrics import (make_scorer, mean_absolute_error,
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+# SciPy Imports
 from scipy.optimize import minimize
 from scipy.stats import loguniform, randint, uniform
 
@@ -75,7 +61,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - [%(name)s.%(funcName)s:%(lineno)d] - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-logger = logging.getLogger(__name__) # Get logger for this module
+logger = logging.getLogger(__name__) # Get logger for this module (__main__ when run directly)
 
 # Silence overly verbose loggers from libraries
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -90,28 +76,29 @@ plt.style.use('fivethirtyeight')
 # ==============================================================================
 
 # --- Import Essential Non-Dummy Modules ---
+# config.py will load backend/.env when imported
 try:
     logger.debug("Importing essential modules (config, utils)...")
-    from backend import config # Imports config, which now ONLY reads from os.environ
-    from . import utils
+    from backend import config # Imports config, triggering backend/.env load
+    from . import utils      # Imports this script's utils sibling
     logger.debug("Essential modules imported.")
 except ImportError as e_essential:
     logger.critical(f"FATAL: Failed to import essential modules (config, utils)! Error: {e_essential}", exc_info=True)
     sys.exit("Could not import essential modules.")
 
-# --- Define Paths (using config if available, otherwise defaults) ---
-# Ensure PROJECT_ROOT is defined robustly (recalculate here if needed)
+# --- Define Paths (Now that config is imported) ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
-PROJECT_ROOT = BACKEND_DIR.parent # Use this as fallback
+PROJECT_ROOT = BACKEND_DIR.parent
 
+# Get paths from config, providing sensible defaults if config doesn't define them
 MAIN_MODELS_DIR = Path(getattr(config, 'MAIN_MODELS_DIR', PROJECT_ROOT / 'models' / 'saved'))
 REPORTS_DIR = Path(getattr(config, 'REPORTS_DIR', PROJECT_ROOT / 'reports'))
 MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Import Modules with Potential Dummy Fallbacks ---
-LOCAL_MODULES_IMPORTED = False # Flag to know if real modules loaded
+LOCAL_MODULES_AVAILABLE = False # Flag to know if real modules loaded
 try:
     # --- Attempt to import ALL real modules ---
     logger.info("Attempting to import REAL feature/model/eval modules...")
@@ -126,57 +113,32 @@ try:
     logger.info("Successfully imported REAL modules.")
     LOCAL_MODULES_AVAILABLE = True # Set flag on success
 
-except ImportError as e: # Catch ANY import error from the 'try' block
+except ImportError as e: # Catch ANY import error from the above 'try' block
     logger.error("Local modules could not be imported; falling back to dummy implementations.")
-
-    # --- Keep debug prints commented out unless needed again ---
-    # print(f"\n--- CAUGHT IMPORT ERROR trying to load real modules ---")
-    # print(f"Error Type: {type(e).__name__}")
-    # print(f"Error Details: {e}")
-    # traceback.print_exc()
-    # print(f"-----------------------------------------------------\n")
-
-    # --- Attempt to import ALL necessary dummies ---
+    # --- Keep the fallback logic ---
     logger.info("Attempting to import DUMMY modules...")
     try:
         from .dummy_modules import (
-            FeatureEngine, SVRScorePredictor, RidgeScorePredictor,
-            compute_recency_weights, plot_feature_importances,
-            plot_actual_vs_predicted, plot_residuals_analysis_detailed,
-            plot_conditional_bias, plot_temporal_bias
+            FeatureEngine,
+            SVRScorePredictor,
+            RidgeScorePredictor,
+            compute_recency_weights,
+            plot_feature_importances,
+            plot_actual_vs_predicted,
+            plot_residuals_analysis_detailed,
+            plot_conditional_bias,
+            plot_temporal_bias
             # Assuming utils was successfully imported earlier
         )
         logger.info("Successfully imported DUMMY modules.")
         # LOCAL_MODULES_AVAILABLE remains False
 
     except ImportError as e_dummy:
+        # Critical failure if even dummies can't be imported
         logger.critical(f"FATAL: Failed to import even the dummy modules! Error: {e_dummy}", exc_info=True)
         sys.exit("Could not import real or dummy modules.")
     # --- End of dummy import logic ---
 
-
-# ==============================================================================
-# Configuration
-# ==============================================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(name)s.%(funcName)s:%(lineno)d] - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
-
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-# --- Paths ---
-SCRIPT_DIR = Path(__file__).resolve().parent
-BACKEND_DIR = SCRIPT_DIR.parent
-PROJECT_ROOT = BACKEND_DIR.parent
-MAIN_MODELS_DIR = Path(getattr(config, 'MAIN_MODELS_DIR', PROJECT_ROOT / 'models' / 'saved'))
-REPORTS_DIR = Path(getattr(config, 'REPORTS_DIR', PROJECT_ROOT / 'reports'))
-
-MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Constants ---
 TARGET_COLUMNS = ['home_score', 'away_score']
@@ -1392,7 +1354,7 @@ def run_training_pipeline(args: argparse.Namespace):
     logger.info(f"Run Arguments: {vars(args)}")
 
     # Check if local modules were imported correctly
-    if not LOCAL_MODULES_IMPORTED and not args.allow_dummy:
+    if not LOCAL_MODULES_AVAILABLE and not args.allow_dummy:
         logger.critical("Required local modules not found and --allow-dummy not set. Exiting.")
         sys.exit(1)
     if not config and not args.allow_dummy: 

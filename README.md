@@ -1,148 +1,235 @@
-# [ScoreGenius](https://sportsgenius.io)
+# ScoreGenius
 
-ScoreGenius is an AI-driven, live sports analytics Progressive Web App (PWA) that delivers real-time predictive analysis, natural language game recaps, and actionable betting insights for NBA games. Leveraging state-of-the-art machine learning techniques, adaptive ensemble modeling, and robust feature engineering, ScoreGenius dynamically updates in-game predictions as a match unfolds.
+ScoreGenius is an AI-driven live sports analytics Progressive Web App (PWA) that delivers real-time predictive analysis, natural language game recaps, and actionable betting insights for NBA games, with potential expansion to MLB and NFL. Leveraging machine learning, robust feature engineering via database views, and a modular backend, ScoreGenius provides dynamic predictions and insights.
 
-## 🚀 Key Features
+## Table of Contents
 
-### Real-Time Predictive Analytics
-- Live win probability, momentum shifts, and dynamic score predictions.
-- Quarter-specific models integrated into an adaptive ensemble framework.
-- Uncertainty estimation and confidence intervals for every prediction.
+1. [Key Features](#key-features)
+2. [Architecture & System Flow](#architecture--system-flow)
+3. [Tech Stack](#tech-stack)
+4. [Project Structure](#project-structure)
+5. [Getting Started](#getting-started)
+   - [Prerequisites](#prerequisites)
+   - [Installation](#installation)
+   - [Running Locally](#running-locally)
+   - [Running Scripts](#running-scripts)
+6. [License](#license)
+7. [Contact](#contact)
+
+## Key Features
+
+### Predictive Analytics
+
+- Win probability and score predictions
+- Uncertainty estimation for predictions (planned)
 
 ### AI-Powered Game Recaps & Analysis
-- Automated, natural language game recaps powered by LLM integration.
-- Post-game detailed analysis with interactive trend visualizations.
+
+- Automated natural language game recaps (planned)
+- Post-game detailed analysis with interactive visualizations (planned)
 
 ### Sports Betting & Insights
-- Real-time odds analysis fused with model predictions for betting insights.
-- Historical trend analysis and market comparisons for identifying value.
-- Automated betting recommendations based on prediction confidence.
 
-### Robust Data Pipeline & Monitoring
-- Automated ingestion of historical and live game data via APIs and Supabase.
-- Efficient caching, rate-limiting, and anomaly detection for reliable data flow.
-- Comprehensive logging and performance metrics tracking across all components.
+- Comparison of model predictions with market odds
+- Historical trend analysis (planned)
 
-## 🛠 Architecture & System Flow
+### Robust Data Pipeline & Backend
 
-The system is designed with modularity and scalability in mind, structured into the following key layers:
+- Automated ingestion of historical game data via Python scripts (`backend/data_pipeline/`)
+- Data storage and querying using Supabase (PostgreSQL)
+- Modular feature engineering pipeline (`backend/features/`)
+- Database schema managed via SQL migrations (`supabase/migrations/`)
 
-### Data Ingestion & Caching
-- Historical and live game data is ingested through dedicated scripts.
-- Data is cached using `Supabase` and `Redis` for fast retrieval and processing.
-- Shared utilities ensure duplicate columns are removed and recency weights computed consistently.
+## Architecture & System Flow
+
+### Data Ingestion & Storage
+
+1. Historical game and team data ingested via Python scripts in `backend/data_pipeline/`
+2. Data stored in a Supabase (PostgreSQL) database
+3. Shared Supabase client in `backend/caching/supabase_client.py`
+
+### Database Schema & Migrations
+
+- SQL migration files in `supabase/migrations/`, managed with the Supabase CLI
+- Materialized views (e.g., `team_rolling_20`) for complex rolling window features
+- SQL linting with `sqlfluff` (planned)
 
 ### Feature Engineering
-- A centralized module generates over 100 refined features including rolling averages, season context, and advanced metrics.
-- Utilities ensure robust handling of missing data and duplicate columns.
-- The design enables reusability across training, tuning, and real-time prediction.
 
-### Model Training & Ensemble Prediction
-- Multiple lightweight models (`XGBoost`, `RandomForest`, `Ridge`) are trained individually.
-- An adaptive ensemble framework dynamically adjusts weights based on error history and game context (time, score differential, momentum).
-- Hyperparameter tuning is automated using `RandomizedSearchCV` with `TimeSeriesSplit`.
-- Model saving includes comprehensive metadata for versioning and reproducibility.
+- Modular pipeline in `backend/features/` orchestrated by `engine.py`
+- Modules include:
+  - `rolling.py`: rolling statistics from SQL views with Python fallback
+  - `h2h.py`: head-to-head matchup features
+  - `rest.py`: rest days and schedule density
+  - `form.py`: recent form and streaks
+  - `season.py`: seasonal context
+  - `momentum.py`: intra-game momentum (NBA-specific)
+  - `advanced.py`: advanced stats (NBA-specific)
+- Legacy code in `backend/features/legacy/` for reference
 
-### Prediction & Calibration
-- Pre-game predictions are generated on-the-fly using a dedicated prediction module.
-- Predictions are calibrated with betting odds when available.
-- The system logs both raw and calibrated predictions along with uncertainty intervals.
-- Modular functions ensure that data ingestion, feature generation, and prediction are decoupled for easier testing and maintenance.
+### Model Training & Prediction
 
-### Visualization & Reporting
-- Detailed performance plots and dashboards display model performance, prediction evolution, and betting metrics.
-- Centralized reporting utilities aggregate results and highlight any anomalies.
+- Training scripts in `backend/nba_score_prediction/train_models.py`
+- Models: Ridge Regression, Support Vector Regression (SVR)
+- Hyperparameter tuning with `RandomizedSearchCV` and `TimeSeriesSplit`
+- Prediction module in `backend/nba_score_prediction/prediction.py`
+- Ensemble and calibration methods (planned)
 
-## 🛠 Tech Stack
+### Backend API
+
+- Node.js/Express server in `backend/server/` exposing data and prediction endpoints
+
+### Frontend PWA
+
+- React/TypeScript application with PWA features displaying predictions and insights
+
+## Tech Stack
 
 ### Frontend
-- `React 18` with `TypeScript`
-- `Vite` for rapid development and bundling
-- `PWA` with offline support
-- Interactive data visualizations (`Recharts`, `Chart.js`)
 
-### Backend
-- `Python 3.13+`
-- `FastAPI` for REST endpoints
-- `Supabase` for real-time data storage and caching
+- React 18 with TypeScript
+- Vite build tool
+- Tailwind CSS
+- PWA support
+- Data visualization libraries (Recharts, Chart.js)
+
+### Backend & Data
+
+- Python 3.11+
+- Libraries: pandas, numpy, scikit-learn
+- Supabase (PostgreSQL)
+- Configuration: python-dotenv
+- SQL migrations: Supabase CLI
+- SQL linting: sqlfluff (planned)
+- API server: Node.js with Express
 
 ### Machine Learning Models
-- Adaptive ensemble weighting with quarter-specific models
-- Robust feature engineering and dynamic uncertainty estimation
-- Centralized Logging & Configuration for consistent system monitoring
 
-### LLM Integration
-- For narrative game recaps
+- Ridge Regression
+- Support Vector Regression (SVR)
+- Feature engineering via Python modules and SQL views
+- Hyperparameter tuning with RandomizedSearchCV
 
 ### Data Sources
-- Real-time sports APIs (e.g., `API-Sports`)
-- Historical game and team stats data ingestion
-- Real-time game data streaming
 
-## 📁 Project Structure
+- API-Sports
+- Odds APIs (e.g., The Odds API)
+- RapidAPI
+- Supabase historical tables
 
-```text
+## Project Structure
+
+````text
 score-genius/
 ├── backend/
-│   ├── caching/                 # Supabase and Redis caching utilities
-│   ├── models/                  # Model definitions, training, ensemble logic, and simulation
-│   │   ├── feature_engineering.py   # Unified feature engineering module
-│   │   ├── models.py                # Model definitions (XGBoost, RandomForest, Ridge) and pipelines
-│   │   ├── ensemble.py              # Adaptive ensemble weighting and uncertainty estimation
-│   │   ├── simulation.py            # Custom loss functions and simulation utilities
-│   │   └── train_models.py          # End-to-end model tuning, training, and evaluation pipeline
-│   ├── prediction.py            # On-the-fly prediction module with calibration and reporting
-│   ├── routers/                 # FastAPI routes for data, predictions, and recaps
-│   ├── venv/                    # Python virtual environment
-│   └── config.py                # Centralized configuration and environment variables
-└── frontend/
-    ├── src/
-    │   ├── components/          # Reusable UI components
-    │   ├── pages/               # Dashboard, recaps, and live updates
-    │   └── services/            # API service calls and state management
-    └── public/
+│   ├── caching/
+│   ├── data_pipeline/
+│   ├── features/
+│   ├── nba_score_prediction/
+│   ├── server/
+│   └── venv_pytorch/
+├── frontend/
+├── supabase/
+│   └── migrations/
+├── reports/
+├── README.md
+└── package.json
 
-    ## Getting Started
+# Getting Started
 
-### Prerequisites
-- `Node.js 18+`
-- `Python 3.13+`
-- `API-Sports` (or equivalent) credentials
-- Required environment variables (see `.env.example`)
+## Prerequisites
 
-### Installation
-1.  **Clone the Repository:**
+-   Node.js 18+ and npm (or yarn)
+-   Python 3.11+ and pip
+-   Supabase CLI (`npm install -g supabase`)
+-   Access to a Supabase project
+-   API keys for data sources (API-Sports, Odds API, RapidAPI)
+
+## Installation
+
+1.  **Clone the repository:**
     ```bash
     git clone git@github.com:themattbirch/score-genius.git
     cd score-genius
     ```
-2.  **Setup Frontend:**
-    ```bash
-    cd frontend
-    npm install
-    ```
-3.  **Setup Backend:**
+
+2.  **Setup backend:**
     ```bash
     cd backend
-    python -m venv .venv
-    source .venv/bin/activate  # Use .venv\Scripts\activate on Windows
+    python -m venv venv_pytorch
+    # Activate the virtual environment
+    # On macOS/Linux:
+    source venv_pytorch/bin/activate
+    # On Windows:
+    # venv_pytorch\Scripts\activate
     pip install -r requirements.txt
     ```
-4.  **Configure Environment Variables:**
+
+3.  **Configure backend environment:**
+    Create a file named `.env` inside the `backend/` directory with your keys. Example:
+    ```dotenv
+    SUPABASE_URL=YOUR_SUPABASE_URL
+    SUPABASE_SERVICE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+    SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+    API_SPORTS_KEY=YOUR_API_SPORTS_KEY
+    ODDS_API_KEY=YOUR_ODDS_API_KEY
+    RAPIDAPI_KEY=YOUR_RAPIDAPI_KEY
+    RAPIDAPI_HOST=YOUR_RAPIDAPI_HOST
+    ```
+
+4.  **Setup frontend:**
     ```bash
-    cp .env.example .env
-    # Edit .env with your API keys, database URLs, and configurations
+    cd ../frontend
+    npm install
+    ```
+
+5.  **Initialize Supabase:**
+    ```bash
+    supabase login
+    supabase link --project-ref <your-project-ref>
+    supabase db reset
     ```
 
 ## Running Locally
 
-### Start the Backend:
+1.  **Start Supabase:**
+    ```bash
+    supabase start
+    ```
+
+2.  **Start backend API:**
+    ```bash
+    cd backend/server
+    npm install
+    npm start
+    ```
+
+3.  **Start frontend dev server:**
+    ```bash
+    cd frontend
+    npm run dev
+    ```
+
+## Running Scripts
+
+Activate the backend virtual environment first:
+
 ```bash
-cd backend
-uvicorn main:app --reload
+# On macOS/Linux:
+source backend/venv_pytorch/bin/activate
+# On Windows:
+# backend\venv_pytorch\Scripts\activate
 
-# License
-ScoreGenius is open-source and distributed under the MIT License.
+# Example script execution:
+python -m backend.nba_score_prediction.train_models \
+  --data-source supabase \
+  --lookback-days 90
 
-# Contact
-For questions or contributions, please contact Matt Birch at matt@optimizewebsolutions.com.
+  ## License
+
+Distributed under the MIT License.
+
+## Contact
+
+Matt Birch – [matt@optimizewebsolutions.com](mailto:matt@optimizewebsolutions.com)
+````

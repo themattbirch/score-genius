@@ -25,7 +25,7 @@ SUPABASE_TABLE_NAME: str = "mlb_historical_game_stats"
 REQUEST_DELAY_SECONDS: int = 2
 BATCH_SIZE: int = 50
 SEASON_DATE_RANGES: Dict[int, tuple[str, Optional[str]]] = {
-    2025: ("2025-03-28", None),
+    2025: ("2025-04-26", None),
 }
 
 

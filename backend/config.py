@@ -1,56 +1,81 @@
 # backend/config.py
 
-from pathlib import Path
 import os
-from dotenv import load_dotenv
 import logging
+from pathlib import Path
+from dotenv import load_dotenv # Ensure dotenv is installed: pip install python-dotenv
 
 # --- Basic Logging Setup ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
+# Configure logging early. If other modules also configure it, ensure consistency
+# or use a central logging setup function imported here.
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 # --- Path Definitions ---
 try:
-    # Define the project root explicitly. Assumes config.py is in the backend directory.
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    logger.debug(f"PROJECT_ROOT automatically determined as: {PROJECT_ROOT}")
+    # Define paths relative to this config.py file
+    BACKEND_DIR = Path(__file__).resolve().parent
+    PROJECT_ROOT = BACKEND_DIR.parent
+    logger.debug(f"PROJECT_ROOT determined as: {PROJECT_ROOT}")
 
-    # Define MODEL_PATH relative to the project root. (Using path from your working example)
+    # Define MODEL_PATH relative to the project root (adjust path if needed)
     MODEL_PATH = PROJECT_ROOT / "notebooks" / "models" / "pregame_model.pkl"
     logger.info(f"Using MODEL_PATH: {MODEL_PATH}")
 
-    # Define path to the .env file in the project root
-    env_path = Path(__file__).resolve().parent / ".env"
-    logger.info(f"Looking for .env file at: {env_path}")
+    # --- Define path to the .env file IN THE BACKEND DIRECTORY ---
+    env_path = BACKEND_DIR / ".env"
 
-except Exception as e:
-    logger.exception("CRITICAL: Failed to define essential paths (PROJECT_ROOT, MODEL_PATH). Check file structure.")
-    raise
+except Exception as path_e:
+    logger.exception("CRITICAL: Failed to define essential paths. Check file structure relative to config.py.")
+    # Depending on how critical paths are, you might raise the error
+    # raise path_e
+    # For now, let's allow continuing to see if env vars load standalone
 
-# --- Load Environment Variables ---
+# --- Load Environment Variables from backend/.env ---
 try:
-    # Use the calculated env_path from PROJECT_ROOT
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
-        logger.info(f"Successfully loaded environment variables from: {env_path}")
+    logger.info(f"Looking for .env file at: {env_path}")
+    if env_path.is_file():
+        # Load environment variables from backend/.env
+        # override=True means variables in .env will overwrite existing system env vars
+        dotenv_loaded = load_dotenv(dotenv_path=env_path, override=True)
+        if dotenv_loaded:
+            logger.info(f"Successfully loaded environment variables from: {env_path}")
+        else:
+            # This might happen if the file is empty or has issues
+             logger.warning(f".env file found at {env_path}, but load_dotenv returned False.")
     else:
-        # Log the path it tried to find
-        logger.warning(f".env file not found at: {env_path}. Relying on system environment variables.")
+        logger.warning(f".env file not found at: {env_path}. Relying on system environment variables if available.")
 except Exception as e:
     logger.error(f"Error loading .env file from {env_path}: {e}", exc_info=True)
 
-# --- Read Configuration Variables ---
+# --- Read Configuration Variables & Perform Strict Validation ---
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 API_SPORTS_KEY = os.getenv("API_SPORTS_KEY")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
+# Add any other CRITICAL keys needed for basic operation here
+
+# Validate critical variables - Raise Error if missing to halt execution
+if not SUPABASE_URL:
+    raise EnvironmentError("FATAL: SUPABASE_URL not found in environment variables. Check backend/.env.")
+if not SUPABASE_SERVICE_KEY:
+    raise EnvironmentError("FATAL: SUPABASE_SERVICE_KEY not found in environment variables. Check backend/.env.")
+if not API_SPORTS_KEY:
+    raise EnvironmentError("FATAL: API_SPORTS_KEY not found in environment variables. Check backend/.env.")
+if not ODDS_API_KEY:
+     raise EnvironmentError("FATAL: ODDS_API_KEY not found in environment variables. Check backend/.env.")
+
+# --- Read Optional/Less Critical Variables ---
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL") # Often same as Supabase URL but might differ
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
-# --- End New Section ---
 
-# --- Log Status of Key Variables ---
+# --- Log Status of All Variables ---
 config_status = {
     "API_SPORTS_KEY": "Set" if API_SPORTS_KEY else "Not Set",
     "ODDS_API_KEY": "Set" if ODDS_API_KEY else "Not Set",
@@ -58,23 +83,17 @@ config_status = {
     "SUPABASE_URL": "Set" if SUPABASE_URL else "Not Set",
     "SUPABASE_ANON_KEY": "Set" if SUPABASE_ANON_KEY else "Not Set",
     "SUPABASE_SERVICE_KEY": "Set" if SUPABASE_SERVICE_KEY else "Not Set",
-
     "RAPIDAPI_KEY": "Set" if RAPIDAPI_KEY else "Not Set",
     "RAPIDAPI_HOST": "Set" if RAPIDAPI_HOST else "Not Set",
-    # --- End New Section ---
 }
-logger.info(f"Configuration Loading Status: {config_status}")
+logger.info(f"Configuration Loading Status (Read from Environment): {config_status}")
 
-# --- Warnings for Missing Variables ---
-# Keep warnings as they were in your working example, plus add new ones
+# --- Warnings for Missing Non-Critical Variables ---
+if not SUPABASE_ANON_KEY:
+    logger.warning("SUPABASE_ANON_KEY not configured (might be needed for some operations).")
 if not DATABASE_URL:
-    logger.warning("DATABASE_URL is not configured.")
-if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-    logger.warning("Supabase URL or Key is not configured.")
-# --- NEW: Add RapidAPI warning ---
+    logger.warning("DATABASE_URL is not configured (might be needed for non-Supabase DB access).")
 if not RAPIDAPI_KEY or not RAPIDAPI_HOST:
-    logger.warning("RapidAPI Key or Host is not configured. MLB schedule/pitcher features may be unavailable.")
-# --- End New Section ---
+    logger.warning("RapidAPI Key or Host is not configured. Features relying on it may be unavailable.")
 
-# Convert MODEL_PATH to string only if needed by specific libraries
-# MODEL_PATH_STR = str(MODEL_PATH)!
+# You can add other config variables, type conversions, etc. below

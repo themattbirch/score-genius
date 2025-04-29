@@ -14,3 +14,4 @@ python-dotenv==1.0.1
 fastapi==0.115.8
 supabase==2.13.0
 uvicorn==0.34.0
+sqlfluff==3.4.0

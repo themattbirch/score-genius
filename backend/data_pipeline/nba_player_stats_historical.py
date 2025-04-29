@@ -113,8 +113,8 @@ def process_day(date_obj: datetime) -> None:
 
 
 def main() -> None:
-    start = datetime(2025, 4, 25)
-    end = datetime(2025, 4, 27)
+    start = datetime(2025, 4, 26)
+    end = datetime(2025, 4, 29)
     print(f"Starting import: {start.date()} → {end.date()}")
 
     current = start
