@@ -202,8 +202,8 @@ jobs:
       - name: Run MLB preview ingest
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          API_BASEBALL_KEY: ${{ secrets.API_SPORTS_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: |
           python backend/data_pipeline/mlb_games_preview.py
@@ -211,8 +211,8 @@ jobs:
       # example of a second script, uncomment / duplicate as needed
       # - name: Run NBA daily ingest
       #   env:
-      #     SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
-      #     SUPABASE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      #     API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
-      #   run: |
+      #SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      #SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      #API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+      #ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}      #   run: |
       #     python backend/data_pipeline/nba_games_preview.py
