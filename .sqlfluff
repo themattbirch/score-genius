@@ -1,0 +1,21 @@
+[sqlfluff]
+dialect = postgres
+templater = jinja
+sql_file_exts = .sql
+max_line_length = 120
+large_file_skip_byte_limit = 0
+
+# Exclude only the layout & quoting rules we don’t care about
+# (Remove PRS here)
+exclude_rules = LT01,LT02,LT12,LT13,LT15,RF06
+
+[sqlfluff:templater:jinja]
+search_path = supabase/migrations
+
+[sqlfluff:rules]
+capitalisation_policy = upper
+function_name_capitalisation_policy = lower
+
+[sqlfluff:indentation]
+tab_space_size = 4
+indent_unit = space
