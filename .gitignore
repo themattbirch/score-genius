@@ -103,12 +103,8 @@ Thumbs.db
 *.cert
 *.key
 
-# Remove backend/models from remote but keep locally
-backend/models/*
-!backend/models/*.py  # optional: keep this if you want to keep .py files tracked later
-
-# Fully ignore backend/models
-backend/models/
+# Remove /models from remote but keep locally
+models/
 
 # Generated reports
 /reports/
