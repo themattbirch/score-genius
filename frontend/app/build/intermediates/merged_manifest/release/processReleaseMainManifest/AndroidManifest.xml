@@ -23,7 +23,7 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.scoregenius.twa"
-    android:versionCode="7"
+    android:versionCode="8"
     android:versionName="4" >
 
     <uses-sdk
@@ -117,9 +117,6 @@
             <meta-data
                 android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
                 android:value="@string/fallbackType" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.DISPLAY_MODE"
-                android:value="immersive" />
             <meta-data
                 android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION"
                 android:value="@string/orientation" />

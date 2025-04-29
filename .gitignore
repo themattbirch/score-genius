@@ -97,7 +97,6 @@ backend/analytics/outputs/*
 .ipynb_checkpoints/
 notebooks/
 
-
 # Misc
 Thumbs.db
 *.pem
@@ -110,3 +109,10 @@ backend/models/*
 
 # Fully ignore backend/models
 backend/models/
+
+# Generated reports
+/reports/
+
+# Database dumps
+remote_dump.sql
+remote_full.sql
