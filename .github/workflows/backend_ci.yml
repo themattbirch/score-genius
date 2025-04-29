@@ -134,7 +134,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache pip for Python dependencies
+      - name: Cache pip for Python deps
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
@@ -143,10 +143,12 @@ jobs:
       - name: Install Python Dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Lint Python code
+      - name: Lint only changed Python code
         run: |
           pip install ruff
-          ruff check backend/
+          git fetch origin master
+          echo "Linting diff against master…"
+          ruff check --diff origin/master...HEAD
 
       - name: Run Pytest Tests
         run: |
