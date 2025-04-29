@@ -571,8 +571,8 @@ def build_and_upsert_mlb_previews() -> int:
             home_team_name_raw = home_team_info.get("name")
             away_team_name_raw = away_team_info.get("name")
             venue_info = game.get("venue", {})
-            venue_name = venue_info.get("name") if isinstance(venue_info, dict) else None
-            venue_city = venue_info.get("city") if isinstance(venue_info, dict) else None
+            #venue_name = venue_info.get("name") if isinstance(venue_info, dict) else None
+            #venue_city = venue_info.get("city") if isinstance(venue_info, dict) else None
 
             scheduled_time_utc_str = game.get("date")
             game_date_et_str = None
