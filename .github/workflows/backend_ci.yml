@@ -1,0 +1,124 @@
+# .github/workflows/backend_ci.yml
+
+name: Backend CI
+
+on:
+  push: # 2 spaces indent
+    branches: [main] # 4 spaces indent
+    paths: # 4 spaces indent
+      - "backend/**" # 6 spaces indent
+      - "supabase/**"
+      - ".github/workflows/backend_ci.yml"
+  pull_request: # 2 spaces indent
+    branches: [main] # 4 spaces indent
+    paths: # 4 spaces indent
+      - "backend/**" # 6 spaces indent
+      - "supabase/**"
+      - ".github/workflows/backend_ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-sql:
+    name: Lint SQL Migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-sqlfluff-${{ hashFiles('backend/requirements.txt') }}
+
+      - name: Install sqlfluff
+        run: pip install sqlfluff sqlfluff-templater-jinja
+
+      - name: Lint SQL files
+        run: sqlfluff lint supabase/migrations/
+
+  test-migrations:
+    name: Test DB Migrations & MatView
+    runs-on: ubuntu-latest
+    needs: lint-sql
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/actions/setup@v1
+        with:
+          version: latest
+
+      - name: Start Supabase local dev
+        run: supabase start
+
+      - name: Wait for Postgres readiness
+        run: |
+          for i in {1..10}; do
+            CONTAINER_ID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
+            if [ -n "$CONTAINER_ID" ] && docker exec "$CONTAINER_ID" pg_isready -U postgres; then
+              echo "Postgres is ready"
+              break
+            fi
+            sleep 3
+          done
+
+      - name: Apply all migrations
+        run: |
+          echo "Resetting and applying migrations..."
+          PGSSLMODE=disable supabase db reset
+
+      - name: Refresh Materialized View
+        run: |
+          CONTAINER_ID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
+          docker exec "$CONTAINER_ID" psql -U postgres -d postgres -c "REFRESH MATERIALIZED VIEW public.team_rolling_20;"
+
+      - name: Basic SELECT test on MatView
+        run: |
+          CONTAINER_ID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
+          docker exec "$CONTAINER_ID" psql -U postgres -d postgres -c "SELECT COUNT(*) FROM public.team_rolling_20;"
+
+      - name: Stop Supabase local services
+        if: always()
+        run: supabase stop --no-backup
+
+  test-python-backend:
+    name: Test Python Backend Code
+    runs-on: ubuntu-latest
+    needs: test-migrations
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-python-${{ hashFiles('backend/requirements.txt') }}
+
+      - name: Install Python Dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Lint Python code
+        run: |
+          pip install ruff
+          ruff check backend/
+
+      - name: Run Pytest Tests
+        run: |
+          cd backend
+          pytest tests/
