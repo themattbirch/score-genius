@@ -103,8 +103,7 @@ jobs:
         run: supabase stop --no-backup
 
   #-------------------------------------------------------------#
-  # 3) Python lint – **diff-only** (blocks new issues, ignores   #
-  #    legacy code)                                             #
+  # 3) Python lint – diff-only                                  #
   #-------------------------------------------------------------#
   python-lint-diff:
     name: Ruff Lint (changed Python files only)
@@ -112,6 +111,8 @@ jobs:
     needs: test-migrations
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # ← added
 
       - uses: actions/setup-python@v5
         with:
@@ -125,12 +126,12 @@ jobs:
       - name: Determine changed Python files
         id: diff
         run: |
-          # For PRs use the merge-base; for pushes compare with previous commit
+          # For PRs use the merge base; for pushes compare with previous commit
           base_ref="${{ github.event.pull_request.base.sha || github.event.before }}"
           changed=$(git diff --name-only --diff-filter=ACMRT "$base_ref" HEAD -- 'backend/**/*.py')
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          echo "$changed" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$changed" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Run Ruff on changed files
         if: steps.diff.outputs.files != ''
@@ -144,14 +145,15 @@ jobs:
         run: echo "No Python files changed – skipping Ruff."
 
   #-------------------------------------------------------------#
-  # 4) Backend tests (optional – uncomment pytest if/when ready) #
+  # 4) Backend deps install (+ optional pytest)                  #
   #-------------------------------------------------------------#
   test-python-backend:
-    name: Backend Dependency Install (pytest optional)
     runs-on: ubuntu-latest
     needs: python-lint-diff
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
