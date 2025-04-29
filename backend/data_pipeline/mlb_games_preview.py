@@ -620,7 +620,7 @@ def build_and_upsert_mlb_previews() -> int:
         print(f"\nStep 4: Upserting {len(previews_to_upsert)} processed previews to Supabase...")
         try:
             supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-            upsert_response = supabase.table(SUPABASE_TABLE_NAME).upsert(previews_to_upsert, on_conflict="game_id").execute()
+            _upsert_response = supabase.table(SUPABASE_TABLE_NAME).upsert(previews_to_upsert, on_conflict="game_id").execute()
             print("Supabase upsert completed.")
         except Exception as e:
             print(f"Error during Supabase upsert call: {e}")
