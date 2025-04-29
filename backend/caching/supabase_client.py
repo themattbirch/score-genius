@@ -1,19 +1,8 @@
 # /backend/caching/supabase_client.py
 
-from dotenv import load_dotenv
 import os
 from supabase import create_client, Client
 
-# Define path relative to this file to get to project root .env
-# Assumes this file is in backend/caching, so needs to go up two levels
-try:
-    # Construct path relative to the current file's directory
-    dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
-    print(f"Attempting to load .env from: {dotenv_path}")
-    load_dotenv(dotenv_path=dotenv_path)
-except Exception as e:
-    print(f"Warning: Error loading .env file in supabase_client.py: {e}")
-    # Continue, hoping environment variables are set system-wide
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 # --- Load SERVICE KEY instead of ANON KEY ---

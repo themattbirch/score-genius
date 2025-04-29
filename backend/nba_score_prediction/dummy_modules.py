@@ -3,15 +3,14 @@
 import numpy as np
 import pandas as pd
 
-# REPLACE BELOW WITH NEW FEATURE ENGINE, FeatureEngine
-
-# class FeatureEngine
-
-#class NBAFeatureEngine:
- #   def __init__(self, *args, **kwargs):
-  #      pass
-   # def generate_all_features(self, **kwargs):
-    #    return None
+class FeatureEngine:  # Use the correct name
+    def __init__(self, *args, **kwargs):
+        print("--- Initializing DUMMY FeatureEngine ---") # Optional message
+        pass
+    def generate_all_features(self, **kwargs):
+        print("--- DUMMY FeatureEngine: generate_all_features called ---") # Optional message
+        # Return a default value expected by train_models, maybe None or empty DataFrame
+        return pd.DataFrame() # Or return None
 
 class SVRScorePredictor:
     def __init__(self, *args, **kwargs):

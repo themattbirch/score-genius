@@ -22,7 +22,7 @@ from typing import Optional, List, Dict, Any  # Added missing type imports
 # --- Refined Project Module Imports ---
 try:
     # Import classes/functions needed AT THE TOP LEVEL for instantiation
-    from backend.nba_score_prediction.feature_engineering import NBAFeatureEngine
+    from backend.features.legacy.feature_engineering import FeatureEngine    
     from backend.nba_score_prediction.models import QuarterSpecificModelSystem
     from backend.nba_score_prediction.simulation import PredictionUncertaintyEstimator
     from backend.nba_score_prediction.ensemble import EnsembleWeightManager  # Import the weight manager
@@ -85,7 +85,7 @@ async def startup_event():
     logger.info("API starting up...")
 
     try:
-        feature_generator = NBAFeatureEngine(debug=False)
+        feature_generator = FeatureEngine(debug=False)
         app_state["feature_generator"] = feature_generator
         logger.info("NBAFeatureEngine initialized.")
 

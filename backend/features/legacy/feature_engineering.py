@@ -1,4 +1,4 @@
-# backend/nba_score_prediction/feature_engineering.py - Unified & Integrated Feature Engineering
+# backend/features/legacy/feature_engineering.py - Unified & Integrated Feature Engineering
 
 """
 FeatureEngine - Unified module for NBA score prediction feature engineering.

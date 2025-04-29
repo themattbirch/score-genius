@@ -1,4 +1,27 @@
 from __future__ import annotations
+
+
+# --- Start of temporary debug code ---
+import importlib
+import traceback
+print("Attempting direct import of backend.features.engine...")
+try:
+    # Try importing the module first
+    importlib.import_module('backend.features.engine')
+    print("SUCCESS: Direct import of backend.features.engine module worked.")
+    # Optionally, try importing the class specifically after importing the module
+    # from backend.features.engine import FeatureEngine
+    # print("SUCCESS: Specific import of FeatureEngine from engine worked.")
+except Exception as e:
+    print(f"FAILED: Direct import of backend.features.engine failed:")
+    print(f"Error type: {type(e).__name__}")
+    print(f"Error message: {e}")
+    print("Traceback:")
+    traceback.print_exc()
+    print("-" * 20)
+# --- End of temporary debug code ---
+
+
 import pandas as pd
 from .utils import DEFAULTS
 from .momentum import add_intra_game_momentum

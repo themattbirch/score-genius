@@ -25,12 +25,6 @@ from supabase import create_client
 from caching.supabase_client import supabase as supabase_client_instance
 from config import SUPABASE_URL, SUPABASE_ANON_KEY
 
-# --- Your modules ---
-from nba_score_prediction.feature_engineering import FeatureEngine
-from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor
-from nba_score_prediction.simulation import PredictionUncertaintyEstimator
-import nba_score_prediction.utils as utils
-
 # --- Logging setup ---
 logging.basicConfig(
     level=logging.INFO,
@@ -73,7 +67,7 @@ UPCOMING_GAMES_COLS = ["game_id", "scheduled_time", "home_team", "away_team"]
 PROJECT_MODULES_IMPORTED = True
 
 try:
-    from nba_score_prediction.feature_engineering import FeatureEngine
+    from backend.features.legacy.feature_engineering import FeatureEngine    
     from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor
     from nba_score_prediction.simulation import PredictionUncertaintyEstimator
     import nba_score_prediction.utils as utils

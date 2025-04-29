@@ -1,3 +1,4 @@
+-- /sql/migration/001_create_team_rolling_20.sql
 -- 20-game window materialised view
 CREATE MATERIALIZED VIEW IF NOT EXISTS team_rolling_20 AS
 SELECT

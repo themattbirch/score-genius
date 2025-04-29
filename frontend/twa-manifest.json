@@ -22,7 +22,7 @@
     "alias": "score-genius"
   },
   "appVersionName": "4",
-  "appVersionCode": 7,
+  "appVersionCode": 8,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://scoregenius.io/manifest.webmanifest",
