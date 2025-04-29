@@ -49,6 +49,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install "sqlfluff[jinja]"
 
+      - name: Lint only changed Python
+        run: |
+          echo "Running ruff on diff against master..."
+          git fetch origin master
+          ruff check --diff origin/master...HEAD
+
       - name: Lint handwritten migrations only
         run: |
           echo "Using .sqlfluff config from repo root"
