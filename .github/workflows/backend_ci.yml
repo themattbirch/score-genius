@@ -4,7 +4,7 @@ name: Backend CI
 
 on:
   push: # 2 spaces indent
-    branches: [main] # 4 spaces indent
+    branches: [master] # 4 spaces indent
     paths: # 4 spaces indent
       - "backend/**" # 6 spaces indent
       - "supabase/**"
