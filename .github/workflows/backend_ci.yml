@@ -3,16 +3,17 @@
 name: Backend CI
 
 on:
-  push: # 2 spaces indent
-    branches: [master] # 4 spaces indent
-    paths: # 4 spaces indent
-      - "backend/**" # 6 spaces indent
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
       - "supabase/**"
       - ".github/workflows/backend_ci.yml"
-  pull_request: # 2 spaces indent
-    branches: [main] # 4 spaces indent
-    paths: # 4 spaces indent
-      - "backend/**" # 6 spaces indent
+  pull_request:
+    branches: [master]
+    paths:
+      - "backend/**"
       - "supabase/**"
       - ".github/workflows/backend_ci.yml"
 
@@ -25,8 +26,7 @@ jobs:
     name: Lint SQL Migrations
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -50,8 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-sql
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Supabase CLI
         uses: supabase/actions/setup@v1
@@ -66,26 +65,25 @@ jobs:
           for i in {1..10}; do
             CONTAINER_ID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
             if [ -n "$CONTAINER_ID" ] && docker exec "$CONTAINER_ID" pg_isready -U postgres; then
-              echo "Postgres is ready"
-              break
+              echo "Postgres is ready"; break
             fi
             sleep 3
           done
 
-      - name: Apply all migrations
+      - name: Reset & apply migrations
         run: |
           echo "Resetting and applying migrations..."
           PGSSLMODE=disable supabase db reset
 
       - name: Refresh Materialized View
         run: |
-          CONTAINER_ID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
-          docker exec "$CONTAINER_ID" psql -U postgres -d postgres -c "REFRESH MATERIALIZED VIEW public.team_rolling_20;"
+          CID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
+          docker exec "$CID" psql -U postgres -d postgres -c "REFRESH MATERIALIZED VIEW public.team_rolling_20;"
 
       - name: Basic SELECT test on MatView
         run: |
-          CONTAINER_ID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
-          docker exec "$CONTAINER_ID" psql -U postgres -d postgres -c "SELECT COUNT(*) FROM public.team_rolling_20;"
+          CID=$(docker ps --filter "label=com.supabase.service=postgres" -q)
+          docker exec "$CID" psql -U postgres -d postgres -c "SELECT COUNT(*) FROM public.team_rolling_20;"
 
       - name: Stop Supabase local services
         if: always()
@@ -96,8 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test-migrations
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
