@@ -2,29 +2,37 @@
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import fs from "fs";
 
 /* ──────────────────────────────────────────────────────────────
- * 1) Load /backend/.env BEFORE anything touches process.env
+ * 1) Load /backend/.env **if it exists**; otherwise rely on host
  * ──────────────────────────────────────────────────────────── */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const envPath = path.join(__dirname, "..", ".env");
-const { parsed, error } = dotenv.config({ path: envPath });
 
-if (error) {
-  console.error(`❌  dotenv couldn't read ${envPath}`, error);
-  process.exit(1);
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log(`🔑  Loaded env from ${envPath}`);
+} else {
+  console.log("🔑  No local .env file found; assuming host provides vars");
 }
 
-if (!parsed?.SUPABASE_URL || !parsed?.SUPABASE_SERVICE_KEY) {
-  console.error("❌  SUPABASE_URL or SUPABASE_SERVICE_KEY missing in .env");
+/* ----------------------------------------------------------------
+ * 2) Validate that the required Supabase vars are present
+ * ---------------------------------------------------------------- */
+const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error(
+    "FATAL: SUPABASE_URL or SUPABASE_SERVICE_KEY missing in environment"
+  );
   process.exit(1);
 }
 
 /* ──────────────────────────────────────────────────────────────
- * 2) Now it’s safe to import anything that relies on env vars
- *    Use top-level await for dynamic imports so we control order.
+ * 3) Bring in libs that depend on those vars
  * ──────────────────────────────────────────────────────────── */
 import express from "express";
 import cors from "cors";
