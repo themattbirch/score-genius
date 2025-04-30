@@ -1,0 +1,48 @@
+name: Refresh Materialized View
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "30 4 * * *" # 04:00 UTC daily
+
+jobs:
+  refresh-matview:
+    name: Reset & Refresh MV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install Postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Start Supabase
+        run: supabase start
+
+      - name: Wait for Postgres ready
+        run: |
+          for _ in {1..10}; do
+            pg_isready -h 127.0.0.1 -p 54322 -U postgres && break
+            sleep 3
+          done
+
+      - name: Reset DB & apply migrations
+        run: PGSSLMODE=disable supabase db reset
+
+      - name: Refresh materialized view
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -c "REFRESH MATERIALIZED VIEW public.team_rolling_20;"
+
+      - name: Smoke-test view
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -c "SELECT COUNT(*) FROM public.team_rolling_20;"
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup
