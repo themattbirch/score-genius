@@ -36,6 +36,12 @@ _missing = [ name for name,val in [
 if _missing:
     print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
     exit(1)
+
+HERE = os.path.dirname(__file__)
+BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
     
 from caching.supabase_client import supabase
 from caching.supabase_stats import upsert_historical_game_stats_team
@@ -297,8 +303,8 @@ def process_day(date_obj: datetime):
 
 def main():
     # Example: fetch data from 2025-03-16 to 2025-03-17
-    start_date = datetime(2025, 4, 26)
-    end_date = datetime(2025, 4, 29)
+    start_date = datetime(2025, 4, 29)
+    end_date = datetime(2025, 4, 30)
 
     print(f"Starting historical data import from {start_date} to {end_date}")
     current = start_date

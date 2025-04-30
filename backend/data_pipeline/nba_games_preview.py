@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import os
+import sys
 
 import difflib
 import requests
@@ -42,6 +43,12 @@ _missing = [ name for name,val in [
 if _missing:
     print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
     exit(1)
+
+HERE = os.path.dirname(__file__)
+BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
 
 from caching.supabase_client import supabase
 from nba_score_prediction.prediction import (

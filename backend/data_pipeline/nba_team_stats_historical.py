@@ -42,6 +42,13 @@ if _missing:
     print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
     sys.exit(1)
 
+
+HERE = os.path.dirname(__file__)
+BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+
 from caching.supabase_client import supabase
 
 API_KEY = API_SPORTS_KEY

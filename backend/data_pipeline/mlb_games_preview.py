@@ -7,6 +7,7 @@ then upserts the preview data into a Supabase table. Pitcher info is updated sep
 
 import time
 import os
+import sys
 import re
 import json
 from datetime import date, timedelta, datetime as dt_datetime, datetime as dt
@@ -23,13 +24,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
-# --- 3rd-party Imports ---
-try:
-    import requests
-    from supabase import create_client, Client
-except ImportError as e:
-    print(f"FATAL ERROR: Missing required third‑party module: {e}")
-    exit(1)
+# allow `from caching.supabase_client import supabase` no matter where we run from
+HERE = os.path.dirname(__file__)
+BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
 
 # --- Local Config & Variables ---
 # First try to load a local config.py for dev, else fall back to env
@@ -47,6 +46,14 @@ except ImportError:
     ODDS_API_KEY        = os.getenv("ODDS_API_KEY")
     SUPABASE_URL        = os.getenv("SUPABASE_URL")
     SUPABASE_SERVICE_KEY= os.getenv("SUPABASE_SERVICE_KEY")
+
+# --- 3rd-party Imports ---
+try:
+    import requests
+    from supabase import create_client, Client
+except ImportError as e:
+    print(f"FATAL ERROR: Missing required third‑party module: {e}")
+    exit(1)
 
 # Now verify we have everything we need
 missing = [

@@ -44,6 +44,12 @@ if _missing:
     print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
     sys.exit(1)
 
+HERE = os.path.dirname(__file__)
+BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+
 from caching.supabase_client import supabase
 from caching.supabase_stats import upsert_historical_game_stats
 
@@ -145,8 +151,8 @@ def process_day(date_obj: datetime) -> None:
 
 
 def main() -> None:
-    start = datetime(2025, 4, 26)
-    end = datetime(2025, 4, 29)
+    start = datetime(2025, 4, 29)
+    end = datetime(2025, 4, 30)
     print(f"Starting import: {start.date()} → {end.date()}")
 
     current = start
