@@ -4,7 +4,7 @@ name: Backend CI
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 4 * * *" # Daily at 04:00 UTC
+    - cron: "35 4 * * *" # Daily at 04:00 UTC
   pull_request:
     branches: [master]
     paths:

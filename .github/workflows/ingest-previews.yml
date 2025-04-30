@@ -3,7 +3,7 @@ name: Ingest Preview Data
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "40 4 * * *" # 04:10 UTC daily
+    - cron: "42 4 * * *" # 04:10 UTC daily
 
 jobs:
   ingest-previews:

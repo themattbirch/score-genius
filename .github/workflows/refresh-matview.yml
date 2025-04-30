@@ -3,7 +3,7 @@ name: Refresh Materialized View
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 4 * * *" # 04:00 UTC daily
+    - cron: "35 4 * * *" # 04:00 UTC daily
 
 jobs:
   refresh-matview:
