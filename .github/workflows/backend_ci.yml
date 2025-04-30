@@ -4,13 +4,7 @@ name: Backend CI
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 0 * * *" # Daily at 04:00 UTC
-  push:
-    branches: [master]
-    paths:
-      - "backend/**"
-      - "supabase/**"
-      - ".github/workflows/backend_ci.yml"
+    - cron: "0 1 * * *" # Daily at 04:00 UTC
   pull_request:
     branches: [master]
     paths:
@@ -202,6 +196,7 @@ jobs:
       #   run: |
       #     cd backend
       #     pytest -q
+
   #-------------------------------------------------------------#
   # 5)  Run data-pipeline scripts that fetch + upsert to Supabase
   #-------------------------------------------------------------#
@@ -209,6 +204,7 @@ jobs:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     name: Run Data Fetch & Upsert Scripts
     runs-on: ubuntu-latest
+    needs: test-python-backend
     steps:
       - name: ⏱ Wait 40 minutes before starting
         run: sleep 2400
@@ -216,7 +212,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # good practice for tags / versioning
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
