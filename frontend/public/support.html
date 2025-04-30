@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Support - ScoreGenius</title>
+    <title>Support - Score Genius</title>
     <meta
       name="description"
-      content="Support for ScoreGenius NBA Analytics Progressive Web App"
+      content="Support for Score Genius NBA Analytics Progressive Web App"
     />
 
     <link
@@ -27,6 +27,8 @@
       sizes="192x192"
       type="image/png"
     />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#F97316" />
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
@@ -37,14 +39,14 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16 items-center">
           <a href="/" class="flex items-center">
-            <i data-lucide="bar-chart" class="w-8 h-8 text-red-600"></i>
-            <span class="ml-2 font-bold text-white">ScoreGenius</span>
+            <i data-lucide="bar-chart" class="w-8 h-8 text-orange-600"></i>
+            <span class="ml-2 font-bold text-white">Score Genius</span>
           </a>
           <a
             href="/"
-            class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            class="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
           >
-            Download app
+            Back to Home
           </a>
         </div>
       </div>
@@ -54,7 +56,7 @@
       <div class="max-w-3xl mx-auto bg-gray-800 rounded-2xl shadow-xl p-8">
         <header class="mb-8 border-b border-gray-700 pb-8">
           <h1 class="text-3xl font-bold text-white mb-2">Support</h1>
-          <p class="text-gray-400">Get help with ScoreGenius</p>
+          <p class="text-gray-400">Get help with Score Genius</p>
         </header>
 
         <main class="space-y-8">
@@ -63,8 +65,8 @@
               Quick Start Guide
             </h2>
             <p class="text-gray-300 mb-4">
-              ScoreGenius provides real-time NBA analytics, predictive insights,
-              and betting recommendations. Here's how to get started:
+              Score Genius provides real-time NBA analytics, predictive
+              insights, and betting recommendations. Here's how to get started:
             </p>
             <div class="bg-gray-700 rounded-lg p-4 space-y-2">
               <ul class="list-disc pl-5 text-gray-300 space-y-2">
@@ -151,7 +153,12 @@
               Still need help? Contact our support team:
             </p>
             <div class="bg-gray-700 rounded-lg p-4">
-              <p class="text-red-400">support@scoregenius.io</p>
+              <a
+                href="mailto:matt@optimizewebsolutions.com"
+                class="text-orange-600 hover:text-orange-700"
+              >
+                Get In Touch
+              </a>
             </div>
           </section>
         </main>
@@ -163,8 +170,13 @@
         <p class="text-gray-400">
           © 2025 Optimize Web Solutions. All rights reserved.
         </p>
-        <div class="mt-4 space-x-4">
+        <div
+          class="mt-4 flex flex-col items-center space-y-2 sm:flex-row sm:justify-center sm:space-y-0 sm:space-x-4"
+        >
           <a href="/" class="text-gray-400 hover:text-white">Home</a>
+          <a href="/disclaimer" class="text-gray-400 hover:text-white"
+            >Disclaimer</a
+          >
           <a href="/privacy" class="text-gray-400 hover:text-white">Privacy</a>
           <a href="/terms" class="text-gray-400 hover:text-white">Terms</a>
         </div>
