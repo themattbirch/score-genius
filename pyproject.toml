@@ -1,0 +1,5 @@
+[tool.ruff]
+extend-exclude = [
+    "backend/features/legacy/**",
+    "backend/nba_score_prediction/**",
+]
