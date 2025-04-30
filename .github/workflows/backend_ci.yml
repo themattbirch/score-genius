@@ -13,8 +13,8 @@ on:
       - ".github/workflows/backend_ci.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 defaults:
   run:

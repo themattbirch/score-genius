@@ -9,6 +9,7 @@ import sys
 import time
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Generator, List, Optional
+from zoneinfo import ZoneInfo
 
 import requests
 from dateutil import parser as dateutil_parser
@@ -194,52 +195,35 @@ def generate_date_range(
         yield current
         current += timedelta(days=1)
 
-
 def main() -> None:
     if not API_SPORTS_KEY or supabase is None:
         print("Missing API key or Supabase client; exiting")
         sys.exit(1)
 
-    yesterday = (datetime.utcnow().date() - timedelta(days=1))
+    # compute “yesterday” in Eastern Time
+    PT = ZoneInfo("America/Los_Angeles")
+    yesterday_pt = datetime.now(PT).date() - timedelta(days=1)
+    ds = yesterday_pt.isoformat()  # e.g. "2025-04-29"
+    print(f"Fetching MLB game stats for {ds} (PT yesterday)")
+
+    # initialize buffer
     buffer: List[Dict[str, Any]] = []
-    total = 0
 
-    for season in TARGET_SEASONS:
-        rng = SEASON_DATE_RANGES.get(season)
-        if not rng:
-            print(f"No date range for season {season}; skipping")
-            continue
+    # fetch and transform
+    games = get_games_for_date(MLB_LEAGUE_ID, yesterday_pt.year, ds, HEADERS)
+    for g in games:
+        rec = transform_game_data(g)
+        if rec:
+            buffer.append(rec)
 
-        start_date, end_cfg = rng
-        if season == datetime.utcnow().year:
-            end_date = yesterday.strftime("%Y-%m-%d")
-        else:
-            if not end_cfg:
-                print(f"No end date configured for past season {season}; skipping")
-                continue
-            end_date = end_cfg
-
-        print(f"Processing season {season}: {start_date} → {end_date}")
-        for d in generate_date_range(start_date, end_date):
-            ds = d.strftime("%Y-%m-%d")
-            games = get_games_for_date(MLB_LEAGUE_ID, season, ds, HEADERS)
-            for g in games:
-                rec = transform_game_data(g)
-                if rec:
-                    buffer.append(rec)
-                    total += 1
-
-            if len(buffer) >= BATCH_SIZE:
-                upsert_game_stats_batch(supabase, buffer)
-                buffer.clear()
-
-            time.sleep(REQUEST_DELAY_SECONDS)
-
+    # upsert if any
     if buffer:
         upsert_game_stats_batch(supabase, buffer)
+        print(f"Upserted {len(buffer)} records.")
+    else:
+        print("No games found for yesterday; nothing to upsert.")
 
-    print(f"Finished. Total games processed: {total}")
-
+    print("Finished.")
 
 if __name__ == "__main__":
     main()

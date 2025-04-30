@@ -6,6 +6,8 @@ import sys
 import os
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 
 # Add the backend root to Python path for caching & config
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
@@ -302,16 +304,14 @@ def process_day(date_obj: datetime):
 ##############################################################################
 
 def main():
-    # Example: fetch data from 2025-03-16 to 2025-03-17
-    start_date = datetime(2025, 4, 29)
-    end_date = datetime(2025, 4, 30)
+    # Determine “today” in Eastern Time
+    et = ZoneInfo("America/New_York")
+    today_et = datetime.now(et).date()
 
-    print(f"Starting historical data import from {start_date} to {end_date}")
-    current = start_date
-    while current <= end_date:
-        process_day(current)
-        time.sleep(5)  # to avoid potential rate-limiting
-        current += timedelta(days=1)
+    print(f"Starting historical data import for {today_et}")
+    # process_day expects a datetime; zero‐out the time
+    process_day(datetime(today_et.year, today_et.month, today_et.day, tzinfo=et))
+    time.sleep(5)  # avoid rate limits
 
     print("\nCompleted processing historical GAME-level stats.")
 

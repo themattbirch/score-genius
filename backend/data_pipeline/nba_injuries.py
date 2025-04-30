@@ -1,19 +1,18 @@
 # backend/data_pipeline/nba_injuries.py
 
-# Fetches NBA injuries from RapidAPI and upserts to Supabase using Service Key.
-
 import os
+import sys
 import json
 import re
-import requests # Needed for get_nba_injuries
-import datetime
+import requests
 import time
-from datetime import date, time as dt_time, timedelta, datetime as dt_datetime
+
+from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
-from dateutil import parser as dateutil_parser # Keep if parsing dates
+from dateutil import parser as dateutil_parser
 from typing import Dict, Optional, Tuple, List, Any
+
 from supabase import create_client, Client
-import sys
 
 # --- Local Config & Variables ---
 try:
@@ -49,16 +48,17 @@ if _missing:
     print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
     sys.exit(1)
 
+# Allow imports from backend/
 HERE = os.path.dirname(__file__)
 BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-from caching.supabase_client import supabase
+from caching.supabase_client import supabase  # your wrapper
 
-# --- Configuration ---
+# --- Config ---
 SUPABASE_TABLE_NAME = "nba_injuries"
-ET_ZONE = ZoneInfo("America/New_York") # Keep for potential future date logic
+ET_ZONE = ZoneInfo("America/New_York")
 # --- End Configuration ---
 
 # --- Helper Functions ---
@@ -161,38 +161,37 @@ def upsert_nba_injuries(supabase_client: Client, injuries_payload: List[Dict[str
         return updated_count
     except Exception as e: print(f"Error during Supabase upsert: {e}"); return 0
 
-# --- Main Execution Block ---
-if __name__ == "__main__":
-    print("Starting NBA Injuries Update Script...")
-    script_start_time = time.time()
+def main():
+    print("Starting NBA Injuries Update Script…")
+    start = time.time()
 
-    # Initialize Supabase client ONCE using the Service Key from config
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY: print("FATAL ERROR: Supabase URL or Service Key missing."); exit(1)
-    try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        print("Supabase client initialized successfully.")
-    except Exception as e: print(f"FATAL ERROR: Could not initialize Supabase client: {e}"); exit(1)
+    # init supabase client
+    supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    # Fetch Raw Data from API (Ensure RAPIDAPI keys are available)
-    if not RAPIDAPI_KEY or not RAPIDAPI_HOST: print("FATAL ERROR: RapidAPI keys missing."); exit(1)
+    # fetch & flatten
     injuries_raw = get_nba_injuries(RAPIDAPI_KEY, RAPIDAPI_HOST)
-    if not injuries_raw or not isinstance(injuries_raw, dict): print("Failed to retrieve valid data structure from NBA injuries API."); exit(1)
+    team_list = injuries_raw.get("injuries", [])
+    all_recs: List[Dict[str, Any]] = []
+    for team in team_list:
+        all_recs.extend(transform_team_injury_record(team))
 
-    # Extract list of team injury records
-    team_injury_list = injuries_raw.get("injuries")
-    if not isinstance(team_injury_list, list): print(f"Error: Expected list under 'injuries' key."); exit(1)
-    print(f"Retrieved injury data for {len(team_injury_list)} teams from API.")
+    # only today’s (UTC)
+    today = datetime.now(ZoneInfo("UTC")).date()
+    fresh = [
+        r for r in all_recs
+        if dateutil_parser.isoparse(r["report_date_utc"]).date() == today
+    ]
 
-    # Process and transform nested structure
-    all_transformed_injuries = []
-    print(f"Transforming {len(team_injury_list)} raw team records...")
-    for team_rec in team_injury_list:
-        transformed_list = transform_team_injury_record(team_rec)
-        if transformed_list: all_transformed_injuries.extend(transformed_list) # Flatten the list
+    if fresh:
+        print(f"Upserting {len(fresh)} injuries reported on {today}")
+        upsert_nba_injuries(supa, fresh)
+    else:
+        print(f"No new injuries for {today} to upsert.")
 
-    # Upsert the flattened list of transformed records using the initialized client
-    updated_count = upsert_nba_injuries(supabase, all_transformed_injuries)
+    # remove this next line if you *only* want today's
+    # upsert_nba_injuries(supa, all_recs)
 
-    script_end_time = time.time()
-    print(f"\nFinished upserting injuries. Updated/Inserted {updated_count} records.")
-    print(f"Total execution time: {script_end_time - script_start_time:.2f} seconds.")
+    print(f"Done in {time.time() - start:.1f}s.")
+
+if __name__ == "__main__":
+    main()
