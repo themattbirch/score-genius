@@ -102,7 +102,7 @@ def fetch_team_rolling_df(supabase, games: pd.DataFrame) -> pd.DataFrame:
 # -- FeatureEngine Class --
 
 class FeatureEngine:
-    def __init__(self, *, supabase_client=None, debug=False, use_modular: bool|None=None):
+    def __init__(self, *, supabase_client: Optional[Any] = None, debug: bool = False, use_modular: bool | None = None):
         """Initialize the feature engine."""
         self.debug = debug
         if self.debug:
@@ -111,12 +111,9 @@ class FeatureEngine:
         else:
             logger.setLevel(logging.INFO)
 
-        # new modular flag logic
-        self.use_modular = (
-            use_modular
-            if use_modular is not None
-            else os.getenv("FEATURE_MODULES_V2", "0") == "1"
-        )
+        # runtime flag (legacy → modular).  Default is *on*.
+        # Pass use_modular=False when you deliberately want the old monolith.
+        self.use_modular = True if use_modular is None else bool(use_modular)
 
         self.supabase_client = supabase_client
         logger.debug(f"FeatureEngine Initialized (use_modular={self.use_modular}).")
@@ -237,38 +234,49 @@ class FeatureEngine:
         month = game_date.month
         start_year = year if month >= 9 else year - 1
         return f"{start_year}-{start_year + 1}"
-    
+        
     @profile_time
     def add_intra_game_momentum(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Adds features related to quarter-by-quarter score margin changes."""
-        logger.debug("Adding intra-game momentum features...")
+        """
+        Adds quarter-by-quarter score margins and their cumulative & change features.
+        """
+        logger.debug("Adding intra-game margin features...")
         if df is None or df.empty:
             return df
+
         result_df = df.copy()
-        qtr_cols_base = [f'q{i}' for i in range(1, 5)]
-        qtr_cols_home = [f'home_{base}' for base in qtr_cols_base]
-        qtr_cols_away = [f'away_{base}' for base in qtr_cols_base]
-        all_qtr_cols = qtr_cols_home + qtr_cols_away
-        result_df = convert_and_fill(result_df, all_qtr_cols, default=0.0)
-        for i in range(1, 5):
-            result_df[f'q{i}_margin'] = result_df[f'home_q{i}'] - result_df[f'away_q{i}']
-        result_df['end_q1_diff'] = result_df['q1_margin']
-        result_df['end_q2_diff'] = result_df['end_q1_diff'] + result_df['q2_margin']
-        result_df['end_q3_diff'] = result_df['end_q2_diff'] + result_df['q3_margin']
-        result_df['end_q4_reg_diff'] = result_df['end_q3_diff'] + result_df['q4_margin']
-        result_df['q2_margin_change'] = result_df['q2_margin'] - result_df['q1_margin']
-        result_df['q3_margin_change'] = result_df['q3_margin'] - result_df['q2_margin']
-        result_df['q4_margin_change'] = result_df['q4_margin'] - result_df['q3_margin']
-        valid_q_margin_cols = [f'q{i}_margin' for i in range(1, 5) if f'q{i}_margin' in result_df.columns]
-        if len(valid_q_margin_cols) == 4:
-            quarter_margins = result_df[valid_q_margin_cols]
-            result_df['momentum_score_ewma_q4'] = quarter_margins.ewm(span=3, axis=1, adjust=False).mean().iloc[:, -1].fillna(0)
-            result_df['momentum_score_ewma_q3'] = result_df[valid_q_margin_cols[:3]].ewm(span=2, axis=1, adjust=False).mean().iloc[:, -1].fillna(0)
-        else:
-            logger.warning("Could not calculate EWMA momentum scores due to missing quarter margin columns.")
-            result_df['momentum_score_ewma_q4'] = self.defaults['momentum_ewma']
-            result_df['momentum_score_ewma_q3'] = self.defaults['momentum_ewma']
-        logger.debug("Finished adding intra-game momentum features.")
+        # Identify required columns
+        qtr_nums     = range(1, 5)
+        qtr_home     = [f"home_q{i}" for i in qtr_nums]
+        qtr_away     = [f"away_q{i}" for i in qtr_nums]
+        required_cols = qtr_home + qtr_away
+
+        # Guard against missing data
+        missing = [col for col in required_cols if col not in result_df.columns]
+        if missing:
+            logger.warning(f"Missing quarter columns {missing}, skipping intra-game margins.")
+            return result_df
+
+        # Ensure numeric and fill NaNs
+        result_df = convert_and_fill(result_df, required_cols, default=0.0)
+
+        # Compute quarter margins
+        for i in qtr_nums:
+            result_df[f"q{i}_margin"] = result_df[f"home_q{i}"] - result_df[f"away_q{i}"]
+
+        # Cumulative score differentials
+        result_df["end_q1_diff"]     = result_df["q1_margin"]
+        result_df["end_q2_diff"]     = result_df["end_q1_diff"] + result_df["q2_margin"]
+        result_df["end_q3_diff"]     = result_df["end_q2_diff"] + result_df["q3_margin"]
+        result_df["end_q4_reg_diff"] = result_df["end_q3_diff"] + result_df["q4_margin"]
+
+        # Quarter-to-quarter margin changes
+        for prev, curr in zip(qtr_nums, list(qtr_nums)[1:]):
+            result_df[f"q{curr}_margin_change"] = (
+                result_df[f"q{curr}_margin"] - result_df[f"q{prev}_margin"]
+            )
+
+        logger.debug("Finished adding intra-game margin features.")
         return result_df
     
     @profile_time
@@ -407,364 +415,7 @@ class FeatureEngine:
 
         logger.debug("Finished integrating advanced features with revised Pace/Poss/Ratings.")
         return result_df
-
-    @profile_time
-    def add_rolling_features(self, df: pd.DataFrame, window_sizes: List[int] = [5, 10, 20]) -> pd.DataFrame:
-        """Adds rolling mean and standard deviation features, preventing data leakage."""
-        logger.debug(f"Adding rolling features for windows: {window_sizes}...")
-        if df is None or df.empty:
-            logger.warning("Rolling: Input df empty.")
-            return df
-
-        local_df = df.copy()
-        cols_to_roll_generic = [
-            'score_for', 'score_against', 'point_diff', 'momentum_ewma',
-            'off_rating', 'def_rating', 'net_rating', 'pace', 'efg_pct',
-            'tov_rate', 'trb_pct', 'oreb_pct', 'dreb_pct', 'ft_rate'
-        ]
-        source_mapping_home = { 
-            'home_score': 'score_for',
-            'away_score': 'score_against',
-            'point_diff': 'point_diff',
-            'momentum_score_ewma_q4': 'momentum_ewma', 
-            'home_offensive_rating': 'off_rating',
-            'home_defensive_rating': 'def_rating',
-            'home_net_rating': 'net_rating',
-            'game_pace': 'pace',
-            'home_efg_pct': 'efg_pct',
-            'home_tov_rate': 'tov_rate',
-            'home_trb_pct': 'trb_pct',
-            'home_oreb_pct': 'oreb_pct',
-            'home_dreb_pct': 'dreb_pct',
-            'home_ft_rate': 'ft_rate'
-        }
-        source_mapping_away = { 
-            'away_score': 'score_for',
-            'home_score': 'score_against',
-            'point_diff': 'point_diff', 
-            'momentum_score_ewma_q4': 'momentum_ewma',
-            'away_offensive_rating': 'off_rating',
-            'away_defensive_rating': 'def_rating',
-            'away_net_rating': 'net_rating',
-            'game_pace': 'pace',
-            'away_efg_pct': 'efg_pct',
-            'away_tov_rate': 'tov_rate',
-            'away_trb_pct': 'trb_pct',
-            'away_oreb_pct': 'oreb_pct',
-            'away_dreb_pct': 'dreb_pct',
-            'away_ft_rate': 'ft_rate'
-        }
-
-        # --- Check and Prepare Source Columns ---
-        if 'point_diff' not in local_df.columns and 'home_score' in local_df.columns and 'away_score' in local_df.columns:
-             local_df['point_diff'] = pd.to_numeric(local_df['home_score'], errors='coerce') - pd.to_numeric(local_df['away_score'], errors='coerce')
-        if 'game_pace' not in local_df.columns:
-             logger.warning("Rolling: 'game_pace' column missing. Pace features rely on defaults.")
-             local_df['game_pace'] = self.defaults.get('pace', 100.0) 
-
-        required_sources = set(source_mapping_home.keys()) | set(source_mapping_away.keys()) | {'game_id', 'game_date', 'home_team', 'away_team'}
-        missing_sources = [col for col in required_sources if col not in local_df.columns]
-        if missing_sources:
-             logger.warning(f"Rolling: Missing essential source columns: {missing_sources}. Features might use defaults.")
-             for col in missing_sources:
-                  if col not in local_df.columns: local_df[col] = np.nan
-
-        # Determine which generic columns can actually be calculated
-        cols_to_roll_final = []
-        for generic_col in cols_to_roll_generic:
-            home_source = next((k for k, v in source_mapping_home.items() if v == generic_col), None)
-            away_source = next((k for k, v in source_mapping_away.items() if v == generic_col), None)
-            home_source_exists = home_source in local_df.columns if home_source else False
-            away_source_exists = away_source in local_df.columns if away_source else False
-
-            # Special handling for point_diff and game_pace
-            if generic_col == 'point_diff' and 'point_diff' in local_df.columns: home_source_exists = away_source_exists = True; home_source = away_source = 'point_diff'
-            if generic_col == 'pace' and 'game_pace' in local_df.columns: home_source_exists = away_source_exists = True; home_source = away_source = 'game_pace'
-
-            if home_source_exists and away_source_exists:
-                cols_to_roll_final.append(generic_col)
-                default_val = self.defaults.get(generic_col, 0.0)
-                if home_source: local_df[home_source] = pd.to_numeric(local_df[home_source], errors='coerce').fillna(default_val)
-                if away_source and away_source != home_source: local_df[away_source] = pd.to_numeric(local_df[away_source], errors='coerce').fillna(default_val)
-            else:
-                logger.warning(f"Rolling: Cannot calculate for '{generic_col}'. Missing sources: Home='{home_source}', Away='{away_source}'.")
-
-        if not cols_to_roll_final:
-            logger.error("Rolling: No valid columns found to calculate rolling features after checking sources.")
-            return df 
-
-        # --- Create Team-Centric View ---
-        logger.debug(f"Rolling: Creating team-centric view for columns: {cols_to_roll_final}")
-        try:
-            local_df['home_team_norm'] = local_df['home_team'].astype(str).apply(self.normalize_team_name)
-            local_df['away_team_norm'] = local_df['away_team'].astype(str).apply(self.normalize_team_name)
-
-            # <<< START INSERT (Team View Logging) -- COMMENTED OUT ATM >>>
-            #if self.debug:
-                #watched_home_rows = local_df[local_df['home_team_norm'].isin(self._teams_to_watch)]
-                #if not watched_home_rows.empty:
-                     #logger.debug(f"[WATCH_TEAM] Rolling (Pre-TeamView): Found {len(watched_home_rows)} watched home teams. Sample:\n{watched_home_rows[['game_id', 'game_date', 'home_team_norm', 'away_team_norm']].head()}")
-                #watched_away_rows = local_df[local_df['away_team_norm'].isin(self._teams_to_watch)]
-                #if not watched_away_rows.empty:
-                     #logger.debug(f"[WATCH_TEAM] Rolling (Pre-TeamView): Found {len(watched_away_rows)} watched away teams. Sample:\n{watched_away_rows[['game_id', 'game_date', 'home_team_norm', 'away_team_norm']].head()}")
-            # <<< END INSERT >>>
-
-            home_data_list = []
-            away_data_list = []
-            base_cols = ['game_id', 'game_date'] # Ensure game_id exists
-            home_view_base = local_df[base_cols + ['home_team_norm']].rename(columns={'home_team_norm': 'team_norm'})
-            away_view_base = local_df[base_cols + ['away_team_norm']].rename(columns={'away_team_norm': 'team_norm'})
-
-            for generic_col in cols_to_roll_final:
-                home_source = next((k for k, v in source_mapping_home.items() if v == generic_col), None)
-                away_source = next((k for k, v in source_mapping_away.items() if v == generic_col), None)
-
-                if home_source and home_source in local_df.columns:
-                    home_series = local_df[home_source].rename(generic_col)
-                    home_data_list.append(home_series)
-
-                if away_source and away_source in local_df.columns:
-                    away_series = local_df[away_source].rename(generic_col)
-                    if generic_col == 'point_diff' and away_source == 'point_diff':
-                        away_series = -away_series
-                    away_data_list.append(away_series)
-
-            home_view = pd.concat([home_view_base] + home_data_list, axis=1)
-            away_view = pd.concat([away_view_base] + away_data_list, axis=1)
-
-            team_view = (
-                pd.concat([home_view, away_view], ignore_index=True)
-                .assign(game_date=lambda x: pd.to_datetime(x['game_date'])) 
-                .sort_values(['team_norm', 'game_date', 'game_id'], kind='mergesort') 
-                .reset_index(drop=True)
-            )
-            team_view['game_id'] = team_view['game_id'].astype(str)
-
-            # <<< START INSERT (Team View Logging - After Creation -- COMMENTED OUT ATM) >>>
-            #if self.debug:
-               #watched_team_view_rows = team_view[team_view['team_norm'].isin(self._teams_to_watch)]
-                #if not watched_team_view_rows.empty:
-                    #logger.debug(f"[WATCH_TEAM] Rolling: Team view created. Watched teams sample rows:\n{watched_team_view_rows.head()}")
-                #else:
-                     #logger.debug(f"[WATCH_TEAM] Rolling: No watched teams found in the combined team_view.")
-            # <<< END INSERT >>>
-
-        except Exception as e:
-            logger.error(f"Rolling: Error creating team view: {e}", exc_info=True)
-            return df
-
-        # --- Calculate Rolling Features on Team View ---
-        logger.debug(f"Rolling: Calculating shifted mean/std for windows {window_sizes}...")
-        rolling_cols_generated = [] 
-        for window in window_sizes:
-            min_p = max(1, window // 2) 
-            for col in cols_to_roll_final:
-                if col not in team_view.columns:
-                     logger.warning(f"Rolling: Column '{col}' missing from team_view. Skipping.")
-                     continue
-
-                # Define output column names
-                roll_mean_col = generate_rolling_column_name('', col, 'mean', window)
-                roll_std_col = generate_rolling_column_name('', col, 'std', window)
-
-                try:
-                    grouped_col = team_view.groupby('team_norm', observed=True)[col]
-                    shifted_data = grouped_col.shift(1)
-                    rolling_op = shifted_data.rolling(window=window, min_periods=min_p)
-
-                    team_view[roll_mean_col] = rolling_op.mean()
-                    std_dev = rolling_op.std()
-                    team_view[roll_std_col] = np.maximum(0, std_dev) 
-
-                    default_mean = self.defaults.get(col, 0.0)
-                    default_std = self.defaults.get(f'{col}_std', 0.0)
-
-                    team_view[roll_mean_col] = team_view[roll_mean_col].fillna(default_mean)
-                    team_view[roll_std_col] = team_view[roll_std_col].fillna(default_std)
-
-                    rolling_cols_generated.extend([roll_mean_col, roll_std_col])
-
-                except Exception as calc_err:
-                     logger.error(f"Rolling: Error calculating for col='{col}', window={window}: {calc_err}", exc_info=True)
-                     team_view[roll_mean_col] = self.defaults.get(col, 0.0)
-                     team_view[roll_std_col] = self.defaults.get(f'{col}_std', 0.0)
-
-        rolling_cols_generated = sorted(list(set(rolling_cols_generated))) 
-
-        logger.debug("Rolling: Merging rolling stats back...")
-
-        parsed_bases = set() 
-
-        try: 
-             merge_data = None 
-
-             try:
-                 logger.debug("Rolling: Preparing merge keys and data...")
-                 local_df['game_id'] = local_df['game_id'].astype(str)
-                 team_view['game_id'] = team_view['game_id'].astype(str) 
-
-                 team_view['merge_key_rolling'] = team_view['game_id'] + "_" + team_view['team_norm'].astype(str)
-                 local_df['merge_key_home'] = local_df['game_id'] + "_" + local_df['home_team_norm'].astype(str)
-                 local_df['merge_key_away'] = local_df['game_id'] + "_" + local_df['away_team_norm'].astype(str)
-
-                 cols_to_merge = ['merge_key_rolling'] + [c for c in rolling_cols_generated if c in team_view.columns]
-                 if len(cols_to_merge) <= 1 :
-                     logger.warning("Rolling: No rolling columns were successfully generated to merge.")
-                     merge_data = pd.DataFrame(columns=['merge_key_rolling']) 
-                 else:
-                     logger.debug(f"Rolling: Columns selected for merge: {cols_to_merge}")
-                     merge_data = (
-                         team_view[cols_to_merge]
-                         .drop_duplicates(subset=['merge_key_rolling'], keep='last')
-                     )
-                     logger.debug(f"Rolling: merge_data shape after selection/deduplication: {merge_data.shape}")
-
-             except Exception as prep_err:
-                 logger.error(f"Rolling: Error PREPARING merge keys or data: {prep_err}", exc_info=True)
-                 merge_data = None 
-
-
-             # --- Proceed with Merge only if merge_data is valid ---
-             if merge_data is not None and not merge_data.empty:
-                 # <<< START INSERT - Before Home Merge-- COMMENTED OUT ATM>>>
-                 #if self.debug:
-                     #logger.debug(f"Rolling Merge (Home): Left DF shape: {local_df.shape}, Right DF (merge_data) shape: {merge_data.shape}")
-                     #watched_left_home = local_df[local_df['home_team_norm'].isin(self._teams_to_watch)]
-                     #if not watched_left_home.empty:
-                         #logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Left DF sample (watched teams):\n{watched_left_home[['game_id', 'game_date', 'home_team_norm', 'merge_key_home']].head()}")
-                         #watched_keys_home = watched_left_home['merge_key_home'].unique()
-                         #watched_right_home = merge_data[merge_data['merge_key_rolling'].isin(watched_keys_home)]
-                         #if not watched_right_home.empty: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Right DF sample (matching watched keys):\n{watched_right_home.head()}")
-                         #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home) - Right DF: No matching keys found for watched teams.")
-                     #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Home): No watched teams found in Left DF.")
-                 # <<< END INSERT >>>
-
-                 # --- Dictionary Comprehensions for Renaming ---
-                 home_rename_dict = {}
-                 away_rename_dict = {}
-
-                 for col in merge_data.columns:
-                     if col == 'merge_key_rolling': continue
-                     try:
-                         parts = col.split('_')
-                         if len(parts) >= 4 and parts[0] == 'rolling':
-                             window = int(parts[-1])
-                             stat_type = parts[-2]
-                             base = "_".join(parts[1:-2])
-                             parsed_bases.add(base) 
-
-                             home_rename_dict[col] = generate_rolling_column_name('home', base, stat_type, window)
-                             away_rename_dict[col] = generate_rolling_column_name('away', base, stat_type, window)
-                         else: logger.warning(f"Rolling: Could not parse column '{col}' during rename.")
-                     except (ValueError, IndexError) as parse_err: logger.warning(f"Rolling: Error parsing column '{col}' for rename: {parse_err}.")
-
-                 # --- Merge Logic ---
-                 local_df = pd.merge(local_df, merge_data, how='left',
-                                     left_on='merge_key_home', right_on='merge_key_rolling'
-                                    ).rename(columns=home_rename_dict)
-                 if 'merge_key_rolling' in local_df.columns: local_df = local_df.drop(columns=['merge_key_rolling'])
-
-                 # <<< START INSERT - Before Away Merge-- COMMENTED OUT ATM>>>
-                 #if self.debug:
-                     # Log shapes and watched teams again before away merge
-                     #logger.debug(f"Rolling Merge (Away): Left DF shape: {local_df.shape}, Right DF (merge_data) shape: {merge_data.shape}")
-                     #watched_left_away = local_df[local_df['away_team_norm'].isin(self._teams_to_watch)]
-                     #if not watched_left_away.empty:
-                         #logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Left DF sample (watched teams):\n{watched_left_away[['game_id', 'game_date', 'away_team_norm', 'merge_key_away']].head()}")
-                         #watched_keys_away = watched_left_away['merge_key_away'].unique()
-                         #watched_right_away = merge_data[merge_data['merge_key_rolling'].isin(watched_keys_away)]
-                         #if not watched_right_away.empty: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Right DF sample (matching watched keys):\n{watched_right_away.head()}")
-                         #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away) - Right DF: No matching keys found.")
-                     #else: logger.debug(f"[WATCH_TEAM] Rolling Merge (Away): No watched teams found in Left DF.")
-                 # <<< END INSERT >>>
-
-                 local_df = pd.merge(local_df, merge_data, how='left', 
-                                     left_on='merge_key_away', right_on='merge_key_rolling'
-                                    ).rename(columns=away_rename_dict)
-                 if 'merge_key_rolling' in local_df.columns: local_df = local_df.drop(columns=['merge_key_rolling'])
-                 # --- End Merge Logic ---
-
-             else: 
-                  logger.warning("Rolling: Skipping merge operations as merge_data was not prepared successfully or was empty.")
-
-        # --- Main Exception Handler for Merging/Renaming ---
-        except Exception as e:
-            logger.error(f"Rolling: Error during merge/rename stats back: {e}", exc_info=True)
-            missing_cols_defaults = {}
-            bases_for_fallback = parsed_bases if parsed_bases else cols_to_roll_final
-
-            logger.warning(f"Rolling: Attempting to add defaults for bases: {bases_for_fallback}")
-            for prefix in ['home', 'away']:
-                for base in bases_for_fallback:
-                    for stat in ['mean', 'std']:
-                        for w in window_sizes:
-                            col_name = generate_rolling_column_name(prefix, base, stat, w)
-                            if col_name not in local_df.columns:
-                                default_key = f'{base}_std' if stat == 'std' else base
-                                missing_cols_defaults[col_name] = self.defaults.get(default_key, 0.0)
-
-            if missing_cols_defaults:
-                 logger.warning(f"Adding default values for {len(missing_cols_defaults)} missing rolling columns due to error.")
-                 local_df = local_df.assign(**missing_cols_defaults)
-
-
-        # --- Final NaN Filling and Differential Calculation ---
-        logger.debug("Rolling: Finalizing (filling NaNs, calculating diffs)...")
-        primary_window = max(window_sizes) if window_sizes else 10
-        new_diff_cols = {}
-
-        for stat_type in ['mean', 'std']:
-            for base_col in cols_to_roll_final: 
-                for w in window_sizes:
-                    for prefix in ['home', 'away']:
-                        col_name = generate_rolling_column_name(prefix, base_col, stat_type, w)
-                        default_key = f'{base_col}_std' if stat_type == 'std' else base_col
-                        default = self.defaults.get(default_key, 0.0)
-                        if col_name not in local_df.columns:
-                            logger.warning(f"Rolling column '{col_name}' missing before final fill/diff. Adding default.")
-                            local_df[col_name] = default
-                        else:
-                            local_df[col_name] = local_df[col_name].fillna(default)
-                        if stat_type == 'std': local_df[col_name] = np.maximum(0, local_df[col_name])
-
-                # --- Calculate differential using primary window ---
-                w = primary_window
-                home_col = generate_rolling_column_name('home', base_col, stat_type, w)
-                away_col = generate_rolling_column_name('away', base_col, stat_type, w)
-
-                # Map generic base_col name for the differential column
-                expected_base_name = base_col
-                if base_col == 'point_diff': expected_base_name = 'margin'
-                elif base_col == 'net_rating': expected_base_name = 'eff'
-                elif base_col.endswith('_pct'): expected_base_name = base_col[:-4] 
-                elif base_col == 'momentum_ewma': expected_base_name = 'momentum'
-
-                diff_col_name = f'rolling_{expected_base_name}_diff_{stat_type}'
-
-                # Check if source columns for diff exist after merging/filling
-                if home_col in local_df.columns and away_col in local_df.columns:
-                    home_vals = local_df[home_col]
-                    away_vals = local_df[away_col]
-                    if base_col in ['tov_rate', 'def_rating', 'score_against']:
-                        diff = away_vals - home_vals
-                    else:
-                        diff = home_vals - away_vals
-
-                    new_diff_cols[diff_col_name] = diff.fillna(0.0) 
-                else:
-                    logger.warning(f"Could not calculate differential for {diff_col_name}, missing sources: '{home_col}' or '{away_col}'. Assigning default 0.0.")
-                    new_diff_cols[diff_col_name] = 0.0
-
-        if new_diff_cols: local_df = local_df.assign(**new_diff_cols)
-
-        # --- Clean up intermediate columns ---
-        logger.debug("Rolling: Cleaning up intermediate columns...")
-        cols_to_drop = ['merge_key_home', 'merge_key_away', 'home_team_norm', 'away_team_norm']
-        local_df = local_df.drop(columns=cols_to_drop, errors='ignore')
-
-        logger.debug("Finished adding rolling features.")
-        return local_df
-
+    
     @profile_time
     def add_rest_features_vectorized(self, df: pd.DataFrame) -> pd.DataFrame:
         """Adds rest days, games in last N days, back-to-back flags, and schedule advantages."""
@@ -998,171 +649,229 @@ class FeatureEngine:
         return df_copy[final_cols]
 
     @profile_time
-    def add_matchup_history_features(self, df: pd.DataFrame, historical_df: Optional[pd.DataFrame], max_games: int = 7) -> pd.DataFrame: # Default max_games set here for clarity, but uses value passed from generate_all_features
-        """Adds head-to-head matchup statistics based on recent historical games."""
+    def add_rolling_features(
+        self,
+        df: pd.DataFrame,
+        window_sizes: List[int] = [5, 10, 20]
+    ) -> pd.DataFrame:
+        """
+        Adds rolling mean/std for past games only—no leakage from the current game.
+        Uses .rolling(...).shift(1) on both dates and values to strictly exclude
+        the current row from each window.
+        """
+        logger.debug(f"Rolling: windows={window_sizes}")
+        if df is None or df.empty:
+            logger.warning("Rolling: input df empty, skipping.")
+            return df
+
+        # 1) Prep & normalize
+        local = df.copy()
+        local['game_date'] = (
+            pd.to_datetime(local['game_date'], errors='coerce')
+            .dt.tz_localize(None)
+        )
+        local['home_norm'] = local['home_team'].map(self.normalize_team_name)
+        local['away_norm'] = local['away_team'].map(self.normalize_team_name)
+
+        stat_map = {
+            'home_score':             'score_for',
+            'away_score':             'score_for',
+            'home_offensive_rating':  'off_rating',
+            'away_offensive_rating':  'off_rating',
+            'home_defensive_rating':  'def_rating',
+            'away_defensive_rating':  'def_rating',
+            'home_net_rating':        'net_rating',
+            'away_net_rating':        'net_rating',
+        }
+
+        # 2) Build long form per team
+        pieces = []
+        for raw_col, gen in stat_map.items():
+            if raw_col in local:
+                side = 'home' if raw_col.startswith('home_') else 'away'
+                pieces.append(
+                    local[['game_id','game_date', f"{side}_norm", raw_col]]
+                    .rename(columns={f"{side}_norm": 'team_norm', raw_col: gen})
+                )
+        if not pieces:
+            logger.warning("Rolling: no stats columns found.")
+            return local
+
+        tv = pd.concat(pieces, ignore_index=True)
+        tv['game_id'] = tv['game_id'].astype(str)
+        # stable sort before grouping
+        tv = tv.sort_values(['team_norm','game_date'], kind='mergesort')
+
+        all_rolls = []
+        for window in window_sizes:
+            minp = max(1, window // 2)
+            for gen in set(stat_map.values()):
+                grp = tv[['team_norm','game_id','game_date',gen]] \
+                        .groupby('team_norm', observed=True)
+
+                total_leaks = 0
+                def roll_grp(g):
+                    nonlocal total_leaks
+                    # stable sort inside each group
+                    g = g.sort_values('game_date', kind='mergesort').reset_index(drop=True)
+                    dates = g['game_date']
+                    vals  = g[gen]
+
+                    shifted_date_ints = dates.view('int64').shift(1)
+                    max_ints = shifted_date_ints.rolling(window, min_periods=1).max()
+                    date_roll_max = pd.to_datetime(max_ints)
+
+                    mean_series = vals.rolling(window, min_periods=minp).mean().shift(1)
+                    std_series = vals.rolling(window, min_periods=minp).std().clip(lower=0).shift(1)
+
+                    default_m = self.defaults.get(gen, 0.0)
+                    default_s = self.defaults.get(f"{gen}_std", 0.0)
+
+                    # detect any remaining leakage
+                    leak_mask = date_roll_max >= dates
+                    if leak_mask.any():
+                        total_leaks += int(leak_mask.sum())
+                        mean_series[leak_mask] = default_m
+                        std_series[leak_mask]  = default_s
+
+                    # fill NaNs with defaults
+                    mean_series = mean_series.fillna(default_m)
+                    std_series  = std_series.fillna(default_s)
+
+                    return pd.DataFrame({
+                        'team_norm': g['team_norm'],
+                        'game_id':   g['game_id'],
+                        f"rolling_{gen}_mean_{window}": mean_series,
+                        f"rolling_{gen}_std_{window}":  std_series,
+                    }, index=g.index)
+
+                rolled = grp.apply(roll_grp).reset_index(drop=True)
+                if total_leaks:
+                    logger.warning(
+                        f"Rolling leakage for '{gen}' w={window}: reset {total_leaks} values"
+                    )
+                all_rolls.append(rolled)
+
+        # 3) Reassemble
+        roll_df = pd.concat(all_rolls, axis=1)
+        roll_df = roll_df.loc[:, ~roll_df.columns.duplicated()]
+
+        out = local.copy()
+        out['merge_home'] = out['game_id'].astype(str) + "_" + out['home_norm']
+        out['merge_away'] = out['game_id'].astype(str) + "_" + out['away_norm']
+        roll_df['merge_key'] = roll_df['game_id'] + "_" + roll_df['team_norm']
+
+        roll_cols = [c for c in roll_df if c.startswith('rolling_')]
+        merged   = roll_df[['merge_key'] + roll_cols].drop_duplicates('merge_key')
+
+        # merge home
+        home_map = {c: c.replace('rolling_', 'home_rolling_') for c in roll_cols}
+        out = (out
+            .merge( merged, how='left', left_on='merge_home', right_on='merge_key')
+            .rename(columns=home_map)
+            .drop(columns=['merge_key'])
+        )
+        # merge away
+        away_map = {c: c.replace('rolling_', 'away_rolling_') for c in roll_cols}
+        out = (out
+            .merge( merged, how='left', left_on='merge_away', right_on='merge_key')
+            .rename(columns=away_map)
+            .drop(columns=['merge_key','merge_home','merge_away'])
+        )
+
+        # fill any remaining NaNs in numeric cols
+        for col in out.select_dtypes(include='number'):
+            key = "_".join(col.split('_')[2:])
+            out[col] = out[col].fillna(self.defaults.get(key, 0.0))
+
+        logger.debug("Rolling features added.")
+        return out
+
+    @profile_time
+    def add_matchup_history_features(
+        self,
+        df: pd.DataFrame,
+        historical_df: Optional[pd.DataFrame],
+        max_games: int = 7
+    ) -> pd.DataFrame:
+        """Adds head-to-head matchup stats from prior games, with no leakage."""
         logger.debug(f"Adding head-to-head matchup features (last {max_games} games)...")
         if df is None or df.empty:
             logger.warning("H2H: Input df is empty.")
             return df
-        result_df = df.copy()
 
+        result = df.copy()
         placeholder_cols = [
             'matchup_num_games', 'matchup_avg_point_diff', 'matchup_home_win_pct',
-            'matchup_avg_total_score', 'matchup_avg_home_score', 'matchup_avg_away_score',
-            'matchup_last_date', 'matchup_streak'
+            'matchup_avg_total_score', 'matchup_avg_home_score',
+            'matchup_avg_away_score', 'matchup_last_date', 'matchup_streak'
         ]
+
+        # no history → placeholders
+        # ← changed: explicit None check instead of `if not historical_df`
         if historical_df is None or historical_df.empty:
-            logger.warning("H2H: Historical DataFrame empty or None. Adding H2H placeholders with defaults.")
+            logger.warning("H2H: No historical data—filling placeholders.")
             for col in placeholder_cols:
-                if col not in result_df.columns:
-                    default_key = col.replace('matchup_', '')
-                    default_val = self.defaults.get(default_key, 0.0 if col != 'matchup_last_date' else pd.NaT)
-                    result_df[col] = default_val
-            return result_df 
+                default_val = pd.NaT if col == 'matchup_last_date' else self.defaults.get(col.replace('matchup_',''), 0.0)
+                result[col] = default_val
+            return result
 
-        try:
-            # --- Prepare Historical Data ---
-            hist_df = historical_df.copy()
-            hist_required = ['game_date', 'home_team', 'away_team', 'home_score', 'away_score']
-            if not all(col in hist_df.columns for col in hist_required):
-                missing_hist_cols = set(hist_required) - set(hist_df.columns)
-                raise ValueError(f"H2H: Historical DF missing required columns: {missing_hist_cols}")
+        # clean historical
+        hist = historical_df.dropna(subset=['game_date','home_score','away_score']).copy()
+        hist['game_date'] = pd.to_datetime(hist['game_date'], errors='coerce').dt.tz_localize(None)
+        hist['home_score'] = pd.to_numeric(hist['home_score'], errors='coerce')
+        hist['away_score'] = pd.to_numeric(hist['away_score'], errors='coerce')
 
-            # Convert types and clean historical data
-            hist_df['game_date'] = pd.to_datetime(hist_df['game_date'], errors='coerce').dt.tz_localize(None)
-            hist_df['home_score'] = pd.to_numeric(hist_df['home_score'], errors='coerce')
-            hist_df['away_score'] = pd.to_numeric(hist_df['away_score'], errors='coerce')
-            hist_df = hist_df.dropna(subset=['game_date', 'home_score', 'away_score'])
+        # normalize and key
+        hist['home_team_norm'] = hist['home_team'].astype(str).map(self.normalize_team_name)
+        hist['away_team_norm'] = hist['away_team'].astype(str).map(self.normalize_team_name)
+        hist['matchup_key'] = hist.apply(
+            lambda r: "_vs_".join(sorted([r['home_team_norm'], r['away_team_norm']])), axis=1
+        )
+        hist = hist.sort_values('game_date')
+        lookup = {k: g for k, g in hist.groupby('matchup_key', observed=True)}
 
-            if hist_df.empty:
-                 logger.warning("H2H: Historical DataFrame has no valid rows after cleaning. Adding H2H placeholders.")
+        # prepare target
+        result = result.dropna(subset=['game_date']).copy()
+        result['game_date'] = pd.to_datetime(result['game_date'], errors='coerce').dt.tz_localize(None)
+        result['home_team_norm'] = result['home_team'].astype(str).map(self.normalize_team_name)
+        result['away_team_norm'] = result['away_team'].astype(str).map(self.normalize_team_name)
+        result['matchup_key'] = result.apply(
+            lambda r: "_vs_".join(sorted([r['home_team_norm'], r['away_team_norm']])), axis=1
+        )
 
-            # Normalize team names and create matchup keys in historical data
-            hist_df['home_team_norm'] = hist_df['home_team'].astype(str).apply(self.normalize_team_name)
-            hist_df['away_team_norm'] = hist_df['away_team'].astype(str).apply(self.normalize_team_name)
-            hist_df['matchup_key'] = hist_df.apply(lambda row: "_vs_".join(sorted([row['home_team_norm'], row['away_team_norm']])), axis=1)
-            hist_df = hist_df.sort_values('game_date') # Sort for correct history lookup
+        # compute per-row
+        rows = []
+        for idx, row in result.iterrows():
+            key = row['matchup_key']
+            hist_subset = lookup.get(key, pd.DataFrame())
+            hist_subset = hist_subset[hist_subset['game_date'] < row['game_date']]
+            stats = self._get_matchup_history_single(
+                home_team_norm=row['home_team_norm'],
+                away_team_norm=row['away_team_norm'],
+                historical_subset=hist_subset,
+                max_games=max_games,
+                current_game_date=row['game_date'],
+                loop_index=idx
+            )
+            rows.append(stats)
 
-            hist_lookup = {key: group for key, group in hist_df.groupby('matchup_key', observed=True)}
+        h2h_df = pd.DataFrame(rows, index=result.index)
+        if self.debug:
+            logger.debug("H2H: variances before join:\n%s", h2h_df[placeholder_cols].var())
 
-            # --- Prepare Target Data ---
-            result_df['game_date'] = pd.to_datetime(result_df['game_date'], errors='coerce').dt.tz_localize(None)
-            result_df = result_df.dropna(subset=['game_date']) # Drop rows where target date is invalid
+        result = result.join(h2h_df, how='left')
 
-            if result_df.empty:
-                logger.warning("H2H: No valid input rows remaining in target df after date processing.")
-                for col in placeholder_cols:
-                    if col not in result_df.columns:
-                        default_key = col.replace('matchup_', '')
-                        default_val = self.defaults.get(default_key, 0.0 if col != 'matchup_last_date' else pd.NaT)
-                        result_df[col] = default_val
-                return result_df 
+        # fill defaults
+        for col in placeholder_cols:
+            default_val = pd.NaT if col == 'matchup_last_date' else self.defaults.get(col.replace('matchup_',''), 0.0)
+            result[col] = result[col].fillna(default_val)
 
-            # Normalize team names and create matchup keys in target data
-            result_df['home_team_norm'] = result_df['home_team'].astype(str).apply(self.normalize_team_name)
-            result_df['away_team_norm'] = result_df['away_team'].astype(str).apply(self.normalize_team_name)
-            result_df['matchup_key'] = result_df.apply(lambda row: "_vs_".join(sorted([row['home_team_norm'], row['away_team_norm']])), axis=1)
-
-            # --- Calculate H2H Features Row-by-Row ---
-            logger.debug("H2H: Calculating features row by row...")
-            h2h_results_list = []
-            for index, row in result_df.iterrows(): # Keep using iterrows
-                # --- Define variables for this specific row ---
-                home_norm = row.get('home_team_norm', 'Unknown_Home')
-                away_norm = row.get('away_team_norm', 'Unknown_Away')
-                matchup_key = row.get('matchup_key', 'Unknown_Key')
-                game_id = row.get('game_id', 'Unknown_ID') 
-                current_game_date = row.get('game_date', pd.NaT)
-
-                # --- Find historical games for this specific matchup key ---
-                matchup_hist_subset = hist_lookup.get(matchup_key, pd.DataFrame())
-
-                # --- Calculate H2H stats using the helper function ---
-                single_h2h_stats = self._get_matchup_history_single(
-                    home_team_norm=home_norm,
-                    away_team_norm=away_norm,
-                    historical_subset=matchup_hist_subset,
-                    max_games=max_games,
-                    current_game_date=current_game_date,
-                    loop_index=index 
-                )
-
-                h2h_results_list.append(single_h2h_stats)
-
-            # --- Combine Results ---
-            if h2h_results_list:
-                h2h_results_df = pd.DataFrame(h2h_results_list, index=result_df.index)
-
-                if self.debug:
-                    logger.debug("H2H: h2h_results_df Info BEFORE JOIN:")
-                    h2h_results_df.info(verbose=True, show_counts=True)
-                    logger.debug("H2H: h2h_results_df Describe BEFORE JOIN:\n" + h2h_results_df.describe().to_string())
-                    matchup_cols_check = [col for col in placeholder_cols if col in h2h_results_df.columns and col != 'matchup_last_date']
-                    if matchup_cols_check:
-                         variances_before_join = h2h_results_df[matchup_cols_check].var()
-                         logger.debug(f"H2H: Variances BEFORE JOIN:\n{variances_before_join}")
-                    else:
-                         logger.warning("H2H: No matchup columns found BEFORE JOIN to check variance.")
-                
-                if self.debug:
-                    logger.debug("H2H: h2h_results_df Info:")
-                    h2h_results_df.info(verbose=True, show_counts=True)
-                    logger.debug("H2H: h2h_results_df Describe:\n" + h2h_results_df.describe().to_string())
-                result_df = result_df.join(h2h_results_df, how='left')
-            else:
-                logger.warning("H2H: No head-to-head results were generated (list was empty).")
-                for col in placeholder_cols:
-                     if col not in result_df.columns: result_df[col] = np.nan # Add as NaN first
-
-
-
-            # --- Finalize and Fill Defaults ---
-            logger.debug("H2H: Finalizing features (filling defaults)...")
-            for col in placeholder_cols:
-                default_key = col.replace('matchup_', '')
-                default_val = self.defaults.get(default_key, 0.0) 
-                if col == 'matchup_last_date':
-                    default_val = pd.NaT
-                elif col == 'matchup_home_win_pct':
-                     default_val = self.defaults.get('matchup_home_win_pct', 0.5) 
-
-                # Fill NaNs or add column if missing entirely
-                if col not in result_df.columns:
-                    result_df[col] = default_val
-                else:
-                    result_df[col] = result_df[col].fillna(default_val)
-
-                # Ensure correct data types after filling
-                if col == 'matchup_last_date':
-                    result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
-                elif col in ['matchup_num_games', 'matchup_streak']:
-                    result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0).round().astype(int)
-                else:
-                     result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(default_val)
-
-
-        except Exception as e:
-            logger.error(f"H2H: Error adding features: {e}", exc_info=True)
-            logger.warning("H2H: Adding placeholders due to error during processing.")
-            for col in placeholder_cols:
-                if col not in result_df.columns:
-                    default_key = col.replace('matchup_', '')
-                    default_val = self.defaults.get(default_key, 0.0 if col != 'matchup_last_date' else pd.NaT)
-                    if col == 'matchup_home_win_pct': default_val = self.defaults.get('matchup_home_win_pct', 0.5)
-                    result_df[col] = default_val
-                    if col == 'matchup_last_date': result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
-                    elif col in ['matchup_num_games', 'matchup_streak']: result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0).round().astype(int)
-                    else: result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0.0)
-
-
-        if self.debug and not result_df.empty:
-                matchup_cols_in_final = [col for col in placeholder_cols if col in result_df.columns and col != 'matchup_last_date']
-                if matchup_cols_in_final:
-                    variances_final = result_df[matchup_cols_in_final].var()
-                    logger.debug(f"H2H: Final Variances before return:\n{variances_final}")
+        if self.debug:
+            logger.debug("H2H: variances after join:\n%s", result[placeholder_cols].var())
 
         logger.debug("H2H: Finished adding head-to-head features.")
-        return result_df
+        return result
 
     @profile_time
     def add_season_context_features(self, df: pd.DataFrame, team_stats_df: Optional[pd.DataFrame]) -> pd.DataFrame:
@@ -1652,7 +1361,7 @@ class FeatureEngine:
         df: pd.DataFrame,
         historical_games_df: Optional[pd.DataFrame] = None,
         team_stats_df: Optional[pd.DataFrame] = None,
-        rolling_windows: List[int] = [5, 10, 20],
+        rolling_windows: List[int] = [5, 10],
         h2h_window: int = 7
     ) -> pd.DataFrame:
         """Applies all feature engineering steps in sequence."""
@@ -1666,9 +1375,9 @@ class FeatureEngine:
 
             df_mod = momentum.transform(df_mod, debug=self.debug)
             df_mod = advanced.transform(df_mod, debug=self.debug)
-            df_mod = rolling.transform(df_mod, windows=rolling_windows, debug=self.debug)
+            df_mod = rolling.transform(df_mod, window_sizes=rolling_windows, debug=self.debug)
             df_mod = rest.transform(df_mod, debug=self.debug)
-            df_mod = h2h.transform(df_mod, historical=historical_games_df, window=h2h_window, debug=self.debug)
+            df_mod = h2h.transform(df_mod, historical_df=historical_games_df, max_games=h2h_window, debug=self.debug)
             df_mod = season.transform(df_mod, team_stats=team_stats_df, debug=self.debug)
             df_mod = form.transform(df_mod, debug=self.debug)
 
@@ -1722,41 +1431,60 @@ class FeatureEngine:
                 logger.error(f"Error processing historical_games_df: {e}")
                 hist_df_processed = None
 
-        # Determine base_calc_df
-        if hist_df_processed is not None and not hist_df_processed.empty:
-            df_ids = set(target_games_df['game_id'])
-            hist_ids = set(hist_df_processed['game_id'])
-            if df_ids == hist_ids:
-                base_calc_df = hist_df_processed.sort_values(
-                    ['game_date','game_id'], kind='mergesort'
-                ).reset_index(drop=True)
+            # ── Determine base_calc_df ────────────────────────────────────────────────────
+            if hist_df_processed is not None and not hist_df_processed.empty:
+                df_ids   = set(target_games_df['game_id'])
+                hist_ids = set(hist_df_processed['game_id'])
+
+                if df_ids == hist_ids:
+                    # historical covers exactly the target games
+                    base_calc_df = (
+                        hist_df_processed
+                        .sort_values(['game_date','game_id'], kind='mergesort')
+                        .reset_index(drop=True)
+                    )
+                else:
+                    # combine & dedupe
+                    all_cols = list(set(hist_df_processed.columns) | set(target_games_df.columns))
+                    for col in all_cols:
+                        hist_df_processed.setdefault(col, np.nan)
+                        target_games_df.setdefault(col, np.nan)
+
+                    base_calc_df = (
+                        pd.concat(
+                            [hist_df_processed[all_cols], target_games_df[all_cols]],
+                            ignore_index=True
+                        )
+                        .sort_values(['game_date','game_id'], kind='mergesort')
+                        .drop_duplicates('game_id', keep='last')
+                        .reset_index(drop=True)
+                    )
             else:
-                # Combine & dedupe
-                all_cols = list(set(hist_df_processed.columns) | set(target_games_df.columns))
-                for col in all_cols:
-                    hist_df_processed.setdefault(col, np.nan)
-                    target_games_df.setdefault(col, np.nan)
-                base_calc_df = pd.concat(
-                    [hist_df_processed[all_cols], target_games_df[all_cols]],
-                    ignore_index=True
-                ).sort_values(['game_date','game_id'], kind='mergesort')
-                base_calc_df = base_calc_df.drop_duplicates('game_id', keep='last')
-        else:
-            base_calc_df = target_games_df.sort_values(
-                ['game_date','game_id'], kind='mergesort'
-            ).reset_index(drop=True)
+                # no historical → just target games
+                base_calc_df = (
+                    target_games_df
+                    .sort_values(['game_date','game_id'], kind='mergesort')
+                    .reset_index(drop=True)
+                )
 
-        if base_calc_df is None or base_calc_df.empty:
-            logger.error("Base DataFrame for feature calculation is empty.")
-            return pd.DataFrame()
+            if base_calc_df.empty:
+                logger.error("Base DataFrame for feature calculation is empty.")
+                return pd.DataFrame()
 
-        # --- Feature Generation Sequence ---
+        # ── Now apply head-to-head using the same hist_df_processed (or empty) ─────────
+        h2h_hist = hist_df_processed if (hist_df_processed is not None and not hist_df_processed.empty) else pd.DataFrame()
+
+        # ── Feature Generation Sequence ───────────────────────────────────────────────
         try:
             base_calc_df = self.add_intra_game_momentum(base_calc_df)
             base_calc_df = self.integrate_advanced_features(base_calc_df)
             base_calc_df = self.add_rolling_features(base_calc_df, window_sizes=rolling_windows)
             base_calc_df = self.add_rest_features_vectorized(base_calc_df)
-            base_calc_df = self.add_matchup_history_features(base_calc_df, hist_df_processed or pd.DataFrame(), max_games=h2h_window)
+            base_calc_df = self.add_matchup_history_features(
+                base_calc_df,
+                h2h_hist,
+                max_games=h2h_window
+            )
             base_calc_df = self.add_season_context_features(base_calc_df, team_stats_df)
             base_calc_df = self.add_form_string_features(base_calc_df)
         except Exception as e:

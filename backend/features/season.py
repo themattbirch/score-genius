@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-import pandas as pd
 from typing import Optional
+
+import pandas as pd
 
 from backend.features.legacy.feature_engineering import FeatureEngine
 
@@ -14,49 +15,53 @@ __all__ = ["transform"]
 
 @lru_cache(maxsize=1)
 def _fe() -> FeatureEngine:
-    """Singleton legacy engine (no DB, no debug)."""
+    """Singleton legacy FeatureEngine (no Supabase, no debug)."""
     return FeatureEngine(supabase_client=None, debug=False)
 
 
 def transform(
     df: pd.DataFrame,
     *,
+    team_stats: Optional[pd.DataFrame] = None,
+    team_stats_df: Optional[pd.DataFrame] = None,  # ← legacy alias
     debug: bool = False,
-    team_stats_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
-    Thin proxy to legacy `add_season_context_features`.
+    Add season-to-date context features.
 
     Parameters
     ----------
-    df
-        DataFrame of games to augment.
-    team_stats_df
-        Optional DataFrame of team-season stats for context features.
+    df : pd.DataFrame
+        Games to augment.
+    team_stats / team_stats_df : pd.DataFrame | None
+        Season-aggregate per-team stats (optional).
+    debug : bool
+        Verbose logging.
 
     Returns
     -------
     pd.DataFrame
-        New DataFrame with season-context features added.
+        DataFrame with season-context features added.
     """
     if df is None or df.empty:
         if debug:
-            logger.debug("season.transform: input empty, returning unchanged.")
+            logger.debug("season.transform: input empty → returning unchanged.")
         return df
 
-    out = df.copy(deep=False)
+    # Resolve which stats DataFrame the caller supplied
+    stats_df = team_stats if team_stats is not None else team_stats_df
+
     if debug:
-        logger.debug("season.transform: invoking legacy add_season_context_features()")
+        logger.debug(
+            "season.transform: calling legacy add_season_context_features "
+            "(stats rows = %s)", 0 if stats_df is None else len(stats_df)
+        )
 
     try:
-        result = _fe().add_season_context_features(
-            out,
-            team_stats_df=team_stats_df
-        )
+        result = _fe().add_season_context_features(df.copy(), stats_df)
         if debug:
-            logger.debug("season.transform: done, result shape=%s", result.shape)
+            logger.debug("season.transform: success – output shape %s", result.shape)
         return result
-
     except Exception as e:
-        logger.exception("season.transform: legacy proxy failed, returning original DataFrame. %s", e)
-        return out
+        logger.exception("season.transform: legacy proxy failed: %s", e)
+        return df
