@@ -1,50 +1,47 @@
 # backend/features/form.py
 
 from __future__ import annotations
-import pandas as pd
 import logging
-from typing import Optional
+from functools import lru_cache
+import pandas as pd
 
-from .legacy.feature_engineering import FeatureEngine as LegacyFeatureEngine
+from backend.features.legacy.feature_engineering import FeatureEngine
 
 logger = logging.getLogger(__name__)
-
-# Instantiate legacy engine once for fallback
-try:
-    _legacy_engine = LegacyFeatureEngine()
-    logger.info("Form: Legacy FeatureEngine instantiated for fallback.")
-except Exception:
-    logger.exception("Form: Failed to instantiate Legacy engine.")
-    _legacy_engine = None
-
 __all__ = ["transform"]
+
+
+@lru_cache(maxsize=1)
+def _fe() -> FeatureEngine:
+    """Singleton legacy engine (no DB, no debug)."""
+    return FeatureEngine(supabase_client=None, debug=False)
 
 
 def transform(
     df: pd.DataFrame,
     *,
-    debug: bool = False
+    debug: bool = False,
 ) -> pd.DataFrame:
     """
-    Add form-string derived features (home/away form metrics, diffs)
-    using the legacy engine under the hood.
+    Thin proxy for legacy `add_form_string_features`.
+    Returns a **new** DataFrame with form features added.
     """
     if df is None or df.empty:
         if debug:
-            logger.debug("Form.transform: received empty DataFrame, returning as-is.")
+            logger.debug("Form.transform: input empty, returning unchanged.")
         return df
 
-    if _legacy_engine is None:
-        logger.error("Form.transform: legacy engine unavailable, returning original DataFrame.")
-        return df
+    out = df.copy()
+
+    if debug:
+        logger.debug("Form.transform: invoking legacy add_form_string_features.")
 
     try:
+        result = _fe().add_form_string_features(out)
         if debug:
-            logger.debug("Form.transform: invoking legacy add_form_string_features.")
-        result = _legacy_engine.add_form_string_features(df.copy())
-        if debug:
-            logger.debug(f"Form.transform: result shape = {result.shape}")
+            logger.debug("Form.transform: done, output shape = %s", result.shape)
         return result
     except Exception as e:
-        logger.exception(f"Form.transform: fallback error: {e}")
-        return df
+        logger.exception("Form.transform: legacy proxy error: %s", e)
+        # on failure, return original copy
+        return out

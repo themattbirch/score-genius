@@ -1,37 +1,38 @@
 # backend/features/rolling.py
-
 from __future__ import annotations
+
+import logging
+from functools import lru_cache
 from typing import Any
 import pandas as pd
-import logging
 
 from .utils import DEFAULTS
-from .base_windows import fetch_rolling  # your SQL fetch helper
-from .legacy.feature_engineering import FeatureEngine as LegacyFeatureEngine
+from .base_windows import fetch_rolling
+from backend.features.legacy.feature_engineering import FeatureEngine
 
 logger = logging.getLogger(__name__)
-
-# Spin up one legacy engine for fallback reuse
-try:
-    _legacy_engine = LegacyFeatureEngine()
-    logger.info("Rolling: Legacy FeatureEngine instantiated for fallback.")
-except Exception:
-    logger.exception("Rolling: failed to init legacy FeatureEngine—SQL path only." )
-    _legacy_engine = None
-
 __all__ = ["transform"]
 
 
-def _legacy_fallback(df: pd.DataFrame, window_sizes: list[int], reason: str) -> pd.DataFrame:
-    logger.warning(f"Rolling: falling back to legacy Python (reason: {reason})")
-    if not _legacy_engine:
-        logger.error("Rolling: no legacy engine available, returning original DataFrame.")
-        return df
+@lru_cache(maxsize=1)
+def _fe() -> FeatureEngine:
+    """Singleton legacy engine for fallback."""
+    return FeatureEngine(supabase_client=None, debug=False)
+
+
+def _legacy_fallback(
+    out: pd.DataFrame,
+    window_sizes: list[int],
+    reason: str,
+    debug: bool = False
+) -> pd.DataFrame:
+    if debug:
+        logger.warning("rolling.transform: falling back to legacy (reason=%s)", reason)
     try:
-        return _legacy_engine.add_rolling_features(df, window_sizes=window_sizes)
-    except Exception:
-        logger.exception("Rolling: error in legacy fallback—returning input df.")
-        return df
+        return _fe().add_rolling_features(out, window_sizes=window_sizes)
+    except Exception as e:
+        logger.exception("rolling.transform: legacy fallback failed, returning input. %s", e)
+        return out
 
 
 def transform(
@@ -47,71 +48,74 @@ def transform(
     """
     if df is None or df.empty:
         if debug:
-            logger.debug("Rolling.transform: empty input, returning as-is.")
+            logger.debug("rolling.transform: input empty, returning unchanged.")
         return df
 
-    # Make sure we have game_id & normalized team columns
-    missing = [col for col in ("game_id", "home_team_norm", "away_team_norm") if col not in df.columns]
-    if missing:
-        return _legacy_fallback(df, window_sizes, f"missing columns {missing}")
+    # Ensure required keys
+    for col in ("game_id", "home_team_norm", "away_team_norm"):
+        if col not in df.columns:
+            return _legacy_fallback(df.copy(deep=False), window_sizes, f"missing column '{col}'", debug)
 
-    # If no DB connection, skip SQL
+    # No DB? skip straight to legacy
     if conn is None:
-        return _legacy_fallback(df, window_sizes, "no DB connection")
+        return _legacy_fallback(df.copy(deep=False), window_sizes, "no DB connection", debug)
 
-    # Attempt SQL fetch
     try:
-        ids = df["game_id"].astype(str).unique().tolist()
+        out = df.copy(deep=False)
+        out["game_id"] = out["game_id"].astype(str)
+        ids = out["game_id"].unique().tolist()
+
         rolled = fetch_rolling(conn, ids)
-
         if rolled is None or rolled.empty:
-            return _legacy_fallback(df, window_sizes, "SQL returned no rows")
+            return _legacy_fallback(out, window_sizes, "SQL returned no rows", debug)
 
-        # Prepare merges
+        # Prepare for merge
         rolled["game_id"] = rolled["game_id"].astype(str)
         rolled["team_norm"] = rolled["team_norm"].astype(str)
 
-        # Build rename maps
+        # Identify stats columns
         stats_cols = [c for c in rolled.columns if c not in ("game_id", "team_norm", "game_date")]
+
+        # Home merge
         home_map = {c: f"home_{c}" for c in stats_cols}
+        home_df = rolled.rename(columns=home_map).drop(columns=["team_norm", "game_date"], errors="ignore")
+        out = out.merge(
+            home_df,
+            left_on=["game_id", "home_team_norm"],
+            right_on=["game_id", "team_norm"],
+            how="left",
+            suffixes=("", "_hdup")
+        )
+
+        # Away merge
         away_map = {c: f"away_{c}" for c in stats_cols}
-
-        # Merge home
-        out = df.copy()
-        out["game_id"] = out["game_id"].astype(str)
-        out = pd.merge(
-            out,
-            rolled.rename(columns=home_map).drop(columns=["team_norm","game_date"], errors="ignore"),
-            on=["game_id","home_team_norm"],
+        away_df = rolled.rename(columns=away_map).drop(columns=["team_norm", "game_date"], errors="ignore")
+        out = out.merge(
+            away_df,
+            left_on=["game_id", "away_team_norm"],
+            right_on=["game_id", "team_norm"],
             how="left",
-        )
-        # Merge away
-        out = pd.merge(
-            out,
-            rolled.rename(columns=away_map).drop(columns=["team_norm","game_date"], errors="ignore"),
-            on=["game_id","away_team_norm"],
-            how="left",
+            suffixes=("", "_adup")
         )
 
-        # Fill any NaNs in newly added cols with defaults
+        # Clean up duplicates
+        drop_cols = [c for c in out.columns if c.endswith("_hdup") or c.endswith("_adup") or c == "team_norm"]
+        out = out.drop(columns=drop_cols, errors="ignore")
+
+        # Fill NaNs with defaults
         new_cols = list(home_map.values()) + list(away_map.values())
         for col in new_cols:
-            # derive default key: strip prefix/home_/away_
-            key = col.split("_",2)[-1]
-            if key.endswith("_std"):
-                default = DEFAULTS.get(key, 0.0)
-            else:
-                default = DEFAULTS.get(key, 0.0)
+            key = col.split("_", 1)[-1]  # strip prefix
+            default = DEFAULTS.get(key, 0.0)
             out[col] = out[col].fillna(default)
             if key.endswith("_std"):
-                # no negatives on std
-                out[col] = out[col].clip(lower=0)
+                out[col] = out[col].clip(lower=0.0)
 
         if debug:
-            logger.debug(f"Rolling.transform: merged {len(rolled)} rows, added {len(new_cols)} cols.")
+            logger.debug("rolling.transform: SQL merge succeeded, added %d cols.", len(new_cols))
 
         return out
 
     except Exception as e:
-        logger.exception(f"Rolling: SQL path error ({e}), falling back.")
-        return _legacy_fallback(df, window_sizes, f"sql error {e}")
+        logger.exception("rolling.transform: SQL path error (%s), falling back.", e)
+        return _legacy_fallback(df.copy(deep=False), window_sizes, f"sql error {e}", debug)

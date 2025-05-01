@@ -1,55 +1,69 @@
 # backend/features/h2h.py
 
 from __future__ import annotations
-import pandas as pd
 import logging
-from typing import Optional
+from functools import lru_cache
 
-from .legacy.feature_engineering import FeatureEngine as LegacyFeatureEngine
+import pandas as pd
+
+from backend.features.legacy.feature_engineering import FeatureEngine
 
 logger = logging.getLogger(__name__)
-
-# Instantiate legacy engine once for fallback
-try:
-    _legacy_engine = LegacyFeatureEngine()
-    logger.info("H2H: Legacy FeatureEngine instantiated for fallback.")
-except Exception:
-    logger.exception("H2H: Failed to instantiate Legacy engine.")
-    _legacy_engine = None
-
 __all__ = ["transform"]
+
+
+@lru_cache(maxsize=1)
+def _fe() -> FeatureEngine:
+    """Singleton legacy engine (no Supabase, no debug)."""
+    return FeatureEngine(supabase_client=None, debug=False)
 
 
 def transform(
     df: pd.DataFrame,
     *,
-    historical: Optional[pd.DataFrame] = None,
-    max_games: int = 7,
     debug: bool = False,
+    historical_df: pd.DataFrame | None = None,
+    window: int = 7,
 ) -> pd.DataFrame:
     """
-    Add head-to-head matchup features using the legacy engine.
+    Thin proxy for legacy add_matchup_history_features.
+
+    Parameters
+    ----------
+    df
+        DataFrame of target games.
+    historical_df
+        Historical games DataFrame (head-to-head source).
+    window
+        Lookback window (number of games) for h2h features.
+    debug
+        If True, emit debug logs.
+
+    Returns
+    -------
+    DataFrame
+        New DataFrame with head-to-head features added.
     """
     if df is None or df.empty:
         if debug:
-            logger.debug("H2H.transform: received empty DataFrame, returning unchanged.")
+            logger.debug("h2h.transform: input empty, returning unchanged.")
         return df
 
-    if _legacy_engine is None:
-        logger.error("H2H.transform: legacy engine unavailable, returning original DataFrame.")
-        return df
-
+    out = df.copy()
     try:
         if debug:
-            logger.debug(f"H2H.transform: running legacy H2H with max_games={max_games}.")
-        result = _legacy_engine.add_matchup_history_features(
-            df.copy(),
-            historical_df=historical,
-            max_games=max_games
+            logger.debug(
+                "h2h.transform: invoking legacy add_matchup_history_features "
+                "(window=%d)", window
+            )
+        result = _fe().add_matchup_history_features(
+            out,
+            historical_df if historical_df is not None else pd.DataFrame(),
+            max_games=window
         )
         if debug:
-            logger.debug(f"H2H.transform: result shape = {result.shape}")
+            logger.debug("h2h.transform: done, output shape = %s", result.shape)
         return result
     except Exception as e:
-        logger.exception(f"H2H.transform: fallback error: {e}")
-        return df
+        logger.exception("h2h.transform: legacy proxy error: %s", e)
+        return out

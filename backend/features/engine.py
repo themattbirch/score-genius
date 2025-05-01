@@ -2,65 +2,76 @@
 
 from __future__ import annotations
 
-
-# --- Start of temporary debug code ---
-import importlib
-import traceback
-print("Attempting direct import of backend.features.engine...")
-try:
-    # Try importing the module first
-    importlib.import_module('backend.features.engine')
-    print("SUCCESS: Direct import of backend.features.engine module worked.")
-    # Optionally, try importing the class specifically after importing the module
-    # from backend.features.engine import FeatureEngine
-    # print("SUCCESS: Specific import of FeatureEngine from engine worked.")
-except Exception as e:
-    print(f"FAILED: Direct import of backend.features.engine failed:")
-    print(f"Error type: {type(e).__name__}")
-    print(f"Error message: {e}")
-    print("Traceback:")
-    traceback.print_exc()
-    print("-" * 20)
-# --- End of temporary debug code ---
-
-
 import pandas as pd
-from .utils import DEFAULTS
-from .momentum import add_intra_game_momentum
-from .advanced import add_advanced_features            # temporary pass-through
-from .rolling import add_rolling_features
-from .rest import add_rest_features
-from .h2h import add_matchup_features
-from .season import add_season_features
-from .form import add_form_features
+from typing import Optional, Sequence
+
+from .momentum    import transform as momentum_transform
+from .advanced    import transform as advanced_transform
+from .rolling     import transform as rolling_transform
+from .rest        import transform as rest_transform
+from .h2h         import transform as h2h_transform
+from .season      import transform as season_transform
+from .form        import transform as form_transform
+
 
 class FeatureEngine:
     """
-    Thin orchestrator that calls the modular feature steps.
+    Orchestrates the modular pipeline for feature engineering.
     Public API matches the original: `generate_all_features(...)`.
     """
-    def __init__(self, supabase_client=None):
-        self.conn = supabase_client        # optional for SQL fetch
+
+    def __init__(self,
+                 supabase_client: Optional[object] = None,
+                 debug: bool = False):
+        self.conn = supabase_client
+        self.debug = debug
 
     def generate_all_features(
         self,
         df: pd.DataFrame,
-        historical_games_df: pd.DataFrame | None = None,
-        team_stats_df: pd.DataFrame | None = None,
-        rolling_windows: list[int] = [5, 10, 20],
+        historical_games_df: Optional[pd.DataFrame] = None,
+        team_stats_df: Optional[pd.DataFrame] = None,
+        rolling_windows: Sequence[int] = (5, 10, 20),
         h2h_window: int = 7
     ) -> pd.DataFrame:
+        """
+        Applies each modular transform in sequence:
 
-        if df.empty:
+          1. momentum_transform
+          2. advanced_transform
+          3. rolling_transform
+          4. rest_transform
+          5. h2h_transform
+          6. season_transform
+          7. form_transform
+
+        Returns a **new** DataFrame.
+        """
+        if df is None or df.empty:
             return df
 
         out = df.copy()
-        # ---- Step sequence (unchanged order) ----
-        out = add_intra_game_momentum(out)
-        out = add_advanced_features(out)
-        out = add_rolling_features(out, conn=self.conn)
-        out = add_rest_features(out)
-        out = add_matchup_features(out, historical_games_df, max_games=h2h_window)
-        out = add_season_features(out, team_stats_df)
-        out = add_form_features(out)
+
+        out = momentum_transform(out, debug=self.debug)
+        out = advanced_transform(out, debug=self.debug)
+        out = rolling_transform(
+            out,
+            conn=self.conn,
+            window_sizes=list(rolling_windows),
+            debug=self.debug
+        )
+        out = rest_transform(out, debug=self.debug)
+        out = h2h_transform(
+            out,
+            historical_df=historical_games_df,
+            window=h2h_window,
+            debug=self.debug
+        )
+        out = season_transform(
+            out,
+            team_stats_df=team_stats_df,
+            debug=self.debug
+        )
+        out = form_transform(out, debug=self.debug)
+
         return out

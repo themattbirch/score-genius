@@ -1,55 +1,62 @@
 # backend/features/season.py
-
 from __future__ import annotations
-import pandas as pd
+
 import logging
+from functools import lru_cache
+import pandas as pd
 from typing import Optional
 
-from .legacy.feature_engineering import FeatureEngine as LegacyFeatureEngine
+from backend.features.legacy.feature_engineering import FeatureEngine
 
 logger = logging.getLogger(__name__)
-
-# Instantiate legacy engine once for fallback
-try:
-    _legacy_engine = LegacyFeatureEngine()
-    logger.info("Season: Legacy FeatureEngine instantiated for fallback.")
-except Exception:
-    logger.exception("Season: Failed to instantiate Legacy engine.")
-    _legacy_engine = None
-
 __all__ = ["transform"]
+
+
+@lru_cache(maxsize=1)
+def _fe() -> FeatureEngine:
+    """Singleton legacy engine (no DB, no debug)."""
+    return FeatureEngine(supabase_client=None, debug=False)
 
 
 def transform(
     df: pd.DataFrame,
     *,
-    team_stats: Optional[pd.DataFrame] = None,
     debug: bool = False,
+    team_stats_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
-    Add season‐context features (win_pct, avg_pts_for/against, current_form, net_rating_diff, etc.)
-    using the legacy engine under the hood.
+    Thin proxy to legacy `add_season_context_features`.
+
+    Parameters
+    ----------
+    df
+        DataFrame of games to augment.
+    team_stats_df
+        Optional DataFrame of team-season stats for context features.
+
+    Returns
+    -------
+    pd.DataFrame
+        New DataFrame with season-context features added.
     """
     if df is None or df.empty:
         if debug:
-            logger.debug("Season.transform: received empty DataFrame, returning as-is.")
+            logger.debug("season.transform: input empty, returning unchanged.")
         return df
 
-    if _legacy_engine is None:
-        logger.error("Season.transform: legacy engine unavailable, returning original DataFrame.")
-        return df
+    out = df.copy(deep=False)
+    if debug:
+        logger.debug("season.transform: invoking legacy add_season_context_features()")
 
     try:
-        if debug:
-            logger.debug("Season.transform: invoking legacy add_season_context_features.")
-        # Note: legacy expects (df, team_stats_df)
-        result = _legacy_engine.add_season_context_features(
-            df.copy(),
-            team_stats_df=team_stats
+        result = _fe().add_season_context_features(
+            out,
+            team_stats_df=team_stats_df
         )
         if debug:
-            logger.debug(f"Season.transform: result shape = {result.shape}")
+            logger.debug("season.transform: done, result shape=%s", result.shape)
         return result
+
     except Exception as e:
-        logger.exception(f"Season.transform: fallback error: {e}")
-        return df
+        logger.exception("season.transform: legacy proxy failed, returning original DataFrame. %s", e)
+        return out
