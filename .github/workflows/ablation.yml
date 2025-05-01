@@ -3,8 +3,8 @@ name: Ablation
 
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: "0 5 * * 1" # every Monday 05:00 UTC
+  #schedule:
+  #- cron: "0 5 * * 1" # every Monday 05:00 UTC
 
 concurrency:
   group: ablation-${{ github.ref }}
