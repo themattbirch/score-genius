@@ -108,6 +108,7 @@ models/
 
 # Generated reports
 /reports/
+/reports
 
 # Database dumps
 remote_dump.sql
