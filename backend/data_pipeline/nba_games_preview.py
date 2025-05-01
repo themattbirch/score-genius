@@ -200,23 +200,25 @@ def extract_odds_by_market(event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return result
 
 
-def clear_old_games() -> None:
-    """Delete any nba_game_schedule entries with ET date before today."""
-    today = datetime.now(ET_ZONE).date()
-    rows = supabase.table("nba_game_schedule").select("game_id,scheduled_time").execute().data or []
-    to_delete = []
+def clear_upcoming_schedule_data() -> None:
+    """Delete nba_game_schedule entries with ET game_date >= today."""
+    try:
+        today_et_iso = datetime.now(ET_ZONE).date().isoformat()
+        print(f"Clearing schedule entries from Supabase table 'nba_game_schedule' for date {today_et_iso} onwards...")
 
-    for r in rows:
-        try:
-            sched = datetime.fromisoformat(r["scheduled_time"])
-            if sched.astimezone(ET_ZONE).date() < today:
-                to_delete.append(r["game_id"])
-        except Exception:
-            continue
+        # Delete rows where 'game_date' is greater than or equal to today's ET date
+        # Assumes 'game_date' column exists and stores date as 'YYYY-MM-DD' string
+        response = supabase.table("nba_game_schedule").delete().gte("game_date", today_et_iso).execute()
 
-    if to_delete:
-        supabase.table("nba_game_schedule").delete().in_("game_id", to_delete).execute()
-        print(f"Deleted {len(to_delete)} old games")
+        # Basic check for errors (Supabase python client delete doesn't easily return count)
+        if hasattr(response, 'error') and response.error:
+             print(f"Error deleting upcoming schedule data: {response.error}")
+        else:
+             # Log success indication. Actual count deleted isn't easily available.
+             print(f"Successfully executed delete request for games on or after {today_et_iso}. The table is now ready for fresh upserts for these dates.")
+
+    except Exception as e:
+        print(f"An exception occurred during deletion of upcoming schedule data: {e}")
 
 
 def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
@@ -278,7 +280,7 @@ def upsert_previews(previews: List[Dict[str, Any]]) -> None:
 
 def main() -> None:
     print("\n--- NBA Game Preview Pipeline ---")
-    clear_old_games()
+    clear_upcoming_schedule_data()
 
     previews = build_game_preview(DEFAULT_UPCOMING_DAYS_WINDOW)
     if previews:

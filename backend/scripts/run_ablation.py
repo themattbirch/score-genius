@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# backend/scripts/run_ablation.py
 """
 Faster Ablation‐study runner with:
   • dependency‐aware combos
