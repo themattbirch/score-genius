@@ -23,7 +23,7 @@ defaults:
 jobs:
   # 1) SQL-only linting (SQLFluff)
   lint-sql:
-    if: ${{ github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
 
   # 2) Smoke-test migrations & materialized view
   test-migrations:
-    if: ${{ github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: lint-sql
     runs-on: ubuntu-latest
     steps:
@@ -85,7 +85,7 @@ jobs:
 
   # 3) Python lint – diff-only
   python-lint-diff:
-    if: ${{ github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: test-migrations
     runs-on: ubuntu-latest
     steps:
@@ -125,7 +125,7 @@ jobs:
 
   # 4) Backend deps install (+ optional pytest)
   test-python-backend:
-    if: ${{ github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: python-lint-diff
     runs-on: ubuntu-latest
     steps:
