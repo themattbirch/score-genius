@@ -1,3 +1,5 @@
+# backend/features/base_windows.py
+
 """
 SQL interface for pre-computed rolling windows.
 Falls back to legacy Python implementation if view hasn’t refreshed.

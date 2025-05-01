@@ -142,7 +142,7 @@ jobs:
           key: ${{ runner.os }}-pip-python-${{ hashFiles('backend/requirements.txt') }}
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
-      # - name: Run tests
-      #   run: |
-      #     cd backend
-      #     pytest -q
+      - name: Run FeatureEngine smoke tests
+        run: |
+          cd backend
+          pytest -q tests_smoke

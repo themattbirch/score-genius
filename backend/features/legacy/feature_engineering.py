@@ -9,6 +9,7 @@ Integrated version combining best practices from previous iterations.
 import pandas as pd
 import numpy as np
 import traceback
+import os
 from datetime import datetime, timedelta
 import time
 import functools
@@ -87,13 +88,21 @@ def profile_time(func=None, debug_mode: Optional[bool] = None):
         return wrapper
     return decorator if func is None else decorator(func)
 
+def fetch_team_rolling_df(supabase, games: pd.DataFrame) -> pd.DataFrame:
+    gids = games['game_id'].astype(int).unique().tolist()
+    resp = (
+        supabase.table("team_rolling_20")
+        .select("*")
+        .in_("game_id", gids)
+        .execute()
+    )
+    return pd.DataFrame(resp.data or [])
+
 
 # -- FeatureEngine Class --
 
 class FeatureEngine:
-    """Core class for NBA feature engineering."""
-    
-    def __init__(self, supabase_client: Optional[Any] = None, debug: bool = False):
+    def __init__(self, *, supabase_client=None, debug=False, use_modular: bool|None=None):
         """Initialize the feature engine."""
         self.debug = debug
         if self.debug:
@@ -101,8 +110,16 @@ class FeatureEngine:
             logger.info("DEBUG mode enabled for detailed logging.")
         else:
             logger.setLevel(logging.INFO)
+
+        # new modular flag logic
+        self.use_modular = (
+            use_modular
+            if use_modular is not None
+            else os.getenv("FEATURE_MODULES_V2", "0") == "1"
+        )
+
         self.supabase_client = supabase_client
-        logger.debug("FeatureEngine Initialized.")
+        logger.debug(f"FeatureEngine Initialized (use_modular={self.use_modular}).")
 
         self._teams_to_watch = {"pistons", "grizzlies", "lakers", "clippers", "nets", "knicks"}
 
@@ -1630,15 +1647,37 @@ class FeatureEngine:
         return final_metrics
 
     @profile_time
-    def generate_all_features(self,
-                              df: pd.DataFrame,
-                              historical_games_df: Optional[pd.DataFrame] = None,
-                              team_stats_df: Optional[pd.DataFrame] = None,
-                              rolling_windows: List[int] = [5, 10, 20],
-                              h2h_window: int = 7
-                              ) -> pd.DataFrame:
+    def generate_all_features(
+        self,
+        df: pd.DataFrame,
+        historical_games_df: Optional[pd.DataFrame] = None,
+        team_stats_df: Optional[pd.DataFrame] = None,
+        rolling_windows: List[int] = [5, 10, 20],
+        h2h_window: int = 7
+    ) -> pd.DataFrame:
         """Applies all feature engineering steps in sequence."""
-        logger.info("Starting comprehensive feature generation pipeline...")
+        # ── Modular pipeline branch ─────────────────────────────────────────────────
+        if self.use_modular:
+            from features import momentum, advanced, rolling, rest, season, h2h, form
+
+            df_mod = df.copy()
+            if self.debug:
+                logger.debug("Running modular pipeline…")
+
+            df_mod = momentum.transform(df_mod, debug=self.debug)
+            df_mod = advanced.transform(df_mod, debug=self.debug)
+            df_mod = rolling.transform(df_mod, windows=rolling_windows, debug=self.debug)
+            df_mod = rest.transform(df_mod, debug=self.debug)
+            df_mod = h2h.transform(df_mod, historical=historical_games_df, window=h2h_window, debug=self.debug)
+            df_mod = season.transform(df_mod, team_stats=team_stats_df, debug=self.debug)
+            df_mod = form.transform(df_mod, debug=self.debug)
+
+            if self.debug:
+                logger.info("Modular pipeline complete.")
+            return df_mod
+
+        # ── Legacy monolithic pipeline ───────────────────────────────────────────────
+        logger.info("Running legacy pipeline…")
         start_time_total = time.time()
 
         # --- Input Validation & Prep ---
@@ -1647,143 +1686,112 @@ class FeatureEngine:
             return pd.DataFrame()
         essential_cols = ['game_id', 'game_date', 'home_team', 'away_team']
         if not all(c in df.columns for c in essential_cols):
-            missing_essentials = set(essential_cols) - set(df.columns)
-            logger.error(f"Input 'df' missing essential columns: {missing_essentials}. Cannot generate features.")
+            missing = set(essential_cols) - set(df.columns)
+            logger.error(f"Input 'df' missing essential columns: {missing}.")
             return pd.DataFrame()
 
+        # Process target_games_df
         target_games_df = df.copy()
         try:
-            target_games_df['game_date'] = pd.to_datetime(target_games_df['game_date'], errors='coerce').dt.tz_localize(None)
+            target_games_df['game_date'] = (
+                pd.to_datetime(target_games_df['game_date'], errors='coerce')
+                .dt.tz_localize(None)
+            )
             target_games_df = target_games_df.dropna(subset=['game_date'])
-
-            if 'game_id' in target_games_df.columns:
-                 target_games_df['game_id'] = target_games_df['game_id'].astype(str)
+            target_games_df['game_id'] = target_games_df['game_id'].astype(str)
         except Exception as e:
-            logger.error(f"Error processing 'game_date' or 'game_id' in target df: {e}")
+            logger.error(f"Error processing 'game_date' or 'game_id': {e}")
             return pd.DataFrame()
         if target_games_df.empty:
             logger.error("No valid target games remaining after date processing.")
             return pd.DataFrame()
-        logger.info(f"Target games date range: {target_games_df['game_date'].min().date()} to {target_games_df['game_date'].max().date()}")
 
+        # Process historical_games_df
         hist_df_processed = None
         if historical_games_df is not None and not historical_games_df.empty:
-            logger.debug(f"Processing {len(historical_games_df)} historical games...")
             try:
                 hist_df_processed = historical_games_df.copy()
-                hist_df_processed['game_date'] = pd.to_datetime(hist_df_processed['game_date'], errors='coerce').dt.tz_localize(None)
+                hist_df_processed['game_date'] = (
+                    pd.to_datetime(hist_df_processed['game_date'], errors='coerce')
+                    .dt.tz_localize(None)
+                )
                 hist_df_processed = hist_df_processed.dropna(subset=['game_date'])
-
-                if 'game_id' in hist_df_processed.columns:
-                    hist_df_processed['game_id'] = hist_df_processed['game_id'].astype(str)
-                    hist_df_processed = hist_df_processed.drop_duplicates(subset=['game_id'], keep='last')
-                logger.debug(f"{len(hist_df_processed)} historical games remaining after date processing.")
+                hist_df_processed['game_id'] = hist_df_processed['game_id'].astype(str)
+                hist_df_processed = hist_df_processed.drop_duplicates(subset=['game_id'], keep='last')
             except Exception as e:
-                logger.error(f"Error processing 'game_date' or 'game_id' in historical_games_df: {e}. Proceeding without historical.")
+                logger.error(f"Error processing historical_games_df: {e}")
                 hist_df_processed = None
 
-        # --- Determine base_calc_df ---
-        base_calc_df = None
+        # Determine base_calc_df
         if hist_df_processed is not None and not hist_df_processed.empty:
-
-            df_ids = set(target_games_df['game_id'].unique())
-            hist_ids = set(hist_df_processed['game_id'].unique())
-
-            if df_ids == hist_ids: 
-                logger.info("Using the provided historical data directly as the base (inputs appear identical).")
-                base_calc_df = hist_df_processed.copy().sort_values(['game_date', 'game_id'], kind='mergesort').reset_index(drop=True)
-
-                logger.info(f"Created base calculation DataFrame with {len(base_calc_df)} unique games.")
-            else: 
-                try:
-                    logger.info(f"Combining {len(hist_df_processed)} processed historical and {len(target_games_df)} target games...")
-
-                    hist_cols = set(hist_df_processed.columns); target_cols = set(target_games_df.columns); all_cols_union = list(hist_cols.union(target_cols))
-                    for col in all_cols_union:
-                        if col not in hist_df_processed.columns: hist_df_processed[col] = np.nan
-                        if col not in target_games_df.columns: target_games_df[col] = np.nan
-
-                    base_calc_df = pd.concat([hist_df_processed[all_cols_union], target_games_df[all_cols_union]], ignore_index=True)\
-                                    .sort_values(['game_date','game_id'], kind='mergesort')
-                    initial_rows = len(base_calc_df)
-
-                    base_calc_df = base_calc_df.drop_duplicates('game_id', keep='last')
-                    rows_dropped = initial_rows - len(base_calc_df)
-                    if rows_dropped > 0: logger.warning(f"Dropped {rows_dropped} duplicate game_id rows during combination.")
-                    logger.info(f"Created base calculation DataFrame with {len(base_calc_df)} unique games.")
-                except Exception as e:
-                    logger.error(f"Error combining distinct historical and target data: {e}", exc_info=True)
-                    logger.warning("Falling back to using only target games data."); base_calc_df = target_games_df.copy().sort_values(['game_date','game_id']).reset_index(drop=True)
-
-        else: 
-            logger.warning("No historical data provided or processed. Using only target games data.")
-            base_calc_df = target_games_df.copy().sort_values(['game_date','game_id']).reset_index(drop=True)
+            df_ids = set(target_games_df['game_id'])
+            hist_ids = set(hist_df_processed['game_id'])
+            if df_ids == hist_ids:
+                base_calc_df = hist_df_processed.sort_values(
+                    ['game_date','game_id'], kind='mergesort'
+                ).reset_index(drop=True)
+            else:
+                # Combine & dedupe
+                all_cols = list(set(hist_df_processed.columns) | set(target_games_df.columns))
+                for col in all_cols:
+                    hist_df_processed.setdefault(col, np.nan)
+                    target_games_df.setdefault(col, np.nan)
+                base_calc_df = pd.concat(
+                    [hist_df_processed[all_cols], target_games_df[all_cols]],
+                    ignore_index=True
+                ).sort_values(['game_date','game_id'], kind='mergesort')
+                base_calc_df = base_calc_df.drop_duplicates('game_id', keep='last')
+        else:
+            base_calc_df = target_games_df.sort_values(
+                ['game_date','game_id'], kind='mergesort'
+            ).reset_index(drop=True)
 
         if base_calc_df is None or base_calc_df.empty:
-            logger.error("Base DataFrame for feature calculation is empty. Cannot proceed.")
+            logger.error("Base DataFrame for feature calculation is empty.")
             return pd.DataFrame()
-
 
         # --- Feature Generation Sequence ---
         try:
-            logger.info("Step 1/8: Adding intra-game momentum features...")
             base_calc_df = self.add_intra_game_momentum(base_calc_df)
-            logger.debug(f"Shape after momentum: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
-
-            logger.info("Step 2/8: Integrating advanced metrics...")
             base_calc_df = self.integrate_advanced_features(base_calc_df)
-            logger.debug(f"Shape after advanced: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
-
-            logger.info("Step 3/8: Adding rolling features...")
             base_calc_df = self.add_rolling_features(base_calc_df, window_sizes=rolling_windows)
-            logger.debug(f"Shape after rolling: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
-
-            logger.info("Step 4/8: Adding rest & schedule density features...")
             base_calc_df = self.add_rest_features_vectorized(base_calc_df)
-            logger.debug(f"Shape after rest: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
-
-            logger.info("Step 5/8: Adding head-to-head matchup features...")
-
-            hist_lookup_df = hist_df_processed if hist_df_processed is not None else pd.DataFrame()
-            base_calc_df = self.add_matchup_history_features(base_calc_df, hist_lookup_df, max_games=h2h_window)
-            logger.debug(f"Shape after H2H: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
-
-            logger.info("Step 6/8: Adding season context features...")
+            base_calc_df = self.add_matchup_history_features(base_calc_df, hist_df_processed or pd.DataFrame(), max_games=h2h_window)
             base_calc_df = self.add_season_context_features(base_calc_df, team_stats_df)
-            logger.debug(f"Shape after season: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
-
-            logger.info("Step 7/8: Adding form string features...")
             base_calc_df = self.add_form_string_features(base_calc_df)
-            logger.debug(f"Shape after form: {base_calc_df.shape}, Unique game_ids: {base_calc_df['game_id'].nunique()}")
-        
         except Exception as e:
-            logger.error(f"Error during feature generation pipeline step: {e}", exc_info=True)
+            logger.error(f"Error during pipeline steps: {e}", exc_info=True)
             return pd.DataFrame()
 
         # --- Final Filtering ---
-        logger.info("Filtering results back to target games...")
         try:
-            original_game_ids = df['game_id'].astype(str).unique() 
-            num_unique_original_ids = len(original_game_ids)
-            logger.debug(f"Filtering for {num_unique_original_ids} unique target game IDs...")
-            if 'game_id' not in base_calc_df.columns:
-                raise ValueError("'game_id' column missing after feature generation.")
-
-            final_df = base_calc_df[base_calc_df['game_id'].isin(original_game_ids)].copy()
-            logger.info(f"Shape of final DataFrame after filtering: {final_df.shape}")
-            if len(final_df) != num_unique_original_ids:
-
-                logger.warning(f"Final Filtering Count Mismatch! Expected: {num_unique_original_ids}, Got: {len(final_df)}. Some target games might have been dropped due to processing errors.")
-         
-            else:
-                logger.info("Final filtering successful, row count matches target game count.")
-        except Exception as filter_e:
-            logger.error(f"Error during final filtering step: {filter_e}", exc_info=True)
+            original_ids = set(df['game_id'].astype(str))
+            final_df = base_calc_df[base_calc_df['game_id'].isin(original_ids)].copy()
+        except Exception as e:
+            logger.error(f"Error during final filtering: {e}", exc_info=True)
             return pd.DataFrame()
 
         total_time = time.time() - start_time_total
-        logger.info(f"Feature generation pipeline complete for {len(final_df)} games in {total_time:.2f}s.")
-        return final_df.reset_index(drop=True) 
+        logger.info(f"Feature generation complete for {len(final_df)} games in {total_time:.2f}s.")
+        return final_df.reset_index(drop=True)
+
+from sklearn.linear_model import Ridge
+from sklearn.svm import SVR
+
+class RidgeScorePredictor:
+    """
+    Simple wrapper so that fe_legacy.RidgeScorePredictor().model
+    yields a Ridge() estimator for use in cross_val_score.
+    """
+    def __init__(self, alpha: float = 1.0, **kwargs):
+        self.model = Ridge(alpha=alpha, **kwargs)
+
+class SVRScorePredictor:
+    """
+    Likewise for SVR if you ever want to swap in an SVR baseline.
+    """
+    def __init__(self, kernel: str = 'rbf', C: float = 1.0, epsilon: float = 0.1, **kwargs):
+        self.model = SVR(kernel=kernel, C=C, epsilon=epsilon, **kwargs)
 
 
 # -- Example Usage --
