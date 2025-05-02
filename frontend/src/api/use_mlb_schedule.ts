@@ -18,6 +18,6 @@ export const useMLBSchedule = (date: string) =>
       const json: Resp = await res.json();
       return json.data;
     },
-    staleTime: 60_000,
+    staleTime: 0,
     enabled: !!date,
   });
