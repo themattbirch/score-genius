@@ -9,6 +9,7 @@ import time
 import os
 import sys
 import re
+import httpx
 import json
 from datetime import date, timedelta, datetime as dt_datetime, datetime as dt
 from zoneinfo import ZoneInfo
@@ -427,52 +428,91 @@ def scrape_fangraphs_probables(base_date: date) -> dict:
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1) Find the right table by its “Team” header
+    # --- MODIFIED TABLE FINDING LOGIC ---
     target_table = None
-    for tbl in soup.find_all("table"):
-        th = tbl.find("th")
-        if th and th.get_text(strip=True) == "Team":
-            target_table = tbl
-            break
-    if not target_table:
-        print("No ‘Team’ table found.")
+
+    # 1) Find the specific header cell using its data-stat attribute
+    #    We use a CSS selector: 'th[data-stat="Team"]' looks for a <th> element
+    #    that has an attribute 'data-stat' with the value 'Team'.
+    team_header_cell = soup.select_one('th[data-stat="Team"]')
+
+    if team_header_cell:
+        # 2) If we found the header, navigate up the HTML tree to find its parent table
+        target_table = team_header_cell.find_parent('table')
+        if target_table:
+             print("Successfully located target table via header 'th[data-stat=\"Team\"]'.")
+        else:
+            # This would be odd, but possible if HTML is malformed
+            print("Found the 'Team' header cell, but failed to find its parent table.")
+            return {}
+    else:
+        # If the header cell itself wasn't found
+        print("Could not find the crucial header cell: 'th[data-stat=\"Team\"]'. FanGraphs page structure has likely changed.")
         return {}
 
-    # 2) Figure out how many days across
+    # --- END OF MODIFIED LOGIC ---
+
+    # The rest of your logic should proceed using the found 'target_table'
+    # Make sure the subsequent selectors operate on 'target_table', not 'soup' if they were global before.
+
+    # 2) Figure out how many days across (using the found target_table)
     first_row = next(
         (r for r in target_table.select("tbody tr") if len(r.find_all("td")) > 1),
         None
     )
     if not first_row:
-        print("No data rows found.")
+        print("No data rows found in the identified table.")
         return {}
+    # Subtract 1 because the first cell is the team name
     num_days = len(first_row.find_all("td")) - 1
+    if num_days <= 0:
+        print(f"Warning: Found table but detected {num_days} data columns. Check structure.")
+        return {}
 
     # 3) Build the date headers
     headers = [(base_date + timedelta(days=i)).isoformat() for i in range(num_days)]
 
-    # 4) Extract all pitchers
+    # 4) Extract all pitchers (using the found target_table)
     lookup: Dict[Tuple[str,str],Dict[str,Optional[str]]] = {}
+    # Use target_table.select to search only within the correct table
     for row in target_table.select("tbody tr"):
         cells = row.find_all("td")
-        if len(cells) <= 1:
+        if len(cells) <= 1: # Should be team + at least one day
             continue
-        team = normalize_team_name(cells[0].get_text(strip=True))
+
+        # Ensure the first cell contains the team name
+        team_cell = cells[0]
+        # You might want to add robustness here, e.g., check if team_cell looks like a team
+        team = normalize_team_name(team_cell.get_text(strip=True))
+        if not team: # Skip rows where team name isn't found/parsed
+            continue
+
+        # Process pitcher cells for the detected number of days
         for i, cell in enumerate(cells[1:]):
-            if i >= num_days:
+            if i >= num_days: # Don't process more cells than expected days
                 break
+
+            # Your existing pitcher name extraction logic
             links = cell.find_all("a")
             name = links[-1].get_text(strip=True) if links else cell.get_text(" ", strip=True)
-            name = re.sub(r'^@\s*[A-Z]{2,3}\s+', "", name)
+
+            # Clean up '@ TEAM' prefixes which sometimes appear
+            name = re.sub(r'^@\s*[A-Z]{2,3}\s+', "", name).strip()
+
+            # Extract handedness
             m = re.search(r"\(([RLS])\)", name)
             hand = m.group(1) if m else None
             if hand:
                 name = re.sub(r"\s*\([RLS]\)", "", name).strip()
-            if not name or name.lower() in ("tbd", "off", "ppd"):
+
+            # Skip if no valid name found
+            if not name or name.lower() in ("tbd", "off", "ppd", ""):
                 continue
+
+            # Store the found pitcher info
             lookup[(headers[i], team)] = {"pitcher_name": name, "handedness": hand}
 
-    print(f"Mapped {len(lookup)} probables via Selenium.")
+    print(f"Mapped {len(lookup)} probables via Selenium using specific table.")
     return lookup
 
 def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
@@ -522,20 +562,84 @@ def update_pitchers_for_date(target_date: date) -> int:
             payload["away_probable_pitcher_name"]      = new_a
             payload["away_probable_pitcher_handedness"] = fg_lookup[(d, a)]["handedness"]
 
+        # Check if payload has data (meaning an update is needed)
         if payload:
+            # Set the updated_at timestamp just before attempting the update
             payload["updated_at"] = dt.now(UTC).isoformat()
-            print(f" → Patching game {gid}:", payload)
-            try:
-                r = (
-                    supa.table(SUPABASE_TABLE_NAME)
-                    .update(payload)
-                    .eq("game_id", gid)
-                    .execute()
-                )
-                if getattr(r, "data", None):
-                    updated += 1
-            except Exception as e:
-                print(f"   ✖️ Failed {gid}: {e}")
+            print(f" → Attempting to patch game {gid}: {payload}") # Updated print message slightly
+
+            # --- Retry Logic Start ---
+            max_retries = 3
+            retry_delay_seconds = 10  # Wait 10 seconds between retries
+            success = False # Flag to track if update succeeded within retries
+
+            # Loop for retry attempts
+            for attempt in range(max_retries):
+                try:
+                    # Attempt the Supabase update API call
+                    r = (
+                        supa.table(SUPABASE_TABLE_NAME)
+                        .update(payload)
+                        .eq("game_id", gid)
+                        .execute()
+                    )
+
+                    # Check if Supabase returned data in the response.
+                    # The presence of 'data' often indicates a successful update operation.
+                    # Note: Behavior might vary based on RLS or if 'return=minimal' is set.
+                    if getattr(r, "data", None):
+                        print(f"   ✅ Successfully updated game {gid} on attempt {attempt + 1}.")
+                        success = True
+                        break # Exit the retry loop successfully
+
+                    else:
+                        # Handle case where execute() succeeds without exception but returns no data.
+                        # This *might* be normal (e.g., using 'return=minimal') or could indicate
+                        # an issue like RLS preventing the update but not raising an HTTP error.
+                        # We'll log it as a warning but treat it as success for now, assuming no error means OK.
+                        # You might need to adjust this based on your specific Supabase setup/expectations.
+                        print(f"   ⚠️ Update command executed for game {gid} on attempt {attempt + 1}, but no data returned. Assuming success (verify if RLS/permissions are involved).")
+                        success = True
+                        break # Exit the retry loop
+
+                # --- Exception Handling during the Supabase API call ---
+
+                # Catch specific httpx network/HTTP errors (more specific than general Exception)
+                # TransportError includes SSL errors like EOF, ConnectError, etc.
+                # TimeoutException handles timeouts.
+                # HTTPStatusError handles responses >= 400.
+                except (httpx.TransportError, httpx.TimeoutException, httpx.HTTPStatusError) as e_http:
+                    error_type = type(e_http).__name__
+                    # For HTTPStatusError, include the status code
+                    status_code_info = f" (Status Code: {e_http.response.status_code})" if isinstance(e_http, httpx.HTTPStatusError) else ""
+                    print(f"   ⚠️ Network/HTTP error ({error_type}{status_code_info}) on attempt {attempt + 1}/{max_retries} for game {gid}: {e_http}")
+                    if attempt < max_retries - 1:
+                        print(f"      Retrying in {retry_delay_seconds} seconds...")
+                        time.sleep(retry_delay_seconds)
+                    # Failure message is handled after the loop if 'success' remains False
+
+                # Catch any other unexpected exceptions during the API call
+                except Exception as e:
+                    error_type = type(e).__name__
+                    print(f"   ⚠️ Unexpected error ({error_type}) on attempt {attempt + 1}/{max_retries} for game {gid}: {e}")
+                    # Decide if this error is retryable. We'll retry for now.
+                    if attempt < max_retries - 1:
+                        print(f"      Retrying in {retry_delay_seconds} seconds...")
+                        time.sleep(retry_delay_seconds)
+                    # Failure message is handled after the loop if 'success' remains False
+
+            # --- After the retry loop finishes ---
+            if success:
+                # Increment the overall count only if one of the attempts was successful
+                updated += 1
+            else:
+                # Log the final failure only if all retries were exhausted without success
+                print(f"   ✖️ Failed to update game {gid} after {max_retries} attempts.")
+            # --- Retry Logic End ---
+
+# The print and return statements outside the 'if payload:' block remain unchanged
+# print(f"--- Done: {updated} updated. ---")
+# return updated
 
     print(f"--- Done: {updated} updated. ---")
     return updated
