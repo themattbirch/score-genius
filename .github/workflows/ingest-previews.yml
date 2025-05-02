@@ -27,6 +27,11 @@ jobs:
       - name: Install deps
         run: pip install -r backend/requirements.txt
 
+      - name: Debug all Preview env vars
+        run: |
+          echo "ENV VARS:"
+          env | grep -E 'API_SPORTS_KEY|ODDS_API_KEY|RAPIDAPI'
+
       - name: Install Google Chrome
         run: |
           sudo apt-get update
