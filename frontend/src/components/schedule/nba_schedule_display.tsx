@@ -18,40 +18,44 @@ const groupInjuriesByTeam = (inj: Injury[]) =>
     return acc;
   }, {});
 
-const formatDate = (d: Date | null) =>
-  d ? d.toLocaleDateString("en-US", { month: "long", day: "numeric" }) : "";
+// Helper function (optional but good practice)
+const formatLocalDate = (d: Date | null | undefined): string => {
+  if (!d) return "";
+  // Use the same robust manual formatting as NBA or switch both to date-fns/luxon
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 const NBAScheduleDisplay: React.FC = () => {
   const { date } = useDate();
 
-  // instead of toISOString(), do:
-  const isoDate = date
-    ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-        2,
-        "0"
-      )}-${String(date.getDate()).padStart(2, "0")}`
-    : "";
+  // --- Use the shared helper function ---
+  const isoDate = formatLocalDate(date);
+  // --- End change ---
 
-  // and keep your displayDate the same:
+  // Keep your user-friendly displayDate
   const displayDate =
     date?.toLocaleDateString("en-US", {
       month: "long",
       day: "numeric",
     }) ?? "";
 
-  console.log("[NBA schedule] isoDate =", isoDate);
+  console.log("[NBA schedule] isoDate used for API =", isoDate);
+  console.log("[NBA schedule] displayDate used for UI =", displayDate);
 
   const {
     data: games,
     isLoading: loadingGames,
     error: gamesError,
-  } = useNBASchedule(isoDate);
+  } = useNBASchedule(isoDate); // Correctly uses local YYYY-MM-DD
 
   const {
     data: injuries = [],
     isLoading: loadingInjuries,
     error: injuriesError,
-  } = useInjuries("NBA", isoDate);
+  } = useInjuries("NBA", isoDate); // Correctly uses local YYYY-MM-DD
 
   const { teamsWithInjuries, injuriesByTeam } = useMemo(() => {
     if (!games?.length || !injuries.length) {
