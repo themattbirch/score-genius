@@ -5,7 +5,7 @@ NBA Score Prediction Model Training Pipeline
 This script orchestrates the process of training and evaluating models for predicting NBA game scores.
 Key steps include:
 1. Loading historical game data and team statistics.
-2. Generating a comprehensive set of features using FeatureEngine.
+2. Generating a comprehensive set of features using a modular system.
 3. Performing feature selection using LassoCV on pre-game features to prevent data leakage.
 4. Splitting the data chronologically into training, validation, and test sets.
 5. Optionally tuning hyperparameters for base models (Ridge, SVR) using RandomizedSearchCV
@@ -102,24 +102,32 @@ LOCAL_MODULES_AVAILABLE = False # Flag to know if real modules loaded
 try:
     # --- Attempt to import ALL real modules ---
     logger.info("Attempting to import REAL feature/model/eval modules...")
-    # Pointing to legacy file as determined previously:
-    from backend.features.legacy.feature_engineering import FeatureEngine
+
+    # Import the NEW feature pipeline orchestrator
+    from backend.features.engine import run_feature_pipeline # <--- NEW IMPORT
+
+    # Keep imports for models and evaluation (assuming they are separate)
     from .models import RidgeScorePredictor, SVRScorePredictor, compute_recency_weights
     from .evaluation import (
         plot_actual_vs_predicted, plot_conditional_bias,
         plot_feature_importances, plot_residuals_analysis_detailed,
         plot_temporal_bias
     )
-    logger.info("Successfully imported REAL modules.")
+    # NOTE: Ensure 'utils' is still imported correctly earlier
+
+    logger.info("Successfully imported REAL feature pipeline engine, models, and evaluation modules.")
     LOCAL_MODULES_AVAILABLE = True # Set flag on success
 
 except ImportError as e: # Catch ANY import error from the above 'try' block
-    logger.error("Local modules could not be imported; falling back to dummy implementations.")
-    # --- Keep the fallback logic ---
+    logger.error(f"Real modules could not be imported ({e}); falling back to dummy implementations.")
+    # --- Fallback Logic ---
     logger.info("Attempting to import DUMMY modules...")
     try:
+        # Import the DUMMY feature pipeline orchestrator
+        from .dummy_modules import run_feature_pipeline # <--- IMPORT DUMMY VERSION
+
+        # Import dummy versions of other components
         from .dummy_modules import (
-            FeatureEngine,
             SVRScorePredictor,
             RidgeScorePredictor,
             compute_recency_weights,
@@ -128,7 +136,7 @@ except ImportError as e: # Catch ANY import error from the above 'try' block
             plot_residuals_analysis_detailed,
             plot_conditional_bias,
             plot_temporal_bias
-            # Assuming utils was successfully imported earlier
+            # Assuming utils was successfully imported earlier and doesn't need a dummy
         )
         logger.info("Successfully imported DUMMY modules.")
         # LOCAL_MODULES_AVAILABLE remains False
@@ -138,7 +146,6 @@ except ImportError as e: # Catch ANY import error from the above 'try' block
         logger.critical(f"FATAL: Failed to import even the dummy modules! Error: {e_dummy}", exc_info=True)
         sys.exit("Could not import real or dummy modules.")
     # --- End of dummy import logic ---
-
 
 # --- Constants ---
 TARGET_COLUMNS = ['home_score', 'away_score']
@@ -1346,7 +1353,7 @@ def run_training_pipeline(args: argparse.Namespace):
     start_pipeline_time = time.time()
     if args.debug:
         logger.setLevel(logging.DEBUG)
-        for handler in logging.root.handlers: 
+        for handler in logging.root.handlers:
              handler.setLevel(logging.DEBUG)
         logger.debug("DEBUG logging enabled.")
 
@@ -1354,64 +1361,62 @@ def run_training_pipeline(args: argparse.Namespace):
     logger.info(f"Run Arguments: {vars(args)}")
 
     # Check if local modules were imported correctly
+    # This check now implicitly covers run_feature_pipeline availability
     if not LOCAL_MODULES_AVAILABLE and not args.allow_dummy:
-        logger.critical("Required local modules not found and --allow-dummy not set. Exiting.")
+        logger.critical("Required local modules (including feature pipeline) not found and --allow-dummy not set. Exiting.")
         sys.exit(1)
-    if not config and not args.allow_dummy: 
+    # Keep config check
+    if not config and not args.allow_dummy:
         logger.critical("Config module missing or failed to import and --allow-dummy not set. Exiting.")
         sys.exit(1)
 
     # --- Initialize Clients ---
-    supabase_client = get_supabase_client() 
+    supabase_client = get_supabase_client() # Assuming this helper function exists
 
     # --- Load Data ---
     historical_df, team_stats_df = load_data_source(
-        args.data_source, args.lookback_days, args, supabase_client
+        args.data_source, args.lookback_days, args, supabase_client # Assuming this helper exists
     )
     if historical_df.empty:
         logger.error("Failed to load historical data. Exiting.")
         sys.exit(1)
-    if team_stats_df.empty:
-        logger.warning("Team stats data is empty. Context features might be limited.")
+    if team_stats_df is not None and team_stats_df.empty: # Check if not None before logging warning
+        logger.warning("Team stats data is empty or failed to load. Context features might be limited.")
 
     # --- Feature Engineering ---
-    logger.info("Initializing Feature Engine...")
-    try:
-        feature_engine = FeatureEngine(supabase_client=supabase_client, debug=args.debug)
-    except TypeError: 
-         feature_engine = FeatureEngine()
-         logger.warning("Using dummy FeatureEngine without arguments.")
-    except Exception as fe_init_e:
-         logger.error(f"Failed to initialize FeatureEngine: {fe_init_e}", exc_info=True)
-         sys.exit(1)
+    # REMOVED FeatureEngine Initialization block
 
-    logger.info("Generating features for ALL historical data...")
-    rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10]
+    logger.info("Generating features for ALL historical data using modular pipeline...")
+    # Parse rolling windows argument
+    rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10, 20] # Default if not provided
     logger.info(f"Using rolling windows: {rolling_windows_list}")
+    logger.info(f"Using H2H window: {args.h2h_window}")
 
     try:
-        features_df = feature_engine.generate_all_features(
-            df=historical_df.copy(), 
-            historical_games_df=historical_df.copy(), 
-            team_stats_df=team_stats_df.copy() if not team_stats_df.empty else None,
+        # Call the imported run_feature_pipeline function directly
+        features_df = run_feature_pipeline(
+            df=historical_df.copy(), # Pass the main historical data
+            historical_games_df=historical_df.copy(), # Pass historical again for H2H lookup
+            team_stats_df=team_stats_df.copy() if team_stats_df is not None and not team_stats_df.empty else None, # Pass team stats if available
             rolling_windows=rolling_windows_list,
             h2h_window=args.h2h_window,
+            debug=args.debug # Pass debug flag
+            # execution_order can be omitted to use the default from engine.py
         )
-    except AttributeError:
-         logger.error("FeatureEngine instance missing 'generate_all_features' method (likely dummy class).")
-         sys.exit(1)
+    # Keep general exception handling for the pipeline call
     except Exception as fe_gen_e:
-         logger.error(f"Feature generation failed: {fe_gen_e}", exc_info=True)
+         logger.error(f"Feature generation pipeline failed: {fe_gen_e}", exc_info=True)
          sys.exit(1)
 
+    # --- Validation after Feature Generation ---
     if features_df is None or features_df.empty:
-        logger.error("Feature generation returned an empty DataFrame. Exiting.")
+        logger.error("Feature generation pipeline returned an empty or None DataFrame. Exiting.")
         sys.exit(1)
     logger.info(f"Feature generation completed. Shape: {features_df.shape}")
 
     # --- Feature Cleaning & Pre-selection ---
     if features_df.columns.duplicated().any():
-        logger.warning("Duplicate column names found! Removing duplicates, keeping first occurrence.")
+        logger.warning("Duplicate column names found after feature generation! Removing duplicates, keeping first occurrence.")
         features_df = features_df.loc[:, ~features_df.columns.duplicated(keep='first')]
         logger.info(f"Shape after duplicate removal: {features_df.shape}")
 
@@ -1429,44 +1434,59 @@ def run_training_pipeline(args: argparse.Namespace):
     if args.run_analysis:
         logger.info("Analyzing generated feature values...")
         try:
+            # Select only numeric columns for analysis
             numeric_features_df = features_df.select_dtypes(include=np.number)
             if not numeric_features_df.empty:
+                # Calculate descriptive statistics
                 desc_stats = numeric_features_df.describe().transpose()
+                # Calculate percentage of zero values
                 zero_pct = (numeric_features_df == 0).mean().mul(100).rename('zero_percentage')
+                # Calculate percentage of NaN values (should be low after cleaning, but good check)
                 nan_pct = numeric_features_df.isnull().mean().mul(100).rename('nan_percentage')
 
+                # Combine stats into a summary table
                 feature_summary = pd.concat([desc_stats, zero_pct, nan_pct], axis=1)
 
-                problem_threshold_std = 1e-7
-                problem_threshold_zero_pct = 99.0
-                problem_threshold_nan_pct = 50.0
+                # Define thresholds for potentially problematic features
+                problem_threshold_std = 1e-7 # Very low standard deviation (near-constant)
+                problem_threshold_zero_pct = 99.0 # Almost all values are zero
+                problem_threshold_nan_pct = 50.0 # High percentage of missing values (shouldn't happen here)
+
+                # Identify problematic features based on thresholds
                 problematic_features = feature_summary[
                     (feature_summary['std'].fillna(0) < problem_threshold_std) |
-                    (feature_summary['zero_percentage'] > problem_threshold_zero_pct) |
-                    (feature_summary['nan_percentage'] > problem_threshold_nan_pct)
+                    (feature_summary['zero_percentage'].fillna(0) > problem_threshold_zero_pct) |
+                    (feature_summary['nan_percentage'].fillna(0) > problem_threshold_nan_pct)
                 ]
 
-                # Save summary to file
+                # --- Save Summary Report ---
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 summary_filename = f"feature_value_summary_{timestamp}.txt"
                 summary_path = REPORTS_DIR / summary_filename
-                with open(summary_path, 'w') as f:
-                    f.write(f"Feature Value Summary ({timestamp})\n")
-                    f.write(f"Total Numeric Features Analyzed: {len(feature_summary)}\n")
-                    f.write("=" * 80 + "\n")
+                try: # Add try-except for file writing
+                    with open(summary_path, 'w') as f:
+                        f.write(f"Feature Value Summary ({timestamp})\n")
+                        f.write(f"Total Numeric Features Analyzed: {len(feature_summary)}\n")
+                        f.write("=" * 80 + "\n")
+                        if not problematic_features.empty:
+                            f.write("\n--- POTENTIALLY PROBLEMATIC FEATURES ---\n")
+                            f.write(f"(std < {problem_threshold_std:.1E} OR zero % > {problem_threshold_zero_pct}% OR NaN % > {problem_threshold_nan_pct}%)\n\n")
+                            # Use pandas option_context for better formatting in file
+                            with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 1000):
+                                f.write(problematic_features.to_string(float_format="%.4f"))
+                            f.write("\n\n" + "=" * 80 + "\n")
+                        else:
+                            f.write("\n--- No obvious problematic features found based on thresholds. ---\n\n")
+
+                        f.write("\n--- FULL FEATURE SUMMARY ---\n\n")
+                        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 1000):
+                            f.write(feature_summary.to_string(float_format="%.4f"))
+                    logger.info(f"Feature value summary saved to: {summary_path}")
                     if not problematic_features.empty:
-                        f.write("\n--- POTENTIALLY PROBLEMATIC FEATURES ---\n")
-                        f.write(f"(std < {problem_threshold_std:.1E} OR zero % > {problem_threshold_zero_pct}% OR NaN % > {problem_threshold_nan_pct}%)\n\n")
-                        f.write(problematic_features.to_string(float_format="%.4f"))
-                        f.write("\n\n" + "=" * 80 + "\n")
-                    else:
-                        f.write("\n--- No obvious problematic features found based on thresholds. ---\n\n")
-                    f.write("\n--- FULL FEATURE SUMMARY ---\n\n")
-                    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 1000):
-                        f.write(feature_summary.to_string(float_format="%.4f"))
-                logger.info(f"Feature value summary saved to: {summary_path}")
-                if not problematic_features.empty:
-                    logger.warning(f"Found {len(problematic_features)} potentially problematic features. Review {summary_filename}")
+                        logger.warning(f"Found {len(problematic_features)} potentially problematic features. Review {summary_filename}")
+                except IOError as e_write:
+                     logger.error(f"Failed to write feature summary report to {summary_path}: {e_write}")
+
             else:
                 logger.warning("No numeric features found to generate value summary.")
         except Exception as e_summary:

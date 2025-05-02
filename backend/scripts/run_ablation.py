@@ -23,7 +23,6 @@ import argparse
 import itertools
 import json
 from typing import Iterable, Mapping
-
 import numpy as np
 import pandas as pd
 from sklearn.dummy import DummyRegressor
@@ -35,21 +34,31 @@ from supabase import create_client
 from backend.features import advanced, momentum, rolling, rest, h2h, season, form
 from backend import config
 
+import logging
+
+# Configure logging at module level
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------- #
 # canonical execution order & explicit deps
 # ---------------------------------------------------------------------------- #
-EXECUTION_ORDER = ["advanced", "momentum", "rolling", "rest", "h2h", "season", "form"]
+EXECUTION_ORDER = ["advanced", "momentum", "rest", "h2h", "season", "form"]
 MODULES: Mapping[str, callable] = {
     "advanced": advanced.transform,
     "momentum": momentum.transform,
-    "rolling":  rolling.transform,
+    #"rolling":  rolling.transform,
     "rest":     rest.transform,
     "h2h":      h2h.transform,
     "season":   season.transform,
     "form":     form.transform,
 }
 REQUIRES = {
-    "rolling": ("advanced", "momentum"),
+    #"rolling": ("advanced", "momentum"),
     "h2h":     ("rolling",),
     "season":  ("advanced",),
     "form":    ("season",),
@@ -75,25 +84,41 @@ def apply_blocks(
     hist_df: pd.DataFrame,
     team_stats_df: pd.DataFrame,
     rolling_windows: list[int],
-    h2h_window: int,
+    h2h_window: int, # Keep this parameter name for the function signature
 ) -> pd.DataFrame:
     """
     Apply each block in EXECUTION_ORDER (after expansion) to a fresh df copy.
     """
     out = df.copy()
     active = set(blocks)
+    # Use a temporary debug flag based on script args if needed, or pass it down
+    # debug_mode = args.debug # Assuming args is accessible or passed down
+
     for name in EXECUTION_ORDER:
         if name not in active:
             continue
+
         fn = MODULES[name]
+        logger.debug(f"Applying block: {name}") # Added debug log
+
+        # Prepare kwargs for the specific module
+        kwargs = {'debug': False} # Default debug to False unless passed down
+
         if name == "rolling":
-            out = fn(out, window_sizes=rolling_windows)
+            kwargs['window_sizes'] = rolling_windows
+            out = fn(out, **kwargs) # Pass kwargs
         elif name == "h2h":
-            out = fn(out, historical_df=hist_df, window=h2h_window)
+            # *** FIX: Use 'max_games' instead of 'window' ***
+            kwargs['historical_df'] = hist_df
+            kwargs['max_games'] = h2h_window # Use the correct keyword argument
+            out = fn(out, **kwargs) # Pass kwargs
         elif name == "season":
-            out = fn(out, team_stats_df=team_stats_df)
+            kwargs['team_stats_df'] = team_stats_df
+            out = fn(out, **kwargs) # Pass kwargs
         else:
-            out = fn(out)
+             # For modules like momentum, advanced, rest, form that only take df and debug
+             out = fn(out, **kwargs) # Pass kwargs
+
     return out
 
 def numeric_features(df: pd.DataFrame) -> pd.DataFrame:
