@@ -273,16 +273,6 @@ export const getMlbScheduleByDate = async (date) => {
       .order("scheduled_time_utc", { ascending: true });
   }
 
-  // *** ADD THIS DIAGNOSTIC DELAY ***
-  console.log(
-    `[mlb_service] Adding 2-second diagnostic delay before querying Supabase for date ${date}...`
-  );
-  await new Promise((resolve) => setTimeout(resolve, 2000)); // Delay for 2000ms (2 seconds)
-  console.log(
-    `[mlb_service] Delay finished. Executing query for date ${date}...`
-  );
-  // *** END DELAY ***
-
   try {
     // *** ADD LOGGING BEFORE QUERY ***
     console.log(
