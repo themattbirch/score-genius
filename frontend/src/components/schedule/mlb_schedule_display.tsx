@@ -77,7 +77,7 @@ const MLBScheduleDisplay: React.FC = () => {
       <div className="space-y-4">
         {noGamesScheduled ? (
           <p className="text-text-secondary text-center mt-4">
-            {/* Updated message with displayDate */}
+            {/* Update message with displayDate */}
             No MLB games scheduled for {isoDate}.
           </p>
         ) : (
