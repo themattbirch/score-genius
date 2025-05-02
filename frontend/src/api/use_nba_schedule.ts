@@ -18,5 +18,5 @@ export const useNBASchedule = (date: string) =>
       const json: Resp = await res.json();
       return json.data;
     },
-    staleTime: 60_000,
+    staleTime: 5_000,
   });

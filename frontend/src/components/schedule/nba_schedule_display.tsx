@@ -47,11 +47,11 @@ const NBAScheduleDisplay: React.FC = () => {
     error: gamesError,
   } = useNBASchedule(isoDate);
 
-const {
-  data: injuries = [],
-  isLoading: loadingInjuries,
-  error: injuriesError,
-} = useInjuries("NBA", isoDate);
+  const {
+    data: injuries = [],
+    isLoading: loadingInjuries,
+    error: injuriesError,
+  } = useInjuries("NBA", isoDate);
 
   const { teamsWithInjuries, injuriesByTeam } = useMemo(() => {
     if (!games?.length || !injuries.length) {

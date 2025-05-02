@@ -223,10 +223,12 @@ export const getMlbScheduleByDate = async (date) => {
 
   let query; // Will hold the Supabase query promise
   let selectColumns; // Will hold the columns string
+  let tableName; // Add this for logging
 
   // Build the query based on date
   if (isPastDate) {
     console.log(`[mlb_service] Fetching historical MLB data for ${date}`);
+    tableName = MLB_HISTORICAL_GAMES_TABLE; // Log table name
     selectColumns = `game_id, game_date_time_utc, home_team_name, away_team_name, home_score, away_score, status_short`;
     const startOfInputDayET = DateTime.fromISO(date, {
       zone: ET_ZONE_IDENTIFIER,
@@ -244,7 +246,10 @@ export const getMlbScheduleByDate = async (date) => {
       .order("game_date_time_utc", { ascending: true });
   } else {
     // Fetch Schedule Data
-    console.log(`[mlb_service] Fetching schedule MLB data for ${date}`);
+    tableName = MLB_SCHEDULE_TABLE; // Log table name
+    console.log(
+      `[mlb_service] Fetching schedule MLB data for ${date} from table: ${tableName}`
+    );
     selectColumns = `
         game_id, scheduled_time_utc, game_date_et, status_detail, status_state,
         home_team_name, away_team_name, home_probable_pitcher_name,
@@ -253,22 +258,53 @@ export const getMlbScheduleByDate = async (date) => {
         spread_home_line_clean, spread_home_price_clean, spread_away_price_clean,
         total_line_clean, total_over_price_clean, total_under_price_clean
     `;
+    // *** ADD LOGGING FOR COLUMNS ***
+    console.log(
+      `[mlb_service] Using SELECT columns: ${selectColumns.replace(
+        /\s+/g,
+        " "
+      )}`
+    );
+
     query = supabase
-      .from(MLB_SCHEDULE_TABLE)
+      .from(tableName) // Use variable
       .select(selectColumns)
       .eq("game_date_et", date)
       .order("scheduled_time_utc", { ascending: true });
   }
 
-  // Execute the query and handle results/errors/mapping
-  try {
-    const { data, error } = await query; // Execute the built query
+  // *** ADD THIS DIAGNOSTIC DELAY ***
+  console.log(
+    `[mlb_service] Adding 2-second diagnostic delay before querying Supabase for date ${date}...`
+  );
+  await new Promise((resolve) => setTimeout(resolve, 2000)); // Delay for 2000ms (2 seconds)
+  console.log(
+    `[mlb_service] Delay finished. Executing query for date ${date}...`
+  );
+  // *** END DELAY ***
 
+  try {
+    // *** ADD LOGGING BEFORE QUERY ***
     console.log(
-      `[mlb_service getMlbScheduleByDate] Supabase returned ${
-        data?.length ?? 0
-      } rows for date ${date}. Error: ${error ? error.message : "No"}`
+      `[mlb_service] EXECUTING query for date ${date} on table ${tableName}...`
     );
+    const { data, error, status } = await query; // Execute the built query
+
+    // *** ADD LOGGING OF RAW RESPONSE ***
+    console.log(
+      `[mlb_service] RAW Supabase response for ${date}: Status=${status}, Error=${
+        error ? error.message : "No"
+      }, Data Rows=${data?.length ?? 0}`
+    );
+    // Optionally log the first few rows of raw data if needed (be careful with large amounts)
+    if (data && data.length > 0) {
+      console.log(
+        `[mlb_service] RAW Supabase data sample (first row) for ${date}:`,
+        JSON.stringify(data[0])
+      );
+    }
+    // *** END ADDED LOGGING ***
+
     if (error) throw error;
     if (!Array.isArray(data)) {
       console.warn(
@@ -326,6 +362,9 @@ export const getMlbScheduleByDate = async (date) => {
         return gameData;
       }
     });
+    console.log(
+      `[mlb_service] Returning ${results.length} mapped results for date ${date}`
+    );
     return results;
   } catch (err) {
     console.error(
@@ -387,30 +426,39 @@ export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
 
   const seasonYear = parseInt(seasonYearStr, 10);
   if (isNaN(seasonYear) || String(seasonYearStr).length !== 4) {
-     console.error("Invalid season year string passed to RPC service fn:", seasonYearStr);
-     return [];
+    console.error(
+      "Invalid season year string passed to RPC service fn:",
+      seasonYearStr
+    );
+    return [];
   }
 
-  console.log(`CACHE MISS: ${cacheKey}. Calling RPC get_mlb_advanced_team_stats for season ${seasonYear}...`);
+  console.log(
+    `CACHE MISS: ${cacheKey}. Calling RPC get_mlb_advanced_team_stats for season ${seasonYear}...`
+  );
   try {
-      // Call the Supabase RPC function
-      const { data, error } = await supabase.rpc('get_mlb_advanced_team_stats', {
-          p_season_year: seasonYear // Pass the integer year as the argument
-      });
+    // Call the Supabase RPC function
+    const { data, error } = await supabase.rpc("get_mlb_advanced_team_stats", {
+      p_season_year: seasonYear, // Pass the integer year as the argument
+    });
 
-      if (error) {
-        console.error("Supabase RPC error fetching MLB advanced stats:", error);
-        throw error; // Let controller handle
-      }
+    if (error) {
+      console.error("Supabase RPC error fetching MLB advanced stats:", error);
+      throw error; // Let controller handle
+    }
 
-      const resultData = data || [];
-      // Note: RPC directly returns the calculated fields named as defined in RETURNS TABLE (...)
-      console.log(`RPC returned ${resultData.length} advanced stat records for ${seasonYear}. Caching ${ttl}s.`);
-      cache.set(cacheKey, resultData, ttl);
-      return resultData;
-
-  } catch(err) {
-      console.error(`Error calling RPC get_mlb_advanced_team_stats for season ${seasonYearStr}:`, err);
-      throw err; // Re-throw to controller
+    const resultData = data || [];
+    // Note: RPC directly returns the calculated fields named as defined in RETURNS TABLE (...)
+    console.log(
+      `RPC returned ${resultData.length} advanced stat records for ${seasonYear}. Caching ${ttl}s.`
+    );
+    cache.set(cacheKey, resultData, ttl);
+    return resultData;
+  } catch (err) {
+    console.error(
+      `Error calling RPC get_mlb_advanced_team_stats for season ${seasonYearStr}:`,
+      err
+    );
+    throw err; // Re-throw to controller
   }
 };
