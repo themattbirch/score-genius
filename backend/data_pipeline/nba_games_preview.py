@@ -2,7 +2,7 @@
 
 """
 Fetch upcoming NBA games, enrich with betting odds, fetch injuries, store in Supabase,
-and generate score predictions. CONSOLIDATED SCRIPT.
+and generate score predictions. 
 """
 
 import json
@@ -18,7 +18,7 @@ import requests
 from zoneinfo import ZoneInfo
 from dateutil import parser as dateutil_parser # Added dateutil
 
-# allow `from config import …` to find /backend/config.py
+# allow from config import … to find /backend/config.py
 HERE = os.path.dirname(__file__)
 BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
 if BACKEND_DIR not in sys.path:
@@ -123,6 +123,7 @@ def get_games_by_date(
     # Using HEADERS_SPORTS for this request
     return make_api_request(url, HEADERS_SPORTS, params) or {}
 
+
 def get_betting_odds(et_date: datetime) -> List[Dict[str, Any]]:
     """Fetch odds for a given ET date from The Odds API."""
     if not ODDS_API_KEY:
@@ -220,59 +221,101 @@ def extract_odds_by_market(event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
                 result["total"][o.get("name")] = {"point": o.get("point"), "price": o.get("price")}
     return result
 
-
-
 # --- Schedule Clearing Function ---
 # (Keep clear_upcoming_schedule_data)
-def clear_upcoming_schedule_data() -> None:
-    """Delete nba_game_schedule entries with ET game_date >= today."""
-    try:
-        today_et_iso = datetime.now(ET_ZONE).date().isoformat()
-        print(f"\n--- Clearing Schedule Data ---")
-        print(f"Clearing schedule entries from Supabase table '{NBA_SCHEDULE_TABLE}' for date {today_et_iso} onwards...")
-        response = supabase.table(NBA_SCHEDULE_TABLE).delete().gte("game_date", today_et_iso).execute()
-        if hasattr(response, 'error') and response.error:
-             print(f"Error deleting upcoming schedule data: {response.error}")
-        else:
-             print(f"Successfully executed delete request for schedule games on or after {today_et_iso}.")
-    except Exception as e:
-        print(f"An exception occurred during deletion of upcoming schedule data: {e}")
+def clear_past_schedule_data() -> None:
+    """Delete nba_game_schedule entries with ET game_date < today."""
+    today_et_iso = datetime.now(ET_ZONE).date().isoformat()
+    print(f"Clearing past games before {today_et_iso}")
+    resp = supabase.table(NBA_SCHEDULE_TABLE).delete().lt("game_date", today_et_iso).execute()
+    if getattr(resp, "error", None):
+        print("Error clearing past games:", resp.error)
+    else:
+        print("Successfully cleared past games.")
+
+def _fetch_games_for_date(date_iso: str) -> List[Dict[str, Any]]:
+    """Try strict date lookup first; if empty, fall back to `next`."""
+    # 1) primary query
+    primary = get_games_by_date("12", "2024-2025", date_iso).get("response", [])
+    if primary:
+        return primary
+
+    # 2) fallback – grab next 10 fixtures, filter locally
+    fallback = make_api_request(
+        f"{NBA_SPORTS_API}/games",
+        HEADERS_SPORTS,
+        {"league": "12", "next": 10, "timezone": "America/New_York"},
+    ).get("response", [])
+
+    return [
+        g for g in fallback
+        if datetime.fromisoformat(g["date"].replace("Z", "+00:00"))
+              .astimezone(ET_ZONE)
+              .date()
+              .isoformat() == date_iso
+    ]
 
 # --- Game Preview Building/Upserting Functions ---
 def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
-    """Fetch pregame NBA schedule + odds and return a list of preview dicts."""
-    now_et = datetime.now(ET_ZONE)
-    all_games = []
+    """Fetch pregame NBA schedule + odds and return a list of preview dicts for today + next window_days-1 days."""
 
-    # 1) Get all NS/scheduled games in window
+    all_games: List[Dict[str, Any]] = []
+
+    today_et = datetime.now(ET_ZONE).date()
+
+        # 2) Gather all scheduled (NS) games for today, tomorrow, ...
     for offset in range(window_days):
-        dt = (now_et + timedelta(days=offset)).date().isoformat()
-        data = get_games_by_date("12", "2024-2025", dt)
-        games = data.get("response", [])
-        pre = [
-            g
-            for g in games
-            if g.get("status", {}).get("short") in ("NS",)
-            or "scheduled" in (g["status"].get("long", "")).lower()
+        fetch_date = (today_et + timedelta(days=offset)).isoformat()
+        print(f"→ Fetching schedule for ET date {fetch_date}")
+
+        # OLD: data = get_games_by_date("12", "2024-2025", fetch_date)
+        #       games = data.get("response", [])
+        # NEW: call the robust helper instead
+        games = _fetch_games_for_date(fetch_date)
+
+        scheduled = [
+            g for g in games
+            if (
+                g.get("status", {}).get("short") in {"NS", "TBD"}
+                or any(
+                    phrase in g.get("status", {}).get("long", "").lower()
+                    for phrase in (
+                        "scheduled",
+                        "time to be determined",
+                        "to be announced",
+                    )
+                )
+            )
         ]
-        all_games.extend(pre)
+        print(f"   found {len(scheduled)} games")
+        all_games.extend(scheduled)
 
     if not all_games:
         return []
 
-    # 2) Fetch odds once per day
-    odds_list = []
+    # 3) Odds fetch at midnight ET for each day
+    odds_list: List[Dict[str, Any]] = []
     for offset in range(window_days):
-        odds_list.extend(get_betting_odds(now_et + timedelta(days=offset)))
+        d = today_et + timedelta(days=offset)
+        midnight_et = datetime(d.year, d.month, d.day, tzinfo=ET_ZONE)
+        odds_list.extend(get_betting_odds(midnight_et))
 
-    # 3) Match & build previews
-    previews = []
+    # 4) Build previews
+    previews: List[Dict[str, Any]] = []
     for g in all_games:
         ev = match_odds_for_game(g, odds_list)
         odds = extract_odds_by_market(ev)
-        venue = g.get("venue", {}).get("name") if isinstance(g.get("venue"), dict) else g.get("venue", "N/A")
-        gd = datetime.fromisoformat(g["date"].replace("Z", "+00:00")).astimezone(ET_ZONE).date().isoformat()
-
+        venue = (
+            g.get("venue", {}).get("name")
+            if isinstance(g.get("venue"), dict)
+            else g.get("venue", "N/A")
+        )
+        gd = (
+            datetime.fromisoformat(g["date"].replace("Z", "+00:00"))
+            .astimezone(ET_ZONE)
+            .date()
+            .isoformat()
+        )
         previews.append(
             {
                 "game_id": g["id"],
@@ -291,12 +334,8 @@ def upsert_previews(previews: List[Dict[str, Any]]) -> None:
     """Upsert preview records into Supabase by game_id."""
     if not previews:
         return
-    supabase.table("nba_game_schedule").upsert(previews, on_conflict="game_id").execute()
+    supabase.table(NBA_SCHEDULE_TABLE).upsert(previews, on_conflict="game_id").execute()
     print(f"Upserted {len(previews)} game previews")
-
-
-# --- Prediction Functions ---
-# (Keep generate_predictions and upsert_score_predictions references)
 
 
 # --- <<< Injury Functions (Integrated from nba_injuries.py) >>> ---
@@ -464,43 +503,41 @@ def update_injuries_table_clear_insert(injuries: List[Dict[str, Any]]) -> None:
 # --- <<< END: Injury Functions >>> ---
 
 
-def main() -> None:
-    start_time = time.time()
-    print("\n--- NBA Data Pipeline Start ---")
+def main():
+    start = time.time()
+    print("\n--- NBA Daily Pipeline Start ---")
 
-    # 1. Clear Upcoming Schedule Data
-    clear_upcoming_schedule_data()
+    # 1) Clear past games
+    clear_past_schedule_data()
 
-    # 2. Fetch, Normalize, and Update Injuries (Clear & Insert)
-    normalized_injuries = process_and_normalize_rapidapi_injuries()
-    update_injuries_table_clear_insert(normalized_injuries)
+    # 2) Injuries logic
+    normalized = process_and_normalize_rapidapi_injuries()
+    update_injuries_table_clear_insert(normalized)
 
-    # 3. Fetch and Upsert Game Previews/Odds
-    previews = build_game_preview(DEFAULT_UPCOMING_DAYS_WINDOW)
+    # 3) Previews + odds for today & tomorrow
+    previews = build_game_preview(window_days=2)
     if previews:
-        upsert_previews(previews) # Upsert schedule/odds
+        upsert_previews(previews)
+        print(f"Upserted {len(previews)} game previews")
 
-        # 4. Generate and Upsert Predictions (if previews exist)
-        print("\n--- Generating Score Predictions ---")
+        # 4) Generate & upsert predictions
+        print("\n--- Generating Predictions ---")
         preds, _ = generate_predictions(
-            days_window=DEFAULT_UPCOMING_DAYS_WINDOW,
+            days_window=2,
             model_dir=MODELS_DIR,
             calibrate_with_odds=True,
             blend_factor=0.3,
             historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
-            # Pass injury data if prediction model uses it:
-            # injuries_data=normalized_injuries
         )
         if preds:
-            upsert_score_predictions(preds) # Assumes this updates NBA_SCHEDULE_TABLE
+            upsert_score_predictions(preds)
+            print(f"Upserted {len(preds)} predictions")
         else:
-            print("No score predictions were generated.")
+            print("No predictions generated")
     else:
-        print("No game previews were built, skipping prediction generation.")
+        print("Skipped previews & predictions; no games found")
 
-    end_time = time.time()
-    print(f"\n--- Pipeline finished in {end_time - start_time:.2f} seconds ---")
-
+    print(f"\n--- Pipeline finished in {time.time() - start:.2f}s ---")
 
 if __name__ == "__main__":
     main()
