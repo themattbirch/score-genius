@@ -9,6 +9,13 @@ jobs:
   ingest-previews:
     name: Run Preview‐only Pipelines
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+      RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,19 +33,7 @@ jobs:
           sudo apt-get install -y google-chrome-stable
 
       - name: Run MLB preview ingest
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python backend/data_pipeline/mlb_games_preview.py
 
       - name: Run NBA preview ingest
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
-          RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
         run: python backend/data_pipeline/nba_games_preview.py
