@@ -1,48 +1,57 @@
 # backend/data_pipeline/nba_games_preview.py
 
 """
-Fetch upcoming NBA games, enrich with betting odds, store in Supabase,
-and generate score predictions.
+Fetch upcoming NBA games, enrich with betting odds, fetch injuries, store in Supabase,
+and generate score predictions. CONSOLIDATED SCRIPT.
 """
 
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date # Added date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple # Added Tuple
 import os
 import sys
-
+import re # Added re
 import difflib
 import requests
 from zoneinfo import ZoneInfo
+from dateutil import parser as dateutil_parser # Added dateutil
 
-# --- Local Config & Variables (same pattern as MLB script) ---
+# --- Local Config & Variables ---
 try:
     from config import (
         API_SPORTS_KEY,
         ODDS_API_KEY,
         SUPABASE_URL,
         SUPABASE_SERVICE_KEY,
+        RAPIDAPI_KEY,      # Added
+        RAPIDAPI_HOST,     # Added
     )
-    print("Using config.py for credentials")
-except ImportError:
-    print("config.py not found → loading credentials from environment")
+    print("Loaded configuration from config.py")
+except ImportError as e:
+    print(f"config.py not found ({e}), falling back to environment variables")
     API_SPORTS_KEY       = os.getenv("API_SPORTS_KEY")
     ODDS_API_KEY         = os.getenv("ODDS_API_KEY")
     SUPABASE_URL         = os.getenv("SUPABASE_URL")
     SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+    RAPIDAPI_KEY         = os.getenv("RAPIDAPI_KEY")      # Added
+    RAPIDAPI_HOST        = os.getenv("RAPIDAPI_HOST")     # Added
 
 # Validate
-_missing = [ name for name,val in [
-    ("API_SPORTS_KEY",       API_SPORTS_KEY),
-    ("ODDS_API_KEY",         ODDS_API_KEY),
-    ("SUPABASE_URL",         SUPABASE_URL),
-    ("SUPABASE_SERVICE_KEY", SUPABASE_SERVICE_KEY),
-] if not val ]
+_missing = [
+    name for name, val in [
+        ("API_SPORTS_KEY",       API_SPORTS_KEY),
+        ("ODDS_API_KEY",         ODDS_API_KEY),
+        ("SUPABASE_URL",         SUPABASE_URL),
+        ("SUPABASE_SERVICE_KEY", SUPABASE_SERVICE_KEY),
+        ("RAPIDAPI_KEY",         RAPIDAPI_KEY),      # Added
+        ("RAPIDAPI_HOST",        RAPIDAPI_HOST),     # Added
+    ] if not val
+]
 if _missing:
     print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
-    exit(1)
+    sys.exit(1)
 
 HERE = os.path.dirname(__file__)
 BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
@@ -50,7 +59,7 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 
-from caching.supabase_client import supabase
+from caching.supabase_client import supabase # Assumes this initializes Supabase client correctly
 from nba_score_prediction.prediction import (
     DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
     DEFAULT_UPCOMING_DAYS_WINDOW,
@@ -62,44 +71,56 @@ from nba_score_prediction.prediction import (
 MODELS_DIR = (
     Path(__file__).resolve().parent.parent.parent / "models" / "saved"
 )
+# API-Sports (for Games/Odds)
 NBA_SPORTS_API = "https://v1.basketball.api-sports.io"
 HEADERS_SPORTS = {
-    "x-rapidapi-key": API_SPORTS_KEY,
+    "x-rapidapi-key": API_SPORTS_KEY, # Note: Key name might be confusing, but using your var
     "x-rapidapi-host": "v1.basketball.api-sports.io",
 }
+# RapidAPI (for Injuries) - Using different host/key from config
+HEADERS_INJURIES = {
+    "x-rapidapi-key": RAPIDAPI_KEY,
+    "x-rapidapi-host": RAPIDAPI_HOST,
+}
+
 NBA_ODDS_API = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
 ET_ZONE = ZoneInfo("America/New_York")
+NBA_INJURIES_TABLE = "nba_injuries" # Confirmed table name
+NBA_SCHEDULE_TABLE = "nba_game_schedule"
 
-
+# --- Helper Functions ---
 def normalize_team_name(name: str) -> str:
     return " ".join(name.split()).lower()
 
-
 def title_case_team_name(name: str) -> str:
     return " ".join(word.capitalize() for word in name.split())
-
 
 def make_api_request(
     url: str, headers: Dict[str, str], params: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
     """GET and return JSON or None on error."""
+    print(f"Making API request to: {url} with params: {params}") # Log request
     try:
         resp = requests.get(url, headers=headers, params=params)
         resp.raise_for_status()
+        print(f"API Request successful (Status {resp.status_code}): {url}")
         return resp.json()
-    except requests.RequestException as e:
+    except requests.exceptions.RequestException as e:
         print(f"API request error for {url} {params}: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+             print(f"Response status: {e.response.status_code}")
+             print(f"Response text: {e.response.text[:500]}...")
         return None
 
-
+# --- Game/Odds Functions ---
 def get_games_by_date(
     league: str, season: str, date: str, timezone: str = "America/New_York"
 ) -> Dict[str, Any]:
-    """Fetch games for a specific date."""
+    """Fetch games for a specific date using API-Sports."""
     url = f"{NBA_SPORTS_API}/games"
     params = dict(league=league, season=season, date=date, timezone=timezone)
+    # Using HEADERS_SPORTS for this request
     return make_api_request(url, HEADERS_SPORTS, params) or {}
-
 
 def get_betting_odds(et_date: datetime) -> List[Dict[str, Any]]:
     """Fetch odds for a given ET date from The Odds API."""
@@ -165,7 +186,6 @@ def match_odds_for_game(
             return ev
     return None
 
-
 def _same_et_date(event: Dict[str, Any], gdate: Any) -> bool:
     """Helper: check if odds event matches a given ET date."""
     try:
@@ -200,27 +220,24 @@ def extract_odds_by_market(event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return result
 
 
+
+# --- Schedule Clearing Function ---
+# (Keep clear_upcoming_schedule_data)
 def clear_upcoming_schedule_data() -> None:
     """Delete nba_game_schedule entries with ET game_date >= today."""
     try:
         today_et_iso = datetime.now(ET_ZONE).date().isoformat()
-        print(f"Clearing schedule entries from Supabase table 'nba_game_schedule' for date {today_et_iso} onwards...")
-
-        # Delete rows where 'game_date' is greater than or equal to today's ET date
-        # Assumes 'game_date' column exists and stores date as 'YYYY-MM-DD' string
-        response = supabase.table("nba_game_schedule").delete().gte("game_date", today_et_iso).execute()
-
-        # Basic check for errors (Supabase python client delete doesn't easily return count)
+        print(f"\n--- Clearing Schedule Data ---")
+        print(f"Clearing schedule entries from Supabase table '{NBA_SCHEDULE_TABLE}' for date {today_et_iso} onwards...")
+        response = supabase.table(NBA_SCHEDULE_TABLE).delete().gte("game_date", today_et_iso).execute()
         if hasattr(response, 'error') and response.error:
              print(f"Error deleting upcoming schedule data: {response.error}")
         else:
-             # Log success indication. Actual count deleted isn't easily available.
-             print(f"Successfully executed delete request for games on or after {today_et_iso}. The table is now ready for fresh upserts for these dates.")
-
+             print(f"Successfully executed delete request for schedule games on or after {today_et_iso}.")
     except Exception as e:
         print(f"An exception occurred during deletion of upcoming schedule data: {e}")
 
-
+# --- Game Preview Building/Upserting Functions ---
 def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
     """Fetch pregame NBA schedule + odds and return a list of preview dicts."""
     now_et = datetime.now(ET_ZONE)
@@ -269,7 +286,6 @@ def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
 
     return previews
 
-
 def upsert_previews(previews: List[Dict[str, Any]]) -> None:
     """Upsert preview records into Supabase by game_id."""
     if not previews:
@@ -278,26 +294,211 @@ def upsert_previews(previews: List[Dict[str, Any]]) -> None:
     print(f"Upserted {len(previews)} game previews")
 
 
+# --- Prediction Functions ---
+# (Keep generate_predictions and upsert_score_predictions references)
+
+
+# --- <<< Injury Functions (Integrated from nba_injuries.py) >>> ---
+
+def _extract_player_id(athlete: Dict[str, Any]) -> Optional[str]:
+    """ Robustly extracts player ID from RapidAPI athlete object. """
+    # (Copied directly from nba_injuries.py)
+    player_id = athlete.get("id")
+    if player_id: return str(player_id)
+    links = athlete.get("links", [])
+    for link in links:
+        if "playercard" in link.get("rel", []):
+            match = re.search(r"/id/(\d+)", link.get("href", ""))
+            if match: return match.group(1)
+    uid = athlete.get("uid", "")
+    match_uid = re.search(r"a:(\d+)", uid)
+    if match_uid: return match_uid.group(1)
+    return None
+
+def fetch_rapidapi_injuries() -> List[Dict[str, Any]]:
+    """ Retrieves NBA injuries data from RapidAPI (espn source). """
+    # Based on get_nba_injuries from nba_injuries.py
+    print("\n--- Fetching Injury Data (RapidAPI) ---")
+    endpoint_path = "/nba/injuries" # Check if this is the correct endpoint
+    url = f"https://{RAPIDAPI_HOST}{endpoint_path}"
+    # Using HEADERS_INJURIES for this request
+    response_json = make_api_request(url, HEADERS_INJURIES, {}) # No params needed?
+
+    if response_json and "injuries" in response_json:
+        team_injury_list = response_json["injuries"]
+        if isinstance(team_injury_list, list):
+             print(f"Fetched injury data for {len(team_injury_list)} teams from RapidAPI.")
+             return team_injury_list
+        else:
+             print(f"Warn: Expected 'injuries' field to be a list, but got {type(team_injury_list)}. Data: {str(response_json)[:500]}")
+             return []
+    else:
+        print("Failed to fetch injuries or response format unexpected from RapidAPI.")
+        return []
+
+
+def _transform_single_injury(rec: Dict[str, Any], team_id_added: Optional[str], team_displayName_added: Optional[str]) -> Optional[Dict[str, Any]]:
+    """ Transforms a single nested injury record from RapidAPI. """
+    # (Copied directly from nba_injuries.py, ensure keys match YOUR table)
+    try:
+        injury_id = rec.get("id") # API's ID for the injury report event
+        report_date_utc = rec.get("date") # Expect ISO string (TIMESTAMPTZ)
+        athlete = rec.get("athlete", {}); player_id = _extract_player_id(athlete) if isinstance(athlete, dict) else None
+        team_id = team_id_added; team_display_name = team_displayName_added
+
+        # Convert IDs to TEXT (or keep as INT if your DB uses INT)
+        injury_id_str = str(injury_id) if injury_id is not None else None
+        player_id_str = str(player_id) if player_id is not None else None
+        team_id_str = str(team_id) if team_id is not None else None
+
+        # Validation Check (Essential IDs + Date)
+        if not all([injury_id_str, player_id_str, team_id_str, report_date_utc]):
+            print(f"Warn: Skipping injury {injury_id_str}. Missing required ID/Date fields.")
+            return None
+
+        # Extract other fields
+        player_display_name = athlete.get("displayName") if isinstance(athlete, dict) else None
+        type_info = rec.get("type", {}); injury_status = type_info.get("description"); injury_status_abbr = type_info.get("abbreviation")
+        details = rec.get("details", {}); injury_type = details.get("type"); injury_location = details.get("location"); injury_detail = details.get("detail"); injury_side = details.get("side"); return_date_est = details.get("returnDate")
+        short_comment = rec.get("shortComment"); long_comment = rec.get("longComment")
+
+        # Prepare final dictionary - *** ADJUST KEYS TO MATCH YOUR TABLE ***
+        transformed = {
+            "injury_id": injury_id_str, # This is the API's report ID
+            "player_id": player_id_str,
+            "player_display_name": player_display_name,
+            "team_id": team_id_str,
+            "team_display_name": team_display_name,
+            "report_date_utc": report_date_utc, # Store as TIMESTAMPTZ compatible string
+            "injury_status": injury_status,
+            "injury_status_abbr": injury_status_abbr,
+            "injury_type": injury_type,
+            "injury_location": injury_location,
+            "injury_detail": injury_detail,
+            "injury_side": injury_side,
+            "return_date_est": return_date_est if return_date_est else None,
+            "short_comment": short_comment,
+            "long_comment": long_comment,
+            "last_api_update_time": report_date_utc, # Use API report date
+            "raw_api_response": json.dumps(rec) # Optional: Store raw data
+            # Supabase handles 'created_at'/'updated_at' automatically if configured
+        }
+        return transformed
+    except Exception as e: print(f"Error transforming nested injury record id {rec.get('id', 'UNKNOWN')}: {e}"); return None
+
+def process_and_normalize_rapidapi_injuries() -> List[Dict[str, Any]]:
+    """ Fetches from RapidAPI, processes team records, and returns a flat list of normalized injuries. """
+    team_injury_list = fetch_rapidapi_injuries()
+    all_normalized_records: List[Dict[str, Any]] = []
+
+    if not team_injury_list:
+        return all_normalized_records # Return empty list if fetch failed
+
+    print(f"Processing {len(team_injury_list)} team injury records...")
+    for team_record in team_injury_list:
+         # Based on transform_team_injury_record from nba_injuries.py
+        team_id = team_record.get("id"); team_display_name = team_record.get("displayName")
+        nested_injuries = team_record.get("injuries", [])
+
+        if not isinstance(nested_injuries, list):
+            print(f"Warn: Expected list for nested 'injuries' in team {team_id}. Skipping.")
+            continue # Skip this team record
+
+        for injury_rec in nested_injuries:
+            if isinstance(injury_rec, dict):
+                transformed = _transform_single_injury(injury_rec, str(team_id) if team_id else None, team_display_name)
+                if transformed: all_normalized_records.append(transformed)
+            else:
+                print(f"Warn: Found non-dict item in nested injuries list for team {team_id}.")
+
+    print(f"Finished processing. Total normalized injury records: {len(all_normalized_records)}")
+    # Removed the filter for "today's" injuries - we want the full current report
+    return all_normalized_records
+
+
+def update_injuries_table_clear_insert(injuries: List[Dict[str, Any]]) -> None:
+    """ Clears the nba_injuries table and inserts the latest fetched injuries. """
+    if not injuries:
+        print("No normalized injuries to update in the table.")
+        return
+
+    print(f"\n--- Updating '{NBA_INJURIES_TABLE}' Table (Clear & Insert) ---")
+    try:
+        # 1. Clear the entire table
+        print(f"Clearing ALL data from '{NBA_INJURIES_TABLE}'...")
+        # Use a condition that will always be true to delete all rows.
+        # Adjust column name 'player_id' if needed.
+        delete_response = supabase.table(NBA_INJURIES_TABLE).delete().neq('player_id', '-99999').execute()
+
+        if hasattr(delete_response, 'error') and delete_response.error:
+            print(f"Error clearing '{NBA_INJURIES_TABLE}': {delete_response.error}")
+            print("Aborting injury update due to clearing error.")
+            return # Exit if clearing failed
+        else:
+            print(f"Successfully cleared '{NBA_INJURIES_TABLE}'.")
+
+        # 2. Insert the new batch
+        print(f"Inserting {len(injuries)} new injury records into '{NBA_INJURIES_TABLE}'...")
+        # Increase chunk size if needed and supported by your Supabase plan/client library version
+        # chunk_size = 500
+        # for i in range(0, len(injuries), chunk_size):
+        #    chunk = injuries[i:i + chunk_size]
+        #    insert_response = supabase.table(NBA_INJURIES_TABLE).insert(chunk).execute()
+        # Using single insert for simplicity now:
+        insert_response = supabase.table(NBA_INJURIES_TABLE).insert(injuries).execute()
+
+
+        if hasattr(insert_response, 'error') and insert_response.error:
+             print(f"Error inserting injury data: {insert_response.error}")
+             if hasattr(insert_response.error, 'details'): print(f"Details: {insert_response.error.details}")
+             if hasattr(insert_response.error, 'hint'): print(f"Hint: {insert_response.error.hint}")
+             if hasattr(insert_response.error, 'message'): print(f"Message: {insert_response.error.message}")
+        else:
+            inserted_count = len(insert_response.data) if hasattr(insert_response, 'data') else 'N/A' # Varies by client version
+            print(f"Successfully executed insert request. Response indicates {inserted_count} rows processed (count may vary based on client library).")
+
+    except Exception as e:
+        print(f"An exception occurred during updating '{NBA_INJURIES_TABLE}': {e}")
+
+# --- <<< END: Injury Functions >>> ---
+
+
 def main() -> None:
-    print("\n--- NBA Game Preview Pipeline ---")
+    start_time = time.time()
+    print("\n--- NBA Data Pipeline Start ---")
+
+    # 1. Clear Upcoming Schedule Data
     clear_upcoming_schedule_data()
 
+    # 2. Fetch, Normalize, and Update Injuries (Clear & Insert)
+    normalized_injuries = process_and_normalize_rapidapi_injuries()
+    update_injuries_table_clear_insert(normalized_injuries)
+
+    # 3. Fetch and Upsert Game Previews/Odds
     previews = build_game_preview(DEFAULT_UPCOMING_DAYS_WINDOW)
     if previews:
-        upsert_previews(previews)
+        upsert_previews(previews) # Upsert schedule/odds
 
+        # 4. Generate and Upsert Predictions (if previews exist)
+        print("\n--- Generating Score Predictions ---")
         preds, _ = generate_predictions(
             days_window=DEFAULT_UPCOMING_DAYS_WINDOW,
             model_dir=MODELS_DIR,
             calibrate_with_odds=True,
             blend_factor=0.3,
             historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
+            # Pass injury data if prediction model uses it:
+            # injuries_data=normalized_injuries
         )
         if preds:
-            upsert_score_predictions(preds)
-            print(f"Upserted {len(preds)} score predictions")
+            upsert_score_predictions(preds) # Assumes this updates NBA_SCHEDULE_TABLE
+        else:
+            print("No score predictions were generated.")
+    else:
+        print("No game previews were built, skipping prediction generation.")
 
-    print("\n--- Done ---")
+    end_time = time.time()
+    print(f"\n--- Pipeline finished in {end_time - start_time:.2f} seconds ---")
 
 
 if __name__ == "__main__":
