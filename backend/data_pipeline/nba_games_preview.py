@@ -18,15 +18,21 @@ import requests
 from zoneinfo import ZoneInfo
 from dateutil import parser as dateutil_parser # Added dateutil
 
-# --- Local Config & Variables ---
+# allow `from config import …` to find /backend/config.py
+HERE = os.path.dirname(__file__)
+BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+# now config.py can be imported, and load_dotenv will run
 try:
     from config import (
         API_SPORTS_KEY,
         ODDS_API_KEY,
         SUPABASE_URL,
         SUPABASE_SERVICE_KEY,
-        RAPIDAPI_KEY,      # Added
-        RAPIDAPI_HOST,     # Added
+        RAPIDAPI_KEY,
+        RAPIDAPI_HOST,
     )
     print("Loaded configuration from config.py")
 except ImportError as e:
@@ -35,8 +41,8 @@ except ImportError as e:
     ODDS_API_KEY         = os.getenv("ODDS_API_KEY")
     SUPABASE_URL         = os.getenv("SUPABASE_URL")
     SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-    RAPIDAPI_KEY         = os.getenv("RAPIDAPI_KEY")      # Added
-    RAPIDAPI_HOST        = os.getenv("RAPIDAPI_HOST")     # Added
+    RAPIDAPI_KEY         = os.getenv("RAPIDAPI_KEY")
+    RAPIDAPI_HOST        = os.getenv("RAPIDAPI_HOST")
 
 # Validate
 _missing = [
@@ -52,11 +58,6 @@ _missing = [
 if _missing:
     print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
     sys.exit(1)
-
-HERE = os.path.dirname(__file__)
-BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
 
 
 from caching.supabase_client import supabase # Assumes this initializes Supabase client correctly

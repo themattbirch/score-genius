@@ -200,28 +200,24 @@ def main() -> None:
         print("Missing API key or Supabase client; exiting")
         sys.exit(1)
 
-    # compute “yesterday” in Eastern Time
-    PT = ZoneInfo("America/Los_Angeles")
-    yesterday_pt = datetime.now(PT).date() - timedelta(days=1)
-    ds = yesterday_pt.isoformat()  # e.g. "2025-04-29"
-    print(f"Fetching MLB game stats for {ds} (PT yesterday)")
+    ET = ZoneInfo("America/New_York")
+    now_et = datetime.now(ET)
+    yesterday = (now_et - timedelta(days=1)).date()
+    date_str = yesterday.isoformat()
+    print(f"Fetching MLB game stats for {date_str} (ET yesterday)")
 
-    # initialize buffer
     buffer: List[Dict[str, Any]] = []
-
-    # fetch and transform
-    games = get_games_for_date(MLB_LEAGUE_ID, yesterday_pt.year, ds, HEADERS)
+    games = get_games_for_date(MLB_LEAGUE_ID, yesterday.year, date_str, HEADERS)
     for g in games:
         rec = transform_game_data(g)
         if rec:
             buffer.append(rec)
 
-    # upsert if any
     if buffer:
         upsert_game_stats_batch(supabase, buffer)
-        print(f"Upserted {len(buffer)} records.")
+        print(f"Upserted {len(buffer)} record{'s' if len(buffer)>1 else ''}.")
     else:
-        print("No games found for yesterday; nothing to upsert.")
+        print(f"No games found for {date_str}; nothing to upsert.")
 
     print("Finished.")
 

@@ -169,11 +169,7 @@ def get_team_stats(team_id: int, league: str, season: str) -> dict:
         resp = requests.get(url, headers=HEADERS, params=params)
         resp.raise_for_status()
         data = resp.json()
-        
-        # Add these debug lines:
-        print(f"DEBUG - Full API response for team {team_id}:")
-        print(json.dumps(data, indent=2))
-        
+               
         print(f"Fetched stats for team_id={team_id}, league={league}, season={season}")
         # Return directly the response object, not the full dictionary
         # The statistics endpoint returns a single object, not a list

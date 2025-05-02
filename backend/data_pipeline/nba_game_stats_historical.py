@@ -304,13 +304,18 @@ def process_day(date_obj: datetime):
 ##############################################################################
 
 def main():
-    # Determine “today” in Eastern Time
+    # Determine “yesterday” in Eastern Time
     et = ZoneInfo("America/New_York")
-    today_et = datetime.now(et).date()
+    yesterday_et = (datetime.now(et) - timedelta(days=1)).date()
 
-    print(f"Starting historical data import for {today_et}")
-    # process_day expects a datetime; zero‐out the time
-    process_day(datetime(today_et.year, today_et.month, today_et.day, tzinfo=et))
+    print(f"Starting historical data import for {yesterday_et}")
+    # process_day expects a datetime; zero‐out the time but keep tzinfo
+    process_day(datetime(
+        yesterday_et.year,
+        yesterday_et.month,
+        yesterday_et.day,
+        tzinfo=et
+    ))
     time.sleep(5)  # avoid rate limits
 
     print("\nCompleted processing historical GAME-level stats.")

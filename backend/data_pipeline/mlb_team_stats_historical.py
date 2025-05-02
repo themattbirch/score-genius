@@ -109,17 +109,17 @@ def safe_float(value: Any) -> Optional[float]:
 
 def transform_stats_data(api_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
-    Map raw API response to the Supabase table schema.
-    Does not include `current_form`; that’s added later.
+    Map raw API response to the Supabase table schema for mlb_historical_team_stats.
     """
     try:
-        games = api_data.get("games", {})
-        points = api_data.get("points", {})
-        team = api_data.get("team", {})
-        league = api_data.get("league", {})
+        games = api_data.get("games", {}) or {}
+        points = api_data.get("points", {}) or {}
+        team = api_data.get("team", {}) or {}
+        league = api_data.get("league", {}) or {}
 
-        def nested(d: Dict[str, Any], *path, default=None):
-            for key in path:
+        # Helper to navigate nested dictionaries
+        def nested(d: Dict[str, Any], *keys, default=None):
+            for key in keys:
                 if not isinstance(d, dict):
                     return default
                 d = d.get(key, default)
@@ -139,60 +139,58 @@ def transform_stats_data(api_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
             # Wins
             "wins_home_total": nested(games, "wins", "home", "total"),
-            "wins_home_pct": safe_float(nested(games, "wins", "home", "percentage")),
+            "wins_home_percentage": safe_float(nested(games, "wins", "home", "percentage")),
             "wins_away_total": nested(games, "wins", "away", "total"),
-            "wins_away_pct": safe_float(nested(games, "wins", "away", "percentage")),
+            "wins_away_percentage": safe_float(nested(games, "wins", "away", "percentage")),
             "wins_all_total": nested(games, "wins", "all", "total"),
-            "wins_all_pct": safe_float(nested(games, "wins", "all", "percentage")),
+            "wins_all_percentage": safe_float(nested(games, "wins", "all", "percentage")),
 
             # Losses
             "losses_home_total": nested(games, "loses", "home", "total"),
-            "losses_home_pct": safe_float(nested(games, "loses", "home", "percentage")),
+            "losses_home_percentage": safe_float(nested(games, "loses", "home", "percentage")),
             "losses_away_total": nested(games, "loses", "away", "total"),
-            "losses_away_pct": safe_float(nested(games, "loses", "away", "percentage")),
+            "losses_away_percentage": safe_float(nested(games, "loses", "away", "percentage")),
             "losses_all_total": nested(games, "loses", "all", "total"),
-            "losses_all_pct": safe_float(nested(games, "loses", "all", "percentage")),
+            "losses_all_percentage": safe_float(nested(games, "loses", "all", "percentage")),
 
             # Runs for
             "runs_for_total_home": nested(points, "for", "total", "home"),
-            "runs_for_avg_home": safe_float(nested(points, "for", "average", "home")),
             "runs_for_total_away": nested(points, "for", "total", "away"),
-            "runs_for_avg_away": safe_float(nested(points, "for", "average", "away")),
             "runs_for_total_all": nested(points, "for", "total", "all"),
+            "runs_for_avg_home": safe_float(nested(points, "for", "average", "home")),
+            "runs_for_avg_away": safe_float(nested(points, "for", "average", "away")),
             "runs_for_avg_all": safe_float(nested(points, "for", "average", "all")),
 
             # Runs against
             "runs_against_total_home": nested(points, "against", "total", "home"),
-            "runs_against_avg_home": safe_float(nested(points, "against", "average", "home")),
             "runs_against_total_away": nested(points, "against", "total", "away"),
-            "runs_against_avg_away": safe_float(nested(points, "against", "average", "away")),
             "runs_against_total_all": nested(points, "against", "total", "all"),
+            "runs_against_avg_home": safe_float(nested(points, "against", "average", "home")),
+            "runs_against_avg_away": safe_float(nested(points, "against", "average", "away")),
             "runs_against_avg_all": safe_float(nested(points, "against", "average", "all")),
 
+            # Raw API response
             "raw_api_response": json.dumps({"games": games, "points": points}),
         }
 
-        # Sanity check required keys
+        # Ensure essential keys are present
         if not (record["team_id"] and record["season"] and record["league_id"]):
             return None
 
         return record
-
     except Exception as exc:
         print(f"Error in transform_stats_data: {exc}")
         return None
 
-
 def calculate_team_form(team_id: int, season: int, lookback: int = 5) -> str:
     """
-    Build a W/L string from the last `lookback` completed games for this team.
+    Return a W/L string (newest→oldest) of the last `lookback` completed games for this team.
+    Pads with '-' if fewer than `lookback` games are available.
     """
     try:
         resp = (
             supabase.table("mlb_historical_game_stats")
-            .select(
-                "home_team_id,away_team_id,home_score,away_score,game_date_time_utc"
-            )
+            .select("home_team_id,away_team_id,home_score,away_score,game_date_time_utc")
             .eq("season", season)
             .eq("status_short", "FT")
             .or_(f"home_team_id.eq.{team_id},away_team_id.eq.{team_id}")
@@ -201,21 +199,31 @@ def calculate_team_form(team_id: int, season: int, lookback: int = 5) -> str:
             .execute()
         )
         games = resp.data or []
-        form = ""
+
+        form_chars: list[str] = []
         for g in games:
             hs = g.get("home_score")
             as_ = g.get("away_score")
             if hs is None or as_ is None:
+                # missing score → count as loss
+                form_chars.append("L")
                 continue
+
             is_home = g["home_team_id"] == team_id
             team_score = hs if is_home else as_
-            opp_score = as_ if is_home else hs
-            form += "W" if team_score > opp_score else "L"
-        return form
+            opp_score  = as_ if is_home else hs
+            form_chars.append("W" if team_score > opp_score else "L")
+
+        # pad older games with '-' so the string is always length == lookback
+        if len(form_chars) < lookback:
+            form_chars += ["-"] * (lookback - len(form_chars))
+
+        return "".join(form_chars)
 
     except Exception as exc:
         print(f"Error calculating form for team {team_id}: {exc}")
-        return ""
+        # on error, return all placeholders
+        return "-" * lookback
 
 
 def upsert_team_stats(stats: Dict[str, Any]) -> None:

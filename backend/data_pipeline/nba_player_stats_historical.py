@@ -8,6 +8,7 @@ import json
 import time
 import os
 import sys
+from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
@@ -151,9 +152,13 @@ def process_day(date_obj: datetime) -> None:
 
 
 def main() -> None:
-    start = datetime(2025, 4, 29)
-    end = datetime(2025, 4, 30)
-    print(f"Starting import: {start.date()} → {end.date()}")
+    # set "today" in Eastern Time at 00:00
+    ET = ZoneInfo("America/New_York")
+    now_et = datetime.now(ET)
+    start = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start
+
+    print(f"Starting ET import for: {start.date()}")
 
     current = start
     while current <= end:
@@ -161,8 +166,7 @@ def main() -> None:
         time.sleep(RATE_LIMIT_SLEEP)
         current += timedelta(days=1)
 
-    print("Completed historical player stats import.")
-
+    print("Completed daily player stats import.")
 
 if __name__ == "__main__":
     main()
