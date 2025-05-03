@@ -665,7 +665,7 @@ def generate_predictions(
             df=upcoming_df.copy(),
             historical_games_df=hist_df,
             team_stats_df=team_stats_df,
-            rolling_windows=[5, 10, 20],
+            rolling_windows=[5, 10],
             h2h_window=7,
             debug=debug_mode
         )
