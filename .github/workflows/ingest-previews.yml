@@ -43,4 +43,4 @@ jobs:
       - name: Run NBA preview ingest
         run: |
           python -u -m backend.data_pipeline.nba_games_preview \
-            --days 1 --lookback 90 --no_calibrate
+            --days 1 --lookback 30 --no_calibrate
