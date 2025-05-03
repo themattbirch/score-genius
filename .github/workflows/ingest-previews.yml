@@ -3,16 +3,16 @@ name: Ingest Preview Data
 on:
   workflow_dispatch:
   schedule:
-    - cron: "40 4 * * *" # 04:40 UTC daily
+    - cron: "40 4 * * *" # 04:40 UTC daily
 
 concurrency:
-  group: ingest-previews-${{ github.run_id }} # 👈 unique per run
+  group: ingest-previews-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
   ingest-previews:
     runs-on: ubuntu-latest
-    timeout-minutes: 60 # whole job
+    timeout-minutes: 60
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -21,7 +21,9 @@ jobs:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
       RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
-      PYTHONUNBUFFERED: 1 # same as python -u
+      PYTHONUNBUFFERED: 1 # flush logs immediately
+      LOG_LEVEL_OVERRIDE: ERROR # tells preview script to mute
+      CI: true # same purpose
 
     steps:
       - uses: actions/checkout@v4
@@ -41,4 +43,4 @@ jobs:
       - name: Run NBA preview ingest
         run: |
           python -u -m backend.data_pipeline.nba_games_preview \
-            --days 1 --lookback 90 --no_calibrate --debug
+            --days 1 --lookback 90 --no_calibrate

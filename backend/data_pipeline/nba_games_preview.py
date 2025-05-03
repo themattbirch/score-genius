@@ -5,18 +5,31 @@ Fetch upcoming NBA games, enrich with betting odds, fetch injuries, store in Sup
 and generate score predictions. 
 """
 
+# ‑‑‑‑‑ ABSOLUTE SILENCE IN CI ‑‑‑‑‑
+import os, sys, logging, types
+
+if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
+    # 1) Disable logging calls WARNING and below
+    logging.disable(logging.ERROR)          # CRITICAL still shows
+    # 2) Replace stdout/stderr with a dummy stream
+    class _Null(types.SimpleNamespace):
+        write = lambda *a, **k: None
+        flush = lambda *a, **k: None
+    sys.stdout = sys.stderr = _Null()
+# ‑‑‑‑‑ END SILENCE BLOCK ‑‑‑‑‑
+
 import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import os
-import sys
 import traceback
 import re # Added re
 import difflib
 import requests
 from zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
 
 # allow from config import … to find /backend/config.py
 HERE = os.path.dirname(__file__)
@@ -67,13 +80,6 @@ from nba_score_prediction.prediction import (
     upsert_score_predictions,
 )
 
-
-import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s"
-)
-logger = logging.getLogger(__name__)
 
 # --- Constants ---
 MODELS_DIR = (

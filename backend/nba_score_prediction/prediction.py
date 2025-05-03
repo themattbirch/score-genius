@@ -13,6 +13,17 @@ import json
 import re
 from typing import List, Dict, Optional, Any, Tuple
 
+import logging
+
+# -----------------------------------------------------------------------------
+# Logging: kill WARNING/INFO in CI (or when LOG_LEVEL_OVERRIDE=ERROR)
+if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
+    logging.disable(logging.ERROR - 1)      # == disable < ERROR
+# -----------------------------------------------------------------------------
+
+# Nothing else to configure – ERROR and CRITICAL will still show
+logger = logging.getLogger(__name__)               # ← overwrite handlers added earlier
+
 # ensure project root is on PYTHONPATH
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
@@ -29,19 +40,6 @@ from supabase import create_client
 from caching.supabase_client import supabase as supabase_client_instance
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
-import logging
-# Hide all rolling‐module logs (and errors only)
-logging.getLogger("backend.nba_features.rolling").setLevel(logging.ERROR)
-
-# If you also want to suppress the engine’s INFO messages
-logging.getLogger("backend.nba_features.engine").setLevel(logging.ERROR)
-
-# --- Logging setup ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s"
-)
-logger = logging.getLogger(__name__)
 
 # --- Constants & paths ---
 MODELS_DIR = PROJECT_ROOT / "models" / "saved"
