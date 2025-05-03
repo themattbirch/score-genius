@@ -300,21 +300,38 @@ def transform(
     # Drop duplicates on merge_key to ensure one row per team per game
     merge_ready_rolling_df = final_roll_df[['merge_key'] + rolling_stat_cols].drop_duplicates('merge_key')
 
+    # --- FIX: Correctly generate rename maps ---
+    home_rename_map = {}
+    away_rename_map = {}
+    for col in rolling_stat_cols:
+        try:
+            parts = col.split('_') # e.g., ['rolling', 'score', 'for', 'mean', '5']
+            if len(parts) < 4: # Basic check for expected format
+                 logger.warning(f"Unexpected rolling column format: {col}. Skipping rename.")
+                 continue
+            base_stat_key = "_".join(parts[1:-2]) # e.g., 'score_for'
+            stat_type = parts[-2] # e.g., 'mean' or 'std'
+            window_val = int(parts[-1]) # e.g., 5
+            # Call generate_rolling_column_name with correct arguments
+            home_rename_map[col] = generate_rolling_column_name('home', base_stat_key, stat_type, window_val)
+            away_rename_map[col] = generate_rolling_column_name('away', base_stat_key, stat_type, window_val)
+        except (IndexError, ValueError) as e_parse:
+             logger.warning(f"Could not parse rolling column name '{col}' for renaming: {e_parse}")
+
+
     # Merge rolling stats for the home team
-    home_rename_map = {col: generate_rolling_column_name('home', *col.split('_')[1:]) for col in rolling_stat_cols} # e.g., rolling_score_for_mean_5 -> home_rolling_score_for_mean_5
     out_df = pd.merge(
         out_df,
-        merge_ready_rolling_df.rename(columns=home_rename_map),
+        merge_ready_rolling_df.rename(columns=home_rename_map), # Use corrected map
         how='left',
         left_on='merge_key_home',
         right_on='merge_key'
     ).drop(columns=['merge_key'], errors='ignore') # Drop the merge key from the rolling df side
 
     # Merge rolling stats for the away team
-    away_rename_map = {col: generate_rolling_column_name('away', *col.split('_')[1:]) for col in rolling_stat_cols} # e.g., rolling_score_for_mean_5 -> away_rolling_score_for_mean_5
     out_df = pd.merge(
         out_df,
-        merge_ready_rolling_df.rename(columns=away_rename_map), # Use the same merge_ready_rolling_df
+        merge_ready_rolling_df.rename(columns=away_rename_map), # Use corrected map
         how='left',
         left_on='merge_key_away',
         right_on='merge_key'

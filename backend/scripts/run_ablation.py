@@ -31,7 +31,7 @@ from sklearn.model_selection import cross_val_score
 from supabase import create_client
 
 # your modular thin‐proxies
-from backend.features import advanced, momentum, rolling, rest, h2h, season, form
+from backend.nba_features import advanced, momentum, rolling, rest, h2h, season, form
 from backend import config
 
 import logging
@@ -127,10 +127,49 @@ def numeric_features(df: pd.DataFrame) -> pd.DataFrame:
     return num.loc[:, num.notna().any()]
 
 def drop_target_leak(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop any direct‐target columns so we don’t leak home_score/away_score."""
-    leak = [c for c in df.columns if c.endswith("_score")] + \
-           ["total_score", "point_diff", "game_id", "game_date"]
-    return df.drop(columns=leak, errors="ignore")
+    """
+    Drop columns directly related to or calculated from the final game outcome
+    to prevent data leakage during cross-validation or training.
+    """
+    # Original direct target columns
+    direct_targets = [
+        'home_score',
+        'away_score',
+        'total_score', # Calculated from home_score + away_score
+        'point_diff',  # Calculated from home_score - away_score
+    ]
+
+    # Columns often calculated *using* final scores (potential leakage if present in input)
+    # Add any other columns from your raw data that are post-game results
+    derived_targets = [
+        'home_offensive_rating', 'away_offensive_rating',
+        'home_defensive_rating', 'away_defensive_rating', # Derived from opponent's offensive rating
+        'home_net_rating', 'away_net_rating',             # Derived from off/def ratings
+        'efficiency_differential',                       # Derived from net ratings
+        # Add others if they exist in your raw data and depend on final scores:
+        # 'home_efg_pct', 'away_efg_pct', # Sometimes calculated post-game
+        # 'home_tov_rate', 'away_tov_rate', # Sometimes calculated post-game
+        # etc.
+    ]
+
+    # Also remove identifiers that shouldn't be features
+    identifiers = ['game_id', 'game_date'] # game_date might be okay if handled carefully, but safer to remove here
+
+    # Combine all columns to drop
+    columns_to_drop = direct_targets + derived_targets + identifiers
+
+    # Drop columns, ignoring errors if a column doesn't exist
+    df_cleaned = df.drop(columns=columns_to_drop, errors='ignore')
+
+    # Optional: Log which columns were actually dropped
+    dropped_cols = [col for col in columns_to_drop if col in df.columns]
+    if dropped_cols:
+         logger.debug(f"drop_target_leak removed columns: {dropped_cols}")
+    else:
+         logger.debug("drop_target_leak: No target-related columns found to remove.")
+
+
+    return df_cleaned
 
 def whitelist_pregame_features(df: pd.DataFrame) -> pd.DataFrame:
     """

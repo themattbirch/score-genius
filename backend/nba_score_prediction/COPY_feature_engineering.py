@@ -1367,7 +1367,7 @@ class FeatureEngine:
         """Applies all feature engineering steps in sequence."""
         # ── Modular pipeline branch ─────────────────────────────────────────────────
         if self.use_modular:
-            from features import momentum, advanced, rolling, rest, season, h2h, form
+            #from features import momentum, advanced, rolling, rest, season, h2h, form
 
             df_mod = df.copy()
             if self.debug:

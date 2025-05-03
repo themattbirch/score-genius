@@ -104,7 +104,7 @@ try:
     logger.info("Attempting to import REAL feature/model/eval modules...")
 
     # Import the NEW feature pipeline orchestrator
-    from backend.features.engine import run_feature_pipeline # <--- NEW IMPORT
+    from backend.nba_features.engine import run_feature_pipeline # <--- NEW IMPORT
 
     # Keep imports for models and evaluation (assuming they are separate)
     from .models import RidgeScorePredictor, SVRScorePredictor, compute_recency_weights
@@ -123,11 +123,9 @@ except ImportError as e: # Catch ANY import error from the above 'try' block
     # --- Fallback Logic ---
     logger.info("Attempting to import DUMMY modules...")
     try:
-        # Import the DUMMY feature pipeline orchestrator
-        from .dummy_modules import run_feature_pipeline # <--- IMPORT DUMMY VERSION
-
-        # Import dummy versions of other components
+        # Import all necessary dummy components from dummy_modules
         from .dummy_modules import (
+            run_feature_pipeline, # <-- Import dummy pipeline function
             SVRScorePredictor,
             RidgeScorePredictor,
             compute_recency_weights,
@@ -136,7 +134,7 @@ except ImportError as e: # Catch ANY import error from the above 'try' block
             plot_residuals_analysis_detailed,
             plot_conditional_bias,
             plot_temporal_bias
-            # Assuming utils was successfully imported earlier and doesn't need a dummy
+            # Add any other dummy functions/classes needed by train_models specifically
         )
         logger.info("Successfully imported DUMMY modules.")
         # LOCAL_MODULES_AVAILABLE remains False
@@ -168,11 +166,6 @@ TEAM_STATS_REQUIRED_COLS = [
     'team_name', 'season', 'wins_all_percentage', 'points_for_avg_all',
     'points_against_avg_all', 'current_form'
 ]
-
-# --- Plotting and Warnings ---
-plt.style.use('fivethirtyeight')
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
 
 # ==============================================================================
 # Data Loading & Client Initialization
@@ -786,43 +779,65 @@ def tune_and_evaluate_predictor(
     metrics['feature_count'] = len(feature_list_unique)
     metrics['features_used'] = feature_list_unique 
 
-    # Ensure all required features are present in the data splits
+        # Ensure all required features are present in the data splits
     required_cols_train = feature_list_unique + (['game_date'] if use_recency_weights else [])
-    required_cols_val = feature_list_unique + (['game_date'] if use_recency_weights else [])
-    required_cols_test = feature_list_unique 
+    required_cols_val   = feature_list_unique + (['game_date'] if use_recency_weights else [])
+    required_cols_test  = feature_list_unique
 
-    missing_train = [col for col in required_cols_train if col not in X_train.columns]
-    missing_val = [col for col in required_cols_val if col not in X_val.columns]
-    missing_test = [col for col in required_cols_test if col not in X_test.columns]
-
+    missing_train = [c for c in required_cols_train if c not in X_train.columns]
+    missing_val   = [c for c in required_cols_val   if c not in X_val.columns]
+    missing_test  = [c for c in required_cols_test  if c not in X_test.columns]
     if missing_train or missing_val or missing_test:
-        logger.error(f"Missing required features. Train: {missing_train}, Val: {missing_val}, Test: {missing_test}")
+        logger.error(
+            f"Missing required features. Train: {missing_train}, "
+            f"Val: {missing_val}, Test: {missing_test}"
+        )
         return None, None
 
     try:
-        # Data for tuning (using only the training set)
-        X_tune = X_train[feature_list_unique].copy()
+        # --- Tuning split (Train only) with zero‐fill ---
+        missing_tune = [f for f in feature_list_unique if f not in X_train.columns]
+        if missing_tune:
+            logger.warning(
+                "X_train missing features; adding zeros for: %s",
+                missing_tune
+            )
+        X_tune = X_train.reindex(columns=feature_list_unique).fillna(0)
         y_tune_home = y_train_home.loc[X_tune.index].copy()
-        y_tune_away = y_train_away.loc[X_tune.index].copy() 
+        y_tune_away = y_train_away.loc[X_tune.index].copy()
 
-        # Data for final model training (combined Train + Val)
+        # --- Final fit split (Train + Val) with zero‐fill ---
         X_train_val = pd.concat([X_train, X_val])
-        X_train_val_features = X_train_val[feature_list_unique].copy()
+        missing_trainval = [f for f in feature_list_unique if f not in X_train_val.columns]
+        if missing_trainval:
+            logger.warning(
+                "Combined Train+Val missing features; adding zeros for: %s",
+                missing_trainval
+            )
+        X_train_val_features = X_train_val.reindex(columns=feature_list_unique).fillna(0)
         y_train_val_home = pd.concat([y_train_home, y_val_home]).loc[X_train_val_features.index]
         y_train_val_away = pd.concat([y_train_away, y_val_away]).loc[X_train_val_features.index]
         logger.info(f"Combined Train+Val size for final fit: {len(X_train_val_features)} samples.")
 
-        # Data for testing
-        X_test_final = X_test[feature_list_unique].copy()
+        # --- Test split with zero‐fill ---
+        missing_testcols = [f for f in feature_list_unique if f not in X_test.columns]
+        if missing_testcols:
+            logger.warning(
+                "X_test missing features; adding zeros for: %s",
+                missing_testcols
+            )
+        X_test_final = X_test.reindex(columns=feature_list_unique).fillna(0)
 
-        # Ensure indices match targets (can prevent hard-to-debug errors)
+        # --- Index alignment sanity checks ---
         if not X_tune.index.equals(y_tune_home.index) or not X_tune.index.equals(y_tune_away.index):
-             raise ValueError("X_tune and y_tune indices do not match.")
+            raise ValueError("X_tune and y_tune indices do not match.")
         if not X_train_val_features.index.equals(y_train_val_home.index) or not X_train_val_features.index.equals(y_train_val_away.index):
-             raise ValueError("X_train_val_features and y_train_val indices do not match.")
+            raise ValueError("X_train_val_features and y_train_val indices do not match.")
         if not X_test_final.index.equals(y_test_home.index) or not X_test_final.index.equals(y_test_away.index):
-             logger.warning("X_test_final and y_test indices do not match. Will align during evaluation.")
-
+            logger.warning(
+                "X_test_final and y_test indices do not match. "
+                "They will be realigned during evaluation."
+            )
 
     except KeyError as ke:
         logger.error(f"KeyError preparing data splits: {ke}. Check feature names.", exc_info=True)
@@ -1571,6 +1586,15 @@ def run_training_pipeline(args: argparse.Namespace):
     selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=1e-5)
     selected_mask = selector_home.get_support() | selector_away.get_support() 
     final_feature_list_for_models = X_lasso.columns[selected_mask].tolist()
+
+    # Right after final_feature_list_for_models is built:
+    missing_lasso = [c for c in final_feature_list_for_models if c not in features_df.columns]
+    if missing_lasso:
+        logger.error(
+        "LASSO claimed to select features that aren't in features_df: %s",
+        missing_lasso
+        )
+        sys.exit(1)
 
     num_selected = len(final_feature_list_for_models)
     logger.info(f"LASSO selected {num_selected} features in total (union of home/away).")
