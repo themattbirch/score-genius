@@ -7,16 +7,16 @@ and generate score predictions.
 
 import json
 import time
-from datetime import datetime, timedelta, date # Added date
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple # Added Tuple
+from typing import Any, Dict, List, Optional
 import os
 import sys
+import traceback
 import re # Added re
 import difflib
 import requests
 from zoneinfo import ZoneInfo
-from dateutil import parser as dateutil_parser # Added dateutil
 
 # allow from config import … to find /backend/config.py
 HERE = os.path.dirname(__file__)
@@ -63,10 +63,17 @@ if _missing:
 from caching.supabase_client import supabase # Assumes this initializes Supabase client correctly
 from nba_score_prediction.prediction import (
     DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
-    DEFAULT_UPCOMING_DAYS_WINDOW,
     generate_predictions,
     upsert_score_predictions,
 )
+
+
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # --- Constants ---
 MODELS_DIR = (
@@ -263,7 +270,7 @@ def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
 
     today_et = datetime.now(ET_ZONE).date()
 
-        # 2) Gather all scheduled (NS) games for today, tomorrow, ...
+    # 2) Gather all scheduled (NS) games for today, tomorrow, ...
     for offset in range(window_days):
         fetch_date = (today_et + timedelta(days=offset)).isoformat()
         print(f"→ Fetching schedule for ET date {fetch_date}")
@@ -318,7 +325,7 @@ def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
         )
         previews.append(
             {
-                "game_id": g["id"],
+                "game_id": str(g["id"]),
                 "scheduled_time": g["date"],
                 "game_date": gd,
                 "venue": venue,
@@ -506,38 +513,46 @@ def update_injuries_table_clear_insert(injuries: List[Dict[str, Any]]) -> None:
 def main():
     start = time.time()
     print("\n--- NBA Daily Pipeline Start ---")
+    
+    try:
 
-    # 1) Clear past games
-    clear_past_schedule_data()
+        # 1) Clear past games
+        clear_past_schedule_data()
 
-    # 2) Injuries logic
-    normalized = process_and_normalize_rapidapi_injuries()
-    update_injuries_table_clear_insert(normalized)
+        # 2) Injuries logic
+        normalized = process_and_normalize_rapidapi_injuries()
+        update_injuries_table_clear_insert(normalized)
 
-    # 3) Previews + odds for today & tomorrow
-    previews = build_game_preview(window_days=2)
-    if previews:
-        upsert_previews(previews)
-        print(f"Upserted {len(previews)} game previews")
+        # 3) Previews + odds for today & tomorrow
+        previews = build_game_preview(window_days=2)
+        if previews:
+            upsert_previews(previews)
+            print(f"Upserted {len(previews)} game previews")
 
-        # 4) Generate & upsert predictions
-        print("\n--- Generating Predictions ---")
-        preds, _ = generate_predictions(
-            days_window=2,
-            model_dir=MODELS_DIR,
-            calibrate_with_odds=True,
-            blend_factor=0.3,
-            historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
-        )
-        if preds:
-            upsert_score_predictions(preds)
-            print(f"Upserted {len(preds)} predictions")
+            # 4) Generate & upsert predictions
+            print("\n--- Generating Predictions ---")
+            preds, _ = generate_predictions(
+                days_window=2,
+                model_dir=MODELS_DIR,
+                calibrate_with_odds=True,
+                blend_factor=0.3,
+                historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
+                debug_mode=False
+            )
+            if preds:
+                upsert_score_predictions(preds)
+                print(f"Upserted {len(preds)} predictions")
+            else:
+                print("No predictions generated")
         else:
-            print("No predictions generated")
-    else:
-        print("Skipped previews & predictions; no games found")
+            print("Skipped previews & predictions; no games found")
 
-    print(f"\n--- Pipeline finished in {time.time() - start:.2f}s ---")
+    except Exception:
+        logger.error("Pipeline failed:", exc_info=True)
+        sys.exit(1)
+    finally:
+        elapsed = time.time() - start
+        logger.info(f"Pipeline finished in {elapsed:.2f}s")
 
 if __name__ == "__main__":
     main()
