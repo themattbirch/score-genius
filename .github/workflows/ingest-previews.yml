@@ -3,7 +3,7 @@ name: Ingest Preview Data
 on:
   workflow_dispatch:
   schedule:
-    - cron: "40 4 * * *" # 04:40 UTC daily
+    - cron: "20 4 * * *" # 04:20 UTC daily
 
 concurrency:
   group: ingest-previews-${{ github.run_id }}

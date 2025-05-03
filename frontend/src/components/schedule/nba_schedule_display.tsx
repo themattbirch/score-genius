@@ -1,6 +1,6 @@
 // frontend/src/components/schedule/nba_schedule_display.tsx
 
-import React, { useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react"; // Added useState, useEffect
 import { useDate } from "@/contexts/date_context";
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import { useInjuries, type Injury } from "@/api/use_injuries";
@@ -8,6 +8,8 @@ import type { UnifiedGame } from "@/types";
 import GameCard from "@/components/games/game_card";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import { ChevronDown } from "lucide-react";
+// Consider adding a date library for robust parsing if needed:
+// import { parseISO } from 'date-fns';
 
 const groupInjuriesByTeam = (inj: Injury[]) =>
   inj.reduce<Record<string, Injury[]>>((acc, i) => {
@@ -18,10 +20,8 @@ const groupInjuriesByTeam = (inj: Injury[]) =>
     return acc;
   }, {});
 
-// Helper function (optional but good practice)
 const formatLocalDate = (d: Date | null | undefined): string => {
   if (!d) return "";
-  // Use the same robust manual formatting as NBA or switch both to date-fns/luxon
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
     2,
     "0"
@@ -30,17 +30,27 @@ const formatLocalDate = (d: Date | null | undefined): string => {
 
 const NBAScheduleDisplay: React.FC = () => {
   const { date } = useDate();
-
-  // --- Use the shared helper function ---
   const isoDate = formatLocalDate(date);
-  // --- End change ---
-
-  // Keep your user-friendly displayDate
   const displayDate =
     date?.toLocaleDateString("en-US", {
       month: "long",
       day: "numeric",
     }) ?? "";
+
+  // --- State for Current Time ---
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  // --- Effect to Update Current Time ---
+  useEffect(() => {
+    // Update time every 60 seconds (1 minute)
+    const intervalId = setInterval(() => {
+      setCurrentTime(Date.now());
+      console.log("Tick: Updating current time for filtering"); // For debugging
+    }, 60000);
+
+    // Cleanup function to clear the interval when the component unmounts
+    return () => clearInterval(intervalId);
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   console.log("[NBA schedule] isoDate used for API =", isoDate);
   console.log("[NBA schedule] displayDate used for UI =", displayDate);
@@ -49,15 +59,77 @@ const NBAScheduleDisplay: React.FC = () => {
     data: games,
     isLoading: loadingGames,
     error: gamesError,
-  } = useNBASchedule(isoDate); // Correctly uses local YYYY-MM-DD
+  } = useNBASchedule(isoDate);
 
   const {
     data: injuries = [],
     isLoading: loadingInjuries,
     error: injuriesError,
-  } = useInjuries("NBA", isoDate); // Correctly uses local YYYY-MM-DD
+  } = useInjuries("NBA", isoDate);
 
+  // --- Filtered Games Logic ---
+  const filteredGames = useMemo(() => {
+    if (!games) return [];
+
+    const nowMillis = currentTime;
+    const bufferMillis = 3.5 * 60 * 60 * 1000; // 3.5 hours in milliseconds
+
+    console.log(
+      `Filtering ${games.length} games against time: ${new Date(
+        nowMillis
+      ).toLocaleString()}`
+    ); // For debugging
+
+    return games.filter((game: UnifiedGame) => {
+      // --- Use the CORRECT field name ---
+      const startTimeString = game.gameTimeUTC; // <--- Corrected field name
+
+      // This check now correctly handles if gameTimeUTC is null or undefined
+      if (!startTimeString) {
+        console.warn("Game missing gameTimeUTC for filtering:", game.id);
+        return true; // Keep games with missing times? Or return false to hide?
+      }
+
+      try {
+        // Use Date constructor for ISO 8601 strings. Use a library (date-fns, dayjs) for more complex formats.
+        const gameStartMillis = new Date(startTimeString).getTime();
+
+        if (isNaN(gameStartMillis)) {
+          console.warn(
+            "Invalid game start time format (gameTimeUTC):",
+            startTimeString,
+            "Game ID:",
+            game.id
+          );
+          return true; // Keep games with invalid times? Or return false?
+        }
+
+        const estimatedEndMillis = gameStartMillis + bufferMillis;
+
+        // Keep the game if the current time is BEFORE the estimated end time
+        const shouldShow = nowMillis < estimatedEndMillis;
+
+        // Debugging log per game
+        // console.log(`Game ${game.id} (${game.awayTeamAbbr} @ ${game.homeTeamAbbr}): Start ${new Date(gameStartMillis).toLocaleString()}, Est End ${new Date(estimatedEndMillis).toLocaleString()}, Show: ${shouldShow}`);
+
+        return shouldShow;
+      } catch (e) {
+        console.error(
+          "Error parsing game date (gameTimeUTC):",
+          startTimeString,
+          "Game ID:",
+          game.id,
+          e
+        );
+        return true; // Keep game if there's a parsing error? Or return false?
+      }
+    });
+  }, [games, currentTime]); // Re-run filter when games data or currentTime changes
+
+  // Injury logic depends on the original 'games' list to know which teams are playing *today*
+  // It should NOT use filteredGames, otherwise injury reports might disappear prematurely.
   const { teamsWithInjuries, injuriesByTeam } = useMemo(() => {
+    // Use original 'games' list here
     if (!games?.length || !injuries.length) {
       return { teamsWithInjuries: [], injuriesByTeam: {} };
     }
@@ -67,9 +139,10 @@ const NBAScheduleDisplay: React.FC = () => {
     const grouped = groupInjuriesByTeam(injuries);
     const teams = [...playing].filter((t) => grouped[t]?.length).sort();
     return { teamsWithInjuries: teams, injuriesByTeam: grouped };
-  }, [games, injuries]);
+  }, [games, injuries]); // Keep dependencies on original games and injuries
 
   if (gamesError) {
+    // Error display remains the same...
     return (
       <div className="p-4 text-center">
         <h2 className="mb-2 text-lg font-semibold text-red-600 dark:text-red-500">
@@ -80,8 +153,18 @@ const NBAScheduleDisplay: React.FC = () => {
     );
   }
 
+  // Determine if there are games to show *after* filtering
+  const hasVisibleGames = !loadingGames && filteredGames.length > 0;
+  // Determine if the initial load finished and resulted in zero games *before* filtering
+  const noGamesInitiallyScheduled =
+    !loadingGames && (!games || games.length === 0);
+  // Determine if games were scheduled but all have been filtered out
+  const allGamesFilteredOut =
+    !loadingGames && games && games.length > 0 && filteredGames.length === 0;
+
   return (
     <div className="p-4">
+      {/* Header remains mostly the same */}
       <h2
         className={`mb-3 text-center text-lg font-semibold ${
           loadingGames
@@ -95,31 +178,43 @@ const NBAScheduleDisplay: React.FC = () => {
       </h2>
 
       <div className="space-y-4">
-        {loadingGames ? (
-          <>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <SkeletonBox key={i} className="h-24 w-full" />
-            ))}
-          </>
-        ) : games && games.length > 0 ? (
-          <>
-            {games.map((game) => (
-              <GameCard key={game.id} game={game} />
-            ))}
-          </>
-        ) : (
-          <p className="mt-4 text-center text-text-secondary">
-            No NBA games scheduled for {displayDate}.
-          </p>
-        )}
+        {
+          loadingGames ? (
+            <>
+              {Array.from({ length: 3 }).map((_, i) => (
+                <SkeletonBox key={i} className="h-24 w-full" />
+              ))}
+            </>
+          ) : // Use filteredGames for rendering
+          hasVisibleGames ? (
+            <>
+              {/* --- Render using the filtered list --- */}
+              {filteredGames.map((game) => (
+                <GameCard key={game.id} game={game} />
+              ))}
+            </>
+          ) : // Handle the case where there were no games *or* all games finished
+          noGamesInitiallyScheduled ? (
+            <p className="mt-4 text-center text-text-secondary">
+              No NBA games scheduled for {displayDate}.
+            </p>
+          ) : allGamesFilteredOut ? (
+            <p className="mt-4 text-center text-text-secondary">
+              All NBA games for {displayDate} have concluded.
+            </p>
+          ) : null /* Should not happen if logic above is correct */
+        }
       </div>
 
+      {/* Injury Report Section - Keep using original 'games' data for context */}
+      {/* Only show injury report if there were games scheduled initially */}
       {!loadingGames && games && games.length > 0 && (
         <div className="mt-8 border-t border-border pt-6">
+          {/* ... rest of the injury report logic remains unchanged ... */}
+          {/* It correctly uses 'teamsWithInjuries' derived from the original 'games' list */}
           <h2 className="mb-3 text-center text-lg font-semibold text-gray-900 dark:text-text-primary">
             Daily Injury Report
           </h2>
-
           {loadingInjuries ? (
             <p className="text-center text-sm italic text-text-secondary">
               Loading injuries…
