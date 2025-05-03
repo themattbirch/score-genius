@@ -13,16 +13,6 @@ import json
 import re
 from typing import List, Dict, Optional, Any, Tuple
 
-if os.getenv("CI"):
-    for noisy in (
-        "httpx", 
-        "nba_features.rolling", 
-        "nba_features.advanced",
-        "matplotlib",
-    ):
-        logging.getLogger(noisy).setLevel(logging.ERROR)
-
-
 # ensure project root is on PYTHONPATH
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
