@@ -6,16 +6,18 @@ and generate score predictions.
 """
 
 # ‑‑‑‑‑ ABSOLUTE SILENCE IN CI ‑‑‑‑‑
-import os, sys, logging, types
+import os, logging, threading, sys, time
 
 if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
-    # 1) Disable logging calls WARNING and below
-    logging.disable(logging.ERROR)          # CRITICAL still shows
-    # 2) Replace stdout/stderr with a dummy stream
-    class _Null(types.SimpleNamespace):
-        write = lambda *a, **k: None
-        flush = lambda *a, **k: None
-    sys.stdout = sys.stderr = _Null()
+    # Mute all WARNING/INFO/DEBUG
+    logging.disable(logging.ERROR)
+
+    # Emit a dot every 30 s so GitHub Actions sees activity
+    def _tick():
+        while True:
+            time.sleep(30)
+            print('.', flush=True)
+    threading.Thread(target=_tick, daemon=True).start()
 # ‑‑‑‑‑ END SILENCE BLOCK ‑‑‑‑‑
 
 import json
