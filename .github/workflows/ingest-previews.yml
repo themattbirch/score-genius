@@ -36,4 +36,9 @@ jobs:
         run: python backend/data_pipeline/mlb_games_preview.py
 
       - name: Run NBA preview ingest
-        run: python backend/data_pipeline/nba_games_preview.py
+        run: |
+          python -m backend.data_pipeline.nba_games_preview \
+            --days 1 \
+            --lookback 90 \
+            --no_calibrate \
+            --debug

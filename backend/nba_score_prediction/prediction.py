@@ -2,7 +2,6 @@
 
 import os
 import sys
-import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 import time
@@ -29,6 +28,13 @@ import config
 from supabase import create_client
 from caching.supabase_client import supabase as supabase_client_instance
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+import logging
+# Hide all rolling‐module logs (and errors only)
+logging.getLogger("backend.nba_features.rolling").setLevel(logging.ERROR)
+
+# If you also want to suppress the engine’s INFO messages
+logging.getLogger("backend.nba_features.engine").setLevel(logging.ERROR)
 
 # --- Logging setup ---
 logging.basicConfig(
@@ -240,32 +246,38 @@ def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.Data
         return pd.DataFrame()
 
 # --- Model Loading ---
-def load_trained_models(model_dir: Path = MODELS_DIR) -> Tuple[Optional[Dict[str, Any]], Optional[List[str]]]:
-    feature_list_path = model_dir / "selected_features.json"
-    if not feature_list_path.is_file():
-        logger.error(f"Feature list not found at {feature_list_path}")
-        return None, None
-
-    try:
-        with open(feature_list_path) as f:
-            feature_list = json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to read feature list: {e}", exc_info=True)
-        return None, None
-
+# --- Model Loading -----------------------------------------------------------
+def load_trained_models(
+    model_dir: Path = MODELS_DIR,
+    load_feature_list: bool = False,   # ⬅ default OFF for now
+) -> Tuple[Dict[str, Any], Optional[List[str]]]:
+    """
+    Load any saved `*_score_predictor.joblib` models from `model_dir`.
+    If `load_feature_list` is True and a clean selected_features.json is present,
+    return it; otherwise return None.
+    """
     models: Dict[str, Any] = {}
     for name, Cls in [("svr", SVRScorePredictor), ("ridge", RidgeScorePredictor)]:
         try:
             pred = Cls(model_dir=str(model_dir), model_name=f"{name}_score_predictor")
             pred.load_model()
             models[name] = pred
-            logger.info(f"Loaded {name} predictor.")
+            logger.info("Loaded %s predictor.", name)
         except Exception as e:
-            logger.error(f"Could not load '{name}' model: {e}", exc_info=True)
+            logger.error("Could not load '%s' model: %s", name, e, exc_info=True)
+
+    feature_list: Optional[List[str]] = None
+    if load_feature_list:
+        fp = model_dir / "selected_features.json"
+        if fp.is_file():
+            try:
+                with fp.open() as f:
+                    feature_list = json.load(f)
+            except Exception as e:
+                logger.warning("Ignoring unreadable selected_features.json: %s", e)
 
     if not models:
-        logger.error("No base models loaded.")
-        return None, None
+        raise RuntimeError(f"No models found in {model_dir}")
 
     return models, feature_list
 
@@ -568,7 +580,7 @@ def display_prediction_summary(preds: List[Dict]) -> None:
 
     print(header_line)
 
-# --- Core Pipeline ---
+# --- Core Pipeline -----------------------------------------------------------
 def generate_predictions(
     days_window: int = DEFAULT_UPCOMING_DAYS_WINDOW,
     model_dir: Path = MODELS_DIR,
@@ -584,21 +596,21 @@ def generate_predictions(
     logger.info("--- Starting NBA Prediction Pipeline ---")
     start_ts = time.time()
 
+    # optional DEBUG verbosity toggle
     root_logger = logging.getLogger()
     original_levels = [h.level for h in root_logger.handlers]
     orig_level = logger.level
-
     def _restore():
         logger.setLevel(orig_level)
         for lvl, h in zip(original_levels, root_logger.handlers):
             h.setLevel(lvl)
-
     if debug_mode:
         logger.setLevel(logging.DEBUG)
         for h in root_logger.handlers:
             h.setLevel(logging.DEBUG)
         logger.debug("DEBUG mode enabled")
 
+    # ---------- DATA ---------------------------------------------------------
     supabase = get_supabase_client()
     if not supabase:
         logger.critical("Cannot proceed without Supabase client")
@@ -622,37 +634,40 @@ def generate_predictions(
     cov_df   = pd.read_csv(cov_file) if cov_file.is_file() else None
     uncertainty = PredictionUncertaintyEstimator(historical_coverage_stats=cov_df, debug=debug_mode)
 
-    models, feature_list = load_trained_models(model_dir)
-    if not models or not feature_list:
+    # ---------- MODELS -------------------------------------------------------
+    models, feature_list = load_trained_models(model_dir, load_feature_list=False)
+    if not models:
         _restore()
         return [], []
 
-    # ensemble weights
+    # ---------- ENSEMBLE WEIGHTS -------------------------------------------
     weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
     wfile = model_dir / ENSEMBLE_WEIGHTS_FILENAME
     if wfile.is_file():
         try:
-            with open(wfile) as f:
+            with wfile.open() as f:
                 loaded = json.load(f)
-            expected = set(weights.keys())
+
+            expected = set(weights.keys())  # {"ridge", "svr"}
             if abs(sum(loaded.values()) - 1.0) < 1e-5 and expected.issubset(loaded):
                 subset = {k: float(loaded[k]) for k in expected}
-                total = sum(subset.values())
-                if abs(total - 1.0) > 1e-5 and total > 0:
-                    subset = {k: v / total for k, v in subset.items()}
+                tot = sum(subset.values())
+                if abs(tot - 1.0) > 1e-5 and tot > 0:
+                    subset = {k: v / tot for k, v in subset.items()}
                 weights = subset
-                logger.info(f"Using ensemble weights: {weights}")
+                logger.info("Using ensemble weights: %s", weights)
             else:
-                logger.warning("Invalid weights file; using fallback.")
+                logger.warning("Invalid ensemble_weights.json – falling back to 50/50.")
         except Exception as e:
-            logger.error(f"Error reading weights: {e}")
+            logger.error("Error reading ensemble weights: %s", e)
 
+    # ---------- FEATURES -----------------------------------------------------
     try:
         features_df = run_feature_pipeline(
             df=upcoming_df.copy(),
             historical_games_df=hist_df,
             team_stats_df=team_stats_df,
-            rolling_windows=[5,10,20],
+            rolling_windows=[5, 10, 20],
             h2h_window=7,
             debug=debug_mode
         )
@@ -666,20 +681,26 @@ def generate_predictions(
         _restore()
         return [], []
 
-    # 1) Detect missing columns
-    missing = [f for f in feature_list if f not in features_df.columns]
-    if missing:
+    # ---------- BUILD THE FEATURE MATRIX ------------------------------------
+    # If selected_features.json is missing, fall back to *all* columns emitted by
+    # the feature pipeline.  This keeps inference alive while you fix leakage.
+    if feature_list is None:
+        feature_list = list(features_df.columns)
         logger.warning(
-            "Feature pipeline did not emit the following features; adding as zeros: %s",
-            missing
+            "selected_features.json not found — using all %d feature columns "
+            "produced by the pipeline.",
+            len(feature_list)
         )
 
-    # 2) Build X, filling any NaN/inf with 0 in one go
+    missing_cols = [c for c in feature_list if c not in features_df.columns]
+    if missing_cols:
+        logger.info("Adding %d missing columns as zeros: %s", len(missing_cols), missing_cols)
+
     X = (
         features_df
-        .reindex(columns=feature_list)     # any missing → full-NaN columns
-        .fillna(0)                         # NaNs → 0
-        .replace([np.inf, -np.inf], 0)     # Infs → 0
+        .reindex(columns=feature_list, fill_value=0)      # add any missing cols
+        .fillna(0)                                        # NaNs → 0
+        .replace([np.inf, -np.inf], 0)                    # Infs → 0
     )
 
     # per-model preds

@@ -58,14 +58,14 @@ if features_df is None or features_df.empty:
     print("❌ Feature pipeline returned no data—aborting.")
     sys.exit(1)
 
-# ─── 4) Lasso-based feature selection ────────────────────────────────────────
+# ─── 4) Lasso‐based feature selection ────────────────────────────────────────
 # Drop any target‐derived or leakage columns first
 leakage_cols = ["home_score", "away_score", "total_score", "point_diff"]
 X = (
     features_df
-    .drop(columns=leakage_cols, errors="ignore")
-    .select_dtypes(include="number")
-    .copy()
+      .drop(columns=leakage_cols, errors="ignore")   # 🔥 drop targets 🔥
+      .select_dtypes(include="number")               # keep only numeric
+      .copy()
 )
 y_home = features_df["home_score"]
 y_away = features_df["away_score"]
@@ -77,6 +77,7 @@ sel_home = SelectFromModel(lasso_home, prefit=True, threshold=1e-5)
 sel_away = SelectFromModel(lasso_away, prefit=True, threshold=1e-5)
 mask = sel_home.get_support() | sel_away.get_support()
 final_features = list(X.columns[mask])
+
 print(f"✔ Lasso selected {len(final_features)} features.")
 
 # ─── 5) Write out JSON and exit ──────────────────────────────────────────────
