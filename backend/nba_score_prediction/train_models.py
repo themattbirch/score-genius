@@ -17,6 +17,16 @@ Key steps include:
 10. Saving trained models and generating performance reports/plots.
 """
 
+
+from __future__ import annotations
+import sys
+from pathlib import Path
+
+# ensure project root is on PYTHONPATH so `import backend…` works
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 # --- Standard Library Imports ---
 import argparse
 import json
@@ -53,6 +63,21 @@ from sklearn.preprocessing import StandardScaler
 from scipy.optimize import minimize
 from scipy.stats import loguniform, randint, uniform
 
+# ─── Project Imports ─────────────────────────────────────────────────────────
+# config will auto-load backend/.env
+from backend import config
+from backend.nba_score_prediction import utils
+
+# Import your new feature-pipeline orchestrator
+from backend.nba_features.engine import run_feature_pipeline
+
+# Import your model classes
+from backend.nba_score_prediction.models import (
+    RidgeScorePredictor,
+    SVRScorePredictor,
+    compute_recency_weights,
+)
+
 # ==============================================================================
 # Logging Configuration (Setup Once)
 # ==============================================================================
@@ -80,7 +105,6 @@ plt.style.use('fivethirtyeight')
 try:
     logger.debug("Importing essential modules (config, utils)...")
     from backend import config # Imports config, triggering backend/.env load
-    from . import utils      # Imports this script's utils sibling
     logger.debug("Essential modules imported.")
 except ImportError as e_essential:
     logger.critical(f"FATAL: Failed to import essential modules (config, utils)! Error: {e_essential}", exc_info=True)
@@ -107,7 +131,6 @@ try:
     from backend.nba_features.engine import run_feature_pipeline # <--- NEW IMPORT
 
     # Keep imports for models and evaluation (assuming they are separate)
-    from .models import RidgeScorePredictor, SVRScorePredictor, compute_recency_weights
     from .evaluation import (
         plot_actual_vs_predicted, plot_conditional_bias,
         plot_feature_importances, plot_residuals_analysis_detailed,
@@ -124,7 +147,7 @@ except ImportError as e: # Catch ANY import error from the above 'try' block
     logger.info("Attempting to import DUMMY modules...")
     try:
         # Import all necessary dummy components from dummy_modules
-        from .dummy_modules import (
+        from backend.nba_score_prediction.dummy_modules import (
             run_feature_pipeline, # <-- Import dummy pipeline function
             SVRScorePredictor,
             RidgeScorePredictor,
@@ -1607,17 +1630,18 @@ def run_training_pipeline(args: argparse.Namespace):
     if args.debug:
         logger.debug(f"Final selected features by LASSO: {final_feature_list_for_models}")
 
-        # --- Save the Selected Feature List --- # 
-    selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
-    try:
-        MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        with open(selected_features_path, 'w') as f:
-            json.dump(final_feature_list_for_models, f, indent=4)
-        logger.info(f"Successfully saved selected feature list ({num_selected} features) to {selected_features_path}")
-    except Exception as e:
-        logger.error(f"Failed to save selected feature list to {selected_features_path}: {e}", exc_info=True)
-        logger.error("Proceeding without saved feature list - prediction script will likely fail.")
-
+    # only write the JSON and quit if the flag is set
+    if args.write_selected_features:
+        selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
+        try:
+            MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+            with open(selected_features_path, 'w') as f:
+                json.dump(final_feature_list_for_models, f, indent=4)
+            logger.info(f"Successfully wrote selected_features.json ({num_selected} features) to {selected_features_path}")
+        except Exception as e:
+            logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
+        logger.info("Exiting after writing selected features (flag --write-selected-features).")
+        sys.exit(0)
     # --- Data Splitting (using LASSO-selected features) ---  
     logger.info("Splitting data (time-based) using LASSO-selected features...")
     essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
@@ -2032,6 +2056,10 @@ if __name__ == '__main__':
     parser.add_argument("--save-plots", action="store_true", help="Save generated plots to the reports directory")
     parser.add_argument("--allow-dummy", action="store_true", help="Allow script to run using dummy classes if local module imports fail")
     parser.add_argument("--debug", action="store_true", help="Enable detailed DEBUG level logging")
+    parser.add_argument(
+    "--write-selected-features",
+    action="store_true",
+    help="After training completes, write selected_features.json and exit")
 
     cli_args = parser.parse_args()
 
