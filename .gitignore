@@ -104,7 +104,7 @@ Thumbs.db
 *.key
 
 # Remove /models from remote but keep locally
-models/
+#models/
 
 # Generated reports
 /reports/
