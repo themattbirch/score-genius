@@ -1,14 +1,23 @@
 name: Ingest Preview Data
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch: # run manually from the Actions tab
   schedule:
-    - cron: "40 4 * * *" # 04:50 UTC daily
+    - cron: "40 4 * * *" # 04:40 UTC daily
+
+# ‑‑ Concurrency ‑‑-----------------------------------------------------------
+# Give this workflow its own group so manual reruns don’t kill in‑flight jobs.
+concurrency:
+  group: ingest-previews-${{ github.ref }}
+  cancel-in-progress: false # keep the older run alive
 
 jobs:
   ingest-previews:
-    name: Run Preview‐only Pipelines
+    name: Run Preview‑only Pipelines
     runs-on: ubuntu-latest
+    # Entire job must finish in 45 min (well under the default 6 h limit)
+    timeout-minutes: 45
+
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -16,26 +25,35 @@ jobs:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
       RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install Python dependencies
         run: pip install -r backend/requirements.txt
 
+      # Optional — only keep if your scripts need a full Chrome
       - name: Install Google Chrome
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
 
+      # --- Preview pipelines -------------------------------------------------
       - name: Run MLB preview ingest
-        run: python backend/data_pipeline/mlb_games_preview.py
+        timeout-minutes: 15 # step‑level timeout
+        run: |
+          python -m backend.data_pipeline.mlb_games_preview \
+            --days 1 \
+            --lookback 90
 
-      - name: Run NBA preview ingest
+      - name: Run NBA preview ingest (CI‑safe flags)
+        timeout-minutes: 20
         run: |
           python -m backend.data_pipeline.nba_games_preview \
             --days 1 \
