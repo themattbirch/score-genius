@@ -6,8 +6,7 @@ import { useMLBSchedule } from "@/api/use_mlb_schedule";
 import { UnifiedGame } from "@/types"; // Adjust path if needed
 import GameCard from "@/components/games/game_card";
 import SkeletonBox from "@/components/ui/skeleton_box";
-// Consider adding a date library for robust parsing if needed:
-// import { parseISO } from 'date-fns';
+import { startOfDay, isBefore } from "date-fns";
 
 const formatLocalDate = (d: Date | null | undefined): string => {
   if (!d) return "";
@@ -24,6 +23,12 @@ const MLBScheduleDisplay: React.FC = () => {
   // --- State for Current Time ---
   const [currentTime, setCurrentTime] = useState(() => Date.now());
 
+  // --- Date Comparison Logic ---
+  const today = startOfDay(new Date());
+  const selectedDay = date ? startOfDay(date) : null;
+  const isPastDate = selectedDay ? isBefore(selectedDay, today) : false;
+  // --- End Date Comparison ---
+
   // --- Effect to Update Current Time ---
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -39,53 +44,40 @@ const MLBScheduleDisplay: React.FC = () => {
 
   // --- Filtered Games Logic (Identical to NBA) ---
   const filteredGames = useMemo(() => {
+    // --- If viewing a past date, show ALL fetched historical games ---
+    if (isPastDate) {
+      return games || []; // Return original games array (contains historical data)
+    }
+
+    // --- Otherwise (viewing TODAY), apply time filtering ---
     if (!games) return [];
 
-    const nowMillis = currentTime;
-    const bufferMillis = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
-
-    // console.log(`Filtering ${games.length} MLB games against time: ${new Date(nowMillis).toLocaleString()}`); // For debugging
+    const nowMillis = currentTime; // Use state for current time
+    const bufferMillis = 3.5 * 60 * 60 * 1000; // 3.5 hours
 
     return games.filter((game: UnifiedGame) => {
-      const startTimeString = game.gameTimeUTC; // Using the correct field name
-
+      const startTimeString = game.gameTimeUTC;
       if (!startTimeString) {
-        console.warn("MLB Game missing gameTimeUTC for filtering:", game.id);
-        return true; // Keep games with missing times? Or return false?
+        console.warn(
+          "MLB Game missing gameTimeUTC for filtering (today):",
+          game.id
+        );
+        return true; // Keep missing times? Decide policy
       }
-
       try {
         const gameStartMillis = new Date(startTimeString).getTime();
-
         if (isNaN(gameStartMillis)) {
-          console.warn(
-            "Invalid MLB game start time format (gameTimeUTC):",
-            startTimeString,
-            "Game ID:",
-            game.id
-          );
-          return true; // Keep games with invalid times? Or return false?
+          console.warn("Invalid MLB game start time format (today):", game.id);
+          return true; // Keep invalid times? Decide policy
         }
-
         const estimatedEndMillis = gameStartMillis + bufferMillis;
-        const shouldShow = nowMillis < estimatedEndMillis;
-
-        // Debugging log per game
-        // console.log(`MLB Game ${game.id}: Start ${new Date(gameStartMillis).toLocaleString()}, Est End ${new Date(estimatedEndMillis).toLocaleString()}, Show: ${shouldShow}`);
-
-        return shouldShow;
+        return nowMillis < estimatedEndMillis; // Filter based on time
       } catch (e) {
-        console.error(
-          "Error parsing MLB game date (gameTimeUTC):",
-          startTimeString,
-          "Game ID:",
-          game.id,
-          e
-        );
-        return true; // Keep game if there's a parsing error? Or return false?
+        console.error("Error parsing MLB game date (today):", game.id, e);
+        return true; // Keep on error? Decide policy
       }
     });
-  }, [games, currentTime]); // Re-run filter when games data or currentTime changes
+  }, [games, currentTime, isPastDate]); // Add isPastDate dependency
 
   // --- Loading State ---
   if (isLoading) {
