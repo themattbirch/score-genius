@@ -42,7 +42,7 @@ const MLBScheduleDisplay: React.FC = () => {
     if (!games) return [];
 
     const nowMillis = currentTime;
-    const bufferMillis = 3.5 * 60 * 60 * 1000; // 3.5 hours in milliseconds
+    const bufferMillis = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
     // console.log(`Filtering ${games.length} MLB games against time: ${new Date(nowMillis).toLocaleString()}`); // For debugging
 

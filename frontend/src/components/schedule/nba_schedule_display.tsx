@@ -72,7 +72,7 @@ const NBAScheduleDisplay: React.FC = () => {
     if (!games) return [];
 
     const nowMillis = currentTime;
-    const bufferMillis = 3.5 * 60 * 60 * 1000; // 3.5 hours in milliseconds
+    const bufferMillis = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
     console.log(
       `Filtering ${games.length} games against time: ${new Date(
@@ -178,44 +178,41 @@ const NBAScheduleDisplay: React.FC = () => {
       </h2>
 
       <div className="space-y-4">
-        {
-          loadingGames ? (
-            <>
-              {Array.from({ length: 3 }).map((_, i) => (
-                <SkeletonBox key={i} className="h-24 w-full" />
-              ))}
-            </>
-          ) : // Use filteredGames for rendering
-          hasVisibleGames ? (
-            <>
-              {/* --- Render using the filtered list --- */}
-              {filteredGames.map((game) => (
-                <GameCard key={game.id} game={game} />
-              ))}
-            </>
-          ) : // Handle the case where there were no games *or* all games finished
-          noGamesInitiallyScheduled ? (
-            <p className="mt-4 text-center text-text-secondary">
-              No NBA games scheduled for {displayDate}.
-            </p>
-          ) : allGamesFilteredOut ? (
-            <p className="mt-4 text-center text-text-secondary">
-              All NBA games for {displayDate} have concluded.
-            </p>
-          ) : null /* Should not happen if logic above is correct */
-        }
+        {loadingGames ? (
+          <>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <SkeletonBox key={i} className="h-24 w-full" />
+            ))}
+          </>
+        ) : hasVisibleGames ? (
+          <>
+            {filteredGames.map((game: UnifiedGame) => (
+              <GameCard key={game.id} game={game} />
+            ))}
+          </>
+        ) : noGamesInitiallyScheduled ? (
+          <p className="mt-4 text-center text-text-secondary">
+            No NBA games scheduled for {displayDate}.
+          </p>
+        ) : allGamesFilteredOut ? (
+          <p className="mt-4 text-center text-text-secondary">
+            All NBA games for {displayDate} have concluded.
+          </p>
+        ) : null}
       </div>
 
-      {/* Injury Report Section - Keep using original 'games' data for context */}
-      {/* Only show injury report if there were games scheduled initially */}
+      {/* Injury Report Section */}
       {!loadingGames && games && games.length > 0 && (
         <div className="mt-8 border-t border-border pt-6">
-          {/* ... rest of the injury report logic remains unchanged ... */}
-          {/* It correctly uses 'teamsWithInjuries' derived from the original 'games' list */}
           <h2 className="mb-3 text-center text-lg font-semibold text-gray-900 dark:text-text-primary">
             Daily Injury Report
           </h2>
-          {loadingInjuries ? (
+
+          {allGamesFilteredOut ? (
+            <p className="text-center text-sm text-text-secondary">
+              No remaining games for today. No injury statuses to report.
+            </p>
+          ) : loadingInjuries ? (
             <p className="text-center text-sm italic text-text-secondary">
               Loading injuries…
             </p>
@@ -239,10 +236,9 @@ const NBAScheduleDisplay: React.FC = () => {
                     </span>
                     <ChevronDown className="h-4 w-4 flex-shrink-0 transition-transform group-open:rotate-180" />
                   </summary>
-
                   <div className="border-t border-border bg-transparent p-3">
                     <ul className="space-y-1">
-                      {injuriesByTeam[team].map((inj) => (
+                      {injuriesByTeam[team].map((inj: Injury) => (
                         <li
                           key={inj.id}
                           className="flex items-center justify-between gap-2 py-1"
@@ -250,12 +246,12 @@ const NBAScheduleDisplay: React.FC = () => {
                           <span className="break-words text-gray-800 dark:text-text-primary">
                             {inj.player}
                             {inj.injury_type && (
-                              <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary dark:bg-transparent">
+                              <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary">
                                 ({inj.injury_type})
                               </span>
                             )}
                           </span>
-                          <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800 dark:border-border dark:bg-transparent dark:bg-panel-hover dark:text-text-primary">
+                          <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800 dark:border-border dark:bg-transparent dark:text-text-primary">
                             {inj.status}
                           </span>
                         </li>
