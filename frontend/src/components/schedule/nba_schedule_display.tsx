@@ -8,6 +8,7 @@ import type { UnifiedGame } from "@/types";
 import GameCard from "@/components/games/game_card";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import { ChevronDown } from "lucide-react";
+import { startOfDay, isBefore } from "date-fns";
 // Consider adding a date library for robust parsing if needed:
 // import { parseISO } from 'date-fns';
 
@@ -36,6 +37,23 @@ const NBAScheduleDisplay: React.FC = () => {
       month: "long",
       day: "numeric",
     }) ?? "";
+
+  const today = startOfDay(new Date()); // Get the very beginning of today
+  const selectedDay = date ? startOfDay(date) : null; // Get the beginning of the selected day
+  // Check if the selected day is strictly before today
+  const isPastDate = selectedDay ? isBefore(selectedDay, today) : false;
+
+  // Alternative using native Date (less robust, use with caution):
+  /*
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Set to beginning of today
+  const selectedDay = date ? new Date(date) : null;
+  if (selectedDay) {
+      selectedDay.setHours(0, 0, 0, 0); // Set to beginning of selected day
+  }
+  const isPastDate = selectedDay ? selectedDay.getTime() < today.getTime() : false;
+  */
+  // --- End Date Comparison ---
 
   // --- State for Current Time ---
   const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -201,66 +219,79 @@ const NBAScheduleDisplay: React.FC = () => {
         ) : null}
       </div>
 
-      {/* Injury Report Section */}
+      {/* Injury Report */}
       {!loadingGames && games && games.length > 0 && (
         <div className="mt-8 border-t border-border pt-6">
           <h2 className="mb-3 text-center text-lg font-semibold text-gray-900 dark:text-text-primary">
             Daily Injury Report
           </h2>
 
-          {allGamesFilteredOut ? (
+          {isPastDate ? (
             <p className="text-center text-sm text-text-secondary">
-              No remaining games for today. No injury statuses to report.
-            </p>
-          ) : loadingInjuries ? (
-            <p className="text-center text-sm italic text-text-secondary">
-              Loading injuries…
-            </p>
-          ) : injuriesError ? (
-            <p className="text-center text-sm text-red-500">
-              Could not load injury report.
-            </p>
-          ) : teamsWithInjuries.length === 0 ? (
-            <p className="text-center text-sm text-text-secondary">
-              No significant injuries reported for playing teams on{" "}
-              {displayDate}.
+              Games have been completed. No injury statuses to report.
             </p>
           ) : (
-            <div className="space-y-2">
-              {teamsWithInjuries.map((team) => (
-                <details key={team} className="app-card overflow-hidden group">
-                  <summary className="flex cursor-pointer items-start justify-between gap-2 bg-transparent p-3 text-gray-900 dark:text-text-primary">
-                    <span className="min-w-0 flex-1 font-medium">{team}</span>
-                    <span className="flex-shrink-0 rounded-full bg-orange-100 px-2.5 py-1 text-xs text-orange-800 dark:bg-orange-900/80 dark:text-orange-200">
-                      {injuriesByTeam[team].length} available
-                    </span>
-                    <ChevronDown className="h-4 w-4 flex-shrink-0 transition-transform group-open:rotate-180" />
-                  </summary>
-                  <div className="border-t border-border bg-transparent p-3">
-                    <ul className="space-y-1">
-                      {injuriesByTeam[team].map((inj: Injury) => (
-                        <li
-                          key={inj.id}
-                          className="flex items-center justify-between gap-2 py-1"
-                        >
-                          <span className="break-words text-gray-800 dark:text-text-primary">
-                            {inj.player}
-                            {inj.injury_type && (
-                              <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary">
-                                ({inj.injury_type})
+            <>
+              {allGamesFilteredOut ? (
+                <p className="text-center text-sm text-text-secondary">
+                  No remaining games for today. No injury statuses to report.
+                </p>
+              ) : loadingInjuries ? (
+                <p className="text-center text-sm italic text-text-secondary">
+                  Loading injuries…
+                </p>
+              ) : injuriesError ? (
+                <p className="text-center text-sm text-red-500">
+                  Could not load injury report.
+                </p>
+              ) : teamsWithInjuries.length === 0 ? (
+                <p className="text-center text-sm text-text-secondary">
+                  No significant injuries reported for playing teams on{" "}
+                  {displayDate}.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {teamsWithInjuries.map((team) => (
+                    <details
+                      key={team}
+                      className="app-card overflow-hidden group"
+                    >
+                      <summary className="flex cursor-pointer items-start justify-between gap-2 bg-transparent p-3 text-gray-900 dark:text-text-primary">
+                        <span className="min-w-0 flex-1 font-medium">
+                          {team}
+                        </span>
+                        <span className="flex-shrink-0 rounded-full bg-orange-100 px-2.5 py-1 text-xs text-orange-800 dark:bg-orange-900/80 dark:text-orange-200">
+                          {injuriesByTeam[team].length} available
+                        </span>
+                        <ChevronDown className="h-4 w-4 flex-shrink-0 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="border-t border-border bg-transparent p-3">
+                        <ul className="space-y-1">
+                          {injuriesByTeam[team].map((inj: Injury) => (
+                            <li
+                              key={inj.id}
+                              className="flex items-center justify-between gap-2 py-1"
+                            >
+                              <span className="break-words text-gray-800 dark:text-text-primary">
+                                {inj.player}
+                                {inj.injury_type && (
+                                  <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary">
+                                    ({inj.injury_type})
+                                  </span>
+                                )}
                               </span>
-                            )}
-                          </span>
-                          <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800 dark:border-border dark:bg-transparent dark:text-text-primary">
-                            {inj.status}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </details>
-              ))}
-            </div>
+                              <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800 dark:border-border dark:bg-transparent dark:text-text-primary">
+                                {inj.status}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
