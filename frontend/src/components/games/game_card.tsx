@@ -31,11 +31,11 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   return (
     <div className="app-card flex flex-col gap-2" data-tour="game-card">
       {/* Top Row: Teams & Time */}
-      <div className="flex items-start justify-between gap-4">
-        {" "}
-        {/* Changed items-center to items-start for top alignment */}
+      <div className="flex items-start gap-4">
         {/* Left Side: Teams & Time */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 max-w-md">
+          {" "}
+          {/* <<< ADDED max-w-md */}
           {/* --- MODIFIED SECTION START --- */}
           {/* Away Team */}
           <p className="font-semibold text-sm sm:text-base leading-tight">
@@ -45,10 +45,9 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           </p>
           {/* Home Team - On a new line */}
           <p className="font-semibold text-sm sm:text-base leading-tight">
-            @ {homeTeamName} {/* Kept the '@' prefix for context */}
+            @ {homeTeamName} {/* Kept the '@' pre.fix for context */}
           </p>
           {/* --- MODIFIED SECTION END --- */}
-
           {/* Time / Status - Added padding-top for spacing */}
           <p className="text-xs text-text-secondary pt-1">
             {/* Display time if available */}
@@ -64,11 +63,14 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             {displayStatus &&
               !displayStatus.toLowerCase().includes("final") &&
               !displayStatus.toLowerCase().includes("sched") &&
+              !displayStatus.toLowerCase().includes("pre") && // <<< ADD THIS LINE
               ` (${displayStatus})`}
           </p>
         </div>
         {/* Right Side: Score/Prediction/Pitchers & Odds */}
-        <div className="flex-none text-right text-sm">
+        <div className="w-36 text-left text-sm">
+          {" "}
+          {/* <<< CHANGED flex-none to w-36 */}
           {/* === Main Display: Use dataType === */}
           {game.dataType === "historical" ? (
             // --- Historical Score ---
@@ -94,12 +96,12 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
               ) : (
                 // MLB Pitchers
                 <>
-                  <p className="text-xs font-normal text-[var(--color-text-secondary)] truncate max-w-[100px] sm:max-w-[150px]">
+                  <p className="text-xs font-normal text-[var(--color-text-secondary)]">
                     {game.awayPitcher ?? "TBD Pitcher"}
                     {game.awayPitcherHand && ` (${game.awayPitcherHand}HP)`}
                   </p>
-                  <p className="text-xs font-normal text-[var(--color-text-secondary)] truncate max-w-[100px] sm:max-w-[150px]">
-                    vs {game.homePitcher ?? "TBD Pitcher"}
+                  <p className="text-xs font-normal text-[var(--color-text-secondary)]">
+                    {game.homePitcher ?? "TBD Pitcher"}
                     {game.homePitcherHand && ` (${game.homePitcherHand}HP)`}
                   </p>
                 </>
