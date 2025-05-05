@@ -217,32 +217,37 @@ def transform(
 
     # --- Final Processing (Filling NaNs and Enforcing Types) ---
     logger.debug("Finalizing form features (filling defaults/types)...")
+
     for col in placeholder_cols:
-        # Determine the base key for default lookup
         base_key = col.replace("home_", "").replace("away_", "")
         diff_key = base_key.replace("_diff", "").replace("_advantage", "")
 
-        # Find the appropriate default value from DEFAULTS
-        default_val = 0.0 # Generic default
-        if diff_key == "form_win_pct": default_val = DEFAULTS.get("form_win_pct", 0.5)
-        elif diff_key == "current_streak": default_val = DEFAULTS.get("current_streak", 0)
-        elif diff_key == "momentum_direction": default_val = DEFAULTS.get("momentum_direction", 0.0)
-        # For diff columns, the default is usually 0
-        elif "_diff" in base_key or "_advantage" in base_key: default_val = 0.0
-        else: default_val = DEFAULTS.get(diff_key, 0.0) # Fallback lookup
+        # Decide the default value
+        if "_diff" in base_key or "_advantage" in base_key:
+            default_val = 0.0                         # difference/advantage ⇒ 0
+        elif diff_key == "form_win_pct":
+            default_val = DEFAULTS.get("form_win_pct", 0.5)
+        elif diff_key == "current_streak":
+            default_val = DEFAULTS.get("current_streak", 0)
+        elif diff_key == "momentum_direction":
+            default_val = DEFAULTS.get("momentum_direction", 0.0)
+        else:
+            default_val = DEFAULTS.get(diff_key, 0.0)  # fallback
 
-        # Ensure column exists and fill any NaNs with the determined default
+        # Ensure column exists and fill NaNs
         if col not in result_df.columns:
-            logger.warning(f"Column '{col}' missing before final fill. Adding with default: {default_val}")
+            logger.warning(
+                f"Column '{col}' missing before final fill. Adding with default: {default_val}"
+            )
             result_df[col] = default_val
         else:
             result_df[col] = result_df[col].fillna(default_val)
 
-        # Enforce numeric type (streak and momentum direction should be numeric)
-        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(default_val)
+        # Numeric enforcement
+        result_df[col] = pd.to_numeric(result_df[col], errors="coerce").fillna(default_val)
 
-        # Ensure streak columns (not advantage) are integers
-        if 'streak' in col and 'advantage' not in col:
+        # Cast streak columns (not advantages) to int
+        if "streak" in col and "advantage" not in col:
             result_df[col] = result_df[col].round().astype(int)
 
     logger.debug("Finished adding form features.")

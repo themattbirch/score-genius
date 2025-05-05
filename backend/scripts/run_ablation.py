@@ -51,14 +51,14 @@ EXECUTION_ORDER = ["advanced", "momentum", "rest", "h2h", "season", "form"]
 MODULES: Mapping[str, callable] = {
     "advanced": advanced.transform,
     "momentum": momentum.transform,
-    #"rolling":  rolling.transform,
+    "rolling":  rolling.transform,
     "rest":     rest.transform,
     "h2h":      h2h.transform,
     "season":   season.transform,
     "form":     form.transform,
 }
 REQUIRES = {
-    #"rolling": ("advanced", "momentum"),
+    "rolling": ("advanced", "momentum"),
     "h2h":     ("rolling",),
     "season":  ("advanced",),
     "form":    ("season",),

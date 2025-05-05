@@ -1,377 +1,288 @@
-# backend/features/rolling.py
-
+# ---------------------------------------------------------------------
+# backend/nba_features/rolling.py - Using robust helper functions
+# ---------------------------------------------------------------------
 from __future__ import annotations
+
 import logging
-from typing import Any, List # Keep Any for DEFAULTS typing if needed
+from typing import List
 
 import numpy as np
 import pandas as pd
 
-# Import necessary components from the utils module
-from .utils import DEFAULTS, normalize_team_name # Import DEFAULTS and normalize_team_name
+# Assuming utils.py contains DEFAULTS dict and normalize_team_name function
+from .utils import DEFAULTS, normalize_team_name
 
-# --- Logger Configuration ---
-# Configure logging for this module
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
-)
 logger = logging.getLogger(__name__)
-
-# Explicitly export the transform function
 __all__ = ["transform"]
 
-# -- Constants --
-# EPSILON = 1e-6 # Moved to utils.py if needed globally
+# ------------------------------------------------------------------ #
+# Helper Functions for Rolling Calculations
+# ------------------------------------------------------------------ #
 
-# -- Helper Functions specific to rolling features --
-
-def generate_rolling_column_name(prefix: str, base: str, stat_type: str, window: int) -> str:
+def _lagged_rolling_stat(
+    s: pd.Series,
+    w: int,
+    min_p: int,
+    stat_func: str
+) -> pd.Series:
     """
-    Generate standardized rolling feature column name.
-    Prefix can be 'home', 'away', or ''.
-    Example: generate_rolling_column_name('home', 'score_for', 'mean', 5) -> 'home_rolling_score_for_mean_5'
-    """
-    prefix_part = f"{prefix}_" if prefix else ""
-    return f"{prefix_part}rolling_{base}_{stat_type}_{window}"
+    Leakage‑free rolling statistic (mean or std).
 
-# -- Main Transformation Function --
+    • Excludes *all* games played on the same calendar date as the current row.  
+    • Falls back to the mean/std of the available history (>=1 game) when the
+      group has fewer than `min_periods` rows – this covers the common
+      “second‑game” edge case without touching `min_periods` itself.
+    """
+    if s.empty:
+        return s
+
+    ordered = s.sort_index()                       # index == game_date
+    dates   = pd.Series(ordered.index, index=ordered.index)
+
+    # --- 1. shift(1) to drop the current game ------------------------------
+    shifted_vals = ordered.shift(1)
+
+    # --- 2. wipe out any same‑day rows (idx == previous idx) ---------------
+    same_day_mask = dates == dates.shift(1)
+    shifted_vals[same_day_mask] = np.nan
+
+    # --- 3. rolling calc ---------------------------------------------------
+    _roller = shifted_vals.rolling(window=w, min_periods=min_p)
+    if stat_func == "mean":
+        rolled = _roller.mean()
+        fallback = shifted_vals.rolling(window=w, min_periods=1).mean()
+    elif stat_func == "std":
+        rolled = _roller.std()
+        fallback = shifted_vals.rolling(window=w, min_periods=1).std()
+    else:
+        raise ValueError(f"Unsupported stat_func: {stat_func}")
+
+    # If we failed the min_periods test but still have ≥1 prior game,
+    # use the fallback value (covers the “one‑game history” scenario).
+    rolled = rolled.where(~rolled.isna(), fallback)
+
+    # Re‑align to the original slice order expected by .transform
+    return rolled.reindex(s.index)
+
+# ------------------------------------------------------------------ #
+# Main Transform Function
+# ------------------------------------------------------------------ #
+
+def _mk(side: str, base: str, kind: str, w: int) -> str:
+    """home+away column‑name factory"""
+    return f"{side}_rolling_{base}_{kind}_{w}"
+
 
 def transform(
     df: pd.DataFrame,
     *,
-    window_sizes: List[int] = [5, 10, 20], # Default window sizes
+    window_sizes: List[int] = (5, 10, 20),
     debug: bool = False,
 ) -> pd.DataFrame:
     """
-    Adds rolling mean/std features for specified stats, calculated using past games only.
-
-    This implementation uses pandas rolling operations with careful shifting and
-    date checking to prevent data leakage from the current game into the rolling window.
-
-    Args:
-        df: Input DataFrame containing 'game_id', 'game_date', 'home_team', 'away_team',
-            and the base statistics required (scores, ratings).
-        window_sizes: A list of integers representing the rolling window sizes.
-        debug: If True, sets logging level to DEBUG for this function call.
-
-    Returns:
-        DataFrame with added rolling feature columns (e.g., 'home_rolling_score_for_mean_5').
+    Add leakage‑free rolling mean/std features for each team & stat using
+    robust helper functions.
     """
-    # Set logger level based on debug flag for this specific call
-    current_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
-        logger.debug("DEBUG mode enabled for rolling.transform")
+        logging.basicConfig(level=logging.DEBUG) # Ensure logging is configured
+        logger.debug(f"Input df shape: {df.shape}")
 
-    logger.debug(f"Calculating rolling features with windows: {window_sizes}")
+    if df.empty:
+        logger.debug("Input DataFrame is empty, returning copy.")
+        return df.copy()
 
-    # --- Input Validation ---
-    if df is None or df.empty:
-        logger.warning("rolling.transform: Input DataFrame is empty. Returning empty DataFrame.")
-        if debug: logger.setLevel(current_level) # Restore logger level
-        return pd.DataFrame()
+    out = df.copy()
 
-    essential_cols = ['game_id', 'game_date', 'home_team', 'away_team']
-    if not all(col in df.columns for col in essential_cols):
-        missing = set(essential_cols) - set(df.columns)
-        logger.error(f"rolling.transform: Input df missing essential columns {missing}. Cannot proceed.")
-        if debug: logger.setLevel(current_level) # Restore logger level
-        # Returning original df might be problematic, better to return empty or raise error
-        return df # Or raise ValueError(f"Missing essential columns: {missing}")
+    # --- Data Preparation ---
+    # Convert game_date and normalize team names
+    out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce").dt.tz_localize(None)
+    out["home_norm"] = out["home_team"].map(normalize_team_name)
+    out["away_norm"] = out["away_team"].map(normalize_team_name)
+    logger.debug("Converted game_date and normalized team names.")
 
-    # --- 1. Preparation and Normalization ---
-    logger.debug("Preparing data: copying, normalizing dates and team names...")
-    local = df.copy()
-    try:
-        # Ensure game_date is datetime and timezone-naive
-        local['game_date'] = (
-            pd.to_datetime(local['game_date'], errors='coerce')
-            .dt.tz_localize(None)
-        )
-        # Check for invalid dates after conversion
-        if local['game_date'].isnull().any():
-             # Log how many NaTs were introduced
-             nat_count = local['game_date'].isnull().sum()
-             logger.warning(f"{nat_count} rows have invalid game_date after conversion. These rows might be dropped or cause issues.")
-             # Option 1: Drop rows with NaT dates
-             # local = local.dropna(subset=['game_date'])
-             # Option 2: Proceed but be aware calculations might fail for these rows
-             # (Current logic proceeds)
-
-        # Normalize team names using the utility function
-        # Add normalized columns; keep original team names as well
-        local['home_norm'] = local['home_team'].astype(str).map(normalize_team_name)
-        local['away_norm'] = local['away_team'].astype(str).map(normalize_team_name)
-        local['game_id'] = local['game_id'].astype(str) # Ensure game_id is string
-
-    except Exception as e_prep:
-        logger.error(f"Error during data preparation: {e_prep}", exc_info=debug)
-        if debug: logger.setLevel(current_level) # Restore logger level
-        return df # Return original df on critical prep error
-
-    # Define the mapping from raw stat columns to generic stat names used in rolling calculations
-    # Ensure these raw columns exist in the input 'df'
-    stat_map = {
-        # Raw Column Name         : Generic Name for Rolling Calc
-        'home_score':             'score_for',
-        'away_score':             'score_for', # Away score becomes 'score_for' from away team's perspective
-        'home_offensive_rating':  'off_rating',
-        'away_offensive_rating':  'off_rating',
-        'home_defensive_rating':  'def_rating', # Home def rating is what away team scored (off_rating)
-        'away_defensive_rating':  'def_rating', # Away def rating is what home team scored (off_rating)
-        'home_net_rating':        'net_rating',
-        'away_net_rating':        'net_rating',
+    # --- Create Long Format ---
+    mapping = {
+        ("home_score", "away_score"): "score_for",
+        ("home_offensive_rating", "away_offensive_rating"): "off_rating",
+        ("home_defensive_rating", "away_defensive_rating"): "def_rating",
+        ("home_net_rating", "away_net_rating"): "net_rating",
     }
 
-    # Check which required raw stat columns are actually present
-    available_raw_cols = [col for col in stat_map.keys() if col in local.columns]
-    if not available_raw_cols:
-         logger.error("Rolling: None of the required base stat columns found in input DataFrame. Cannot calculate rolling features.")
-         if debug: logger.setLevel(current_level) # Restore logger level
-         return local # Return df with normalized names but no rolling features
+    recs: list[dict] = []
+    required_cols = {col for pair in mapping for col in pair}
+    missing_cols = required_cols - set(out.columns)
+    if missing_cols:
+        logger.warning(f"Missing required columns for rolling features: {missing_cols}. Skipping.")
+        # Return original frame minus added normalization columns if no features can be made
+        return out.drop(columns=["home_norm", "away_norm"], errors="ignore")
 
-    # Filter stat_map to only include available columns
-    filtered_stat_map = {k: v for k, v in stat_map.items() if k in available_raw_cols}
-    logger.debug(f"Found available base stats for rolling: {list(filtered_stat_map.keys())}")
+    logger.debug("Creating long format DataFrame...")
+    for (home_col, away_col), generic in mapping.items():
+        # Check if specific columns for this stat exist (redundant if checked above, but safe)
+        if home_col not in out.columns or away_col not in out.columns:
+            logger.warning(f"Skipping stat '{generic}' due to missing columns: {home_col} or {away_col}")
+            continue
+        # Iterate using vectorized operations where possible, but iterrows is sometimes clearer for complex reshaping
+        for idx, r in out.iterrows(): # Using index idx might be useful if needed later
+            recs.append(
+                {
+                    "original_index": idx, # Keep track of original row if needed
+                    "game_id": r["game_id"],
+                    "game_date": r["game_date"],
+                    "team_norm": r["home_norm"],
+                    "stat": generic,
+                    "val": pd.to_numeric(r[home_col], errors="coerce"),
+                }
+            )
+            recs.append(
+                {
+                    "original_index": idx,
+                    "game_id": r["game_id"],
+                    "game_date": r["game_date"],
+                    "team_norm": r["away_norm"],
+                    "stat": generic,
+                    "val": pd.to_numeric(r[away_col], errors="coerce"),
+                }
+            )
+
+    if not recs:
+        logger.warning("No records generated for long format. Check input columns and mapping.")
+        return out.drop(columns=["home_norm", "away_norm"], errors="ignore")
+
+    # Create long_df and set game_date as index *temporarily* for sorting robustness in helper
+    long_df = pd.DataFrame.from_records(recs)
+    long_df = long_df.set_index('game_date') # Use game_date as index for sort_index() in helper
+    long_df = long_df.sort_values(["team_norm", "stat", "game_date"], kind="mergesort") # Sort primarily by team/stat, then date index
+    logger.debug(f"Long format df created. Shape: {long_df.shape}. Index: {long_df.index.name}")
 
 
-    # --- 2. Build Long Format DataFrame ---
-    # Reshape data so each row represents one team's stats for a game
-    logger.debug("Building long format DataFrame for team-based rolling calculations...")
+    # --- Calculate Rolling Features ---
     pieces = []
-    for raw_col, gen_stat_name in filtered_stat_map.items():
-        # Determine if it's a home or away stat
-        side = 'home' if raw_col.startswith('home_') else 'away'
-        # Select relevant columns and rename for generic long format
-        piece = local[['game_id', 'game_date', f"{side}_norm", raw_col]].copy()
-        piece = piece.rename(columns={f"{side}_norm": 'team_norm', raw_col: gen_stat_name})
-        pieces.append(piece)
+    logger.debug(f"Calculating rolling features for window sizes: {window_sizes}")
+    for w in window_sizes:
+        min_p = max(1, w // 2)
+        logger.debug(f"Processing window size: {w}, min_periods: {min_p}")
 
+        # Group by team and stat. Ensure group_keys=False for transform compatibility.
+        # The pre-sorting ensures shift(1) works correctly within each group.
+        grp = long_df.groupby(["team_norm", "stat"], group_keys=False, observed=True)
+
+        # Calculate rolling mean using the robust helper function via transform
+        mean_col_name = f"mean_{w}"
+        long_df[mean_col_name] = grp["val"].transform(
+            lambda s: _lagged_rolling_stat(s, w=w, min_p=min_p, stat_func='mean')
+        )
+        logger.debug(f"Calculated {mean_col_name}")
+
+        # Calculate rolling std using the robust helper function via transform
+        std_col_name = f"std_{w}"
+        long_df[std_col_name] = grp["val"].transform(
+            lambda s: _lagged_rolling_stat(s, w=w, min_p=min_p, stat_func='std')
+        )
+        logger.debug(f"Calculated {std_col_name}")
+
+
+        # --- Fill NaNs with Defaults & Clip Std ---
+        # Use vectorized fillna based on the 'stat' column
+        # Create mapping Series for defaults to use with fillna
+        default_means = long_df['stat'].map(lambda s: DEFAULTS.get(s, 0.0))
+        default_stds = long_df['stat'].map(lambda s: DEFAULTS.get(f"{s}_std", 0.0))
+
+        long_df[mean_col_name] = long_df[mean_col_name].fillna(default_means)
+        long_df[std_col_name] = long_df[std_col_name].fillna(default_stds).clip(lower=0)
+        logger.debug(f"Filled NaNs and clipped std for window {w}")
+
+        # --- Pivot to Wide Format ---
+        # Reset index *before* pivoting if game_date was the index
+        long_df_reset = long_df.reset_index() # Bring game_date back as column
+
+        # Pivot mean
+        wide_mean = long_df_reset.pivot_table(
+            index=["game_id", "team_norm"], # Use game_id and team_norm from columns
+            columns="stat",
+            values=mean_col_name,
+            aggfunc="first", # Use first non-null value found for a game_id/team_norm combo
+        )
+        wide_mean.columns = [f"rolling_{s}_mean_{w}" for s in wide_mean.columns]
+        logger.debug(f"Pivoted mean features for window {w}. Shape: {wide_mean.shape}")
+
+        # Pivot std
+        wide_std = long_df_reset.pivot_table(
+            index=["game_id", "team_norm"],
+            columns="stat",
+            values=std_col_name,
+            aggfunc="first",
+        )
+        wide_std.columns = [f"rolling_{s}_std_{w}" for s in wide_std.columns]
+        logger.debug(f"Pivoted std features for window {w}. Shape: {wide_std.shape}")
+
+
+        pieces.append(pd.concat([wide_mean, wide_std], axis=1))
+        logger.debug(f"Appended pivoted features for window {w}")
+
+    # --- Consolidate and Merge Back ---
     if not pieces:
-        # This case should be caught earlier, but as a safeguard:
-        logger.error("Rolling: No data pieces generated for long format. Cannot proceed.")
-        if debug: logger.setLevel(current_level) # Restore logger level
-        return local
+        logger.warning("No rolling stats generated (pieces list is empty); returning original frame.")
+        # Drop added columns before returning
+        return out.drop(columns=["home_norm", "away_norm"], errors="ignore")
 
-    # Concatenate all pieces into the long format DataFrame
-    team_view_df = pd.concat(pieces, ignore_index=True)
+    # Concatenate all wide pieces for different windows
+    tidy = pd.concat(pieces, axis=1).reset_index()  # index is [game_id, team_norm]
+    logger.debug(f"Concatenated all features. Tidy shape: {tidy.shape}")
 
-    # Ensure game_id is string type
-    team_view_df['game_id'] = team_view_df['game_id'].astype(str)
+    # Create merge keys for joining back to the original 'out' DataFrame
+    tidy["merge_key"] = tidy["game_id"].astype(str) + "_" + tidy["team_norm"]
+    out["merge_key_home"] = out["game_id"].astype(str) + "_" + out["home_norm"]
+    out["merge_key_away"] = out["game_id"].astype(str) + "_" + out["away_norm"]
+    logger.debug("Created merge keys.")
 
-    # --- 3. Perform Rolling Calculations ---
-    logger.debug("Applying rolling calculations with stable sort and shift...")
-    # **CRITICAL STEP**: Sort stably by team and date BEFORE grouping.
-    # This ensures that .shift(1) correctly accesses the immediately preceding game for that team.
-    team_view_df = team_view_df.sort_values(['team_norm', 'game_date'], kind='mergesort')
+    # Prepare column renaming maps
+    roll_cols = [c for c in tidy.columns if c.startswith("rolling_")]
+    home_map = {
+        c: _mk("home", "_".join(c.split("_")[1:-2]), c.split("_")[-2], int(c.split("_")[-1]))
+        for c in roll_cols
+    }
+    away_map = {
+        c: _mk("away", "_".join(c.split("_")[1:-2]), c.split("_")[-2], int(c.split("_")[-1]))
+        for c in roll_cols
+    }
 
-    all_rolled_stats = [] # Collect DataFrames for each stat/window combination
+    # Merge home team features
+    out = out.merge(
+        tidy[["merge_key", *roll_cols]].rename(columns=home_map),
+        how="left",
+        left_on="merge_key_home",
+        right_on="merge_key",
+        suffixes=('', '_drop_home') # Add suffix to avoid duplicate merge_key
+    )
+    logger.debug("Merged home features.")
 
-    # Iterate through specified window sizes
-    for window in window_sizes:
-        # Minimum number of periods required within the window to produce a result
-        min_periods = max(1, window // 2) # Require at least half the window size
-
-        # Iterate through the unique generic stat names (e.g., 'score_for', 'off_rating')
-        for gen_stat_name in set(filtered_stat_map.values()):
-            logger.debug(f"Calculating rolling {gen_stat_name} for window={window}...")
-
-            # Group by team to perform rolling calculations independently for each team
-            grouped_by_team = team_view_df[['team_norm', 'game_id', 'game_date', gen_stat_name]] \
-                                    .groupby('team_norm', observed=True)
-
-            total_leaks_detected = 0 # Counter for leaks within this group/stat/window
-
-            # Define the function to apply to each team's group
-            def calculate_rolling_for_group(group_df: pd.DataFrame) -> pd.DataFrame:
-                nonlocal total_leaks_detected # Allow modification of the outer counter
-
-                # **CRITICAL**: Ensure stable sort *within* the group again (belt-and-suspenders)
-                group_df = group_df.sort_values('game_date', kind='mergesort').reset_index(drop=True)
-
-                # Extract series for dates and the statistic values
-                dates = group_df['game_date']
-                values = group_df[gen_stat_name]
-
-                # --- Leakage Prevention Mechanism ---
-                # 1. Shift dates by 1 to get the date of the *previous* game in the sorted group.
-                shifted_date_ints = dates.view('int64').shift(1)
-                # 2. Calculate the maximum *shifted* date within the rolling window ending at the previous game.
-                #    Using min_periods=1 ensures we get a max date even for the first few games.
-                max_shifted_date_ints_in_window = shifted_date_ints.rolling(window, min_periods=1).max()
-                # 3. Convert the max timestamp back to datetime. This represents the latest game date *included* in the rolling window.
-                latest_date_in_window = pd.to_datetime(max_shifted_date_ints_in_window)
-
-                # --- Calculate Rolling Mean and Std ---
-                # Apply rolling calculation on the original values
-                # **CRITICAL**: Apply .shift(1) *after* .rolling() to exclude the current row's value.
-                mean_series = values.rolling(window, min_periods=min_periods).mean().shift(1)
-                std_series = values.rolling(window, min_periods=min_periods).std().clip(lower=0).shift(1) # Clip stddev >= 0
-
-                # Get default values from the DEFAULTS dictionary
-                default_mean = DEFAULTS.get(gen_stat_name, 0.0)
-                default_std = DEFAULTS.get(f"{gen_stat_name}_std", 0.0) # Assumes std defaults exist (e.g., 'score_for_std')
-
-                # --- Detect and Handle Residual Leakage ---
-                # Check if the latest date included in the window is >= the current game's date.
-                # This should NOT happen with the stable sort + shift(1) logic, but acts as a final check.
-                leak_mask = latest_date_in_window >= dates
-                if leak_mask.any():
-                    num_leaks = int(leak_mask.sum())
-                    total_leaks_detected += num_leaks
-                    # If leakage is detected, overwrite the calculated values with defaults for affected rows
-                    mean_series[leak_mask] = default_mean
-                    std_series[leak_mask] = default_std
-                    logger.warning(f"Potential rolling leakage detected and reset for {num_leaks} rows (Team: {group_df['team_norm'].iloc[0]}, Stat: {gen_stat_name}, Window: {window})")
+    # Merge away team features
+    out = out.merge(
+        tidy[["merge_key", *roll_cols]].rename(columns=away_map),
+        how="left",
+        left_on="merge_key_away",
+        right_on="merge_key",
+        suffixes=('', '_drop_away') # Add suffix to avoid duplicate merge_key
+    )
+    logger.debug("Merged away features.")
 
 
-                # Fill any remaining NaNs (e.g., at the start of a team's history before min_periods is met) with defaults
-                mean_series = mean_series.fillna(default_mean)
-                std_series = std_series.fillna(default_std)
+    # --- Clean Up ---
+    # Define columns to drop, including temporary merge keys and suffixed columns
+    cols_to_drop = [
+        "home_norm", "away_norm",
+        "merge_key_home", "merge_key_away",
+        "merge_key", # Original merge key from tidy after merge
+        "merge_key_drop_home", "merge_key_drop_away", # Suffixed merge keys
+    ]
+    # Also drop any other suffixed columns created during merge conflicts if necessary
+    suffixed_cols = [c for c in out.columns if '_drop_home' in c or '_drop_away' in c]
+    cols_to_drop.extend(suffixed_cols)
 
-                # Return a DataFrame with the calculated rolling stats for this group
-                return pd.DataFrame({
-                    'team_norm': group_df['team_norm'],
-                    'game_id': group_df['game_id'],
-                    # Use generate_rolling_column_name for consistent naming
-                    generate_rolling_column_name('', gen_stat_name, 'mean', window): mean_series,
-                    generate_rolling_column_name('', gen_stat_name, 'std', window): std_series,
-                }, index=group_df.index)
+    # Use set for unique columns and list for drop function
+    out.drop(columns=list(set(cols_to_drop)), inplace=True, errors="ignore")
+    logger.debug(f"Cleaned up temporary columns. Final df shape: {out.shape}")
 
-            # Apply the calculation function to each group (team)
-            # Use try-except block for robustness during apply
-            try:
-                 rolled_stats_df = grouped_by_team.apply(calculate_rolling_for_group).reset_index(drop=True)
-            except Exception as apply_err:
-                 logger.error(f"Error applying rolling calculation for stat '{gen_stat_name}', window {window}: {apply_err}", exc_info=debug)
-                 # Create an empty df with expected columns if apply fails, to avoid breaking concatenation
-                 rolled_stats_df = pd.DataFrame(columns=[
-                      'team_norm', 'game_id',
-                      generate_rolling_column_name('', gen_stat_name, 'mean', window),
-                      generate_rolling_column_name('', gen_stat_name, 'std', window)
-                 ])
-
-
-            # Log if any leaks were detected and reset during the apply step
-            if total_leaks_detected > 0:
-                logger.warning(
-                    f"Total rolling leakage reset count for '{gen_stat_name}' w={window}: {total_leaks_detected} values"
-                )
-
-            # Append the results for this stat/window to the list
-            all_rolled_stats.append(rolled_stats_df)
-
-    # --- 4. Reassemble and Merge Back ---
-    logger.debug("Reassembling and merging rolling features back to the original DataFrame structure...")
-    if not all_rolled_stats:
-        logger.warning("No rolling statistics were successfully calculated. Returning DataFrame without rolling features.")
-        if debug: logger.setLevel(current_level) # Restore logger level
-        return local # Return the prepared 'local' df
-
-    # Concatenate all calculated rolling stats DataFrames
-    # Use merge to combine results based on game_id and team_norm, handling potential duplicates
-    final_roll_df = all_rolled_stats[0] # Start with the first df
-    for next_roll_df in all_rolled_stats[1:]:
-         # Ensure unique keys before merging
-         next_roll_df = next_roll_df.loc[:, ~next_roll_df.columns.duplicated()]
-         final_roll_df = pd.merge(
-              final_roll_df,
-              next_roll_df,
-              on=['game_id', 'team_norm'],
-              how='outer', # Use outer merge to keep all rows
-              suffixes=('', '_dup') # Add suffix for duplicate columns from merge
-         )
-         # Drop duplicate columns created by merge
-         final_roll_df = final_roll_df.drop(columns=[col for col in final_roll_df if '_dup' in col], errors='ignore')
-
-
-    # Prepare the original DataFrame ('local') and the final rolling stats ('final_roll_df') for merging
-    out_df = local.copy() # Use the prepared 'local' df as the base for merging
-    # Create merge keys for home and away teams in the output df
-    out_df['merge_key_home'] = out_df['game_id'] + "_" + out_df['home_norm']
-    out_df['merge_key_away'] = out_df['game_id'] + "_" + out_df['away_norm']
-    # Create merge key in the rolling stats df
-    final_roll_df['merge_key'] = final_roll_df['game_id'] + "_" + final_roll_df['team_norm']
-
-    # Identify the columns containing the calculated rolling stats (they start with 'rolling_')
-    rolling_stat_cols = [col for col in final_roll_df if col.startswith('rolling_')]
-    # Prepare the rolling data for merging, keeping only the merge key and stat columns
-    # Drop duplicates on merge_key to ensure one row per team per game
-    merge_ready_rolling_df = final_roll_df[['merge_key'] + rolling_stat_cols].drop_duplicates('merge_key')
-
-    # --- FIX: Correctly generate rename maps ---
-    home_rename_map = {}
-    away_rename_map = {}
-    for col in rolling_stat_cols:
-        try:
-            parts = col.split('_') # e.g., ['rolling', 'score', 'for', 'mean', '5']
-            if len(parts) < 4: # Basic check for expected format
-                 logger.warning(f"Unexpected rolling column format: {col}. Skipping rename.")
-                 continue
-            base_stat_key = "_".join(parts[1:-2]) # e.g., 'score_for'
-            stat_type = parts[-2] # e.g., 'mean' or 'std'
-            window_val = int(parts[-1]) # e.g., 5
-            # Call generate_rolling_column_name with correct arguments
-            home_rename_map[col] = generate_rolling_column_name('home', base_stat_key, stat_type, window_val)
-            away_rename_map[col] = generate_rolling_column_name('away', base_stat_key, stat_type, window_val)
-        except (IndexError, ValueError) as e_parse:
-             logger.warning(f"Could not parse rolling column name '{col}' for renaming: {e_parse}")
-
-
-    # Merge rolling stats for the home team
-    out_df = pd.merge(
-        out_df,
-        merge_ready_rolling_df.rename(columns=home_rename_map), # Use corrected map
-        how='left',
-        left_on='merge_key_home',
-        right_on='merge_key'
-    ).drop(columns=['merge_key'], errors='ignore') # Drop the merge key from the rolling df side
-
-    # Merge rolling stats for the away team
-    out_df = pd.merge(
-        out_df,
-        merge_ready_rolling_df.rename(columns=away_rename_map), # Use corrected map
-        how='left',
-        left_on='merge_key_away',
-        right_on='merge_key'
-    ).drop(columns=['merge_key'], errors='ignore') # Drop the merge key
-
-    # Clean up merge keys and normalized team names from the final DataFrame
-    out_df = out_df.drop(columns=['merge_key_home', 'merge_key_away', 'home_norm', 'away_norm'], errors='ignore')
-
-    # --- 5. Final NaN Filling ---
-    # Fill any remaining NaNs in the newly added rolling columns using defaults
-    # This might happen if a team had no historical data for a merge
-    logger.debug("Filling any remaining NaNs in rolling columns with defaults...")
-    newly_added_rolling_cols = list(home_rename_map.values()) + list(away_rename_map.values())
-    for col in newly_added_rolling_cols:
-        if col in out_df.columns:
-            # Determine the base stat name and type (mean/std) to find the correct default
-            parts = col.split('_') # e.g., ['home', 'rolling', 'score', 'for', 'mean', '5']
-            base_stat_key = "_".join(parts[2:-2]) # e.g., 'score_for'
-            stat_type = parts[-2] # e.g., 'mean' or 'std'
-
-            # Construct the key for the DEFAULTS dictionary
-            default_key = f"{base_stat_key}_std" if stat_type == 'std' else base_stat_key
-            default_val = DEFAULTS.get(default_key, 0.0) # Default to 0.0 if specific default not found
-
-            # Fill NaNs and ensure correct type
-            out_df[col] = out_df[col].fillna(default_val)
-            if stat_type == 'std':
-                 # Ensure std deviation is not negative
-                 out_df[col] = pd.to_numeric(out_df[col], errors='coerce').fillna(default_val).clip(lower=0.0)
-            else:
-                 out_df[col] = pd.to_numeric(out_df[col], errors='coerce').fillna(default_val)
-        else:
-             # This case indicates an issue with the merge or renaming logic
-             logger.warning(f"Expected rolling column '{col}' not found after merges. Skipping final fill.")
-
-
-    logger.debug("Finished adding rolling features.")
-    logger.debug("rolling.transform: done, output shape=%s", out_df.shape)
-
-    # Restore original logger level if it was changed
-    if debug: logger.setLevel(current_level)
-
-    return out_df
+    return out

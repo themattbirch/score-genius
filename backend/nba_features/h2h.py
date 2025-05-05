@@ -62,13 +62,13 @@ def _get_matchup_history_single(
     # Build default result dictionary using placeholder keys and DEFAULTS values
     default_result: Dict[str, Any] = {}
     for col in H2H_PLACEHOLDER_COLS:
-        # Special handling for date column default
-        if col == 'matchup_last_date':
+        if col == "matchup_last_date":
             default_result[col] = pd.NaT
         else:
-            # Extract base key (e.g., 'avg_point_diff' from 'matchup_avg_point_diff')
-            base_key = col.replace('matchup_', '')
-            default_result[col] = DEFAULTS.get(base_key, 0.0) # Default to 0.0 if key not in DEFAULTS
+            # use the full key first; fall back to stripped version for legacy support
+            default_result[col] = DEFAULTS.get(
+                col, DEFAULTS.get(col.replace("matchup_", ""), 0.0)
+            )
 
     # --- Input Validation ---
     if historical_subset is None or historical_subset.empty or max_games <= 0 or pd.isna(current_game_date):

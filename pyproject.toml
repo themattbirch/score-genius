@@ -3,3 +3,7 @@ extend-exclude = [
     "backend/features/legacy/**",
     "backend/nba_score_prediction/**",
 ]
+[tool.pytest.ini_options]
+env_files = [
+    "backend/.env"
+]

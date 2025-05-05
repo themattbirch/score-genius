@@ -582,7 +582,7 @@ def display_prediction_summary(preds: List[Dict]) -> None:
 def generate_predictions(
     days_window: int = DEFAULT_UPCOMING_DAYS_WINDOW,
     model_dir: Path = MODELS_DIR,
-    calibrate_with_odds: bool = True,
+    calibrate_with_odds: bool = False,
     blend_factor: float = 0.3,
     historical_lookback: int = DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
     debug_mode: bool = False
@@ -878,7 +878,8 @@ def main():
     final_preds, raw_preds = generate_predictions(
         days_window=args.days,
         model_dir=args.model_dir,
-        calibrate_with_odds=not args.no_calibrate,
+        #calibrate_with_odds=not args.no_calibrate,
+        calibrate_with_odds=False,
         blend_factor=args.blend,
         historical_lookback=args.lookback,
         debug_mode=args.debug
