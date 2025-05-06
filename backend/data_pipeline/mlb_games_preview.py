@@ -217,7 +217,8 @@ def get_games_from_apibaseball(target_date: date) -> List[Dict[str, Any]]:
     params = {
         "league": MLB_LEAGUE_ID,
         "date": target_date.strftime("%Y-%m-%d"),
-        "season": target_date.year
+        "season": target_date.year,
+        "timezone": "America/New_York",
     }
     data = make_api_request(url, headers, params)
     if data:

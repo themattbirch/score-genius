@@ -47,7 +47,7 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-PACIFIC_TZ = pytz.timezone("America/Los_Angeles")
+EASTERN_TZ = pytz.timezone("America/New_York")
 DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
 DEFAULT_UPCOMING_DAYS_WINDOW = 3
 
@@ -205,26 +205,31 @@ def load_team_stats_data(supabase_client: Any) -> pd.DataFrame:
         return pd.DataFrame()
 
 def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.DataFrame:
-    # …
-    # Compute UTC start/end at midnight UTC
-    now_utc   = datetime.now(pytz.utc)
-    start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_utc   = start_utc + timedelta(days=days_window)
+    # Compute ET midnight window, then convert to UTC for querying
+    now_et = datetime.now(EASTERN_TZ)
+    start_et = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_et = start_et + timedelta(days=days_window)
+
+    start_utc = start_et.astimezone(pytz.utc)
+    end_utc = end_et.astimezone(pytz.utc)
 
     start_str = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_str   = end_utc.strftime(  "%Y-%m-%dT%H:%M:%SZ")
+    end_str = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    logger.info(f"Fetching upcoming games between {start_str} and {end_str} (UTC)...")
-
+    logger.info(
+        f"Fetching upcoming games for ET dates {start_et.date()}–{(end_et - timedelta(seconds=1)).date()} "
+        f"(i.e. UTC {start_str}–{end_str})"
+    )
+    # 1) fetch, process, and return upcoming games window
     try:
         resp = (
             supabase_client
-            .table("nba_game_schedule")
-            .select(", ".join(UPCOMING_GAMES_COLS))
-            .gte("scheduled_time", start_str)
-            .lt( "scheduled_time", end_str)
-            .order("scheduled_time", desc=False)
-            .execute()
+              .table("nba_game_schedule")
+              .select(", ".join(UPCOMING_GAMES_COLS))
+              .gte("scheduled_time", start_str)
+              .lt("scheduled_time", end_str)
+              .order("scheduled_time", desc=False)
+              .execute()
         )
         rows = resp.data or []
         if not rows:
@@ -232,18 +237,27 @@ def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.Data
             return pd.DataFrame()
 
         df = pd.DataFrame(rows)
-        df["scheduled_time_utc"] = pd.to_datetime(df["scheduled_time"], errors="coerce", utc=True)
+        # parse UTC timestamp and drop invalid
+        df["scheduled_time_utc"] = pd.to_datetime(
+            df["scheduled_time"], errors="coerce", utc=True
+        )
         df = df.dropna(subset=["scheduled_time_utc"])
-        df["game_time_pt"] = df["scheduled_time_utc"].dt.tz_convert(PACIFIC_TZ)
-        df["game_date"] = pd.to_datetime(df["game_time_pt"].dt.date)
-        for c in ("game_id","home_team","away_team"):
-            df[c] = df[c].astype(str)
-        return df.sort_values("game_time_pt").reset_index(drop=True)
+        # convert to ET and derive calendar date
+        df["scheduled_time_et"] = df["scheduled_time_utc"].dt.tz_convert(EASTERN_TZ)
+        df["game_date"]          = df["scheduled_time_et"].dt.date
+        # enforce string types
+        for col in ("game_id", "home_team", "away_team"):
+            df[col] = df[col].astype(str)
+        # sort by ET kickoff and return
+        return df.sort_values("scheduled_time_et").reset_index(drop=True)
+
     except Exception as e:
-        logger.error(f"Error fetching upcoming games: {e}", exc_info=True)
+        logger.error(
+            f"Error fetching or processing upcoming games: {e}", 
+            exc_info=True
+        )
         return pd.DataFrame()
 
-# --- Model Loading ---
 # --- Model Loading -----------------------------------------------------------
 def load_trained_models(
     model_dir: Path = MODELS_DIR,

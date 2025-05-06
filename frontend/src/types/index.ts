@@ -4,6 +4,7 @@ export type Sport = "NBA" | "MLB";
 export interface UnifiedGame {
   id: string;
   game_date: string; // YYYY-MM-DD (ET, based on backend logic)
+  scheduled_time: string;
   homeTeamName: string;
   awayTeamName: string;
   gameTimeUTC?: string | null; // ISO UTC timestamp for scheduled or historical
