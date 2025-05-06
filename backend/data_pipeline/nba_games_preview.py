@@ -542,8 +542,6 @@ def main():
             preds, _ = generate_predictions(
                 days_window=2,
                 model_dir=MODELS_DIR,
-                calibrate_with_odds=True,
-                blend_factor=0.3,
                 historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
                 debug_mode=False
             )

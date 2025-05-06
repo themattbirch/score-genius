@@ -464,61 +464,61 @@ def fetch_and_parse_betting_odds(
 
 
 # --- Calibration (no more confidence_pct) ---
-def calibrate_prediction_with_odds(
-    prediction: Dict,
-    odds_info: Optional[Dict],
-    blend_factor: float = 0.3
-) -> Dict:
-    calibrated = prediction.copy()
-    calibrated['betting_odds'] = odds_info
-    calibrated['calibration_blend_factor'] = blend_factor
-    calibrated['is_calibrated'] = False
+#def calibrate_prediction_with_odds(
+    #prediction: Dict,
+   # odds_info: Optional[Dict],
+  #  blend_factor: float = 0.3
+#) -> Dict:
+   # calibrated = prediction.copy()
+   # calibrated['betting_odds'] = odds_info
+   # calibrated['calibration_blend_factor'] = blend_factor
+   # calibrated['is_calibrated'] = False
 
-    if not odds_info:
-        logger.debug(f"No odds info for game {prediction.get('game_id')}; skipping calibration.")
-        return calibrated
+    #if not odds_info:
+        #logger.debug(f"No odds info for game {prediction.get('game_id')}; skipping calibration.")
+        #return calibrated
 
-    try:
+   # try:
         # extract market_spread & total...
-        spread = odds_info.get('spread', {})
-        if spread.get('home_line') is not None:
-            market_spread = spread['home_line']
-        elif spread.get('away_line') is not None:
-            market_spread = -spread['away_line']
-        else:
-            logger.debug("Missing market spread.")
-            return calibrated
+       # spread = odds_info.get('spread', {})
+      #  if spread.get('home_line') is not None:
+         #   market_spread = spread['home_line']
+       # elif spread.get('away_line') is not None:
+          #  market_spread = -spread['away_line']
+       # else:
+          #  logger.debug("Missing market spread.")
+           # return calibrated
 
-        total = odds_info.get('total', {}).get('line')
-        if total is None:
-            logger.debug("Missing market total.")
-            return calibrated
+       # total = odds_info.get('total', {}).get('line')
+        #if total is None:
+         #   logger.debug("Missing market total.")
+          #  return calibrated
 
-        raw_diff  = float(prediction['predicted_point_diff'])
-        raw_total = float(prediction['predicted_total_score'])
+       # raw_diff  = float(prediction['predicted_point_diff'])
+       # raw_total = float(prediction['predicted_total_score'])
 
-        cal_total = blend_factor * total + (1 - blend_factor) * raw_total
-        cal_diff  = blend_factor * market_spread + (1 - blend_factor) * raw_diff
-        cal_home  = (cal_total + cal_diff) / 2.0
-        cal_away  = (cal_total - cal_diff) / 2.0
-        cal_winp  = 1 / (1 + math.exp(-0.15 * cal_diff))
+       # cal_total = blend_factor * total + (1 - blend_factor) * raw_total
+       # cal_diff  = blend_factor * market_spread + (1 - blend_factor) * raw_diff
+       # cal_home  = (cal_total + cal_diff) / 2.0
+       # cal_away  = (cal_total - cal_diff) / 2.0
+       # cal_winp  = 1 / (1 + math.exp(-0.15 * cal_diff))
 
-        calibrated.update({
-            'predicted_home_score':  round(cal_home, 1),
-            'predicted_away_score':  round(cal_away, 1),
-            'predicted_point_diff':  round(cal_diff, 1),
-            'predicted_total_score': round(cal_total, 1),
-            'win_probability':       round(cal_winp, 3),
-            'is_calibrated':         True
-        })
-        logger.info(
-            f"Calibrated game {prediction.get('game_id')}: "
-            f"H {cal_home:.1f}, A {cal_away:.1f}, Diff {cal_diff:+.1f}, Total {cal_total:.1f}"
-        )
-    except Exception as e:
-        logger.error(f"Error during calibration for game {prediction.get('game_id')}: {e}", exc_info=True)
+        #calibrated.update({
+          #  'predicted_home_score':  round(cal_home, 1),
+          #  'predicted_away_score':  round(cal_away, 1),
+          #  'predicted_point_diff':  round(cal_diff, 1),
+          #  'predicted_total_score': round(cal_total, 1),
+           # 'win_probability':       round(cal_winp, 3),
+          #  'is_calibrated':         True
+       # })
+        #logger.info(
+            #f"Calibrated game {prediction.get('game_id')}: "
+           #f"H {cal_home:.1f}, A {cal_away:.1f}, Diff {cal_diff:+.1f}, Total {cal_total:.1f}"
+       # )
+    #except Exception as e:
+        #logger.error(f"Error during calibration for game {prediction.get('game_id')}: {e}", exc_info=True)
 
-    return calibrated
+    #return calibrated
 
 # --- Display Summary (dropped CONF % column) ---
 def display_prediction_summary(preds: List[Dict]) -> None:
@@ -582,8 +582,6 @@ def display_prediction_summary(preds: List[Dict]) -> None:
 def generate_predictions(
     days_window: int = DEFAULT_UPCOMING_DAYS_WINDOW,
     model_dir: Path = MODELS_DIR,
-    calibrate_with_odds: bool = False,
-    blend_factor: float = 0.3,
     historical_lookback: int = DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
     debug_mode: bool = False
 ) -> Tuple[List[Dict], List[Dict]]:
@@ -665,7 +663,7 @@ def generate_predictions(
             df=upcoming_df.copy(),
             historical_games_df=hist_df,
             team_stats_df=team_stats_df,
-            rolling_windows=[5, 10],
+            rolling_windows=[5, 10, 20],
             h2h_window=7,
             debug=debug_mode
         )
@@ -785,16 +783,18 @@ def generate_predictions(
         })
 
     # optional calibration
-    final_preds = []
-    if calibrate_with_odds:
-        odds = fetch_and_parse_betting_odds(supabase, [r["game_id"] for r in raw_preds])
-        if odds:
-            for r in raw_preds:
-                final_preds.append(calibrate_prediction_with_odds(r, odds.get(r["game_id"]), blend_factor))
-        else:
-            final_preds = raw_preds
-    else:
-        final_preds = raw_preds
+    #final_preds = []
+   # if calibrate_with_odds:
+      #  odds = fetch_and_parse_betting_odds(supabase, [r["game_id"] for r in raw_preds])
+      #  if odds:
+          #  for r in raw_preds:
+            #    final_preds.append(calibrate_prediction_with_odds(r, odds.get(r["game_id"]), blend_factor))
+       #else:
+           # final_preds = raw_preds
+    #else:
+       # final_preds = raw_preds
+     # skip any calibration—use raw model outputs directly
+    final_preds = raw_preds
 
     display_prediction_summary(final_preds)
     logger.info(f"Pipeline completed in {(time.time() - start_ts):.1f}s")
@@ -862,10 +862,10 @@ def main():
         "--no_calibrate", action="store_true",
         help="Skip odds calibration step"
     )
-    parser.add_argument(
-        "--blend", type=float, default=0.3,
-        help="Blend factor for calibration (0=model, 1=odds)"
-    )
+    #parser.add_argument(
+        #"--blend", type=float, default=0.3,
+       # help="Blend factor for calibration (0=model, 1=odds)"
+   # )
     parser.add_argument(
         "--debug", action="store_true",
         help="Enable debug logging"
@@ -878,9 +878,6 @@ def main():
     final_preds, raw_preds = generate_predictions(
         days_window=args.days,
         model_dir=args.model_dir,
-        #calibrate_with_odds=not args.no_calibrate,
-        calibrate_with_odds=False,
-        blend_factor=args.blend,
         historical_lookback=args.lookback,
         debug_mode=args.debug
     )
