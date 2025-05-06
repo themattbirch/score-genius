@@ -31,7 +31,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   return (
     <div className="app-card flex flex-col gap-2" data-tour="game-card">
       {/* Top Row: Teams & Time */}
-      <div className="flex items-start gap-4">
+      <div className="flex items-start justify-between gap-4">
         {/* Left Side: Teams & Time */}
         <div className="min-w-0 flex-1 max-w-md">
           {" "}
@@ -68,13 +68,13 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           </p>
         </div>
         {/* Right Side: Score/Prediction/Pitchers & Odds */}
-        <div className="w-36 text-left text-sm">
+        <div className="w-36 md:w-auto text-right text-sm">
           {" "}
           {/* <<< CHANGED flex-none to w-36 */}
           {/* === Main Display: Use dataType === */}
           {game.dataType === "historical" ? (
             // --- Historical Score ---
-            <p className="font-semibold text-lg">
+            <p className="font-semibold text-lg w-full">
               {game.away_final_score ?? "-"} – {game.home_final_score ?? "-"}
               <span className="block text-xs font-normal text-text-secondary">
                 {" "}
@@ -86,7 +86,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             <>
               {sport === "NBA" ? (
                 // NBA Prediction
-                <p className="font-medium">
+                <p className="font-medium w-full">
                   {game.predictionAway ?? "-"} – {game.predictionHome ?? "-"}
                   <span className="block text-xs font-normal text-text-secondary">
                     {" "}
@@ -96,11 +96,11 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
               ) : (
                 // MLB Pitchers
                 <>
-                  <p className="text-xs font-normal text-[var(--color-text-secondary)]">
+                  <p className="text-xs font-normal w-full text-[var(--color-text-secondary)]">
                     {game.awayPitcher ?? "TBD Pitcher"}
                     {game.awayPitcherHand && ` (${game.awayPitcherHand}HP)`}
                   </p>
-                  <p className="text-xs font-normal text-[var(--color-text-secondary)]">
+                  <p className="text-xs font-normal w-full  text-[var(--color-text-secondary)]">
                     {game.homePitcher ?? "TBD Pitcher"}
                     {game.homePitcherHand && ` (${game.homePitcherHand}HP)`}
                   </p>
@@ -110,7 +110,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
               {sport === "NBA"
                 ? // Use standardized odds names if backend maps them
                   (game.spreadLine !== null || game.totalLine !== null) && (
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-1">
+                    <p className="text-xs w-full  text-[var(--color-text-secondary)] mt-1">
                       Spread {game.spreadLine ?? "N/A"}, Total{" "}
                       {game.totalLine ?? "N/A"}
                     </p>
@@ -119,7 +119,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                   ((game.moneylineHome !== null &&
                     game.moneylineAway !== null) ||
                     game.totalLine !== null) && (
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-1">
+                    <p className="text-xs w-full  text-[var(--color-text-secondary)] mt-1">
                       ML {game.moneylineAway ?? "N/A"} /{" "}
                       {game.moneylineHome ?? "N/A"}, O/U{" "}
                       {game.totalLine ?? "N/A"}
@@ -128,7 +128,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             </>
           ) : (
             // Fallback
-            <p className="font-medium">---</p>
+            <p className="font-medium w-full ">---</p>
           )}
         </div>
       </div>
