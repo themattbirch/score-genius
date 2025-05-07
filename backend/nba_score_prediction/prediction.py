@@ -631,7 +631,7 @@ def generate_predictions(
     uncertainty = PredictionUncertaintyEstimator(historical_coverage_stats=cov_df, debug=debug_mode)
 
     # ---------- MODELS -------------------------------------------------------
-    models, feature_list = load_trained_models(model_dir, load_feature_list=False)
+    models, feature_list = load_trained_models(model_dir, load_feature_list=True)
     if not models:
         _restore()
         return [], []

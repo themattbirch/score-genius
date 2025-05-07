@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Optional import for LOWESS smoother
 try:
-    import statsmodels.api as sm
+    import statsmodels.api as sm # type: ignore
     _has_statsmodels = True
 except ImportError:
     _has_statsmodels = False

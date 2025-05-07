@@ -13,7 +13,6 @@ import pandas as pd
 import numpy as np # Keep numpy if needed for NaN checks etc.
 
 # Import the transform function from each feature module, aliasing for clarity
-from .momentum import transform as momentum_transform
 from .advanced import transform as advanced_transform
 from .rolling import transform as rolling_transform
 from .rest import transform as rest_transform
@@ -39,7 +38,6 @@ __all__ = ["run_feature_pipeline"]
 # Define the standard execution order
 # Adjust this order based on actual feature dependencies if they differ from legacy
 DEFAULT_EXECUTION_ORDER = [
-    "momentum",
     "advanced",
     "rolling",
     "rest",
@@ -50,7 +48,6 @@ DEFAULT_EXECUTION_ORDER = [
 
 # Map module names to their transform functions
 TRANSFORM_MAP = {
-    "momentum": momentum_transform,
     "advanced": advanced_transform,
     "rolling": rolling_transform,
     "rest": rest_transform,
