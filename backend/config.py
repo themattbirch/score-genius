@@ -26,6 +26,14 @@ try:
     MODEL_PATH = PROJECT_ROOT / "notebooks" / "models" / "pregame_model.pkl"
     logger.info(f"Using MODEL_PATH: {MODEL_PATH}")
 
+    # project‐root/models/saved
+    MAIN_MODELS_DIR = Path(__file__).resolve().parent.parent / "models" / "saved"
+    REPORTS_DIR     = Path(__file__).resolve().parent.parent / "reports"
+
+    # ensure they exist on import
+    MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
     # --- Define path to the .env file IN THE BACKEND DIRECTORY ---
     env_path = BACKEND_DIR / ".env"
 

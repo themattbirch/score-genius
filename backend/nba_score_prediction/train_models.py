@@ -19,7 +19,7 @@ Key steps include:
 
 
 from __future__ import annotations
-import sys
+import sys, os
 from pathlib import Path
 
 # ensure project root is on PYTHONPATH so `import backend…` works
@@ -27,18 +27,17 @@ SCRIPT_PATH = Path(__file__).resolve()
 PROJECT_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.config import MAIN_MODELS_DIR, REPORTS_DIR
+
 # --- Standard Library Imports ---
 import argparse
 import json
 import logging
-import os
 import re
-import sys
 import time
 import warnings
 import traceback # Still needed for potential dummy import error handling
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
 
 # --- Third-Party Imports ---
@@ -114,12 +113,6 @@ except ImportError as e_essential:
 SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = BACKEND_DIR.parent
-
-# Get paths from config, providing sensible defaults if config doesn't define them
-MAIN_MODELS_DIR = Path(getattr(config, 'MAIN_MODELS_DIR', PROJECT_ROOT / 'models' / 'saved'))
-REPORTS_DIR = Path(getattr(config, 'REPORTS_DIR', PROJECT_ROOT / 'reports'))
-MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Import Modules with Potential Dummy Fallbacks ---
 LOCAL_MODULES_AVAILABLE = False # Flag to know if real modules loaded
@@ -1630,7 +1623,7 @@ def run_training_pipeline(args: argparse.Namespace):
     if args.debug:
         logger.debug(f"Final selected features by LASSO: {final_feature_list_for_models}")
 
-    # only write the JSON and quit if the flag is set
+     # only write the JSON and quit if the flag is set
     if args.write_selected_features:
         selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
         try:
@@ -1642,16 +1635,21 @@ def run_training_pipeline(args: argparse.Namespace):
             logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
         logger.info("Exiting after writing selected features (flag --write-selected-features).")
         sys.exit(0)
-    # --- Data Splitting (using LASSO-selected features) ---  
+
+    # --- Data Splitting (using LASSO-selected features) ---
     logger.info("Splitting data (time-based) using LASSO-selected features...")
     essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
     cols_for_split_df = essential_non_feature_cols + final_feature_list_for_models
     missing_split_cols = [col for col in cols_for_split_df if col not in features_df.columns]
     if missing_split_cols:
-         logger.error(f"Columns required for splitting are missing from features_df: {missing_split_cols}")
-         sys.exit(1)
+        logger.error(f"Columns required for splitting are missing from features_df: {missing_split_cols}")
+        sys.exit(1)
 
-    features_df_selected = features_df[cols_for_split_df].sort_values('game_date').reset_index(drop=True)
+    features_df_selected = (
+        features_df[cols_for_split_df]
+        .sort_values('game_date')
+        .reset_index(drop=True)
+    )
     logger.info(f"Created features_df_selected for splitting with shape: {features_df_selected.shape}")
 
     n_total = len(features_df_selected)

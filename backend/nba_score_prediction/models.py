@@ -32,12 +32,9 @@ from sklearn.svm import SVR
 
 
 # --- Configuration ---
-SCRIPT_DIR = Path(__file__).resolve().parent 
-BACKEND_DIR = SCRIPT_DIR.parent             
-PROJECT_ROOT = BACKEND_DIR.parent           
+from backend.config import MAIN_MODELS_DIR as MODELS_BASE_DIR_DEFAULT
 
-# Use the same primary directory as train_models.py/prediction.py for the default
-MODELS_BASE_DIR_DEFAULT = PROJECT_ROOT / 'models' / 'saved'
+# Ensure it exists
 MODELS_BASE_DIR_DEFAULT.mkdir(parents=True, exist_ok=True)
 
 # --- Logger Configuration ---

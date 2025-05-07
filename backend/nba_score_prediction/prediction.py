@@ -17,8 +17,8 @@ import logging
 
 # -----------------------------------------------------------------------------
 # Logging: kill WARNING/INFO in CI (or when LOG_LEVEL_OVERRIDE=ERROR)
-if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
-    logging.disable(logging.ERROR - 1)      # == disable < ERROR
+#if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
+   # logging.disable(logging.ERROR - 1)      # == disable < ERROR
 # -----------------------------------------------------------------------------
 
 # Nothing else to configure – ERROR and CRITICAL will still show
@@ -39,9 +39,8 @@ import config
 from supabase import create_client
 from caching.supabase_client import supabase as supabase_client_instance
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+from config import MAIN_MODELS_DIR as MODELS_DIR, REPORTS_DIR
 
-
-# --- Constants & paths ---
 MODELS_DIR = PROJECT_ROOT / "models" / "saved"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -243,39 +242,45 @@ def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.Data
         logger.error(f"Error fetching upcoming games: {e}", exc_info=True)
         return pd.DataFrame()
 
-# --- Model Loading ---
 # --- Model Loading -----------------------------------------------------------
 def load_trained_models(
     model_dir: Path = MODELS_DIR,
-    load_feature_list: bool = False,   # ⬅ default OFF for now
+    load_feature_list: bool = False,   # if True, try to read selected_features.json
 ) -> Tuple[Dict[str, Any], Optional[List[str]]]:
     """
-    Load any saved `*_score_predictor.joblib` models from `model_dir`.
-    If `load_feature_list` is True and a clean selected_features.json is present,
-    return it; otherwise return None.
+    Load saved `*_score_predictor.joblib` models from `model_dir`.
+    Also attempts to load `selected_features.json` from the same directory.
+
+    Returns:
+      - models: dict mapping model keys (e.g. 'svr', 'ridge') to predictor instances
+      - feature_list: list of selected features if JSON is present, else None
     """
+    # --- Load selected feature list if available
+    feature_list: Optional[List[str]] = None
+    features_fp = model_dir / "selected_features.json"
+    if features_fp.is_file():
+        try:
+            with open(features_fp, 'r') as f:
+                feature_list = json.load(f)
+            logger.info(f"Loaded selected_features.json with {len(feature_list)} features")
+        except Exception as e:
+            logger.warning(f"Could not read selected_features.json: {e}. Continuing without it.")
+    else:
+        logger.warning("selected_features.json not found — will use all pipeline features.")
+
+    # --- Load models
     models: Dict[str, Any] = {}
     for name, Cls in [("svr", SVRScorePredictor), ("ridge", RidgeScorePredictor)]:
         try:
             pred = Cls(model_dir=str(model_dir), model_name=f"{name}_score_predictor")
             pred.load_model()
             models[name] = pred
-            logger.info("Loaded %s predictor.", name)
+            logger.info(f"Loaded '{name}' predictor from {model_dir}")
         except Exception as e:
-            logger.error("Could not load '%s' model: %s", name, e, exc_info=True)
-
-    feature_list: Optional[List[str]] = None
-    if load_feature_list:
-        fp = model_dir / "selected_features.json"
-        if fp.is_file():
-            try:
-                with fp.open() as f:
-                    feature_list = json.load(f)
-            except Exception as e:
-                logger.warning("Ignoring unreadable selected_features.json: %s", e)
+            logger.error(f"Could not load '{name}' model: {e}", exc_info=True)
 
     if not models:
-        raise RuntimeError(f"No models found in {model_dir}")
+        raise RuntimeError(f"No models could be loaded from {model_dir}")
 
     return models, feature_list
 
@@ -585,29 +590,31 @@ def generate_predictions(
     historical_lookback: int = DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
     debug_mode: bool = False
 ) -> Tuple[List[Dict], List[Dict]]:
+
     if not PROJECT_MODULES_IMPORTED:
         logger.critical("Project modules not imported correctly.")
         return [], []
 
-    logger.info("--- Starting NBA Prediction Pipeline ---")
-    start_ts = time.time()
-
-    # optional DEBUG verbosity toggle
+    # ————— Setup logging/debug toggle —————
     root_logger = logging.getLogger()
-    original_levels = [h.level for h in root_logger.handlers]
+    orig_levels = [h.level for h in root_logger.handlers]
     orig_level = logger.level
     def _restore():
         logger.setLevel(orig_level)
-        for lvl, h in zip(original_levels, root_logger.handlers):
+        for lvl, h in zip(orig_levels, root_logger.handlers):
             h.setLevel(lvl)
+
     if debug_mode:
         logger.setLevel(logging.DEBUG)
         for h in root_logger.handlers:
             h.setLevel(logging.DEBUG)
         logger.debug("DEBUG mode enabled")
 
-    # ---------- DATA ---------------------------------------------------------
-    supabase = get_supabase_client()
+    start_ts = time.time()
+    logger.info("--- Starting NBA Prediction Pipeline ---")
+
+    # ————— LOAD DATA —————
+    supabase      = get_supabase_client()
     if not supabase:
         logger.critical("Cannot proceed without Supabase client")
         _restore()
@@ -621,35 +628,40 @@ def generate_predictions(
         logger.warning("No upcoming games; exiting.")
         _restore()
         return [], []
+
+    # If no history or team stats, pass None downstream
     if hist_df.empty:
         hist_df = None
     if team_stats_df.empty:
         team_stats_df = None
 
+    # Uncertainty estimator (optional)
     cov_file = REPORTS_DIR / "historical_coverage_stats.csv"
     cov_df   = pd.read_csv(cov_file) if cov_file.is_file() else None
-    uncertainty = PredictionUncertaintyEstimator(historical_coverage_stats=cov_df, debug=debug_mode)
+    uncertainty = PredictionUncertaintyEstimator(
+        historical_coverage_stats=cov_df,
+        debug=debug_mode
+    )
 
-    # ---------- MODELS -------------------------------------------------------
+    # ————— LOAD MODELS & FEATURE LIST —————
     models, feature_list = load_trained_models(model_dir, load_feature_list=True)
     if not models:
+        logger.error("No models loaded; aborting.")
         _restore()
         return [], []
 
-    # ---------- ENSEMBLE WEIGHTS -------------------------------------------
+    # ————— ENSEMBLE WEIGHTS —————
     weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
-    wfile = model_dir / ENSEMBLE_WEIGHTS_FILENAME
+    wfile   = model_dir / ENSEMBLE_WEIGHTS_FILENAME
     if wfile.is_file():
         try:
-            with wfile.open() as f:
-                loaded = json.load(f)
-
-            expected = set(weights.keys())  # {"ridge", "svr"}
-            if abs(sum(loaded.values()) - 1.0) < 1e-5 and expected.issubset(loaded):
-                subset = {k: float(loaded[k]) for k in expected}
+            loaded = json.loads(wfile.read_text())
+            keys = set(weights)
+            if abs(sum(loaded.values()) - 1.0) < 1e-5 and keys.issubset(loaded):
+                subset = {k: float(loaded[k]) for k in keys}
                 tot = sum(subset.values())
                 if abs(tot - 1.0) > 1e-5 and tot > 0:
-                    subset = {k: v / tot for k, v in subset.items()}
+                    subset = {k: v/tot for k, v in subset.items()}
                 weights = subset
                 logger.info("Using ensemble weights: %s", weights)
             else:
@@ -657,53 +669,61 @@ def generate_predictions(
         except Exception as e:
             logger.error("Error reading ensemble weights: %s", e)
 
-    # ---------- FEATURES -----------------------------------------------------
+    # ————— FEATURE ENGINEERING —————
+    from backend.nba_features.engine import DEFAULT_EXECUTION_ORDER
+
+    # Merge historical + upcoming so advanced→rolling sees box scores
+    if hist_df is not None:
+        combined = pd.concat([hist_df, upcoming_df], ignore_index=True)
+    else:
+        combined = upcoming_df.copy()
+
     try:
-        features_df = run_feature_pipeline(
-            df=upcoming_df.copy(),
+        features_all = run_feature_pipeline(
+            df=combined,
             historical_games_df=hist_df,
             team_stats_df=team_stats_df,
-            rolling_windows=[5, 10, 20],
+            rolling_windows=[5,10,20],
             h2h_window=7,
+            execution_order=DEFAULT_EXECUTION_ORDER,
             debug=debug_mode
         )
     except Exception as e:
-        logger.error(f"Feature pipeline error: {e}", exc_info=debug_mode)
+        logger.error("Feature pipeline error: %s", e, exc_info=debug_mode)
         _restore()
         return [], []
+
+    # Slice back out just the upcoming games
+    features_df = features_all.loc[
+        features_all["game_id"].isin(upcoming_df["game_id"])
+    ].reset_index(drop=True)
 
     if features_df.empty:
         logger.error("No features returned; exiting.")
         _restore()
         return [], []
 
-    # ---------- BUILD THE FEATURE MATRIX ------------------------------------
-    # If selected_features.json is missing, fall back to *all* columns emitted by
-    # the feature pipeline.  This keeps inference alive while you fix leakage.
-    if feature_list is None:
-        feature_list = list(features_df.columns)
+    # ————— BUILD FEATURE MATRIX —————
+    if feature_list:
+        logger.info("Applying %d selected features from selected_features.json", len(feature_list))
+        missing = [c for c in feature_list if c not in features_df.columns]
+        if missing:
+            logger.warning("Missing %d features; filling with zeros: %s", len(missing), missing)
+        X = features_df.reindex(columns=feature_list, fill_value=0)
+    else:
         logger.warning(
-            "selected_features.json not found — using all %d feature columns "
-            "produced by the pipeline.",
-            len(feature_list)
+            "selected_features.json not found — using all %d pipeline-generated features",
+            features_df.shape[1]
         )
+        X = features_df.copy()
 
-    missing_cols = [c for c in feature_list if c not in features_df.columns]
-    if missing_cols:
-        logger.info("Adding %d missing columns as zeros: %s", len(missing_cols), missing_cols)
+    X = X.fillna(0).replace([np.inf, -np.inf], 0)
 
-    X = (
-        features_df
-        .reindex(columns=feature_list, fill_value=0)      # add any missing cols
-        .fillna(0)                                        # NaNs → 0
-        .replace([np.inf, -np.inf], 0)                    # Infs → 0
-    )
-
-    # per-model preds
+    # ————— PER-MODEL PREDICTIONS —————
     preds_by_model: Dict[str, pd.DataFrame] = {}
     for name, mdl in models.items():
         if not hasattr(mdl, "predict"):
-            logger.warning(f"Model '{name}' has no predict(); skipping.")
+            logger.warning("Model '%s' has no predict(); skipping.", name)
             continue
         try:
             arr = mdl.predict(X)
@@ -713,42 +733,47 @@ def generate_predictions(
                 index=X.index
             )
         except Exception as e:
-            logger.error(f"Error in {name}.predict(): {e}", exc_info=debug_mode)
+            logger.error("Error in %s.predict(): %s", name, e, exc_info=debug_mode)
 
     if not preds_by_model:
         logger.error("No predictions produced by any model; exiting.")
         _restore()
         return [], []
 
-    info_df = features_df.set_index(X.index)[["game_id","game_date","home_team","away_team"]]
-    raw_preds: List[Dict] = []
+    # Metadata for each row
+    info_df = features_df.set_index(X.index)[
+        ["game_id","game_date","home_team","away_team"]
+    ]
 
+    # ————— ASSEMBLE RAW PREDICTIONS —————
+    raw_preds: List[Dict] = []
     for idx in X.index:
         row = info_df.loc[idx]
         comps = {
-            name: {
+            m: {
                 "home": float(df.at[idx,"predicted_home_score"]),
                 "away": float(df.at[idx,"predicted_away_score"])
             }
-            for name, df in preds_by_model.items()
+            for m, df in preds_by_model.items()
             if idx in df.index
         }
         if not comps:
             continue
 
-        # ensemble
-        w_sum = sum(weights.get(n,0) for n in comps)
+        # ensemble blend
+        w_sum = sum(weights.get(m,0) for m in comps)
         if w_sum < 1e-6:
             h_ens = np.mean([c["home"] for c in comps.values()])
             a_ens = np.mean([c["away"] for c in comps.values()])
         else:
-            h_ens = sum(comps[n]["home"] * weights.get(n,0) for n in comps) / w_sum
-            a_ens = sum(comps[n]["away"] * weights.get(n,0) for n in comps) / w_sum
+            h_ens = sum(comps[m]["home"] * weights[m] for m in comps) / w_sum
+            a_ens = sum(comps[m]["away"] * weights[m] for m in comps) / w_sum
 
         diff = h_ens - a_ens
         tot  = h_ens + a_ens
         winp = 1 / (1 + math.exp(-0.1 * diff))
 
+        # optionally add uncertainty intervals
         try:
             tmp = pd.DataFrame({
                 "predicted_home_score":[h_ens],
@@ -761,17 +786,17 @@ def generate_predictions(
             lb = ub = float("nan")
 
         raw_preds.append({
-            "game_id":                row["game_id"],
-            "game_date":              row["game_date"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "home_team":              row["home_team"],
-            "away_team":              row["away_team"],
-            "predicted_home_score":   round(h_ens,1),
-            "predicted_away_score":   round(a_ens,1),
-            "predicted_point_diff":   round(diff,1),
-            "predicted_total_score":  round(tot,1),
-            "win_probability":        round(winp,3),
-            "lower_bound":            (round(lb,1) if not math.isnan(lb) else None),
-            "upper_bound":            (round(ub,1) if not math.isnan(ub) else None),
+            "game_id":               row["game_id"],
+            "game_date":             row["game_date"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "home_team":             row["home_team"],
+            "away_team":             row["away_team"],
+            "predicted_home_score":  round(h_ens,1),
+            "predicted_away_score":  round(a_ens,1),
+            "predicted_point_diff":  round(diff,1),
+            "predicted_total_score": round(tot,1),
+            "win_probability":       round(winp,3),
+            "lower_bound":           (round(lb,1) if not math.isnan(lb) else None),
+            "upper_bound":           (round(ub,1) if not math.isnan(ub) else None),
             "raw_predicted_home_score":  round(h_ens,1),
             "raw_predicted_away_score":  round(a_ens,1),
             "raw_predicted_point_diff":  round(diff,1),
@@ -782,20 +807,7 @@ def generate_predictions(
             "component_predictions":     comps
         })
 
-    # optional calibration
-    #final_preds = []
-   # if calibrate_with_odds:
-      #  odds = fetch_and_parse_betting_odds(supabase, [r["game_id"] for r in raw_preds])
-      #  if odds:
-          #  for r in raw_preds:
-            #    final_preds.append(calibrate_prediction_with_odds(r, odds.get(r["game_id"]), blend_factor))
-       #else:
-           # final_preds = raw_preds
-    #else:
-       # final_preds = raw_preds
-     # skip any calibration—use raw model outputs directly
     final_preds = raw_preds
-
     display_prediction_summary(final_preds)
     logger.info(f"Pipeline completed in {(time.time() - start_ts):.1f}s")
     _restore()

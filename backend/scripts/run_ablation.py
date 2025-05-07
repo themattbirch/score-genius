@@ -84,40 +84,42 @@ def apply_blocks(
     hist_df: pd.DataFrame,
     team_stats_df: pd.DataFrame,
     rolling_windows: list[int],
-    h2h_window: int, # Keep this parameter name for the function signature
+    h2h_window: int,
 ) -> pd.DataFrame:
-    """
-    Apply each block in EXECUTION_ORDER (after expansion) to a fresh df copy.
-    """
     out = df.copy()
     active = set(blocks)
-    # Use a temporary debug flag based on script args if needed, or pass it down
-    # debug_mode = args.debug # Assuming args is accessible or passed down
 
     for name in EXECUTION_ORDER:
         if name not in active:
             continue
 
+        # ✂️ auto‑skip momentum when no quarter data
+        if name == "momentum":
+            required = {
+                "home_q1","home_q2","home_q3","home_q4",
+                "away_q1","away_q2","away_q3","away_q4"
+            }
+            if not required.issubset(out.columns):
+                logger.info("Skipping 'momentum' block: no quarter data present.")
+                continue
+
         fn = MODULES[name]
-        logger.debug(f"Applying block: {name}") # Added debug log
+        logger.debug(f"Applying block: {name}")
 
-        # Prepare kwargs for the specific module
-        kwargs = {'debug': False} # Default debug to False unless passed down
-
+        kwargs = {'debug': False}
         if name == "rolling":
             kwargs['window_sizes'] = rolling_windows
-            out = fn(out, **kwargs) # Pass kwargs
+            out = fn(out, **kwargs)
         elif name == "h2h":
-            # *** FIX: Use 'max_games' instead of 'window' ***
             kwargs['historical_df'] = hist_df
-            kwargs['max_games'] = h2h_window # Use the correct keyword argument
-            out = fn(out, **kwargs) # Pass kwargs
+            kwargs['max_games']     = h2h_window
+            out = fn(out, **kwargs)
         elif name == "season":
             kwargs['team_stats_df'] = team_stats_df
-            out = fn(out, **kwargs) # Pass kwargs
+            out = fn(out, **kwargs)
         else:
-             # For modules like momentum, advanced, rest, form that only take df and debug
-             out = fn(out, **kwargs) # Pass kwargs
+            # advanced, rest, form
+            out = fn(out, **kwargs)
 
     return out
 

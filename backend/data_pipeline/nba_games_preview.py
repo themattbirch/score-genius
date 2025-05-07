@@ -39,9 +39,17 @@ BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from zoneinfo import ZoneInfo
+
+#### ─── make the project root importable ───────────────────────────────####
+# assume this file lives in PROJECT_ROOT/backend/data_pipeline/
+HERE = Path(__file__).resolve().parent
+PROJECT_ROOT = HERE.parents[1]     # up two levels: .../backend/data_pipeline -> .../backend -> PROJECT_ROOT
+sys.path.insert(0, str(PROJECT_ROOT))
+
 # now config.py can be imported, and load_dotenv will run
 try:
-    from config import (
+    from backend.config import (
         API_SPORTS_KEY,
         ODDS_API_KEY,
         SUPABASE_URL,
@@ -59,22 +67,16 @@ except ImportError as e:
     RAPIDAPI_KEY         = os.getenv("RAPIDAPI_KEY")
     RAPIDAPI_HOST        = os.getenv("RAPIDAPI_HOST")
 
-# Validate
-_missing = [
-    name for name, val in [
-        ("API_SPORTS_KEY",       API_SPORTS_KEY),
-        ("ODDS_API_KEY",         ODDS_API_KEY),
-        ("SUPABASE_URL",         SUPABASE_URL),
-        ("SUPABASE_SERVICE_KEY", SUPABASE_SERVICE_KEY),
-        ("RAPIDAPI_KEY",         RAPIDAPI_KEY),      # Added
-        ("RAPIDAPI_HOST",        RAPIDAPI_HOST),     # Added
-    ] if not val
-]
-if _missing:
-    print(f"FATAL ERROR: Missing required config/env vars: {', '.join(_missing)}")
-    sys.exit(1)
+#### ─── shared constants from prediction.py ───────────────────────────####
+from backend.config import MAIN_MODELS_DIR as MODELS_DIR
+from caching.supabase_client import supabase        # your existing client wrapper
+from backend.nba_score_prediction.prediction import (
+    DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
+    generate_predictions,
+    upsert_score_predictions,
+)
 
-
+from backend.config import MAIN_MODELS_DIR as MODELS_DIR
 from caching.supabase_client import supabase # Assumes this initializes Supabase client correctly
 from nba_score_prediction.prediction import (
     DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
@@ -82,11 +84,6 @@ from nba_score_prediction.prediction import (
     upsert_score_predictions,
 )
 
-
-# --- Constants ---
-MODELS_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "models" / "saved"
-)
 # API-Sports (for Games/Odds)
 NBA_SPORTS_API = "https://v1.basketball.api-sports.io"
 HEADERS_SPORTS = {
