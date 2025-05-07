@@ -1420,23 +1420,13 @@ def run_training_pipeline(args: argparse.Namespace):
         sys.exit(1)
     if team_stats_df is not None and team_stats_df.empty: # Check if not None before logging warning
         logger.warning("Team stats data is empty or failed to load. Context features might be limited.")
-
-    # --- Feature Engineering ---
-    # REMOVED FeatureEngine Initialization block
-
-    logger.info("Generating features for ALL historical data using modular pipeline...")
-    # Parse rolling windows argument
-    rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10, 20] # Default if not provided
-    logger.info(f"Using rolling windows: {rolling_windows_list}")
-    logger.info(f"Using H2H window: {args.h2h_window}")
-
+   
     try:
         # Call the imported run_feature_pipeline function directly
         features_df = run_feature_pipeline(
             df=historical_df.copy(), # Pass the main historical data
             historical_games_df=historical_df.copy(), # Pass historical again for H2H lookup
-            team_stats_df=team_stats_df.copy() if team_stats_df is not None and not team_stats_df.empty else None, # Pass team stats if available
-            rolling_windows=rolling_windows_list,
+            team_stats_df=team_stats_df.copy(),
             h2h_window=args.h2h_window,
             debug=args.debug # Pass debug flag
             # execution_order can be omitted to use the default from engine.py
@@ -1642,6 +1632,19 @@ def run_training_pipeline(args: argparse.Namespace):
             logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
         logger.info("Exiting after writing selected features (flag --write-selected-features).")
         sys.exit(0)
+
+    # always dump the JSON so inference will pick it up
+    try:
+        selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
+        MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        with open(selected_features_path, 'w') as f:
+            json.dump(final_feature_list_for_models, f, indent=2)
+        logger.info(f"Wrote {len(final_feature_list_for_models)} selected features to {selected_features_path}")
+    except Exception as e:
+        logger.error(f"Could not write selected_features.json: {e}", exc_info=True)
+
+
+
     # --- Data Splitting (using LASSO-selected features) ---  
     logger.info("Splitting data (time-based) using LASSO-selected features...")
     essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
@@ -2029,7 +2032,6 @@ if __name__ == '__main__':
     parser.add_argument("--lookback-days", type=int, default=1095, help="Number of days of historical data to load (approx 3 seasons)")
 
     # Feature Engineering Arguments
-    parser.add_argument("--rolling-windows", type=str, default="5,10,20", help="Comma-separated rolling window sizes for feature generation")
     parser.add_argument("--h2h-window", type=int, default=5, help="Number of recent games for Head-to-Head features")
 
     # Model Selection Arguments

@@ -1,5 +1,3 @@
-# backend/features/base_windows.py
-
 from __future__ import annotations
 import logging
 from typing import Sequence, Union, Optional, Any # Added Any for Client type hint
@@ -75,3 +73,5 @@ def fetch_rolling(
         logger.error(f"fetch_rolling: Error querying Supabase view '{ROLLING_VIEW}': {e}", exc_info=True)
         # Return an empty DataFrame on error to prevent downstream issues
         return pd.DataFrame()
+
+

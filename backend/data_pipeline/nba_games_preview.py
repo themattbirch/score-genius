@@ -8,16 +8,16 @@ and generate score predictions.
 # ‑‑‑‑‑ ABSOLUTE SILENCE IN CI ‑‑‑‑‑
 import os, logging, threading, sys, time
 
-if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
+#if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
     # Mute all WARNING/INFO/DEBUG
-    logging.disable(logging.ERROR)
+    #logging.disable(logging.ERROR)
 
     # Emit a dot every 30 s so GitHub Actions sees activity
-    def _tick():
-        while True:
-            time.sleep(30)
-            print('.', flush=True)
-    threading.Thread(target=_tick, daemon=True).start()
+    #def _tick():
+       #while True:
+            #time.sleep(30)
+            #print('.', flush=True)
+   # threading.Thread(target=_tick, daemon=True).start()
 # ‑‑‑‑‑ END SILENCE BLOCK ‑‑‑‑‑
 
 import json
@@ -522,6 +522,7 @@ def main():
     start = time.time()
     print("\n--- NBA Daily Pipeline Start ---")
     
+    
     try:
 
         # 1) Clear past games
@@ -543,7 +544,7 @@ def main():
                 days_window=2,
                 model_dir=MODELS_DIR,
                 historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
-                debug_mode=False
+                debug_mode=True
             )
             if preds:
                 upsert_score_predictions(preds)

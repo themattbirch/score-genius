@@ -193,36 +193,50 @@ class BaseScorePredictor:
         """
         load_path_str = filepath
         if load_path_str is None:
+            # figure out which files to scan
+            # prefer an explicit model_name arg, else fall back to self.model_name
+            search_name = model_name if model_name is not None else self.model_name
+            if not isinstance(search_name, str):
+                search_name = ""
+            if not search_name:
+                logger.warning(
+                    "No model_name provided; will consider all '.joblib' files in %s",
+                    self.model_dir
+                )
+
+            model_dir_path = Path(self.model_dir)
+            if not model_dir_path.is_dir():
+                raise FileNotFoundError(f"Model directory not found: {self.model_dir}")
+
             try:
-                search_name = model_name or self.model_name
-                model_dir_path = self.model_dir
-                if not model_dir_path.is_dir():
-                    raise FileNotFoundError(f"Model directory not found: {self.model_dir}")
-
-                files = []
+                # collect all matching .joblib files
+                candidates = []
                 for path in model_dir_path.iterdir():
-                    if path.is_file() and \
-                       path.name.startswith(search_name) and \
-                       path.name.endswith(".joblib"):
-                        files.append(path)
+                    if not path.is_file() or not path.name.endswith(".joblib"):
+                        continue
+                    if search_name and not path.name.startswith(search_name):
+                        continue
+                    candidates.append(path)
 
-                if not files:
-                    raise FileNotFoundError(f"No model file found starting with '{search_name}' in {self.model_dir}")
+                if not candidates:
+                    raise FileNotFoundError(
+                        f"No model file found starting with '{search_name}' in {self.model_dir}"
+                    )
 
-                def get_timestamp_from_filename(path: Path) -> datetime:
-                    try:
-                        match = re.search(r'_(\d{8}_\d{6})$', path.stem)
-                        if match:
-                            timestamp_str = match.group(1)
-                            return datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
-                        else:
-                            return datetime.fromtimestamp(path.stat().st_mtime) 
-                    except (IndexError, ValueError, AttributeError): 
-                        return datetime.fromtimestamp(path.stat().st_mtime) 
+                # pick the newest by timestamp extracted from filename or mtime
+                def _ts(p: Path) -> datetime:
+                    m = re.search(r'_(\d{8}_\d{6})$', p.stem)
+                    if m:
+                        try:
+                            return datetime.strptime(m.group(1), '%Y%m%d_%H%M%S')
+                        except ValueError:
+                            pass
+                    return datetime.fromtimestamp(p.stat().st_mtime)
 
-                files.sort(key=get_timestamp_from_filename, reverse=True)
-                load_path_str = str(files[0])
+                candidates.sort(key=_ts, reverse=True)
+                load_path_str = str(candidates[0])
                 logger.info(f"Loading latest model: {load_path_str}")
+
             except Exception as e:
                 logger.error(f"Error finding latest model file: {e}", exc_info=True)
                 raise

@@ -1,7 +1,8 @@
-# backend/features/form.py
+# backend/nba_features/form.py
 
 from __future__ import annotations
 import logging
+import functools 
 from typing import Any, Dict, Optional # Keep Any for DEFAULTS typing
 
 import numpy as np
@@ -25,7 +26,7 @@ __all__ = ["transform"]
 # EPSILON = 1e-6 # Moved to utils.py if needed globally
 
 # -- Helper Function --
-
+@functools.lru_cache(maxsize=256) 
 def _extract_form_metrics_single(form_string: Optional[str]) -> Dict[str, float]:
     """
     Extracts metrics (win_pct, current_streak, momentum_direction)

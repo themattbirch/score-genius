@@ -1,6 +1,7 @@
 # backend/data_pipeline/nba_team_stats_historical.py
 
 import json
+from zoneinfo import ZoneInfo
 import requests
 import sys
 import os
@@ -50,6 +51,8 @@ if BACKEND_DIR not in sys.path:
 
 
 from caching.supabase_client import supabase
+from backend.data_pipeline.nba_game_stats_historical import parse_season_for_date
+
 
 API_KEY = API_SPORTS_KEY
 BASE_URL = 'https://v1.basketball.api-sports.io'
@@ -307,9 +310,15 @@ def upsert_historical_team_stats(record):
     Upsert team statistics to the nba_historical_team_stats table.
     """
     try:
-        result = supabase.table("nba_historical_team_stats").upsert(
-            record, on_conflict="team_id,season,league_id"
-        ).execute()
+        result = (
+            supabase
+            .table("nba_historical_team_stats")
+            .upsert(
+                record,
+                on_conflict="team_id,season,updated_at"   # ← changed
+            )
+            .execute()
+        )
         return result
     except Exception as e:
         print(f"Error upserting team stats: {e}")
@@ -373,68 +382,57 @@ def calculate_team_form(team_id, team_name, num_games=5):
         traceback.print_exc()  # Added stacktrace to see more details
         return ""
 
-def process_teams_for_season(league_id: str, season: str):
+def process_teams_for_season(league_id: str, season: str) -> int:
     """
-    Process all teams for a given league and season.
+    Fetch every regular NBA team in `league_id` / `season`, pull its latest
+    season‑to‑date numbers from the API (plus a custom 5‑game “form” string),
+    and return how many teams were processed.
+
+    NOTE:  • No database writes happen here.
+           • `nba_historical_team_stats` is now populated exclusively by the
+             daily snapshot built in `snapshot_yesterday()`.
     """
     print(f"\n=== Processing teams for league {league_id}, season {season} ===")
-    
-    # Fetch teams for this league and season
+
+    # ---------------------------------------------------------------- fetch list
     teams_list = get_teams_by_league_season(league_id, season)
     if not teams_list:
-        print("No teams found.")
+        print("No teams returned by /teams – aborting.")
         return 0
-    
-    # Filter out All-Star and special event teams
-    regular_teams = []
-    filtered_count = 0
-    
-    for team in teams_list:
-        team_name = team.get("name", "")
-        if is_regular_team(team_name):
-            regular_teams.append(team)
+
+    # ----------------------------------------------------------- filter specials
+    regular_teams, specials = [], 0
+    for t in teams_list:
+        if is_regular_team(t.get("name", "")):
+            regular_teams.append(t)
         else:
-            filtered_count += 1
-            print(f"Filtering out special event team: {team_name}")
-    
-    print(f"Filtered out {filtered_count} special event teams. Processing {len(regular_teams)} regular teams.")
-    
-    processed_count = 0
+            specials += 1
+    print(f"Filtered out {specials} special‑event teams. "
+          f"Processing {len(regular_teams)} regular teams.")
+
+    # ---------------------------------------------------------------- per team
+    processed = 0
     for team in regular_teams:
-        team_id = team.get("id")
+        team_id   = team.get("id")
         team_name = team.get("name")
-        print(f"Processing team: {team_name} (ID: {team_id})")
-        
-        # Fetch team statistics
-        team_stats = get_team_stats(team_id, league_id, season)
-        if not team_stats:
-            print(f"No statistics found for team_id={team_id}.")
+        print(f"→  {team_name} (ID {team_id})")
+
+        stats = get_team_stats(team_id, league_id, season)
+        if not stats:
+            print(f"   ⚠︎  No /statistics payload – skipping.")
             continue
-        
-        # Transform the data to our required format
-        record = transform_team_stats(team, team_stats, league_id, season)
-        
-        # Calculate and add custom form data
-        current_form = calculate_team_form(team_id, team_name)
-        if current_form:
-            print(f"Calculated form for {team_name}: {current_form}")
-            record['current_form'] = current_form
-        
-        print(f"[INFO] Upserting team stats => Team ID: {record['team_id']}, Team Name: {record['team_name']}")
-        try:
-            res = upsert_historical_team_stats(record)
-            print(f"[INFO] Upsert result: {res}")
-        except Exception as e:
-            print(f"[ERROR] Could not upsert team_id={team_id}: {e}")
-        
-        processed_count += 1
-        # Sleep to avoid rate limiting
-        time.sleep(1)
-    
-    print(f"Processed {processed_count} teams for league {league_id}, season {season}")
-    return processed_count
 
+        # keep transform + form so any later code using this info still works
+        record = transform_team_stats(team, stats, league_id, season)
+        record["current_form"] = calculate_team_form(team_id, team_name)
 
+        # (no database write here – snapshot_yesterday() will handle it)
+
+        processed += 1
+        time.sleep(1)      # stay well below API‑Sports rate limits
+
+    print(f"Processed {processed} teams for league {league_id}, season {season}")
+    return processed
 
 ##############################################################################
 # 5) Main Runner
@@ -479,5 +477,202 @@ def main():
     
     print(f"\nCompleted processing historical TEAM-level stats for {total_processed} teams.")
 
+# ---------------------------------------------------------------------------
+# ⬇⬇⬇  SNAPSHOT HELPERS  ⬇⬇⬇
+# ---------------------------------------------------------------------------
+
+from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
+import pandas as pd
+
+SNAP_FORM_GAMES = 10          # last‑N games to build “current_form”
+
+def _pull_games_upto(season: str, cutoff_dt: datetime) -> pd.DataFrame:
+    """
+    Grab every game in `season` whose game_date < cutoff_dt (strict).
+    """
+    resp = (
+        supabase.table("nba_historical_game_stats")
+        .select("*")
+        .eq("season", season)
+        .lt("game_date", cutoff_dt.isoformat())
+        .execute()
+    )
+    return pd.DataFrame(resp.data or [])
+
+def _build_form(win_series: pd.Series, n: int = SNAP_FORM_GAMES) -> str:
+    """
+    Turn the last N booleans (True=win) into a form string like "WLWWL".
+    """
+    if win_series.empty:
+        return ""
+    return "".join("W" if w else "L" for w in win_series.tail(n))
+
+def _agg_one(grp: pd.DataFrame) -> dict:
+    """
+    Aggregate a single team’s rows (either home or away slice).
+    Expects columns: team_score, opp_score, is_win
+    """
+    g_cnt   = len(grp)
+    wins    = int(grp["is_win"].sum())
+    losses  = g_cnt - wins
+    win_pct = wins / g_cnt if g_cnt else 0.5
+
+    return {
+        "games_played_all":      g_cnt,
+        "wins_all_total":        wins,
+        "wins_all_percentage":   round(win_pct, 3),
+        "losses_all_total":      losses,
+        "losses_all_percentage": round(1 - win_pct, 3),
+        "points_for_avg_all":        round(grp["team_score"].mean(),     1),
+        "points_against_avg_all":    round(grp["opp_score"].mean(),      1),
+        "current_form":          _build_form(grp["is_win"]),
+    }
+
+def _aggregate_team(snapshot_dt: datetime, gdf: pd.DataFrame, team_id: int, team_name: str) -> dict:
+    """
+    Season‑to‑date roll‑up for a single team (home+away combined).
+    """
+    is_home = gdf["home_team_id"] == team_id
+    is_away = gdf["away_team_id"] == team_id
+    played  = gdf[is_home | is_away].copy()
+
+    if played.empty:
+        return {}
+
+    # build win/loss & score cols vectorised
+    played["team_score"] = played["home_score"].where(is_home, played["away_score"])
+    played["opp_score"]  = played["away_score"].where(is_home, played["home_score"])
+    played["is_win"]     = played["team_score"] > played["opp_score"]
+
+    base = _agg_one(played)
+
+    season_lbl = played["season"].iloc[0]  # homogeneous by design
+
+    return {
+        "team_id":     team_id,
+        "team_name":   team_name,
+        "season":      season_lbl,
+        "league_id":   "12",                                   # NBA
+        "updated_at":  snapshot_dt.isoformat(timespec="seconds"),
+        **base,
+    }
+
+# ---------- nightly (00:00 ET) snapshot ------------------------------------
+def snapshot_yesterday() -> None:
+    et       = ZoneInfo("America/New_York")
+    snap_dt  = datetime.now(et).replace(hour=0, minute=0, second=0, microsecond=0)
+    season   = parse_season_for_date(snap_dt - timedelta(days=1))
+    print(f"\n=== Building season‑to‑date snapshot ({season}) at {snap_dt} ===")
+
+    # 1️⃣ pull the id ↔ name map (built by your per‑team fetcher)
+    id_rows = (
+        supabase.table("nba_historical_team_stats")
+        .select("team_id,team_name")
+        .eq("season", season)
+        .execute()
+        .data or []
+    )
+    id_map = {r["team_name"]: r["team_id"] for r in id_rows}
+    if not id_map:
+        print("[WARN] Season rows missing – seed first, then snapshot.")
+        return
+
+    # 2️⃣ pull games up to the snapshot moment
+    gdf = _pull_games_upto(season, snap_dt)
+    if gdf.empty:
+        print("No games yet – skipping snapshot.")
+        return
+
+    # attach team‑id columns once for fast filtering
+    gdf["home_team_id"] = gdf["home_team"].map(id_map).fillna(-1).astype(int)
+    gdf["away_team_id"] = gdf["away_team"].map(id_map).fillna(-1).astype(int)
+
+    # 3️⃣ aggregate per team
+    rows = []
+    for name, tid in id_map.items():
+        snap = _aggregate_team(snap_dt, gdf, tid, name)
+        if snap:
+            rows.append(snap)
+
+    # 4️⃣ upsert on (team_id, season, league_id) – matches unique index
+    if rows:
+        supabase.table("nba_historical_team_stats") \
+            .upsert(rows, on_conflict="team_id,season,league_id") \
+            .execute()
+        print(f"Snapshot rows upserted: {len(rows)}")
+    else:
+        print("Nothing to upsert.")
+
+# ---------- one‑off back‑fill helper ---------------------------------------
+# ---------------------------------------------------------------------------
+# season‑final back‑fill (no leakage, one row / team)  ───────────────────────
+# ---------------------------------------------------------------------------
+def snapshot_full_season(season_label: str) -> None:
+    """
+    Build a single snapshot dated *after* the last game of the given season.
+    Ideal for historical back‑fill: one row per team with final season averages.
+
+    Uses name→id map from any row already in nba_historical_team_stats
+    for that season.  (If you’ve never inserted any rows for the season,
+    run the normal team‑stats ETL once first.)
+    """
+    # 0) id‑map ────────────────────────────────────────────────────────────
+    id_rows = (
+        supabase.table("nba_historical_team_stats")
+        .select("team_id,team_name")
+        .eq("season", season_label)
+        .execute()
+        .data or []
+    )
+    id_map = {r["team_name"].lower(): r["team_id"] for r in id_rows}
+    if not id_map:
+        print(f"[WARN] No (team_name→id) rows yet for season {season_label}. "
+              "Seed the season first and retry.")
+        return
+
+    # 1) pull every game in that season ───────────────────────────────────
+    gdf = _pull_games_upto(
+        season_label,
+        cutoff_dt=datetime.max.replace(tzinfo=ZoneInfo("UTC"))
+    )
+    if gdf.empty:
+        print(f"No games for season {season_label}")
+        return
+
+    # 2) add temp id columns so _aggregate_team can work -------------------
+    gdf["home_team_id"] = gdf["home_team"].str.lower().map(id_map).fillna(-1).astype(int)
+    gdf["away_team_id"] = gdf["away_team"].str.lower().map(id_map).fillna(-1).astype(int)
+
+    last_dt = pd.to_datetime(gdf["game_date"]).max()
+
+    rows = []
+    for team_name_lower, team_id in id_map.items():
+        # recover pretty name once
+        pretty_name = next(r["team_name"] for r in id_rows if r["team_id"] == team_id)
+
+        snap = _aggregate_team(
+            snapshot_dt=last_dt + timedelta(seconds=1),   # 1‑sec after final buzzer
+            gdf=gdf,
+            team_id=team_id,
+            team_name=pretty_name
+        )
+        if snap:
+            rows.append(snap)
+
+    if not rows:
+        print(f"No rows produced for season {season_label}")
+        return
+
+    supabase.table("nba_historical_team_stats") \
+            .upsert(rows, on_conflict="team_id,season,league_id") \
+            .execute()
+
+    print(f"Back‑filled {len(rows)} team snapshots for season {season_label}")
+
+# ---------------------------------------------------------------------------
+# keep daily snapshot after the main per‑game import
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    main()
+    main()               # ← existing game importer
+    snapshot_yesterday() # nightly leak‑safe snapshot

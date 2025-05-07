@@ -11,6 +11,7 @@ import numpy as np
 import math
 import json
 import re
+import joblib
 from typing import List, Dict, Optional, Any, Tuple
 
 import logging
@@ -76,7 +77,7 @@ UPCOMING_GAMES_COLS = ["game_id", "scheduled_time", "home_team", "away_team"]
 # --- Project module imports (left as-is) ---
 try:
     from nba_features.engine import run_feature_pipeline
-    from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor
+    from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor, BaseScorePredictor
     from nba_score_prediction.simulation import PredictionUncertaintyEstimator
     import nba_score_prediction.utils as utils
     PROJECT_MODULES_IMPORTED = True
@@ -258,39 +259,61 @@ def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.Data
         )
         return pd.DataFrame()
 
-# --- Model Loading -----------------------------------------------------------
 def load_trained_models(
-    model_dir: Path = MODELS_DIR,
-    load_feature_list: bool = False,   # ⬅ default OFF for now
-) -> Tuple[Dict[str, Any], Optional[List[str]]]:
+    model_dir: Path,
+    load_feature_list: bool = True
+) -> Tuple[Dict[str, BaseScorePredictor], Optional[List[str]]]:
     """
-    Load any saved `*_score_predictor.joblib` models from `model_dir`.
-    If `load_feature_list` is True and a clean selected_features.json is present,
-    return it; otherwise return None.
+    Scans `model_dir` for .joblib files, loads each one, and returns
+    a dict {'ridge': RidgeScorePredictor, 'svr': SVRScorePredictor}
+    along with an optional selected_features list (from JSON or from models).
     """
-    models: Dict[str, Any] = {}
-    for name, Cls in [("svr", SVRScorePredictor), ("ridge", RidgeScorePredictor)]:
-        try:
-            pred = Cls(model_dir=str(model_dir), model_name=f"{name}_score_predictor")
-            pred.load_model()
-            models[name] = pred
-            logger.info("Loaded %s predictor.", name)
-        except Exception as e:
-            logger.error("Could not load '%s' model: %s", name, e, exc_info=True)
-
+    models: Dict[str, BaseScorePredictor] = {}
     feature_list: Optional[List[str]] = None
+
+    # 1) load selected_features.json if present
     if load_feature_list:
-        fp = model_dir / "selected_features.json"
-        if fp.is_file():
-            try:
-                with fp.open() as f:
-                    feature_list = json.load(f)
-            except Exception as e:
-                logger.warning("Ignoring unreadable selected_features.json: %s", e)
+        sf = model_dir / "selected_features.json"
+        if sf.is_file():
+            with sf.open() as f:
+                feature_list = json.load(f)
+            logger.info(f"Loaded selected_features.json with {len(feature_list)} features")
+        else:
+            logger.info("selected_features.json not found; will fall back to each model's feature_names_in_")
+
+    # 2) discover all joblib files
+    for path in sorted(model_dir.glob("*.joblib")):
+        try:
+            model_data = joblib.load(path)
+        except Exception as e:
+            logger.warning(f"Skipping invalid model file {path.name}: {e}")
+            continue
+
+        cls_name = model_data.get("model_class")
+        if cls_name == "RidgeScorePredictor":
+            inst = RidgeScorePredictor(model_dir=model_dir)
+            key = "ridge"
+        elif cls_name == "SVRScorePredictor":
+            inst = SVRScorePredictor(model_dir=model_dir)
+            key = "svr"
+        else:
+            logger.warning(f"Unknown model_class '{cls_name}' in {path.name}; skipping")
+            continue
+
+        # 3) load pipelines & metadata
+        inst.pipeline_home       = model_data["pipeline_home"]
+        inst.pipeline_away       = model_data["pipeline_away"]
+        inst.feature_names_in_   = model_data.get("feature_names_in_")
+        inst.training_timestamp  = model_data.get("training_timestamp")
+        inst.training_duration   = model_data.get("training_duration")
+        # override so inst.model_name matches your ensemble keys
+        inst.model_name          = key
+
+        models[key] = inst
+        logger.info(f"Loaded '{key}' model from {path.name} ({cls_name})")
 
     if not models:
-        raise RuntimeError(f"No models found in {model_dir}")
-
+        logger.error(f"No models found in {model_dir}")
     return models, feature_list
 
 # --- Betting Odds Parsing Functions ---
@@ -644,21 +667,41 @@ def generate_predictions(
     cov_df   = pd.read_csv(cov_file) if cov_file.is_file() else None
     uncertainty = PredictionUncertaintyEstimator(historical_coverage_stats=cov_df, debug=debug_mode)
 
-    # ---------- MODELS -------------------------------------------------------
-    models, feature_list = load_trained_models(model_dir, load_feature_list=False)
+    # ---------- MODELS & FEATURE LIST --------------------------------------
+    models, feature_list = load_trained_models(model_dir)
     if not models:
+        logger.error("No models loaded; exiting.")
         _restore()
         return [], []
 
+    # If we didn't load a selected_features.json, fall back to whatever
+    # the first model in memory thinks its feature_names_in_ was.
+    if feature_list is None:
+        for name, pred in models.items():
+            feats = getattr(pred, "feature_names_in_", None)
+            if feats:
+                feature_list = list(feats)
+                logger.info(
+                    "Using feature list from model '%s': %d features",
+                    name,
+                    len(feature_list),
+                )
+                break
+
+        if feature_list is None:
+            logger.warning(
+                "None of the loaded models expose feature_names_in_; "
+                "will default to using whatever the pipeline spits out."
+            )
+
     # ---------- ENSEMBLE WEIGHTS -------------------------------------------
     weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
-    wfile = model_dir / ENSEMBLE_WEIGHTS_FILENAME
+    wfile = model_dir / ENSEMBLE_WEIGHTS_FILENAME  # ENSEMBLE_WEIGHTS_FILENAME must be a string, e.g. "ensemble_weights.json"
     if wfile.is_file():
         try:
             with wfile.open() as f:
                 loaded = json.load(f)
-
-            expected = set(weights.keys())  # {"ridge", "svr"}
+            expected = set(weights.keys())
             if abs(sum(loaded.values()) - 1.0) < 1e-5 and expected.issubset(loaded):
                 subset = {k: float(loaded[k]) for k in expected}
                 tot = sum(subset.values())
@@ -677,7 +720,6 @@ def generate_predictions(
             df=upcoming_df.copy(),
             historical_games_df=hist_df,
             team_stats_df=team_stats_df,
-            rolling_windows=[5, 10, 20],
             h2h_window=7,
             debug=debug_mode
         )

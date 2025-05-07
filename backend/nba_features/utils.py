@@ -1,4 +1,4 @@
-# backend/features/utils.py
+# backend/nba_features/utils.py
 
 from __future__ import annotations
 import numpy as np
@@ -24,8 +24,21 @@ try:
 except ImportError:
     PLOTTING_AVAILABLE = False
 
+
+import sys
+import os
+
+# ensure project root is on PYTHONPATH so "backend" can be imported
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    ),
+)
+
+
 # bring in your Supabase client and FeatureEngine class
-from caching.supabase_client import supabase as supabase_client
+from backend.caching.supabase_client import supabase as supabase_client
 
 # --- Logger Configuration  ---
 logging.basicConfig(
@@ -225,7 +238,7 @@ def normalize_team_name(team_name: Optional[Any]) -> str: # Accept Any initially
     return team_lower # Return the cleaned input if no match
 
 def determine_season(game_date: pd.Timestamp) -> str:
-    """Determines the NBA season string (e.g., '2023-2024') for a given game date."""
+    """Return season in **'YYYY-YY'** format (e.g. 2023‑24, 2022‑23)."""    
     if pd.isna(game_date):
         logger.warning("Missing game_date for season determination.")
         return "Unknown_Season"
@@ -233,7 +246,6 @@ def determine_season(game_date: pd.Timestamp) -> str:
     month = game_date.month
     start_year = year if month >= 9 else year - 1
     return f"{start_year}-{start_year + 1}"
-
 
 def generate_rolling_column_name(
     prefix: str,
@@ -254,8 +266,13 @@ def convert_and_fill(
     Ensure specified columns exist, coerce them to numeric, 
     and fill any NaNs with the given default.
     """
-    for c in cols:
-        if c not in df.columns:
-            df[c] = default
-        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(default)
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        df[missing] = default
+
+    df[cols] = (
+        df[cols]
+        .apply(pd.to_numeric, errors='coerce')
+        .fillna(default)
+    )
     return df

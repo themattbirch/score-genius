@@ -246,6 +246,8 @@ def transform_game_stats(game: dict, team_stats_list: list, date_str: str) -> di
         "away_ft_made": free_throws_away.get("total", 0),
         "away_ft_attempted": free_throws_away.get("attempts", 0),
     }
+    game_dt = datetime.fromisoformat(date_str)        # you already have date_str
+    record["season"] = parse_season_for_date(game_dt)
 
     return record
 

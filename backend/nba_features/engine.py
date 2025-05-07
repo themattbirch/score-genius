@@ -1,210 +1,136 @@
-# backend/features/engine.py
-"""
-Orchestrates the execution of the modular feature engineering pipeline.
-Calls the transform function of each individual feature module in sequence.
-"""
+# backend/nba_features/engine.py
 
 from __future__ import annotations
 import logging
 import time
-from typing import Any, List, Optional # Keep Any for DEFAULTS typing if needed
+from typing import Any, List, Optional, Dict
 
 import pandas as pd
-import numpy as np # Keep numpy if needed for NaN checks etc.
 
-# Import the transform function from each feature module, aliasing for clarity
-from .momentum import transform as momentum_transform
-from .advanced import transform as advanced_transform
-from .rolling import transform as rolling_transform
-from .rest import transform as rest_transform
-from .h2h import transform as h2h_transform
-from .season import transform as season_transform
-from .form import transform as form_transform
+import os
+import sys
+import pathlib
 
-# Import utilities if needed (e.g., for profile_time, though removed for now)
-# from .utils import profile_time, DEFAULTS # DEFAULTS might not be needed directly here
+# 1) make sure your project root is on PYTHONPATH so imports work
+ROOT = pathlib.Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(ROOT))
 
-# --- Logger Configuration ---
-# Configure logging for this module
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
+# 1b) load your .env
+from dotenv import load_dotenv
+load_dotenv(ROOT / "backend" / ".env")
+
+import pandas as pd
+from pathlib import Path
+
+# now this will see SUPABASE_URL and SUPABASE_SERVICE_KEY
+from backend.caching.supabase_client import supabase
+
+from backend.data_pipeline.history_loaders import (
+    load_recent_box_scores,
+    load_team_season_stats,
+    load_schedule_next_14_days,
 )
+
+# bring in your transforms
+from backend.nba_features.rolling   import transform as rolling_transform
+from backend.nba_features.rest      import transform as rest_transform
+from backend.nba_features.h2h       import transform as h2h_transform
+from backend.nba_features.season    import transform as season_transform
+from backend.nba_features.form      import transform as form_transform
+
 logger = logging.getLogger(__name__)
 
-# Explicitly export the main pipeline function
-__all__ = ["run_feature_pipeline"]
-
-# -- Constants --
-# Define the standard execution order
-# Adjust this order based on actual feature dependencies if they differ from legacy
+# default order
 DEFAULT_EXECUTION_ORDER = [
-    "momentum",
-    "advanced",
-    "rolling",
-    "rest",
-    "h2h",
-    "season",
-    "form",
+    "rolling","rest","h2h","season","form"
 ]
 
-# Map module names to their transform functions
-TRANSFORM_MAP = {
-    "momentum": momentum_transform,
-    "advanced": advanced_transform,
-    "rolling": rolling_transform,
-    "rest": rest_transform,
-    "h2h": h2h_transform,
-    "season": season_transform,
-    "form": form_transform,
+TRANSFORM_MAP: Dict[str, Any] = {
+    "rolling":  rolling_transform,
+    "rest":     rest_transform,
+    "h2h":      h2h_transform,
+    "season":   season_transform,
+    "form":     form_transform,
 }
 
-# -- Main Pipeline Function --
-
-# @profile_time # Add decorator back if desired and imported from utils
 def run_feature_pipeline(
     df: pd.DataFrame,
-    *, # Enforce keyword arguments for options
+    *,
     historical_games_df: Optional[pd.DataFrame] = None,
-    team_stats_df: Optional[pd.DataFrame] = None,
-    rolling_windows: List[int] = [5, 10, 20], # Default rolling windows
-    h2h_window: int = 7, # Default H2H lookback
-    execution_order: List[str] = DEFAULT_EXECUTION_ORDER, # Allow overriding execution order
-    debug: bool = False,
+    team_stats_df:       Optional[pd.DataFrame] = None,
+    rolling_windows:     List[int]         = [5, 10, 20],
+    h2h_window:          int               = 7,
+    execution_order:     List[str]         = DEFAULT_EXECUTION_ORDER,
+    debug:               bool              = False,
 ) -> pd.DataFrame:
     """
-    Runs the full feature engineering pipeline by calling modular transform functions.
-
-    Args:
-        df: The primary DataFrame containing games to generate features for.
-            Expected basic columns: 'game_id', 'game_date', 'home_team', 'away_team',
-            plus any columns needed by the individual feature modules (e.g., quarter scores).
-        historical_games_df: Optional DataFrame containing historical game data,
-                             required by modules like 'h2h'.
-        team_stats_df: Optional DataFrame containing seasonal team statistics,
-                       required by the 'season' module.
-        rolling_windows: List of window sizes for the 'rolling' module.
-        h2h_window: Lookback window (max games) for the 'h2h' module.
-        execution_order: List of module names specifying the order of execution.
-                         Defaults to a standard logical order.
-        debug: If True, enables debug logging within this function and passes
-               the flag down to individual transform functions.
-
-    Returns:
-        A DataFrame with all features generated by the executed modules.
-        Returns an empty DataFrame or partially processed DataFrame on error.
+    Builds a fully‐enriched BOX_SCORES for history (including advanced metrics),
+    then runs only the non‐historical steps on `df` (no momentum/advanced there).
     """
 
-    if not rolling_windows:
-       execution_order = [m for m in execution_order if m != "rolling"]
+    # ——————————————————————————————————————————————————————————————————————
+    # 1) prepare the HISTORY with advanced metrics baked in
+    # ——————————————————————————————————————————————————————————————————————
 
-    # Set logger level based on debug flag
-    current_level = logger.level
-    if debug:
-        logger.setLevel(logging.DEBUG)
-        logger.debug("DEBUG mode enabled for feature pipeline engine.")
+    raw_hist = (
+        historical_games_df.copy()
+        if historical_games_df is not None
+        else load_recent_box_scores()
+    )
 
-    start_time_total = time.time()
-    logger.info(f"Starting feature engineering pipeline (Order: {' -> '.join(execution_order)})...")
+    # pul lout quarter totals if you haven’t done it in the loader
+    home_qs = ["home_q1","home_q2","home_q3","home_q4","home_ot"]
+    away_qs = ["away_q1","away_q2","away_q3","away_q4","away_ot"]
+    if "home_score" not in raw_hist:
+        raw_hist["home_score"] = raw_hist[home_qs].sum(axis=1)
+        raw_hist["away_score"] = raw_hist[away_qs].sum(axis=1)
 
-    # --- Input Validation ---
-    if df is None or df.empty:
-        logger.error("Engine: Input 'df' (target games) is empty. Cannot generate features.")
-        if debug: logger.setLevel(current_level) # Restore logger level
-        return pd.DataFrame()
+    from .advanced import transform as advanced_transform
+    BOX_SCORES = advanced_transform(raw_hist, debug=debug)
+    # grab team stats & schedule for the other modules
+    TEAM_STATS = team_stats_df if team_stats_df is not None else load_team_season_stats()
 
-    # Basic check for essential columns needed by most steps
-    essential_cols = ['game_id', 'game_date', 'home_team', 'away_team']
-    missing_essentials = [col for col in essential_cols if col not in df.columns]
-    if missing_essentials:
-        logger.error(f"Engine: Input 'df' missing essential columns: {missing_essentials}. Aborting pipeline.")
-        if debug: logger.setLevel(current_level) # Restore logger level
-        return df # Return original df as it cannot be processed
+    # ——————————————————————————————————————————————————————————————————————
+    # 2) trim out momentum+advanced from the upcoming‐games pipeline
+    # ——————————————————————————————————————————————————————————————————————
 
-    # --- Pipeline Execution ---
-    # Work on a copy to avoid modifying the original input DataFrame
+    # if user didn’t explicitly drop them, do it here:
+    exec_order = [
+        m for m in execution_order
+        if m not in ("momentum", "advanced")
+    ]
+
+    MODULE_KWARGS = {
+        "rolling": {
+        "historical_df": BOX_SCORES,
+        "window_sizes": rolling_windows,
+         },        
+        "rest":    {},
+        "h2h":     {"historical_df": BOX_SCORES, "max_games": h2h_window},
+        "season":  {"team_stats_df": TEAM_STATS},
+        "form":    {},
+    }
+
     processed_df = df.copy()
-
-    for module_name in execution_order:
-        if module_name not in TRANSFORM_MAP:
-            logger.warning(f"Engine: Unknown module '{module_name}' in execution order. Skipping.")
+    for module_name in exec_order:
+        if module_name not in MODULE_KWARGS:
+            logger.warning(f"Skipping unknown module '{module_name}'")
             continue
 
-        transform_func = TRANSFORM_MAP[module_name]
-        logger.info(f"Running module: {module_name}...")
-        step_start_time = time.time()
+        logger.info(f"Running module: {module_name}…")
+        fn = TRANSFORM_MAP[module_name]
+        kwargs = {"debug": debug, **MODULE_KWARGS[module_name]}
 
         try:
-            # Prepare arguments specific to each module
-            kwargs = {'debug': debug}
-            if module_name == "rolling":
-                kwargs['window_sizes'] = rolling_windows
-            elif module_name == "h2h":
-                kwargs['historical_df'] = historical_games_df
-                kwargs['max_games'] = h2h_window
-            elif module_name == "season":
-                kwargs['team_stats_df'] = team_stats_df
-            # Add other module-specific arguments here if needed
-
-            # Call the transform function
-            processed_df = transform_func(processed_df, **kwargs)
-
-            step_time = time.time() - step_start_time
-            logger.debug(f"Module '{module_name}' completed in {step_time:.3f}s. Shape after: {processed_df.shape}")
-
-            # Basic check after each step
+            processed_df = fn(processed_df, **kwargs)
             if processed_df is None or processed_df.empty:
-                 logger.error(f"Engine: DataFrame became empty after module '{module_name}'. Aborting pipeline.")
-                 if debug: logger.setLevel(current_level) # Restore logger level
-                 return pd.DataFrame() # Return empty df
-
+                logger.error(f"Module '{module_name}' returned no data; aborting.")
+                return pd.DataFrame()
         except Exception as e:
-            logger.error(f"Engine: Error executing module '{module_name}': {e}", exc_info=debug)
-            logger.error(f"Aborting pipeline due to error in '{module_name}'. Returning partially processed DataFrame.")
-            if debug: logger.setLevel(current_level) # Restore logger level
-            return processed_df # Return the df as it was before the error
+            logger.error(f"Error in '{module_name}': {e}", exc_info=debug)
+            # on debug you want an empty DF so you see the blow-up; otherwise keep what you have
+            return pd.DataFrame() if debug else processed_df
 
-    # --- Completion ---
-    total_time = time.time() - start_time_total
-    logger.info(f"Feature engineering pipeline completed in {total_time:.2f}s.")
-    logger.info(f"Final DataFrame shape: {processed_df.shape}")
-
-    # Restore original logger level if it was changed
-    if debug: logger.setLevel(current_level)
-
+    logger.info(f"Feature pipeline done — final shape: {processed_df.shape}")
     return processed_df
 
-# --- Example Usage (Optional) ---
-if __name__ == '__main__':
-    logger.info("Feature engine script executed directly (usually imported).")
-    # Example of how to potentially use the pipeline function
-    # This requires setting up sample dataframes (df, historical_df, team_stats_df)
-
-    # Placeholder for demonstration
-    # sample_df = pd.DataFrame({
-    #     'game_id': ['1', '2'],
-    #     'game_date': pd.to_datetime(['2024-01-01', '2024-01-02']),
-    #     'home_team': ['Team A', 'Team C'],
-    #     'away_team': ['Team B', 'Team D'],
-    #     'home_q1': [25, 30], 'away_q1': [20, 28],
-    #     'home_q2': [28, 25], 'away_q2': [26, 27],
-    #     'home_q3': [30, 29], 'away_q3': [28, 31],
-    #     'home_q4': [22, 26], 'away_q4': [24, 25],
-    # })
-    # sample_hist_df = pd.DataFrame(...) # Needs historical data for H2H
-    # sample_team_stats_df = pd.DataFrame(...) # Needs seasonal stats for Season
-
-    # logger.info("Running pipeline with sample data (placeholders)...")
-    # try:
-    #     # final_features = run_feature_pipeline(
-    #     #     df=sample_df,
-    #     #     historical_games_df=None, # Provide sample data here
-    #     #     team_stats_df=None,       # Provide sample data here
-    #     #     debug=True
-    #     # )
-    #     # logger.info("Sample pipeline run complete.")
-    #     # print(final_features.info())
-    #     pass # Avoid running without actual sample data
-    # except Exception as ex:
-    #      logger.error(f"Error running example usage: {ex}")
-    pass

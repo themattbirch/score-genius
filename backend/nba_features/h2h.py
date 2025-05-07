@@ -1,5 +1,4 @@
-# backend/features/h2h.py
-
+# backend/nba_features/h2h.py
 from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, List
@@ -39,21 +38,28 @@ def _get_matchup_history_single(
     max_games: int = 7,
     current_game_date: Optional[pd.Timestamp] = None,
     loop_index: Optional[int] = None,
-    debug: bool = False
+    debug: bool = False,
+    league_avg_point_diff: float,
+    league_avg_home_win_pct: float,
 ) -> Dict[str, Any]:
-    # Build defaults
+    """
+    Compute head-to-head history stats for a single matchup.
+    """
+    # Build default results
     default_result: Dict[str, Any] = {}
     for col in H2H_PLACEHOLDER_COLS:
         if col == 'matchup_last_date':
             default_result[col] = pd.NaT
+        elif col == 'matchup_avg_point_diff':
+            default_result[col] = league_avg_point_diff
+        elif col == 'matchup_home_win_pct':
+            default_result[col] = league_avg_home_win_pct
         else:
             default_result[col] = DEFAULTS.get(col, DEFAULTS.get(col.replace('matchup_', ''), 0.0))
-
-    # No history or invalid date
-    if historical_subset is None or historical_subset.empty or pd.isna(current_game_date):
-        if debug:
-            logger.debug(f"H2H Helper[{loop_index}]: returning defaults")
-        return default_result
+        
+        # If no history or bad date, return defaults
+        if historical_subset is None or historical_subset.empty or pd.isna(current_game_date):
+            return default_result
 
     # Take most recent max_games
     recent = (
@@ -68,7 +74,7 @@ def _get_matchup_history_single(
     recent['home_score'] = pd.to_numeric(recent['home_score'], errors='coerce').fillna(0.0)
     recent['away_score'] = pd.to_numeric(recent['away_score'], errors='coerce').fillna(0.0)
 
-    # Compute per-game stats
+    # Variables for stats
     diffs, totals, hp, ap = [], [], [], []
     wins = 0
     streak = 0
@@ -96,12 +102,10 @@ def _get_matchup_history_single(
             wins += 1
 
         winner = home_team_norm if won else away_team_norm
-        if last_winner is None:
+        if last_winner is None or winner != last_winner:
             streak = 1 if won else -1
-        elif winner == last_winner:
-            streak += 1 if won else -1
         else:
-            streak = 1 if won else -1
+            streak += 1 if won else -1
         last_winner = winner
 
     n = len(diffs)
@@ -116,7 +120,7 @@ def _get_matchup_history_single(
         'matchup_streak': int(streak),
     }
 
-    # Ensure all placeholders present
+    # Fill any missing placeholders
     for col in H2H_PLACEHOLDER_COLS:
         stats.setdefault(col, default_result[col])
 
@@ -130,7 +134,9 @@ def transform(
     max_games: int = 7,
     debug: bool = False
 ) -> pd.DataFrame:
-    # Optional DEBUG
+    """
+    Add head-to-head matchup features to the DataFrame.
+    """
     orig_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
@@ -143,22 +149,20 @@ def transform(
 
     out = df.copy()
 
-    # Drop any existing H2H columns to start fresh
+    # Drop existing H2H cols
     for col in H2H_PLACEHOLDER_COLS:
-        if col in out.columns:
-            out = out.drop(columns=[col])
+        out.drop(columns=[col], errors='ignore', inplace=True)
 
-    # Ensure essential columns
+    # Validate essential cols
     essential = ['game_id', 'game_date', 'home_team', 'away_team']
     if not all(c in out.columns for c in essential):
         for c in H2H_PLACEHOLDER_COLS:
-            val = pd.NaT if c == 'matchup_last_date' else DEFAULTS.get(c, DEFAULTS.get(c.replace('matchup_', ''), 0.0))
-            out[c] = val
+            out[c] = pd.NaT if c == 'matchup_last_date' else DEFAULTS.get(c, DEFAULTS.get(c.replace('matchup_', ''), 0.0))
         if debug:
             logger.setLevel(orig_level)
         return out
 
-    # No historical data → fill defaults
+    # No historical → fill defaults once
     if historical_df is None or historical_df.empty:
         logger.warning("h2h.transform: No historical_df provided. Filling defaults.")
         for c in H2H_PLACEHOLDER_COLS:
@@ -178,29 +182,31 @@ def transform(
     hist['away_score'] = pd.to_numeric(hist['away_score'], errors='coerce').fillna(0.0)
     hist['home_team_norm'] = hist['home_team'].astype(str).map(normalize_team_name)
     hist['away_team_norm'] = hist['away_team'].astype(str).map(normalize_team_name)
+        # ─── NEW: league‐wide H2H defaults ───
+    league_avg_point_diff  = (hist['home_score'] - hist['away_score']).mean()
+    league_avg_home_win_pct = (hist['home_score'] > hist['away_score']).mean()
+    # ─────────────────────────────────────
     hist['matchup_key'] = hist.apply(
-        lambda r: '_vs_'.join(sorted([r['home_team_norm'], r['away_team_norm']])),
-        axis=1
+        lambda r: '_vs_'.join(sorted([r['home_team_norm'], r['away_team_norm']])), axis=1
     )
     lookup = {
         key: group.sort_values('game_date')
         for key, group in hist.groupby('matchup_key', observed=True)
     }
 
-    # Prepare target DataFrame
+    # Prepare output DataFrame
     out['game_date'] = pd.to_datetime(out['game_date'], errors='coerce').dt.tz_localize(None)
     out['home_team_norm'] = out['home_team'].astype(str).map(normalize_team_name)
     out['away_team_norm'] = out['away_team'].astype(str).map(normalize_team_name)
     out['matchup_key'] = out.apply(
-        lambda r: '_vs_'.join(sorted([r['home_team_norm'], r['away_team_norm']])),
-        axis=1
+        lambda r: '_vs_'.join(sorted([r['home_team_norm'], r['away_team_norm']])), axis=1
     )
 
-    # Compute H2H for each row
     results: List[Dict[str, Any]] = []
+    default_count = 0
     for idx, row in out.iterrows():
         key = row['matchup_key']
-        hist_sub = lookup.get(key, pd.DataFrame()).copy()
+        hist_sub = lookup.get(key, pd.DataFrame())
         hist_sub = hist_sub[hist_sub['game_date'] < row['game_date']]
         stats = _get_matchup_history_single(
             home_team_norm=row['home_team_norm'],
@@ -209,14 +215,22 @@ def transform(
             max_games=max_games,
             current_game_date=row['game_date'],
             loop_index=idx,
-            debug=debug
+            debug=False,
+            league_avg_point_diff=league_avg_point_diff,
+            league_avg_home_win_pct=league_avg_home_win_pct,
         )
+        if stats['matchup_num_games'] == 0:
+            default_count += 1
         results.append(stats)
 
     stats_df = pd.DataFrame(results, index=out.index)
     out = out.join(stats_df)
 
-    # Final fill, type enforcement, no NaNs
+    # Summarize default usage
+    if debug and default_count > 0:
+        logger.debug(f"h2h.transform: applied defaults for {default_count} rows with no matchup history.")
+
+    # Final cleanup and enforcement
     for c in H2H_PLACEHOLDER_COLS:
         if c not in out.columns:
             out[c] = pd.NaT if c == 'matchup_last_date' else DEFAULTS.get(c, DEFAULTS.get(c.replace('matchup_', ''), 0.0))
@@ -227,8 +241,8 @@ def transform(
         else:
             out[c] = pd.to_numeric(out[c], errors='coerce').fillna(0.0).astype(float)
 
-    # Cleanup
-    out = out.drop(columns=['home_team_norm', 'away_team_norm', 'matchup_key'], errors='ignore')
+    # Drop temporary norms
+    out.drop(columns=['home_team_norm', 'away_team_norm', 'matchup_key'], errors='ignore', inplace=True)
 
     if debug:
         logger.setLevel(orig_level)

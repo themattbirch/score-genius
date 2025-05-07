@@ -1,15 +1,3 @@
-# backend/nba_features/rest.py
-
-"""
-Wide‑coverage tests for backend.nba_features.rest.transform
-
-Focus
------
-1.  Strict “no‑look‑ahead” guarantee when multiple games share a date.
-2.  Correct rest‑day math, B2B flags, 7‑/14‑day density, and advantages.
-3.  Idempotency + NaN‑free outputs.
-"""
-
 from __future__ import annotations
 import logging
 from typing import List

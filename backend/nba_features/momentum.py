@@ -1,11 +1,3 @@
-# backend/features/momentum.py
-"""
-Calculates intra-game momentum features based on quarter-by-quarter scores.
-Features include quarter margins, cumulative differences, margin changes,
-and EWMA (Exponentially Weighted Moving Average) momentum proxies.
-"""
-
-from __future__ import annotations
 import logging
 from typing import Mapping
 
@@ -57,7 +49,6 @@ def transform(
     Returns:
         DataFrame with added momentum features.
     """
-    # adjust logging level if requested
     original_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
