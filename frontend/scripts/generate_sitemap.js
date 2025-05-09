@@ -4,20 +4,28 @@ import { SitemapStream, streamToPromise } from "sitemap";
 import { createWriteStream, readdirSync } from "fs";
 import { resolve } from "path";
 
-const dist = resolve("dist");
-const domain = "https://scoregenius.io";
+async function buildSitemap() {
+  const distDir = resolve("dist");
+  const hostname = "https://scoregenius.io";
 
-const pages = readdirSync(dist)
-  .filter((f) => f.endsWith(".html"))
-  .map((f) => (f === "index.html" ? "/" : `/${f.replace(".html", "")}`));
+  /* ---------- collect routes ---------- */
+  const pages = readdirSync(distDir)
+    .filter((f) => f.endsWith(".html") && f !== "app.html") // ← exclude SPA shell
+    .map((f) => (f === "index.html" ? "/" : `/${f.replace(".html", "")}`));
 
-const smStream = new SitemapStream({ hostname: domain });
-const write = createWriteStream(resolve(dist, "sitemap.xml"));
+  /* ---------- stream → file ---------- */
+  const smStream = new SitemapStream({ hostname });
+  const write = createWriteStream(resolve(distDir, "sitemap.xml"));
 
-streamToPromise(smStream).then(() => {
-  console.log("✅ sitemap.xml written");
+  smStream.pipe(write); // 1) pipe first
+  pages.forEach((url) => smStream.write({ url, changefreq: "weekly" }));
+  smStream.end(); // 2) close the stream
+
+  await streamToPromise(smStream); // 3) wait until fully flushed
+  console.log("✅ sitemap.xml written with", pages.length, "routes");
+}
+
+buildSitemap().catch((err) => {
+  console.error("❌ sitemap generation failed", err);
+  process.exit(1);
 });
-
-pages.forEach((p) => smStream.write({ url: p, changefreq: "weekly" }));
-smStream.end();
-smStream.pipe(write);
