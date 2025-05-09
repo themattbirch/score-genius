@@ -63,7 +63,6 @@ export default defineConfig({
     }),
   ],
 
-  /* ---------------- other parts of config stay the same ---------------- */
   publicDir: "public",
   resolve: { alias: { "@": resolve(__dirname, "src") } },
 
