@@ -2,4 +2,4 @@
 
 User-agent: *
 Disallow: /app/
-Allow: /1
+Allow: /
