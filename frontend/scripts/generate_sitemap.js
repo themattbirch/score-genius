@@ -1,28 +1,21 @@
 import { SitemapStream, streamToPromise } from "sitemap";
-import { createWriteStream } from "fs";
-import { Readable } from "stream";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { createWriteStream, readdirSync } from "fs";
+import { resolve } from "path";
 
-// derive __dirname in ESM
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const dist = resolve("dist");
+const domain = "https://scoregenius.io";
 
-// list your URLs...
-const pages = [
-  /* ... */
-];
+const pages = readdirSync(dist)
+  .filter((f) => f.endsWith(".html"))
+  .map((f) => (f === "index.html" ? "/" : `/${f.replace(".html", "")}`));
 
-async function buildSitemap() {
-  const host = "https://scoregenius.io";
-  const smStream = new SitemapStream({ hostname: host });
+const smStream = new SitemapStream({ hostname: domain });
+const write = createWriteStream(resolve(dist, "sitemap.xml"));
 
-  // write into frontend/dist, relative to this file
-  const sitemapPath = resolve(__dirname, "../dist", "sitemap.xml");
-  const writeStream = createWriteStream(sitemapPath);
+streamToPromise(smStream).then(() => {
+  console.log("✅ sitemap.xml written");
+});
 
-  Readable.from(pages).pipe(smStream).pipe(writeStream);
-  await streamToPromise(smStream);
-  console.log(`✅ sitemap.xml written to ${sitemapPath}`);
-}
-
-buildSitemap().catch(console.error);
+pages.forEach((p) => smStream.write({ url: p, changefreq: "weekly" }));
+smStream.end();
+smStream.pipe(write);
