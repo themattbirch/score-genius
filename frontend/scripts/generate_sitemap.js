@@ -1,3 +1,5 @@
+// frontend/scripts/generate_sitemap.js
+
 import { SitemapStream, streamToPromise } from "sitemap";
 import { createWriteStream, readdirSync } from "fs";
 import { resolve } from "path";
