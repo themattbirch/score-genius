@@ -11,12 +11,14 @@ const queryClient = new QueryClient();
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-// somewhere in main.tsx (after createRoot)
+/* ------- new SW registration, scoped to /app/ -------- */
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    // when a fresh SW takes control, reload so the page
-    // picks up the new app.html -> new hashed asset names
-    window.location.reload();
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/app-sw.js", { scope: "/app/" })
+      .catch((err) =>
+        console.error("Service‑worker registration failed:", err)
+      );
   });
 }
 
