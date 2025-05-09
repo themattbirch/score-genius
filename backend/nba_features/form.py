@@ -97,7 +97,7 @@ def _extract_form_metrics_single(form_string: Optional[str]) -> Dict[str, float]
     # Return the calculated metrics
     return {
         'form_win_pct': form_win_pct,
-        'current_streak': current_streak, # Keep as float for now, finalize type later
+        'current_streak': current_streak, # Keep as float, finalize type later
         'momentum_direction': momentum_direction
     }
 
