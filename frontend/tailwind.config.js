@@ -1,10 +1,9 @@
-import defaultTheme from "tailwindcss/defaultTheme";
-import forms from "@tailwindcss/forms";
-import typography from "@tailwindcss/typography";
-import lineClamp from "@tailwindcss/line-clamp";
+const defaultTheme = require("tailwindcss/defaultTheme");
+const forms       = require("@tailwindcss/forms");
+const typography  = require("@tailwindcss/typography");
+const lineClamp   = require("@tailwindcss/line-clamp");
 
-/** @type {import('tailwindcss').Config} */
-export default {
+module.exports = {
   content: [
     "./index.html",
     "./app.html",
