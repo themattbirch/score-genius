@@ -16,6 +16,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from typing import Dict, Any, Optional, List, Union
+from sklearn.inspection import permutation_importance
+from sklearn.pipeline import Pipeline
 
 # --- Project Module Imports ---
 try:
@@ -309,74 +311,86 @@ def plot_metrics_comparison(metrics_dict: Dict[str, Dict[str, float]],
     except Exception as e: logger.error(f"Error generating metrics comparison plot: {e}", exc_info=True)
 
 
-def plot_feature_importances(models_metadata: Dict[str, Dict[str, Any]], 
-                             primary_model_key: str = 'home_score', 
-                             top_n: int = 15,
-                             figsize: tuple = (8, 7),
-                             save_path: Optional[Union[str, Path]] = None):
-    """
-    Visualizes top feature importances extracted from model metadata (dashboard relevant).
 
-    Args:
-        models_metadata: Dictionary where keys are target names (e.g., 'home_score')
-                         and values are dicts containing a 'metrics' dict, which in turn
-                         contains a 'feature_importance' dict {feature_name: importance_value}.
-        primary_model_key: The key in models_metadata to use for feature importance (e.g., 'home_score').
-        top_n: Number of top features to display.
-        figsize: Figure size.
-        save_path: Optional path to save the figure.
-    """
-    logger.info(f"\n--- Generating Feature Importance Plot (from {primary_model_key} metadata) ---")
-    try:
-        model_meta = models_metadata.get(primary_model_key)
-        if not isinstance(model_meta, dict) or 'metrics' not in model_meta or \
-           not isinstance(model_meta['metrics'], dict) or \
-           'feature_importance' not in model_meta['metrics'] or \
-           not isinstance(model_meta['metrics']['feature_importance'], dict):
-            logger.warning(f"Feature importance data not found or invalid format in metadata for key '{primary_model_key}'. Skipping plot.")
-            return
-
-        imp_dict = model_meta['metrics']['feature_importance']
-        valid_imp = {k: v for k, v in imp_dict.items() if pd.notna(v)}
-
-        if not valid_imp:
-            logger.warning(f"No valid feature importance values found for key '{primary_model_key}'. Skipping plot.")
-            return
-
-        imp_df = pd.DataFrame({'Feature': list(valid_imp.keys()), 'Importance': list(valid_imp.values())})
-        total_imp = imp_df['Importance'].sum()
-
-        if total_imp > 1e-9:
-            imp_df['Normalized Importance'] = imp_df['Importance'] / total_imp
-            sort_col = 'Normalized Importance'
+# Helper function to extract importance consistently
+def _get_feature_importance(model: Any, feature_names: List[str]) -> Optional[Dict[str, float]]:
+    final = model
+    if isinstance(model, Pipeline) and model.steps:
+        final = model.steps[-1][1]
+    # Tree-based
+    if hasattr(final, 'feature_importances_'):
+        imps = final.feature_importances_
+        return dict(zip(feature_names, imps)) if len(imps) == len(feature_names) else None
+    # Linear
+    if hasattr(final, 'coef_'):
+        coefs = final.coef_
+        if coefs.ndim > 1:
+            coefs = np.abs(coefs).sum(axis=0)
         else:
-            logger.warning(f"Total importance for {primary_model_key} is near zero. Using raw values.")
-            imp_df['Normalized Importance'] = imp_df['Importance'] # Still add column for consistency
-            sort_col = 'Importance'
+            coefs = np.abs(coefs.flatten())
+        return dict(zip(feature_names, coefs)) if len(coefs) == len(feature_names) else None
+    return None
 
-        imp_df = imp_df.sort_values(sort_col, ascending=False).head(top_n)
+def plot_feature_importances(
+    models_dict: Dict[str, Any],
+    feature_names: List[str],
+    X: Optional[pd.DataFrame] = None,
+    y: Optional[Union[pd.Series, np.ndarray]] = None,
+    top_n: int = 20,
+    save_dir: Optional[Union[str, Path]] = None,
+    show_plot: bool = True
+):
+    """
+    Generate and save feature importance for each model.
+    Falls back to permutation importance if needed.
+    """
+    out_dir = Path(save_dir) if save_dir else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-        if imp_df.empty:
-             logger.warning(f"No features left after sorting/filtering for {primary_model_key}. Skipping plot.")
-             return
+    data: Dict[str, pd.Series] = {}
+    for name, model in models_dict.items():
+        imp = _get_feature_importance(model, feature_names)
+        if imp is None and X is not None and y is not None:
+            try:
+                logger.info(f"Permutation importance for {name}")
+                res = permutation_importance(model, X[feature_names], y, n_repeats=10, random_state=0, n_jobs=-1)
+                imp = dict(zip(feature_names, res.importances_mean))
+            except Exception as e:
+                logger.warning(f"Permutation failed for {name}: {e}")
+                continue
+        if imp:
+            series = pd.Series(imp).sort_values(ascending=False)
+            data[name] = series
+            # save full list
+            df_full = series.reset_index()
+            df_full.columns = ['feature','importance']
+            if out_dir:
+                df_full.to_csv(out_dir/f"feature_importance_{name}_full.csv", index=False)
+                with open(out_dir/f"feature_importance_{name}_full.txt", 'w') as f:
+                    f.write(df_full.to_string(index=False))
 
-        plt.figure(figsize=figsize)
-        sns.barplot(x=sort_col, y='Feature', data=imp_df, palette='viridis')
-        plt.title(f'Top {top_n} Features - {primary_model_key.replace("_", " ").title()}')
-        plt.xlabel(sort_col.replace("_", " "))
-        plt.ylabel("Feature")
-        plt.tight_layout()
+    if not data:
+        logger.error("No feature importance data extracted.")
+        return
 
-        if save_path:
-            save_path = Path(save_path)
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            plt.savefig(save_path, bbox_inches='tight')
-            logger.info(f"Plot saved to {save_path}")
+    # plot top_n
+    n = min(top_n, len(next(iter(data.values()))))
+    cols = len(data)
+    fig, axes = plt.subplots(1, cols, figsize=(cols*6, n*0.3+2), squeeze=False)
+    for ax, (name, series) in zip(axes.flatten(), data.items()):
+        top = series.head(n).sort_values(ascending=True)
+        sns.barplot(x=top.values, y=top.index, ax=ax)
+        ax.set_title(name)
+    plt.tight_layout()
+    if out_dir:
+        plt.savefig(out_dir/"feature_importance_summary.png", bbox_inches='tight')
+    if show_plot:
         plt.show()
+    else:
+        plt.close()
 
-    except Exception as e:
-        logger.error(f"Error generating feature importance plot from metadata: {e}", exc_info=True)
-
+    logger.info("Feature importance complete.")
 
 def plot_predictions_over_time(dates: Union[List, pd.Series, np.ndarray],
                                y_true: Union[pd.Series, np.ndarray],

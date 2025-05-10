@@ -1289,36 +1289,50 @@ def tune_and_evaluate_predictor(
                 save_dir=plot_dir if save_plots else None, show_plot=visualize
             )
 
-            # Feature Importance Plots (if model provides them)
-            pipeline_home = getattr(final_predictor, 'pipeline_home', None)
-            pipeline_away = getattr(final_predictor, 'pipeline_away', None)
-            features_in = feature_list_unique
+            # ——— FEATURE IMPORTANCE FOR BOTH MODELS ———
+            pipeline_home = getattr(final_predictor, "pipeline_home", None)
+            pipeline_away = getattr(final_predictor, "pipeline_away", None)
+            features_in    = feature_list_unique
 
-            can_plot_importance = False
-            if isinstance(pipeline_home, Pipeline) and isinstance(pipeline_away, Pipeline) and features_in:
-                model_step_home = pipeline_home.steps[-1][1] if pipeline_home.steps else None
-                model_step_away = pipeline_away.steps[-1][1] if pipeline_away.steps else None
-                if (model_step_home and (hasattr(model_step_home, 'coef_') or hasattr(model_step_home, 'feature_importances_'))) or \
-                   (model_step_away and (hasattr(model_step_away, 'coef_') or hasattr(model_step_away, 'feature_importances_'))):
-                    can_plot_importance = True
+            logger.info(f"Plotting feature importances for {model_full_name} (Home and Away).")
 
-            if can_plot_importance:
-                logger.info(f"Attempting to plot feature importance for {model_full_name}...")
-                models_to_plot = {}
-                if pipeline_home: models_to_plot[f"{model_full_name}_Home"] = pipeline_home
-                if pipeline_away: models_to_plot[f"{model_full_name}_Away"] = pipeline_away
+            # helper to run on a sub‑sample for SVR if you like
+            if model_name_prefix == "svr" and X_test_final is not None:
+                subsample = X_test_final.sample(n=min(200, len(X_test_final)), random_state=42)
+                y_home_sub = y_test_home_aligned.loc[subsample.index]
+                y_away_sub = y_test_away_aligned.loc[subsample.index]
+            else:
+                subsample = X_test_final
+                y_home_sub = y_test_home_aligned
+                y_away_sub = y_test_away_aligned
 
+            # Home
+            if pipeline_home:
                 plot_feature_importances(
-                    models_dict=models_to_plot,
-                    feature_names=features_in, 
-                    top_n=30, plot_groups=True, 
-                    save_dir=plot_dir / "feature_importance" if save_plots else None,
+                    models_dict={f"{model_full_name}_Home": pipeline_home},
+                    feature_names=features_in,
+                    X=subsample,                    # supply X so SVR can do permutation
+                    y=y_home_sub,                   # supply y
+                    X_test=subsample,
+                    top_n=30,
+                    save_dir=(plot_dir / "feature_importance") if save_plots else None,
+                    show_plot=visualize
+                )
+
+            # Away
+            if pipeline_away:
+                plot_feature_importances(
+                    models_dict={f"{model_full_name}_Away": pipeline_away},
+                    feature_names=features_in,
+                    X=subsample,
+                    y=y_away_sub,
+                    X_test=subsample,
+                    top_n=30,
+                    save_dir=(plot_dir / "feature_importance") if save_plots else None,
                     show_plot=visualize
                 )
             else:
-                logger.info(f"Skipping feature importance plots for {model_full_name}: "
-                            "Could not find standard importance attributes (coef_ or feature_importances_) "
-                            "on the final step of the predictor's internal pipeline(s), or pipelines/features unavailable.")
+                logger.info(f"No pipeline_away for {model_full_name}, skipping away importances.")
 
         except NameError as ne:
              logger.error(f"Plotting function not found: {ne}. Ensure evaluation/plotting module is imported correctly.")

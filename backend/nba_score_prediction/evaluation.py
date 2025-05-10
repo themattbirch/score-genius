@@ -15,12 +15,21 @@ from scipy import stats
 from pandas.api.types import is_datetime64_any_dtype as is_datetime
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from typing import Dict, Any, Optional, List, Union
+from sklearn.inspection import permutation_importance
 from sklearn.pipeline import Pipeline
 
 # Configure logging
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logger = logging.getLogger(__name__)
+
+# ——— SHAP Setup ———
+try:
+    import shap
+    _has_shap = True
+except ImportError:
+    _has_shap = False
+    logger.warning("SHAP not installed; SHAP plots will be disabled.")
 
 # Optional import for LOWESS smoother
 try:
@@ -410,177 +419,162 @@ def plot_temporal_bias(dates: Union[List, pd.Series, np.ndarray],
 
 # Helper function to extract importance consistently
 def _get_feature_importance(model: Any, feature_names: List[str]) -> Optional[Dict[str, float]]:
-    """ Helper to extract feature importance from various model types (inc. pipelines). """
-    final_estimator = model
+    final = model
     if isinstance(model, Pipeline) and model.steps:
-        try:
-            final_step_name = model.steps[-1][0]
-            final_estimator = model.named_steps[final_step_name]
-            logger.debug(f"Extracting importance from pipeline step: '{final_step_name}' ({type(final_estimator).__name__})")
-        except Exception as e:
-            logger.warning(f"Could not access final step of pipeline for importance: {e}")
-            return None
-    if hasattr(final_estimator, 'feature_importances_'):
-        importances = final_estimator.feature_importances_
-        if len(feature_names) == len(importances):
-            return dict(zip(feature_names, importances))
-        else: logger.warning(f"Feat name ({len(feature_names)}) != importance count ({len(importances)}) for {type(final_estimator).__name__}"); return None
-    elif hasattr(final_estimator, 'coef_'):
-        if final_estimator.coef_.ndim == 1 or final_estimator.coef_.shape[0] == 1:
-            coefs = final_estimator.coef_.flatten()
-            if len(feature_names) == len(coefs): return dict(zip(feature_names, np.abs(coefs)))
-            else: logger.warning(f"Feat name ({len(feature_names)}) != coef count ({len(coefs)}) for {type(final_estimator).__name__}"); return None
-        else: # Handle multi-output coef_
-             logger.debug(f"Model {type(final_estimator).__name__} has multi-output coef_. Summing absolute coefs.")
-             try:
-                 abs_coef_sum = np.abs(final_estimator.coef_).sum(axis=0)
-                 if len(feature_names) == len(abs_coef_sum): return dict(zip(feature_names, abs_coef_sum))
-                 else: logger.warning("Dimension mismatch after summing multi-output coefs.")
-             except Exception as sum_e: logger.warning(f"Could not sum multi-output coefs: {sum_e}")
-             return None
-    else: logger.warning(f"Importance attribute not found on: {type(final_estimator).__name__}."); return None
+        final = model.steps[-1][1]
+    # Tree-based
+    if hasattr(final, 'feature_importances_'):
+        imps = final.feature_importances_
+        return dict(zip(feature_names, imps)) if len(imps) == len(feature_names) else None
+    # Linear
+    if hasattr(final, 'coef_'):
+        coefs = final.coef_
+        if coefs.ndim > 1:
+            coefs = np.abs(coefs).sum(axis=0)
+        else:
+            coefs = np.abs(coefs.flatten())
+        return dict(zip(feature_names, coefs)) if len(coefs) == len(feature_names) else None
+    return None
+
+def plot_shap_summary(
+    model: Any,
+    X: pd.DataFrame,
+    max_display: int = 20,
+    save_path: Optional[Union[str, Path]] = None,
+    show_plot: bool = True
+):
+    """
+    Compute and plot a SHAP summary bar chart (mean absolute SHAP values).
+    - model: trained Pipeline or estimator
+    - X: DataFrame of features to explain (e.g. X_test)
+    """
+    if not _has_shap:
+        logger.warning("SHAP unavailable—skipping SHAP summary plot.")
+        return
+
+    # If it’s a Pipeline, grab the final estimator
+    estimator = model
+    if isinstance(model, Pipeline):
+        estimator = model.steps[-1][1]
+
+    # Use a small background sample for speed
+    background = X.sample(min(100, len(X)), random_state=42)
+    explainer = shap.Explainer(estimator.predict, background)
+    shap_values = explainer(X)
+
+    plt.figure(figsize=(8, max_display * 0.3 + 1))
+    shap.plots.bar(shap_values, max_display=max_display, show=False)
+    plt.title("SHAP Feature Importance (mean |SHAP value|)")
+
+    if save_path:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(save_path, bbox_inches='tight')
+        logger.info(f"SHAP summary plot saved to {save_path}")
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close()
 
 
-# *** REWRITTEN Function ***
+# Updated: supports permutation fallback when native missing
+
 def plot_feature_importances(
     models_dict: Dict[str, Any],
     feature_names: List[str],
-    top_n: Optional[int] = 20,
-    plot_groups: bool = False,
-    feature_group_config: Optional[Dict[str, List[str]]] = None,
+    X: Optional[pd.DataFrame] = None,
+    y: Optional[Union[pd.Series, np.ndarray]] = None,
+    X_test: Optional[pd.DataFrame] = None,
+    top_n: int = 20,
     save_dir: Optional[Union[str, Path]] = None,
-    show_plot: bool = True 
+    show_plot: bool = True
 ):
     """
-    Generates and saves feature importance plots for individual models
-    and saves the full importance scores to both CSV and TXT files.
+    Generate and save feature importance for each model.
+    Falls back to permutation importance if needed.
     """
-    logger.info("\n--- Generating Feature Importance Report ---")
-    save_dir_path = Path(save_dir) if save_dir else None
-    if save_dir_path:
-        save_dir_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Saving plots/data to: {save_dir_path}")
+    out_dir = Path(save_dir) if save_dir else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-    importances_data = {} 
-
-    logger.info("Extracting feature importance from models...")
+    data: Dict[str, pd.Series] = {}
     for name, model in models_dict.items():
-        imp_dict = _get_feature_importance(model, feature_names)
-        if imp_dict:
-            # Create sorted Series
-            importance_series = pd.Series(imp_dict).sort_values(ascending=False)
-            importances_data[name] = importance_series 
+        # 1) Try to get built-in importance
+        imp = _get_feature_importance(model, feature_names)
 
-            # Create DataFrame for saving
-            importance_df_to_save = importance_series.reset_index()
-            importance_df_to_save.columns = ['feature', 'importance']
+        # 2) Fallback to permutation importances if nothing found
+        if imp is None and X is not None and y is not None:
+            logger.info(f"Computing permutation importance for '{name}'")
+            try:
+                perm = permutation_importance(
+                    model,
+                    X[feature_names],
+                    y,
+                    n_repeats=10,
+                    random_state=0,
+                    n_jobs=-1
+                )
+                imp = dict(zip(feature_names, perm.importances_mean))
+            except Exception as e:
+                logger.warning(f"Permutation importance failed for '{name}': {e}")
+                continue
 
-            # --- Save Full Importance Data (CSV and TXT) ---
-            if save_dir_path:
-                # Save CSV 
-                csv_path = save_dir_path / f"feature_importance_{name}_full.csv"
-                try:
-                    importance_df_to_save.to_csv(csv_path, index=False)
-                    logger.info(f"Full importance list for '{name}' saved to {csv_path}")
-                except Exception as e:
-                    logger.error(f"Failed to save importance CSV for {name}: {e}")
+        if not imp:
+            logger.warning(f"No feature importance available for '{name}' – skipping.")
+            continue
 
-                # Save TXT ***
-                txt_path = save_dir_path / f"feature_importance_{name}_full.txt"
-                try:
-                    with open(txt_path, 'w') as f:
-                        f.write(f"Feature Importance for {name} (Sorted Descending):\n")
-                        f.write("-" * 60 + "\n")
-                        # Use to_string for readable text format, include index=False
-                        # max_rows=None ensures all features are written
-                        f.write(importance_df_to_save.to_string(index=False, max_rows=None))
-                    logger.info(f"Full importance list for '{name}' saved to {txt_path} (TXT Format)")
-                except Exception as e:
-                    logger.error(f"Failed to save importance TXT for {name}: {e}")
-        else:
-            logger.warning(f"-> Could not extract importance for model: {name}")
+        # 3) Sort & store in-memory
+        importance_series = pd.Series(imp).sort_values(ascending=False)
+        data[name] = importance_series
 
-    if not importances_data:
-        logger.error("Error: No feature importance data extracted.")
+        # 4) Save full list to CSV and TXT
+        if out_dir:
+            df_full = importance_series.reset_index()
+            df_full.columns = ['feature', 'importance']
+
+            csv_path = out_dir / f"feature_importance_{name}_full.csv"
+            txt_path = out_dir / f"feature_importance_{name}_full.txt"
+            df_full.to_csv(csv_path, index=False)
+            with open(txt_path, 'w') as f:
+                f.write(df_full.to_string(index=False))
+            logger.info(f"Saved full feature list for '{name}' to {out_dir}")
+
+        # 5) Generate SHAP summary plot if available
+        if _has_shap and X_test is not None:
+            try:
+                plot_shap_summary(
+                    model=model,
+                    X=X_test,
+                    max_display=top_n,
+                    save_path=(out_dir / f"shap_{name}.png") if out_dir else None,
+                    show_plot=show_plot
+                )
+            except Exception as e:
+                logger.error(f"Failed to generate SHAP summary for '{name}': {e}")
+
+    # After looping all models
+    if not data:
+        logger.error("No feature importance data extracted.")
         return
 
-    # --- Generate Individual Plots ---
-    logger.info("Generating individual importance plots...")
-    num_plots = len(importances_data)
-    if num_plots == 0: logger.info("No importance data to plot."); return
-
-    if top_n is None or top_n <= 0:
-        # Determine max features dynamically if top_n is not specified
-        plot_n = len(next(iter(importances_data.values()))) 
-        logger.info(f"Plotting ALL {plot_n} features (plot might be large/unreadable).")
+    # plot top_n
+    n = min(top_n, len(next(iter(data.values()))))
+    cols = len(data)
+    fig, axes = plt.subplots(1, cols, figsize=(cols*6, n*0.3+2), squeeze=False)
+    for ax, (name, series) in zip(axes.flatten(), data.items()):
+        top = series.head(n).sort_values(ascending=True)
+        sns.barplot(x=top.values, y=top.index, ax=ax)
+        ax.set_title(name)
+    plt.tight_layout()
+    if out_dir:
+        plt.savefig(out_dir/"feature_importance_summary.png", bbox_inches='tight')
+    if show_plot:
+        plt.show()
     else:
-        plot_n = min(top_n, len(next(iter(importances_data.values()))))
-        logger.info(f"Plotting Top {plot_n} features.")
+        plt.close()
 
-    n_cols = min(2, num_plots); n_rows = (num_plots + n_cols - 1) // n_cols
-    fig_height = max(6, n_rows * (plot_n * 0.3 + 1.5)); fig_width = n_cols * 7
-    fig_ind, axes_ind = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), squeeze=False)
-    axes_ind = axes_ind.flatten(); plot_idx = 0
-
-    for name, imp_series in importances_data.items():
-        if plot_idx >= len(axes_ind): break 
-
-        # Normalize if sum is meaningful (not near zero)
-        total_imp = imp_series.sum()
-        if total_imp > 1e-9:
-            imp_plot = imp_series / total_imp; xlabel = "Normalized Importance"
-        else:
-            logger.warning(f"Total importance near zero for {name}. Plotting raw values.")
-            imp_plot = imp_series; xlabel = "Raw Importance (Sum near Zero)"
-
-        # Select top N for plotting and sort ascending for horizontal bar plot
-        plot_data = imp_plot.head(plot_n).sort_values(ascending=True)
-
-        if not plot_data.empty:
-            ax = axes_ind[plot_idx]
-            sns.barplot(x=plot_data.values, y=plot_data.index, ax=ax, palette='viridis', orient='h')
-            ax.set_title(f'Top {len(plot_data)} Features - {name}'); ax.set_xlabel(xlabel)
-            ax.tick_params(axis='y', labelsize=9) # Adjust label size if needed
-            # Optional: Add value labels to bars
-            plot_idx += 1
-        else:
-            logger.warning(f"No importance values > 0 to plot for {name}.")
-            # Optionally remove the empty subplot axis
-            fig_ind.delaxes(axes_ind[plot_idx])
-
-
-    # Remove any unused subplots
-    for i in range(plot_idx, len(axes_ind)):
-        fig_ind.delaxes(axes_ind[i])
-
-    if plot_idx > 0: 
-        fig_ind.suptitle('Feature Importance by Model', fontsize=16, y=1.01)
-        try:
-            plt.tight_layout(rect=[0, 0, 1, 0.97]) 
-        except ValueError:
-            logger.warning("tight_layout failed, plot formatting might be imperfect.")
-
-        if save_dir_path:
-            f_path = save_dir_path / "feature_importance_individual.png"
-            try:
-                plt.savefig(f_path, bbox_inches='tight')
-                logger.info(f"Plot saved to {f_path}")
-            except Exception as e:
-                logger.error(f"Error saving plot {f_path}: {e}")
-
-        if show_plot: 
-            plt.show()
-        else:
-            plt.close(fig_ind) 
-    else:
-        plt.close(fig_ind) 
-
-    # --- Grouped Importance Plotting ---
-    if plot_groups:
-        logger.info("Skipping group importance plot: Logic needs implementation if desired.")
-        pass
-
-    logger.info("--- Feature Importance Report Complete ---")
+    logger.info("Feature importance complete.")
 
 
 # ---  plot_predictions_over_time ---
