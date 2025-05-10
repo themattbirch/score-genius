@@ -1,7 +1,7 @@
+// tailwind.config.cjs
 const defaultTheme = require("tailwindcss/defaultTheme");
-const forms       = require("@tailwindcss/forms");
-const typography  = require("@tailwindcss/typography");
-const lineClamp   = require("@tailwindcss/line-clamp");
+const forms = require("@tailwindcss/forms");
+const typography = require("@tailwindcss/typography");
 
 module.exports = {
   content: [
@@ -31,7 +31,6 @@ module.exports = {
   plugins: [
     forms,
     typography,
-    lineClamp,
     /** ---- Day-Picker reset --------------------------------------- **/
     function ({ addUtilities }) {
       addUtilities({
