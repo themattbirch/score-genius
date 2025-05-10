@@ -106,25 +106,23 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                   </p>
                 </>
               )}
-              {/* Schedule Odds Display */}
+              {/* 
+                Schedule Odds Display
+                Temporarily commented out per request.
+              
               {sport === "NBA"
-                ? // Use standardized odds names if backend maps them
-                  (game.spreadLine !== null || game.totalLine !== null) && (
-                    <p className="text-xs w-full  text-[var(--color-text-secondary)] mt-1">
-                      Spread {game.spreadLine ?? "N/A"}, Total{" "}
-                      {game.totalLine ?? "N/A"}
+                ? (game.spreadLine !== null || game.totalLine !== null) && (
+                    <p className="text-xs w-full text-[var(--color-text-secondary)] mt-1">
+                      Spread {game.spreadLine ?? "N/A"}, Total {game.totalLine ?? "N/A"}
                     </p>
                   )
-                : // MLB Odds
-                  ((game.moneylineHome !== null &&
-                    game.moneylineAway !== null) ||
+                : ((game.moneylineHome !== null && game.moneylineAway !== null) ||
                     game.totalLine !== null) && (
-                    <p className="text-xs w-full  text-[var(--color-text-secondary)] mt-1">
-                      ML {game.moneylineAway ?? "N/A"} /{" "}
-                      {game.moneylineHome ?? "N/A"}, O/U{" "}
-                      {game.totalLine ?? "N/A"}
+                    <p className="text-xs w-full text-[var(--color-text-secondary)] mt-1">
+                      ML {game.moneylineAway ?? "N/A"} / {game.moneylineHome ?? "N/A"}, O/U {game.totalLine ?? "N/A"}
                     </p>
                   )}
+              */}
             </>
           ) : (
             // Fallback
