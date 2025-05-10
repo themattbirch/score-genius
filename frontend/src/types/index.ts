@@ -1,4 +1,6 @@
-// src/types/index.ts (or similar shared location)
+// src/types/index.ts
+import type { LucideIcon } from "lucide-react";
+export type IconType = LucideIcon;
 export type Sport = "NBA" | "MLB";
 
 export interface UnifiedGame {
