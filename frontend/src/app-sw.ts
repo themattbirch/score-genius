@@ -22,14 +22,12 @@ cleanupOutdatedCaches();
 
 /* ---------- 1. fresh HTML for every navigate --------- */
 registerRoute(
-  ({ request }) =>
-    request.mode === "navigate" && location.pathname.startsWith("/app"),
+  ({ request, url }) =>
+    request.mode === "navigate" && url.pathname.startsWith("/app"),
   new NetworkFirst({
-    cacheName: "html-cache-v1",
+    cacheName: "html-cache-v2",
     networkTimeoutSeconds: 3,
-    plugins: [
-      new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 60 * 60 }), // 1 h
-    ],
+    plugins: [new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 60 * 60 })],
   })
 );
 

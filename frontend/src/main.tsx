@@ -22,10 +22,19 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+/* ------- SW registration (production only) -------- */
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/app-sw.js", { scope: "/app/" })
+      .then((reg) => {
+        // When a new worker activates, reload the page so fresh HTML/CSS/JS load.
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          window.location.reload();
+        });
+        // Optional: ask for an update check on every load
+        reg.update().catch(() => {});
+      })
       .catch((err) => console.error("SW registration failed:", err));
   });
 }
