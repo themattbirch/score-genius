@@ -1,13 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- Basic meta -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Privacy Policy – Score Genius</title>
+
+    <!-- Primary SEO -->
+    <title>{{PAGE_TITLE}}</title>
     <meta
       name="description"
-      content="Score Genius Privacy Policy: what we collect, how we use it, and your rights."
+      content="{{PAGE_DESCRIPTION}}"
     />
+
+    <!-- Canonical -->
+    <link rel="canonical" href="{{CANONICAL_URL}}" />
+
+    <!-- Icons & PWA -->
     <link
       rel="icon"
       href="/icons/favicon-16x16.png"
@@ -28,9 +36,43 @@
     />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#F97316" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{CANONICAL_URL}}" />
+    <meta property="og:site_name" content="Score Genius" />
+    <meta property="og:title" content="{{OG_TITLE}}" />
+    <meta property="og:description" content="{{OG_DESCRIPTION}}" />
+    <meta
+      property="og:image"
+      content="https://scoregenius.io/og/{{OG_IMAGE_FILENAME}}"
+    />
+    <meta
+      property="og:image:alt"
+      content="{{OG_IMAGE_ALT}}"
+    />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@scoregeniusai" />
+    <meta name="twitter:creator" content="@scoregeniusai" />
+    <meta name="twitter:title" content="{{OG_TITLE}}" />
+    <meta name="twitter:description" content="{{OG_DESCRIPTION}}" />
+    <meta
+      name="twitter:image"
+      content="https://scoregenius.io/og/{{OG_IMAGE_FILENAME}}"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="{{OG_IMAGE_ALT}}"
+    />
+
+    <!-- Tailwind & Icons -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   </head>
+
   <body class="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
     <!-- Navbar -->
     <nav class="fixed w-full bg-black/80 backdrop-blur-sm z-50 y-4">
