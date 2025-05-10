@@ -146,13 +146,12 @@ const GameDetailScreen: React.FC = () => {
         {injuries.length > 0 ? (
           <ul className="space-y-1 text-sm">
             {injuries.map((inj) => (
-              // Ensure keys are unique and filtering works
-              <li
-                key={inj.id + "-" + inj.player}
-                className="flex justify-between"
-              >
+              <li key={inj.id + inj.player} className="flex justify-between">
                 <span>
-                  {inj.player} ({inj.team_display_name})
+                  {inj.player}
+                  {inj.injury_type && ` (${inj.injury_type})`}
+                  {" — "}
+                  <em>{inj.team_display_name}</em>
                 </span>
                 <span className="font-medium">{inj.status}</span>
               </li>
