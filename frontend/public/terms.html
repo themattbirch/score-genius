@@ -228,35 +228,58 @@
       </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="bg-gray-900 px-4 py-8">
-      <div class="max-w-7xl mx-auto text-center space-y-4">
-        <nav
-          class="flex flex-col items-center space-y-2 mb-8 sm:flex-row sm:justify-center sm:space-y-0 sm:gap-x-4"
-        >
-          <a href="/" class="text-white hover:text-orange-500">Home</a>
-          <span class="hidden sm:inline-block text-gray-600 px-2">|</span>
-          <a href="/documentation" class="text-white hover:text-orange-500"
-            >Documentation</a
-          >
-          <span class="hidden sm:inline-block text-gray-600 px-2">|</span>
-          <a href="/support" class="text-white hover:text-orange-500"
-            >Support</a
-          >
-          <span class="hidden sm:inline-block text-gray-600 px-2">|</span>
-          <a href="/disclaimer" class="text-white hover:text-orange-500"
-            >Disclaimer</a
-          >
-          <span class="hidden sm:inline-block text-gray-600 px-2">|</span>
-          <a href="/privacy" class="text-white hover:text-orange-500"
-            >Privacy Policy</a
-          >
-        </nav>
-        <p class="text-gray-300 text-sm">
-          © 2025 Score Genius. All rights reserved.
-        </p>
+<!-- ▸▸ FOOTER ◂◂ -->
+<footer class="bg-gray-900 px-4 py-12">
+  <div class="max-w-7xl mx-auto grid gap-y-10 gap-x-8 md:grid-cols-3">
+
+    <!-- ① SOCIALS -->
+    <div class="text-center md:text-left">
+      <h4 class="mb-3 text-sm font-semibold tracking-widest uppercase text-gray-400">
+        Follow&nbsp;Us
+      </h4>
+      <div class="flex justify-center md:justify-start space-x-6">
+        <a href="https://facebook.com/scoregeniusai"
+           aria-label="Facebook – Score Genius"
+           class="text-white hover:text-orange-500 transition-colors">
+          <i data-lucide="facebook" class="w-5 h-5"></i>
+        </a>
+        <a href="https://twitter.com/scoregeniusai"
+           aria-label="X / Twitter – Score Genius"
+           class="text-white hover:text-orange-500 transition-colors">
+          <i data-lucide="twitter" class="w-5 h-5"></i>
+        </a>
+        <a href="https://www.youtube.com/@scoregenius"
+           aria-label="YouTube – Score Genius"
+           class="text-white hover:text-orange-500 transition-colors">
+          <i data-lucide="youtube" class="w-5 h-5"></i>
+        </a>
       </div>
-    </footer>
+    </div>
+
+    <!-- ② RESOURCES -->
+    <div class="text-center md:text-left">
+      <h4 class="mb-3 text-sm font-semibold tracking-widest uppercase text-gray-400">
+        Resources
+      </h4>
+      <ul class="space-y-2">
+        <li><a href="/documentation" class="block text-white hover:text-orange-500 transition-colors">Documentation</a></li>
+        <li><a href="/support"        class="block text-white hover:text-orange-500 transition-colors">Support</a></li>
+        <li><a href="/disclaimer"     class="block text-white hover:text-orange-500 transition-colors">Disclaimer</a></li>
+        <li><a href="/privacy"        class="block text-white hover:text-orange-500 transition-colors">Privacy&nbsp;Policy</a></li>
+        <li><a href="/terms"          class="block text-white hover:text-orange-500 transition-colors">Terms&nbsp;of&nbsp;Service</a></li>
+      </ul>
+    </div>
+
+<!-- ③ COPYRIGHT -->
+<div class="text-center md:text-right md:self-start">
+  <h4 class="mb-2 text-sm font-semibold tracking-widest uppercase text-gray-400">
+    For sports fans…<br class="md:hidden" />by sports fans.
+  </h4>
+  <p class="text-white text-sm">
+    © 2025 Score Genius. All rights reserved.
+  </p>
+  </div>
+</footer>
 
     <script>
       lucide.createIcons();
