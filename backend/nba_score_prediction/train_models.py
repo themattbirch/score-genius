@@ -58,6 +58,9 @@ from sklearn.metrics import (make_scorer, mean_absolute_error,
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.dummy import DummyRegressor
+from sklearn.metrics import mean_absolute_error
+
 # SciPy Imports
 from scipy.optimize import minimize
 from scipy.stats import loguniform, randint, uniform
@@ -1122,6 +1125,21 @@ def tune_and_evaluate_predictor(
         metrics['test_rmse_away'] = test_metrics_away.get('rmse')
         metrics['test_r2_away'] = test_metrics_away.get('r2')
 
+        # --- Baseline Dummy Regressor Metrics ---
+        # Fit on the same Train+Val data
+        dummy_home = DummyRegressor(strategy='mean')
+        dummy_home.fit(X_train_val_features, y_train_val_home)
+        baseline_pred_home = dummy_home.predict(X_test_final)
+        metrics['baseline_mae_home'] = mean_absolute_error(y_test_home_aligned, baseline_pred_home)
+
+        dummy_away = DummyRegressor(strategy='mean')
+        dummy_away.fit(X_train_val_features, y_train_val_away)
+        baseline_pred_away = dummy_away.predict(X_test_final)
+        metrics['baseline_mae_away'] = mean_absolute_error(y_test_away_aligned, baseline_pred_away)
+
+        logger.info(f"Baseline Dummy MAE – Home: {metrics['baseline_mae_home']:.3f}, Away: {metrics['baseline_mae_away']:.3f}")
+
+
         # Calculate combined metrics (Total Score MAE, Point Differential MAE)
         valid_test_mask = y_test_home_aligned.notna() & y_test_away_aligned.notna() & \
                           pred_home_test.notna() & pred_away_test.notna()
@@ -1682,12 +1700,13 @@ def run_training_pipeline(args: argparse.Namespace):
          sys.exit(1)
 
     SVR_PARAM_DIST_REFINED = {
-        'svr__kernel': ['rbf', 'linear'], 
-        'svr__C': loguniform(1, 250), 
-        'svr__epsilon': uniform(0.05, 0.25), 
-        'svr__gamma': ['scale', 'auto'] + list(loguniform(1e-4, 1e-2).rvs(size=20, random_state=SEED))
+        'svr__kernel':     ['rbf', 'linear'],           # keep it simple
+        'svr__C':          loguniform(1, 20),           # tighten from [1,250] → [1,20]
+        'svr__epsilon':    uniform(0.01, 0.2),           # explore smaller epsilons <0.21
+        'svr__gamma':      ['scale','auto'] 
+                        + list(loguniform(1e-4,1e-2)
+                        .rvs(size=20, random_state=SEED))
     }
-
     # Mappings for easy access
     predictor_map = {
         "ridge": RidgeScorePredictor,
@@ -1975,7 +1994,8 @@ def run_training_pipeline(args: argparse.Namespace):
             metrics_df = pd.DataFrame(all_metrics)
             cols_to_show = [
                 'model_name', 'feature_count', 'training_duration_final',
-                'test_mae_home', 'test_mae_away', 'test_r2_home', 'test_r2_away',
+                'baseline_mae_home', 'test_mae_home',
+                'baseline_mae_away', 'test_mae_away', 'test_r2_home', 'test_r2_away',
                 'test_mae_total', 'test_mae_diff', 'test_combined_loss'
             ]
             if 'betting_metrics' in metrics_df.columns:

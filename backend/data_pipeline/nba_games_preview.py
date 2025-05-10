@@ -137,31 +137,45 @@ def get_games_by_date(
 
 
 def get_betting_odds(et_date: datetime) -> List[Dict[str, Any]]:
-    """Fetch odds for a given ET date from The Odds API."""
+    """Fetch odds for a given ET date from The Odds API, with head‑to‑head fallback."""
     if not ODDS_API_KEY:
         print("Error: ODDS_API_KEY not configured.")
         return []
 
     start_et = et_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_et = et_date.replace(hour=23, minute=59, second=59, microsecond=0)
+    end_et   = et_date.replace(hour=23, minute=59, second=59, microsecond=0)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
+
+    # initial attempt with all markets
     params = {
+        "apiKey": ODDS_API_KEY,
         "regions": "us",
         "markets": "h2h,spreads,totals",
         "oddsFormat": "american",
         "commenceTimeFrom": start_et.astimezone(ZoneInfo("UTC")).strftime(fmt),
-        "commenceTimeTo": end_et.astimezone(ZoneInfo("UTC")).strftime(fmt),
-        "apiKey": ODDS_API_KEY,
+        "commenceTimeTo":   end_et.astimezone(ZoneInfo("UTC")).strftime(fmt),
     }
 
-    try:
-        resp = requests.get(NBA_ODDS_API, params=params)
-        resp.raise_for_status()
+    print(f"Requesting odds (all markets) with params: {params}")
+    resp = requests.get(NBA_ODDS_API, params=params)
+
+    # success path
+    if resp.status_code == 200:
         return resp.json()
-    except requests.HTTPError as he:
-        print(f"HTTP error fetching odds: {he} (Status {resp.status_code})")
-    except requests.RequestException as re:
-        print(f"Request error fetching odds: {re}")
+
+    # fallback on unauthorized
+    if resp.status_code == 401 and "," in params["markets"]:
+        print("Received 401 for full markets → retrying head-to-head only")
+        params["markets"] = "h2h"
+        print(f"Requesting odds (h2h-only) with params: {params}")
+        resp = requests.get(NBA_ODDS_API, params=params)
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            print(f"Fallback also failed: {resp.status_code} {resp.text[:200]}")
+
+    # any other error
+    print(f"Error fetching odds: HTTP {resp.status_code} {resp.text[:200]}")
     return []
 
 
@@ -532,6 +546,9 @@ def main():
         previews = build_game_preview(window_days=2)
         if previews:
             upsert_previews(previews)
+            from nba_score_prediction.prediction import fetch_and_parse_betting_odds
+            game_ids = [p["game_id"] for p in previews]
+            fetch_and_parse_betting_odds(supabase, game_ids)
             print(f"Upserted {len(previews)} game previews")
 
             # 4) Generate & upsert predictions

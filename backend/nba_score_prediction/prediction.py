@@ -435,7 +435,7 @@ def fetch_and_parse_betting_odds(
                         "spread_clean":   sp_str,
                         "total_clean":    tot_str
                     })\
-                    .eq("game_id", int(gid))\
+                    .eq("game_id", gid)\
                     .execute()
 
                 home_ml, away_ml = parse_moneyline_str(ml_str, r["home_team"], r["away_team"])
