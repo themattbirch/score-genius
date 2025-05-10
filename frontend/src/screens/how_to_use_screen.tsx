@@ -7,7 +7,7 @@ const HowToUseScreen: React.FC = () => {
   const { start } = useTour();
 
   return (
-    // --- Point 2: Increased vertical spacing between header, list, and button ---
+    // --- Point 2: Increased vertical spacing between header, list and button ---
     <section className="mx-auto max-w-lg space-y-8 p-6 text-text-primary">
       {" "}
       {/* Title */}
