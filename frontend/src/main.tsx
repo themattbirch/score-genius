@@ -1,41 +1,51 @@
 // frontend/src/main.tsx
 
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import App from "./App";
-import "./index.css";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import App from './App';
+import './index.css';
 
 const queryClient = new QueryClient();
-const container = document.getElementById("root");
-if (!container) throw new Error("Root element not found");
+const container = document.getElementById('root');
+if (!container) throw new Error('Root element not found');
 
-/* ------- new SW registration, scoped to /app/ -------- */
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register("/app-sw.js", { scope: "/app/" })
-      .catch((err) =>
-        console.error("Service‑worker registration failed:", err)
-      );
-  });
-}
-
-/* ------- SW registration (production only) -------- */
-if (import.meta.env.PROD && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/app-sw.js", { scope: "/app/" })
+      .register('/app-sw.js', { scope: '/app/' })
       .then((reg) => {
-        // When a new worker activates, reload the page so fresh HTML/CSS/JS load.
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
+        // 1) If there’s already a waiting SW, tell it to skip waiting.
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+
+        // 2) When a new SW is found (on update), hook its state changes.
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (
+              newWorker.state === 'installed' &&
+              navigator.serviceWorker.controller
+            ) {
+              newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+
+        // 3) Reload the page when the new SW takes control.
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
           window.location.reload();
         });
-        // Optional: ask for an update check on every load
+
+        // 4) Optional: check for updates on every load.
         reg.update().catch(() => {});
       })
-      .catch((err) => console.error("SW registration failed:", err));
+      .catch((err) =>
+        console.error('Service-worker registration failed:', err)
+      );
   });
 }
 

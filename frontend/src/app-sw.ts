@@ -55,3 +55,10 @@ registerRoute(
     ],
   })
 );
+
+// Tell the new SW to activate immediately when it gets this message:
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
