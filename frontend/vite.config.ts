@@ -6,32 +6,25 @@ import { resolve } from "path";
 export default defineConfig({
   plugins: [
     react(),
-
     /* ---------- PWA  (scoped to /app) ---------- */
     VitePWA({
-      // We’ll register manually, so skip auto‑insert
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "app-sw.ts",
       injectRegister: false,
       registerType: "autoUpdate",
-
-      /* Service‑worker file will live at /app-sw.js */
-      filename: "app-sw.js",
-
-      /* ----------- manifest (unchanged) ---------- */
       manifest: {
         name: "Score Genius",
         short_name: "ScoreGenius",
         description:
           "Score Genius: Powerful predictive stats for passionate fans",
+        scope: "/app",
+        start_url: "/app",
         theme_color: "#1F2937",
         background_color: "#ffffff",
         display: "standalone",
         display_override: ["fullscreen", "standalone", "minimal-ui"],
         orientation: "portrait",
-
-        /* <-— key lines —-> */
-        scope: "/app",
-        start_url: "/app",
-
         icons: [
           {
             src: "/icons/football-icon-192.png",
@@ -59,6 +52,7 @@ export default defineConfig({
         navigateFallbackAllowlist: [/^\/app(?:\/.*)?$/], // ⬅ key line
 
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
+        cleanupOutdatedCaches: true,
       },
     }),
   ],

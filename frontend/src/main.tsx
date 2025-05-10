@@ -22,6 +22,14 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/app-sw.js", { scope: "/app/" })
+      .catch((err) => console.error("SW registration failed:", err));
+  });
+}
+
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
