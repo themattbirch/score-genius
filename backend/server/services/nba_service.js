@@ -85,15 +85,12 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
 export const fetchNbaInjuries = async () => {
   console.log("→ [fetchNbaInjuries] querying injuries table…");
 
-  // 1) Fetch
   const { data, error } = await supabase
     .from(NBA_INJURIES_TABLE)
     .select(
       `
       injury_id,
-      player_id,
       player_display_name,
-      team_id,
       team_display_name,
       report_date_utc,
       injury_status,
@@ -103,19 +100,13 @@ export const fetchNbaInjuries = async () => {
     )
     .order("report_date_utc", { ascending: false });
 
-  // 2) Error handling
   if (error) {
     console.error("→ [fetchNbaInjuries] Supabase error:", error);
-    return [];
-  }
-  if (!Array.isArray(data)) {
-    console.warn("→ [fetchNbaInjuries] Unexpected data:", data);
     return [];
   }
 
   console.log(`→ [fetchNbaInjuries] got ${data.length} rows`);
 
-  // 3) Normalize & return
   const normalized = data.map((inj) => ({
     id: String(inj.injury_id),
     player: inj.player_display_name,
@@ -123,7 +114,7 @@ export const fetchNbaInjuries = async () => {
     status: inj.injury_status || "N/A",
     detail: inj.injury_detail || "",
     updated: inj.report_date_utc,
-    type: inj.injury_type || null,
+    injury_type: inj.injury_type || null, // ← renamed from `type`
   }));
 
   return normalized;

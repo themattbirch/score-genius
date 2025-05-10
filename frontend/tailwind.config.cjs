@@ -2,6 +2,7 @@
 const defaultTheme = require("tailwindcss/defaultTheme");
 const forms = require("@tailwindcss/forms");
 const typography = require("@tailwindcss/typography");
+const plugin = require("tailwindcss/plugin");
 
 module.exports = {
   content: [
@@ -29,6 +30,13 @@ module.exports = {
     },
   },
   plugins: [
+    plugin(function ({ addVariant, e }) {
+      addVariant("dark", ({ modifySelectors, separator }) => {
+        modifySelectors(
+          ({ className }) => `.dark .${e(`dark${separator}${className}`)}`
+        );
+      });
+    }),
     forms,
     typography,
     /** ---- Day-Picker reset --------------------------------------- **/
