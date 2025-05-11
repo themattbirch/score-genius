@@ -41,13 +41,13 @@ const LinkItem = ({
     {/* ← render icon + label */}
     <div className="flex items-center space-x-2">
       {Icon && (
-        <Icon size={20} className="text-slate-700 dark:text-slate-200" />
+        <Icon size={20} className="text-slate-700 dark:text-text-primary" />
       )}
       <span>{label}</span>
     </div>
     <ExternalLink
       size={16}
-      className="opacity-60 text-slate-500 dark:text-text-primary"
+      className="opacity-60 text-slate-500 dark:text-text-secondary"
     />
   </a>
 );
@@ -78,7 +78,7 @@ const SocialLinkItem = ({
   >
     <div className="flex items-center space-x-2">
       {Icon && (
-        <Icon size={20} className="text-slate-700 dark:text-slate-200" />
+        <Icon size={20} className="text-slate-700 dark:text-text-primary" />
       )}
       <span>{label}</span>
     </div>
@@ -181,7 +181,7 @@ const MoreScreen: React.FC = () => (
           w-full justify-center
           bg-slate-100 dark:bg-[var(--color-panel)]
           border border-slate-300 dark:border-slate-600/60
-          text-slate-700 dark:text-slate-200
+          text-slate-700 dark:text-text-primary
           hover:bg-slate-200 dark:hover:bg-slate-700
           px-4 py-3 text-sm rounded-lg
         "
