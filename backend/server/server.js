@@ -84,11 +84,18 @@ const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
-console.log(
-  "Registered routes:",
-  app._router.stack.filter((r) => r.route).map((r) => r.route.path)
-);
-
+if (
+  process.env.NODE_ENV === "development" &&
+  app._router &&
+  Array.isArray(app._router.stack)
+) {
+  console.log(
+    "Registered routes:",
+    app._router.stack
+      .filter((layer) => layer.route)
+      .map((layer) => layer.route.path)
+  );
+}
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
