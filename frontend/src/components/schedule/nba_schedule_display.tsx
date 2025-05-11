@@ -260,7 +260,7 @@ const NBAScheduleDisplay: React.FC = () => {
                         <span className="min-w-0 flex-1 font-medium">
                           {team}
                         </span>
-                        <span className="flex-shrink-0 rounded-full border border-green-500 shadow-md px-2.5 py-1 text-xs text-green-800 dark:text-green-100">
+                        <span className="flex-shrink-0 rounded-full border border-green-500 shadow-md px-2.5 py-1 text-xs font-medium light:text-green-800 dark:text-green-100">
                           {injuriesByTeam[team].length} available
                         </span>
                         <ChevronDown className="h-4 w-4 flex-shrink-0 transition-transform group-open:rotate-180" />
