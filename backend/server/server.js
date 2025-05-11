@@ -84,27 +84,11 @@ const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
-if (
-  process.env.NODE_ENV === "development" &&
-  app._router &&
-  Array.isArray(app._router.stack)
-) {
-  console.log(
-    "Registered routes:",
-    app._router.stack
-      .filter((layer) => layer.route)
-      .map((layer) => layer.route.path)
-  );
-}
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-/* ──────────────────────────────────────────────────────────────
- * 5) Serve NBA Snapshots
- * ──────────────────────────────────────────────────────────── */
-
-// Serve snapshot JSON files from reports/snapshots
+// 5) Serve snapshots
 app.use(
   "/snapshots",
   express.static(path.join(__dirname, "../../reports/snapshots"), {
@@ -112,9 +96,22 @@ app.use(
   })
 );
 
-app.use(express.static(path.join(__dirname, "../../frontend/dist")));
-app.get("/*", (_req, res) =>
-  res.sendFile(path.join(__dirname, "../../frontend/dist/index.html"))
+/* ───────────── 6)  Serve built frontend assets ───────────── */
+// NB: leave index.html to the SPA fallback ↓
+app.use(
+  express.static(path.resolve(__dirname, "../../frontend/dist"), {
+    index: false,
+  })
+);
+
+/* ───────────── 7)  SPA fallback for everything else ─────────────
+   - RegExp avoids path‑to‑regexp parsing
+   - We skip /api and /snapshots so those keep working
+------------------------------------------------------------------ */
+app.get(
+  /^\/(?!api\/|snapshots\/).*/, // any path not starting with /api or /snapshots
+  (_req, res) =>
+    res.sendFile(path.resolve(__dirname, "../../frontend/dist/index.html"))
 );
 
 /* --------------------------- Error-handling --------------------------- */
