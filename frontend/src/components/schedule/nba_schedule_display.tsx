@@ -183,17 +183,17 @@ const NBAScheduleDisplay: React.FC = () => {
   return (
     <div className="p-4">
       {/* Header remains mostly the same */}
-      <h2
+      <h1
         className={`mb-3 text-center text-lg font-semibold ${
           loadingGames
-            ? "animate-pulse italic text-gray-500 dark:text-text-secondary"
+            ? "animate-pulse italic text-gray-500 dark:text-text-primary"
             : "text-gray-900 dark:text-text-primary"
         }`}
       >
         {loadingGames
           ? `Loading NBA Games for ${displayDate}…`
           : `NBA Games for ${displayDate}`}
-      </h2>
+      </h1>
 
       <div className="space-y-4">
         {loadingGames ? (

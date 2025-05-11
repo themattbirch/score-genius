@@ -84,7 +84,7 @@ const MoreScreen: React.FC = () => (
       <h2
         className="
         text-base sm:text-lg font-semibold
-        text-slate-800 dark:text-slate-100
+       text-gray-900 dark:text-text-primary
         text-center sm:text-left mb-2 sm:mb-3
       "
       >
@@ -101,7 +101,7 @@ const MoreScreen: React.FC = () => (
       <h2
         className="
         text-base sm:text-lg font-semibold
-        text-slate-800 dark:text-slate-100
+        text-slate-800 dark:text-text-primary
         text-center sm:text-left mb-2 sm:mb-3
       "
       >

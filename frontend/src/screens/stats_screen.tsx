@@ -832,7 +832,7 @@ const StatsScreen: React.FC = () => {
       {/* --- END OF ROW 1 --- */}
 
       {/* --- Row 2: Dynamic H1 Heading (Positioned correctly now) --- */}
-      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+      <h1 className="text-xl font-semibold text-gray-900 dark:text-text-primary mb-2">
         {headingText}
       </h1>
 
