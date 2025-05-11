@@ -386,7 +386,7 @@ const StatsScreen: React.FC = () => {
       );
     if (!sortedTeams?.length)
       return (
-        <div className="p-4 text-center text-gray-500">
+        <div className="p-4 text-center text-text-secondary">
           No team stats available for this season.
         </div>
       );
@@ -411,7 +411,11 @@ const StatsScreen: React.FC = () => {
                     onClick={() => toggleTeamSort(key)}
                     align={index === 0 ? "left" : "right"}
                     // Reminder: className value "border-l ..." might still be incomplete
-                    className={index > 0 ? "border-l ..." : ""}
+                    className={
+                      index > 0
+                        ? "border-l border-gray-300 dark:border-slate-600/60"
+                        : ""
+                    }
                     data-tour={tourAttribute}
                   />
                 );
@@ -429,8 +433,8 @@ const StatsScreen: React.FC = () => {
                   const cell = formatCell(raw, String(key));
                   let cellSpecificClasses =
                     index === 0
-                      ? `px-3 text-left font-medium whitespace-nowrap text-gray-900 dark:text-gray-100`
-                      : `px-3 text-center border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400`;
+                      ? `px-3 text-left font-medium whitespace-nowrap text-slate-800 dark:text-text-primary`
+                      : `px-3 text-center border-l border-gray-300 dark:border-slate-600/60 text-slate-800 dark:text-text-primary`;
                   // Ensure no stray whitespace inside the <td> either
                   return (
                     <td
@@ -477,9 +481,9 @@ const StatsScreen: React.FC = () => {
       );
 
     return (
-      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
+      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
         <table className="w-full min-w-max text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
+          <thead className="bg-gray-50 dark:bg-[var(--color-panel)] border-b border-gray-300 dark:border-slate-600/60">
             <tr>
               {playerHeaders.map(({ label, key }, i) => (
                 <HeaderCell
@@ -490,14 +494,17 @@ const StatsScreen: React.FC = () => {
                   align={i < 2 ? "left" : "right"}
                   className={
                     i === 0
-                      ? `sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700`
-                      : "border-l border-gray-300 dark:border-gray-700"
+                      ? `sticky left-0 z-30 bg-gray-50 dark:bg-[var(--color-panel)] before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-slate-600/60`
+                      : "border-l border-gray-300 dark:border-slate-600/60"
                   }
                 />
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
+          <tbody
+            className="divide-y divide-gray-300 dark:divide-slate-600/60
+            bg-white dark:bg-[var(--color-panel)]"
+          >
             {sortedPlayers.map((p) => (
               <tr
                 key={p.player_id}
@@ -514,14 +521,14 @@ const StatsScreen: React.FC = () => {
                         key={key}
                         className="
                 sticky left-0 z-20
-                bg-white dark:bg-gray-900
+                bg-white dark:bg-[var(--color-panel)]
                 px-3
                 text-left font-medium
                 whitespace-nowrap
-                text-gray-900 dark:text-gray-100
+                text-slate-800 dark:text-text-primary
                 before:content-[''] before:absolute before:inset-y-0
                 before:right-0 before:w-px
-                before:bg-gray-300 dark:before:bg-gray-700
+                before:bg-gray-300 dark:before:bg-slate-600/60
               "
                       >
                         {display}
@@ -539,8 +546,8 @@ const StatsScreen: React.FC = () => {
               py-2 px-3
               ${alignClass}
               whitespace-nowrap
-              border-l border-gray-300 dark:border-gray-700
-              text-gray-700 dark:text-gray-400
+              border-l border-gray-300 dark:border-slate-600/60
+              text-gray-700 dark:text-text-primary
             `}
                     >
                       {" "}
@@ -599,9 +606,9 @@ const StatsScreen: React.FC = () => {
     // TODO: Add sorting logic if needed, using nbaAdvancedData, nbaAdvancedSort, toggleNbaAdvancedSort
 
     return (
-      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
+      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-slate-600/60 bg-white dark:bg-[var(--color-panel)] ">
         <table className="w-full min-w-max text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
+          <thead className="bg-gray-50 dark:bg-[var(--color-panel)] border-b border-gray-300 dark:border-slate-600/60">
             <tr>
               {advancedHeaders.map(({ label, key }, i) => (
                 <HeaderCell
@@ -612,14 +619,14 @@ const StatsScreen: React.FC = () => {
                   align={i === 0 ? "left" : "right"}
                   className={
                     i === 0
-                      ? `sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700`
-                      : "border-l border-gray-300 dark:border-gray-700"
+                      ? `sticky left-0 z-30 bg-gray-50 dark:bg-[var(--color-panel)] before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-slate-600/60`
+                      : "border-l border-gray-300 dark:border-slate-600/60"
                   }
                 />
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
+          <tbody className="divide-y divide-gray-300 dark:divide-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
             {nbaAdvancedData.map(
               (
                 team // Use unsorted data for now
@@ -634,7 +641,7 @@ const StatsScreen: React.FC = () => {
                     return i === 0 ? (
                       <td
                         key={key}
-                        className={` sticky left-0 z-20 bg-white dark:bg-gray-900 px-3 text-left font-medium whitespace-nowrap text-gray-900 dark:text-gray-100 before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700 `}
+                        className={` sticky left-0 z-20 bg-white dark:bg-[var(--color-panel)] px-3 text-left font-medium whitespace-nowrap text-slate-800 dark:text-text-primary before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-slate-600/60`}
                       >
                         {" "}
                         {display}{" "}
@@ -642,7 +649,7 @@ const StatsScreen: React.FC = () => {
                     ) : (
                       <td
                         key={key}
-                        className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-slate-600/60 text-gray-700 dark:text-text-primary"
+                        className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-slate-600/60 text-slate-800 dark:text-text-primary"
                       >
                         {" "}
                         {display}{" "}
@@ -708,10 +715,10 @@ const StatsScreen: React.FC = () => {
     // TODO: Add sorting logic if needed, using mlbAdvancedData, mlbAdvancedSort, toggleMlbAdvancedSort
 
     return (
-      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
+      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-slate-600/60">
         <table className="w-full min-w-max text-sm">
           {/* ─────── HEADERS ─────── */}
-          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
+          <thead className="bg-gray-50 dark:bg-[var(--color-panel)] border-b border-gray-300 dark:border-slate-600/60">
             <tr>
               {mlbAdvancedHeaders.map(({ label, key }, i) => (
                 <HeaderCell
@@ -722,8 +729,8 @@ const StatsScreen: React.FC = () => {
                   align={i === 0 ? "left" : "right"}
                   className={
                     i === 0
-                      ? `sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700`
-                      : "border-l border-gray-300 dark:border-gray-700"
+                      ? `sticky left-0 z-30 bg-gray-50 dark:bg-[var(--color-panel)] before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-slate-600/60`
+                      : "border-l border-gray-300 dark:border-slate-600/60"
                   }
                 />
               ))}
@@ -731,7 +738,7 @@ const StatsScreen: React.FC = () => {
           </thead>
 
           {/* ─────── BODY ─────── */}
-          <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
+          <tbody className="divide-y divide-gray-300 dark:divide-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
             {mlbAdvancedData.map(
               (
                 team // Use unsorted data for now
@@ -748,7 +755,7 @@ const StatsScreen: React.FC = () => {
                       /* ── STICKY TEAM NAME ── */
                       <td
                         key={key}
-                        className={` sticky left-0 z-20 bg-white dark:bg-[var(--color-panel)] px-3 text-left font-medium whitespace-nowrap text-gray-900 dark:text-text-primary before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700 `}
+                        className={` sticky left-0 z-20 bg-white dark:bg-[var(--color-panel)] px-3 text-left font-medium whitespace-nowrap text-slate-800 dark:text-text-primary before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-slate-600/60 `}
                       >
                         {display}
                       </td>
@@ -756,7 +763,7 @@ const StatsScreen: React.FC = () => {
                       /* ── STAT COLUMNS ── */
                       <td
                         key={key}
-                        className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400"
+                        className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-slate-600/60 text-gray-700 dark:text-text-primary"
                       >
                         {display}
                       </td>
@@ -774,13 +781,13 @@ const StatsScreen: React.FC = () => {
   // --- FINAL RENDER ---
   return (
     // Main container with vertical spacing between direct children
-    <section className="p-4 space-y-4">
+    <section className="p-4 space-y-4 text-slate-800 dark:text-text-primary">
       {/* --- Row 1: Controls (Sub-Tabs + Season Picker) --- */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         {/* Container for the LEFT part (Sub-Tabs) */}
         <div className="flex-shrink-0">
           {/* --- Always render the sub-tab container div --- */}
-          <div className="flex gap-1 rounded-lg bg-gray-200 dark:bg-gray-800 p-1 text-sm">
+          <div className="flex gap-1 rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] p-1 text-sm">
             {/* --- Conditionally select the TABS ARRAY to map over --- */}
             {(sport === "NBA"
               ? (["teams", "players", "advanced"] as const) // Use NBA tabs array
@@ -799,7 +806,7 @@ const StatsScreen: React.FC = () => {
                     className={`rounded-md px-3 py-1 transition-colors text-xs sm:text-sm ${
                       subTab === tab
                         ? "bg-green-600 text-white shadow-sm" // Active
-                        : "text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700" // Inactive
+                        : "text-gray-600 dark:text-text-secondary hover:bg-gray-300 dark:hover:bg-gray-700" // Inactive
                     }`}
                     onClick={() => setSubTab(tab)}
                     // No 'disabled' needed here, as 'players' isn't in the MLB array
@@ -817,7 +824,7 @@ const StatsScreen: React.FC = () => {
         <select
           value={season}
           onChange={(e) => setSeason(Number(e.target.value))}
-          className="align-baseline rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] text-gray-900 dark:text-text-primary py-1 text-sm outline-none focus:ring focus:ring-green-500/50"
+          className="align-baseline rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] text-slate-800 dark:text-text-primary py-1 text-sm outline-none focus:ring focus:ring-green-500/50"
         >
           {/* ... options ... */}
           {seasonOptions.map(({ value, label }) => (
@@ -832,7 +839,7 @@ const StatsScreen: React.FC = () => {
       {/* --- END OF ROW 1 --- */}
 
       {/* --- Row 2: Dynamic H1 Heading (Positioned correctly now) --- */}
-      <h1 className="text-xl font-semibold text-gray-900 dark:text-text-primary mb-2">
+      <h1 className="text-xl font-semibold text-slate-800 dark:text-text-primary mb-2">
         {headingText}
       </h1>
 
@@ -846,7 +853,7 @@ const StatsScreen: React.FC = () => {
             placeholder="Search player…"
             value={playerSearch}
             onChange={(e) => setPlayerSearch(e.target.value)}
-            className="flex-grow rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-green-600 md:max-w-xs"
+            className="flex-grow rounded-lg border border-gray-400 dark:border-slate-600/60 bg-white dark:bg-[var(--color-panel)] px-3 py-1.5 text-sm text-gray-800 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-secondary outline-none focus:ring-1 focus:ring-green-600 md:max-w-xs"
           />
         </div>
       )}
