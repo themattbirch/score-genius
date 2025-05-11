@@ -110,6 +110,7 @@ const MoreScreen: React.FC = () => (
         Display Options
       </h2>
       <ThemeToggle
+        variant="card"
         data-tour="theme-toggle"
         className={`${cardBase} ${cardLight} ${cardDark} w-full !justify-center`}
       />
