@@ -19,7 +19,7 @@ const HowToUseScreen: React.FC = () => {
           className="stroke-slate-800 dark:stroke-slate-200" // Example explicit colors
         />
         {/* --- Point 3: Explicit light/dark colors for heading --- */}
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+        <h1 className="text-xl font-semiboldtext-gray-900 dark:text-text-primary">
           {" "}
           {/* Explicit colors */}
           How to Use Score Genius
