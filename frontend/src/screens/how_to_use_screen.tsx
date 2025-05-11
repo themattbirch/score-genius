@@ -8,7 +8,7 @@ const HowToUseScreen: React.FC = () => {
 
   return (
     // --- Point 2: Increased vertical spacing between header, list and button ---
-    <section className="mx-auto max-w-lg space-y-8 p-6 text-text-primary">
+    <section className="mx-auto max-w-lg space-y-8 p-6 text-slate-800 dark:text-text-primary">
       {" "}
       {/* Title */}
       <header className="flex items-center gap-2">
@@ -16,10 +16,10 @@ const HowToUseScreen: React.FC = () => {
         <HelpCircle
           size={24}
           strokeWidth={1.8}
-          className="stroke-slate-800 dark:stroke-slate-200" // Example explicit colors
+          className="stroke-slate-800 dark:stroke-text-primary"
         />
         {/* --- Point 3: Explicit light/dark colors for heading --- */}
-        <h1 className="text-xl font-semiboldtext-gray-900 dark:text-text-primary">
+        <h1 className="text-xl font-semibold text-slate-800 dark:text-text-primary">
           {" "}
           {/* Explicit colors */}
           How to Use Score Genius
@@ -27,13 +27,13 @@ const HowToUseScreen: React.FC = () => {
       </header>
       {/* Step list */}
       {/* --- Point 2: (Covered by parent space-y-8) --- */}
-      <ol className="space-y-8 border-l-2 border-brand-green pl-4">
+      <ol className="space-y-8 border-l-2 border-brand-green dark:border-brand-green-light pl-4">
         <li>
-          <h2 className="font-semibold text-slate-900 dark:text-brand-green mb-1">
+          <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
             1. Pick your sport
           </h2>
           {/* Pills inline after "example:" */}
-          <p className="text-sm text-gray-700 dark:text-slate-400 leading-relaxed">
+          <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
             Tap NBA or MLB in the header to switch between basketball and
             baseball views. See buttons as an example:{" "}
             {/* Added space before pills */}
@@ -44,10 +44,10 @@ const HowToUseScreen: React.FC = () => {
 
         <li>
           {/* --- Point 3 & 1 repeated --- */}
-          <h2 className="font-semibold text-slate-900 dark:text-brand-green mb-1">
+          <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
             2. Browse today’s games
           </h2>
-          <p className="text-sm text-gray-700 dark:text-slate-400 leading-relaxed">
+          <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
             The <strong>Games</strong> tab lists scheduled matchups. Tap a game
             for detailed predictions, betting edges, and injury news.
           </p>
@@ -55,10 +55,10 @@ const HowToUseScreen: React.FC = () => {
 
         <li>
           {/* --- Point 3 & 1 repeated --- */}
-          <h2 className="font-semibold text-slate-900 dark:text-brand-green mb-1">
+          <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
             3. Compare model vs. market
           </h2>
-          <p className="text-sm text-gray-700 dark:text-slate-400 leading-relaxed">
+          <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
             Green numbers signal positive value compared to Vegas odds; red
             means caution. Lines update in real time as odds shift.
           </p>
@@ -66,10 +66,10 @@ const HowToUseScreen: React.FC = () => {
 
         <li>
           {/* --- Point 3 & 1 repeated --- */}
-          <h2 className="font-semibold text-slate-900 dark:text-brand-green mb-1">
+          <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
             4. Deep-dive stats
           </h2>
-          <p className="text-sm text-gray-700 dark:text-slate-400 leading-relaxed">
+          <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
             In the <strong>Stats</strong> tab, explore team rankings, advanced
             metrics, and sort any column header to re-order the table.
           </p>

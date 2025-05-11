@@ -187,7 +187,7 @@ const NBAScheduleDisplay: React.FC = () => {
         className={`mb-3 text-center text-lg font-semibold ${
           loadingGames
             ? "animate-pulse italic text-gray-500 dark:text-text-primary"
-            : "text-gray-900 dark:text-text-primary"
+            : "text-slate-800 dark:text-text-primary"
         }`}
       >
         {loadingGames
@@ -222,7 +222,7 @@ const NBAScheduleDisplay: React.FC = () => {
       {/* Injury Report */}
       {!loadingGames && games && games.length > 0 && (
         <div className="mt-8 border-t border-border pt-6">
-          <h2 className="mb-3 text-center text-lg font-semibold text-gray-900 dark:text-text-primary">
+          <h2 className="mb-3 text-center text-lg font-semibold text-slate-800 dark:text-text-primary">
             Daily Injury Report
           </h2>
 
@@ -256,7 +256,7 @@ const NBAScheduleDisplay: React.FC = () => {
                       key={team}
                       className="app-card overflow-hidden group"
                     >
-                      <summary className="flex cursor-pointer items-start justify-between gap-2 bg-transparent p-3 text-gray-900 dark:text-text-primary">
+                      <summary className="flex cursor-pointer items-start justify-between gap-2 bg-transparent p-3 text-slate-800 dark:text-text-primary">
                         <span className="min-w-0 flex-1 font-medium">
                           {team}
                         </span>
@@ -272,7 +272,7 @@ const NBAScheduleDisplay: React.FC = () => {
                               key={inj.id}
                               className="flex items-center justify-between gap-2 py-1"
                             >
-                              <span className="break-words text-gray-800 dark:text-text-primary">
+                              <span className="break-words text-slate-800 dark:text-text-primary">
                                 {inj.player}
                                 {inj.injury_type && (
                                   <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary">
@@ -280,7 +280,7 @@ const NBAScheduleDisplay: React.FC = () => {
                                   </span>
                                 )}
                               </span>
-                              <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800 dark:border-border dark:bg-transparent dark:text-text-primary">
+                              <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-slate-800 dark:border-border dark:bg-transparent dark:text-text-primary">
                                 {inj.status}
                               </span>
                             </li>

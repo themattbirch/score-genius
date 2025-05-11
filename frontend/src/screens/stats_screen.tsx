@@ -335,7 +335,7 @@ const StatsScreen: React.FC = () => {
       {...rest}
       onClick={onClick}
       title="Click to sort"
-      className={` bg-gray-50 dark:bg-gray-800 cursor-pointer select-none py-2 px-3 font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700/30 ${
+      className={` bg-gray-50 dark:bg-[var(--color-panel)] cursor-pointer select-none py-2 px-3 font-medium text-gray-600 dark:text-text-secondary hover:bg-gray-200 dark:hover:bg-gray-700/30 ${
         align === "left" ? "text-left" : "text-center"
       } group ${className} `}
     >
@@ -392,9 +392,9 @@ const StatsScreen: React.FC = () => {
       );
 
     return (
-      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-gray-700">
+      <div className="overflow-x-auto rounded-xl border border-gray-300 dark:border-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
+          <thead className="bg-gray-50 dark:bg-[var(--color-panel)] border-b border-gray-300 dark:border-slate-600/60">
             {/* Ensure no extra spaces/newlines directly within <tr> */}
             <tr>
               {teamHeaders.map(({ label, key }, index) => {
@@ -418,7 +418,7 @@ const StatsScreen: React.FC = () => {
               })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-300 dark:divide-gray-700 bg-white dark:bg-gray-900">
+          <tbody className="divide-y divide-gray-300 dark:divide-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
             {sortedTeams.map((team) => (
               <tr
                 key={team.team_id}
@@ -642,7 +642,7 @@ const StatsScreen: React.FC = () => {
                     ) : (
                       <td
                         key={key}
-                        className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-400"
+                        className="py-2 px-3 text-center whitespace-nowrap border-l border-gray-300 dark:border-slate-600/60 text-gray-700 dark:text-text-primary"
                       >
                         {" "}
                         {display}{" "}
@@ -748,7 +748,7 @@ const StatsScreen: React.FC = () => {
                       /* ── STICKY TEAM NAME ── */
                       <td
                         key={key}
-                        className={` sticky left-0 z-20 bg-white dark:bg-gray-900 px-3 text-left font-medium whitespace-nowrap text-gray-900 dark:text-gray-100 before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700 `}
+                        className={` sticky left-0 z-20 bg-white dark:bg-[var(--color-panel)] px-3 text-left font-medium whitespace-nowrap text-gray-900 dark:text-text-primary before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-gray-300 dark:before:bg-gray-700 `}
                       >
                         {display}
                       </td>
@@ -817,7 +817,7 @@ const StatsScreen: React.FC = () => {
         <select
           value={season}
           onChange={(e) => setSeason(Number(e.target.value))}
-          className="align-baseline rounded-lg bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-white py-1 text-sm outline-none focus:ring focus:ring-green-500/50"
+          className="align-baseline rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] text-gray-900 dark:text-text-primary py-1 text-sm outline-none focus:ring focus:ring-green-500/50"
         >
           {/* ... options ... */}
           {seasonOptions.map(({ value, label }) => (
