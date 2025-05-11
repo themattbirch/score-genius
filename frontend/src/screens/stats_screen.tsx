@@ -335,7 +335,7 @@ const StatsScreen: React.FC = () => {
       {...rest}
       onClick={onClick}
       title="Click to sort"
-      className={` bg-gray-50 dark:bg-[var(--color-panel)] cursor-pointer select-none py-2 px-3 font-medium text-gray-600 dark:text-text-secondary hover:bg-gray-200 dark:hover:bg-gray-700/30 ${
+      className={` bg-gray-50 dark:bg-[var(--color-panel)] cursor-pointer select-none py-2 px-3 font-medium text-slate-600 dark:text-text-secondary hover:bg-gray-200 dark:hover:bg-gray-700/30 ${
         align === "left" ? "text-left" : "text-center"
       } group ${className} `}
     >
@@ -824,7 +824,7 @@ const StatsScreen: React.FC = () => {
         <select
           value={season}
           onChange={(e) => setSeason(Number(e.target.value))}
-          className="align-baseline rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] text-slate-800 dark:text-text-primary py-1 text-sm outline-none focus:ring focus:ring-green-500/50"
+          className="align-baseline rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] text-slate-800 dark:text-text-primary py-2 px-3  text-sm outline-none focus:ring focus:ring-green-500/50"
         >
           {/* ... options ... */}
           {seasonOptions.map(({ value, label }) => (
