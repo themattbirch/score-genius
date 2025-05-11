@@ -1,9 +1,11 @@
 // frontend/src/components/games/game_card.tsx
-import React from "react";
+import React, { useState } from "react";
 import { UnifiedGame, Sport } from "@/types"; // Use UnifiedGame
 import { useInjuries, Injury } from "@/api/use_injuries";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
+import SnapshotCard from "../ui/snapshot_card";
+import { NBAGameFeaturesPanel } from "../ui/nba_game_features_panel";
 
 interface GameCardProps {
   game: UnifiedGame; // Expect the unified type
@@ -14,11 +16,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const { date } = useDate();
   const isoDate = date ? date.toISOString().slice(0, 10) : "";
 
-  // NOTE: Removed useInjuries hook call as 'teamInjuries' wasn't used in the return JSX.
-  // If you need injury display later, you can uncomment this and the filter logic.
-  // const { data: injuries = [] } = useInjuries(sport, isoDate);
-  // const teamInjuries = injuries.filter(/* ... */);
-
   // Use unified fields directly
   const gameId = game.id;
   const homeTeamName = game.homeTeamName;
@@ -26,109 +23,86 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const displayTime = game.gameTimeUTC;
   const displayStatus = game.statusState;
 
-  // Removed console.log statement
+  const [showFeatures, setShowFeatures] = useState(false);
 
   return (
-    <div className="app-card flex flex-col gap-2" data-tour="game-card">
+    <div className="app-card flex flex-col gap-4" data-tour="game-card">
       {/* Top Row: Teams & Time */}
       <div className="flex items-start justify-between gap-4">
-        {/* Left Side: Teams & Time */}
+        {/* Teams & Time */}
         <div className="min-w-0 flex-1 max-w-md">
-          {" "}
-          {/* <<< ADDED max-w-md */}
-          {/* --- MODIFIED SECTION START --- */}
-          {/* Away Team */}
           <p className="font-semibold text-sm sm:text-base leading-tight">
-            {" "}
-            {/* Removed truncate */}
             {awayTeamName}
           </p>
-          {/* Home Team - On a new line */}
           <p className="font-semibold text-sm sm:text-base leading-tight">
-            @ {homeTeamName} {/* Kept the '@' pre.fix for context */}
+            @ {homeTeamName}
           </p>
-          {/* --- MODIFIED SECTION END --- */}
-          {/* Time / Status - Added padding-top for spacing */}
           <p className="text-xs text-text-secondary pt-1">
-            {/* Display time if available */}
-            {
-              displayTime
-                ? new Date(displayTime).toLocaleTimeString([], {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })
-                : game.game_date // Fallback to date
-            }
-            {/* Display status if available and not obvious */}
+            {displayTime
+              ? new Date(displayTime).toLocaleTimeString([], {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+              : game.game_date}
             {displayStatus &&
-              !displayStatus.toLowerCase().includes("final") &&
-              !displayStatus.toLowerCase().includes("sched") &&
-              !displayStatus.toLowerCase().includes("pre") && // <<< ADD THIS LINE
+              !["final", "sched", "pre"].some((s) =>
+                displayStatus.toLowerCase().includes(s)
+              ) &&
               ` (${displayStatus})`}
           </p>
         </div>
-        {/* Right Side: Score/Prediction/Pitchers & Odds */}
+
+        {/* Score / Prediction / Pitchers */}
         <div className="w-36 md:w-auto text-right text-sm">
-          {" "}
-          {/* <<< CHANGED flex-none to w-36 */}
-          {/* === Main Display: Use dataType === */}
           {game.dataType === "historical" ? (
-            // --- Historical Score ---
             <p className="font-semibold text-lg w-full">
               {game.away_final_score ?? "-"} – {game.home_final_score ?? "-"}
               <span className="block text-xs font-normal text-text-secondary">
-                {" "}
                 (Final)
               </span>
             </p>
           ) : game.dataType === "schedule" ? (
-            // --- Schedule Data ---
-            <>
-              {sport === "NBA" ? (
-                // NBA Prediction
-                <p className="font-medium w-full">
-                  {game.predictionAway ?? "-"} – {game.predictionHome ?? "-"}
-                  <span className="block text-xs font-normal text-text-secondary">
-                    {" "}
-                    (Predicted Score)
-                  </span>
+            sport === "NBA" ? (
+              <p className="font-medium w-full">
+                {game.predictionAway ?? "-"} – {game.predictionHome ?? "-"}
+                <span className="block text-xs font-normal text-text-secondary">
+                  (Predicted)
+                </span>
+              </p>
+            ) : (
+              <>
+                <p className="text-xs font-normal text-text-secondary">
+                  {game.awayPitcher ?? "TBD"}{" "}
+                  {game.awayPitcherHand && `(${game.awayPitcherHand}HP)`}
                 </p>
-              ) : (
-                // MLB Pitchers
-                <>
-                  <p className="text-xs font-normal w-full text-[var(--color-text-secondary)]">
-                    {game.awayPitcher ?? "TBD Pitcher"}
-                    {game.awayPitcherHand && ` (${game.awayPitcherHand}HP)`}
-                  </p>
-                  <p className="text-xs font-normal w-full  text-[var(--color-text-secondary)]">
-                    {game.homePitcher ?? "TBD Pitcher"}
-                    {game.homePitcherHand && ` (${game.homePitcherHand}HP)`}
-                  </p>
-                </>
-              )}
-              {/* 
-                Schedule Odds Display
-                Temporarily commented out per request.
-              
-              {sport === "NBA"
-                ? (game.spreadLine !== null || game.totalLine !== null) && (
-                    <p className="text-xs w-full text-[var(--color-text-secondary)] mt-1">
-                      Spread {game.spreadLine ?? "N/A"}, Total {game.totalLine ?? "N/A"}
-                    </p>
-                  )
-                : ((game.moneylineHome !== null && game.moneylineAway !== null) ||
-                    game.totalLine !== null) && (
-                    <p className="text-xs w-full text-[var(--color-text-secondary)] mt-1">
-                      ML {game.moneylineAway ?? "N/A"} / {game.moneylineHome ?? "N/A"}, O/U {game.totalLine ?? "N/A"}
-                    </p>
-                  )}
-              */}
-            </>
+                <p className="text-xs font-normal text-text-secondary">
+                  {game.homePitcher ?? "TBD"}{" "}
+                  {game.homePitcherHand && `(${game.homePitcherHand}HP)`}
+                </p>
+              </>
+            )
           ) : (
-            // Fallback
-            <p className="font-medium w-full ">---</p>
+            <p className="font-medium w-full">—</p>
           )}
         </div>
+      </div>
+
+      {/* Snapshot + Drill-In */}
+      <div className="border-t pt-4">
+        <SnapshotCard gameId={gameId} />
+
+        <button
+          className="mt-2 text-sm underline hover:text-green-600"
+          onClick={() => setShowFeatures((v) => !v)}
+        >
+          {showFeatures ? "Hide full stats" : "View full stats"}
+        </button>
+
+        {showFeatures && (
+          <div className="mt-4">
+            <NBAGameFeaturesPanel gameId={gameId} />
+          </div>
+        )}
       </div>
     </div>
   );
