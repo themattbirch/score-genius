@@ -60,12 +60,12 @@ const SocialLinkItem = ({
     "
   >
     <div className="flex items-center space-x-2">
-      <Icon size={20} className="text-slate-700 dark:text-slate-200" />
+      <Icon size={20} className="text-slate-700 dark:text-text-primary" />
       <span>{label}</span>
     </div>
     <ExternalLink
       size={16}
-      className="opacity-60 text-slate-500 dark:text-slate-400"
+      className="opacity-60 text-slate-500 dark:text-text-secondary"
     />
   </a>
 );

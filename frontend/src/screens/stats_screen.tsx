@@ -824,7 +824,11 @@ const StatsScreen: React.FC = () => {
         <select
           value={season}
           onChange={(e) => setSeason(Number(e.target.value))}
-          className="align-baseline rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] text-slate-800 dark:text-text-primary py-2 px-3  text-sm outline-none focus:ring focus:ring-green-500/50"
+          className="align-baseline appearance-none
+           [-webkit-appearance:none]
+           [-moz-appearance:none] rounded-lg
+           bg-gray-200 dark:bg-[var(--color-panel)] bg-none text-slate-800 dark:text-text-primary 
+           py-2 px-4 text-sm outline-none focus:ring focus:ring-green-500/50"
         >
           {/* ... options ... */}
           {seasonOptions.map(({ value, label }) => (
