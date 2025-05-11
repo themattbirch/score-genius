@@ -87,6 +87,10 @@ body {
   color: var(--color-bg);
 }
 
+.group-open > .rotate-180 {
+  transition: transform 200ms ease-in-out;
+}
+
 /* Focus ring for interactive elements */
 @layer components {
   .focus-ring {

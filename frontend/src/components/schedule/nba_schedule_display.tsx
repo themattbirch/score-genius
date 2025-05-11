@@ -250,37 +250,51 @@ const NBAScheduleDisplay: React.FC = () => {
                   {displayDate}.
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
                   {teamsWithInjuries.map((team) => (
                     <details
                       key={team}
                       className="app-card overflow-hidden group"
                     >
-                      <summary className="flex cursor-pointer items-start justify-between gap-2 bg-transparent p-3 text-slate-800 dark:text-text-primary">
+                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 rounded-md text-slate-800 dark:text-text-primary hover:bg-gray-50 dark:hover:bg-gray-700/50  focus:outline-none focus:ring-2 focus:ring-green-400">
                         <span className="min-w-0 flex-1 font-medium">
                           {team}
                         </span>
-                        <span className="flex-shrink-0 rounded-full bg-orange-100 px-2.5 py-1 text-xs text-orange-800 dark:bg-orange-900/80 dark:text-orange-200">
+                        <span className="flex-shrink-0 rounded-full border border-green-500 shadow-md px-2.5 py-1 text-xs text-green-800 dark:text-green-100">
                           {injuriesByTeam[team].length} available
                         </span>
                         <ChevronDown className="h-4 w-4 flex-shrink-0 transition-transform group-open:rotate-180" />
                       </summary>
-                      <div className="border-t border-border bg-transparent p-3">
+                      {/* ← single wrapper div around hr + ul */}
+                      <div className="mt-2 py-2">
+                        {/* optional, you can omit if you like */}
                         <ul className="space-y-1">
-                          {injuriesByTeam[team].map((inj: Injury) => (
+                          {injuriesByTeam[team].map((inj) => (
                             <li
                               key={inj.id}
-                              className="flex items-center justify-between gap-2 py-1"
+                              className="flex items-start justify-between px-4 pt-3 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700/50"
                             >
-                              <span className="break-words text-slate-800 dark:text-text-primary">
-                                {inj.player}
+                              <div className="flex-1 pr-4">
+                                <p className="font-medium text-slate-800 dark:text-text-primary">
+                                  {inj.player}
+                                </p>
                                 {inj.injury_type && (
-                                  <span className="ml-1 text-xs text-gray-500 dark:text-text-secondary">
-                                    ({inj.injury_type})
-                                  </span>
+                                  <p className="mt-1 text-xs text-gray-500 dark:text-text-secondary">
+                                    {inj.injury_type}
+                                  </p>
                                 )}
-                              </span>
-                              <span className="whitespace-nowrap rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-slate-800 dark:border-border dark:bg-transparent dark:text-text-primary">
+                              </div>
+                              <span
+                                className="
+                                ml-auto mr-10
+                                flex-shrink-0
+                                rounded-full
+                                border border-gray-300
+                                bg-gray-100 px-2.5 py-1
+                                text-xs font-medium text-slate-800
+                                dark:border-border dark:bg-transparent dark:text-text-primary
+                              "
+                              >
                                 {inj.status}
                               </span>
                             </li>
