@@ -7,11 +7,22 @@ import {
   Facebook,
   Instagram,
   PlayCircle,
+  FileText,
+  Info,
+  BookOpen,
 } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import type { IconType } from "@/types";
 
-const LinkItem = ({ href, label }: { href: string; label: string }) => (
+const LinkItem = ({
+  href,
+  label,
+  Icon,
+}: {
+  href: string;
+  label: string;
+  Icon?: IconType;
+}) => (
   <a
     href={href}
     target="_blank"
@@ -27,10 +38,16 @@ const LinkItem = ({ href, label }: { href: string; label: string }) => (
       transition-colors
     "
   >
-    {label}
+    {/* ← render icon + label */}
+    <div className="flex items-center space-x-2">
+      {Icon && (
+        <Icon size={20} className="text-slate-700 dark:text-slate-200" />
+      )}
+      <span>{label}</span>
+    </div>
     <ExternalLink
       size={16}
-      className="opacity-60 text-slate-500 dark:text-slate-400"
+      className="opacity-60 text-slate-500 dark:text-text-primary"
     />
   </a>
 );
@@ -60,7 +77,9 @@ const SocialLinkItem = ({
     "
   >
     <div className="flex items-center space-x-2">
-      <Icon size={20} className="text-slate-700 dark:text-text-primary" />
+      {Icon && (
+        <Icon size={20} className="text-slate-700 dark:text-slate-200" />
+      )}
       <span>{label}</span>
     </div>
     <ExternalLink
@@ -90,10 +109,26 @@ const MoreScreen: React.FC = () => (
       >
         Information
       </h2>
-      <LinkItem href="https://scoregenius.io" label="About Score Genius" />
-      <LinkItem href="https://scoregenius.io/disclaimer" label="Disclaimer" />
-      <LinkItem href="https://scoregenius.io/terms" label="Terms of Service" />
-      <LinkItem href="https://scoregenius.io/privacy" label="Privacy Policy" />
+      <LinkItem
+        href="https://scoregenius.io"
+        label="About Score Genius"
+        Icon={Info}
+      />
+      <LinkItem
+        href="https://scoregenius.io/disclaimer"
+        label="Disclaimer"
+        Icon={FileText}
+      />
+      <LinkItem
+        href="https://scoregenius.io/terms"
+        label="Terms of Service"
+        Icon={BookOpen}
+      />
+      <LinkItem
+        href="https://scoregenius.io/privacy"
+        label="Privacy Policy"
+        Icon={FileText}
+      />
     </div>
 
     {/* Connect with Us */}
@@ -144,10 +179,10 @@ const MoreScreen: React.FC = () => (
         data-tour="theme-toggle"
         className="
           w-full justify-center
-          bg-white dark:bg-slate-800
+          bg-slate-100 dark:bg-[var(--color-panel)]
           border border-slate-300 dark:border-slate-600/60
           text-slate-700 dark:text-slate-200
-          hover:bg-slate-100 dark:hover:bg-slate-700
+          hover:bg-slate-200 dark:hover:bg-slate-700
           px-4 py-3 text-sm rounded-lg
         "
       />
