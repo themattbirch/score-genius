@@ -84,8 +84,30 @@ const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
+console.log(
+  "Registered routes:",
+  app._router.stack.filter((r) => r.route).map((r) => r.route.path)
+);
+
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
+);
+
+/* ──────────────────────────────────────────────────────────────
+ * 5) Serve NBA Snapshots
+ * ──────────────────────────────────────────────────────────── */
+
+// Serve snapshot JSON files from reports/snapshots
+app.use(
+  "/snapshots",
+  express.static(path.join(__dirname, "../../reports/snapshots"), {
+    extensions: ["json"],
+  })
+);
+
+app.use(express.static(path.join(__dirname, "../../frontend/dist")));
+app.get("/*", (_req, res) =>
+  res.sendFile(path.join(__dirname, "../../frontend/dist/index.html"))
 );
 
 /* --------------------------- Error-handling --------------------------- */

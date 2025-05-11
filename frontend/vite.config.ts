@@ -62,7 +62,12 @@ export default defineConfig({
 
   server: {
     open: "/app", // still auto‑opens the SPA
-    proxy: { "/api/v1": "http://localhost:3001" },
+    proxy: {
+      // existing API proxy
+      "/api/v1": "http://localhost:3001",
+      // new snapshots proxy
+      "/snapshots": "http://localhost:3001",
+    },
     strictPort: true,
     port: 5173,
   },
