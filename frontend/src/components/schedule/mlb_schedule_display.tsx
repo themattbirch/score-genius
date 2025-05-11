@@ -84,7 +84,7 @@ const MLBScheduleDisplay: React.FC = () => {
     // Loading display remains the same
     return (
       <div className="p-4">
-        <h2 className="text-lg text-center font-semibold mb-3 text-gray-500 dark:text-text-secondary italic animate-pulse">
+        <h2 className="text-lg text-center font-semibold mb-3 text-slate-800 dark:text-text-secondary italic animate-pulse">
           Loading MLB Games for {isoDate}...
         </h2>
         <div className="space-y-4">
@@ -121,7 +121,7 @@ const MLBScheduleDisplay: React.FC = () => {
   return (
     <div className="p-4">
       {/* Consistent Data Header */}
-      <h2 className="text-lg text-center font-semibold mb-3 text-gray-900 dark:text-text-primary">
+      <h2 className="text-lg text-center font-semibold mb-3 text-slate-800 dark:text-text-primary">
         MLB Games for {isoDate}
       </h2>
       <div className="space-y-4">

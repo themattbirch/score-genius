@@ -19,10 +19,10 @@ const LinkItem = ({ href, label }: { href: string; label: string }) => (
     className="
       flex items-center justify-between
       rounded-lg border
-      bg-slate-100 dark:bg-slate-800
+      bg-slate-100 dark:bg-[var(--color-panel)]
       border-slate-300 dark:border-slate-600/60
       px-4 py-3 text-sm
-      text-slate-700 dark:text-slate-200
+      text-slate-700 dark:text-text-primary
       hover:bg-slate-200 dark:hover:bg-slate-700
       transition-colors
     "
@@ -51,10 +51,10 @@ const SocialLinkItem = ({
     className="
       flex items-center justify-between
       rounded-lg border
-      bg-slate-100 dark:bg-slate-800
+      bg-slate-100 dark:bg-[var(--color-panel)]
       border-slate-300 dark:border-slate-600/60
       px-4 py-3 text-sm
-      text-slate-700 dark:text-slate-200
+      text-slate-700 dark:text-text-primary
       hover:bg-slate-200 dark:hover:bg-slate-700
       transition-colors
     "
@@ -84,7 +84,7 @@ const MoreScreen: React.FC = () => (
       <h2
         className="
         text-base sm:text-lg font-semibold
-       text-gray-900 dark:text-text-primary
+       text-slate-800 dark:text-text-primary
         text-center sm:text-left mb-2 sm:mb-3
       "
       >
@@ -134,7 +134,7 @@ const MoreScreen: React.FC = () => (
       <h2
         className="
         text-base sm:text-lg font-semibold
-        text-slate-800 dark:text-slate-100
+        text-slate-800 dark:text-text-primary
         text-center sm:text-left mb-2 sm:mb-3
       "
       >
