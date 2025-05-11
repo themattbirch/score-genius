@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "io.scoregenius.twa",
       "sha256_cert_fingerprints": [
-        "58:E7:9D:88:2B:A6:5D:DE:F6:3B:7B:4D:09:DC:B4:80:81:E2:4F:38:7F:6D:77:93:8B:91:46:1D:23:D4:94:CA"
+        "58:E7:9D:88:2B:A6:5D:DE:F6:3B:7B:4D:09:DC:B4:80:81:E2:4F:38:7F:6D:77:93:8B:91:46:1D:23:D4:94:CA",
+        "3C:93:B5:FF:22:FA:73:4C:B9:F2:78:3E:17:B8:D2:89:36:D0:54:6A:89:9C:CF:98:5E:14:DD:A2:3A:CF:B2:A9"
       ]
     }
   }
