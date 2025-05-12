@@ -108,28 +108,6 @@ app.use(
   })
 );
 
-/* ───────────── 6)  Serve built frontend assets ───────────── */
-// NB: leave index.html to the SPA fallback ↓
-app.use(
-  express.static(path.resolve(__dirname, "../../frontend/dist"), {
-    index: false,
-  })
-);
-
-// 7a) PWA shell: all /app/* routes get app.html
-app.get(
-  /^\/app(?:\/.*)?$/, // any path under /app/
-  (_req, res) =>
-    res.sendFile(path.resolve(__dirname, "../../frontend/dist/app.html"))
-);
-
-// 7b) Marketing shell: all other non-API/non-snapshot paths get index.html
-app.get(
-  /^\/(?!api\/|snapshots\/).*/, // same as before
-  (_req, res) =>
-    res.sendFile(path.resolve(__dirname, "../../frontend/dist/index.html"))
-);
-
 /* --------------------------- Error-handling --------------------------- */
 app.use((err, _req, res, _next) => {
   console.error(err.stack || err);
