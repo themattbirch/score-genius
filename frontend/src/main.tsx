@@ -11,7 +11,7 @@ const queryClient = new QueryClient();
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-const swUrl = `${location.origin}/app/app-sw.js`;
+const swUrl = "/app-sw.js";
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
