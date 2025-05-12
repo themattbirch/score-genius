@@ -12,6 +12,18 @@ const __dirname = path.dirname(__filename);
 
 const envPath = path.join(__dirname, "..", ".env");
 
+const frontEndDist = path.resolve(__dirname, "../../frontend/dist");
+console.log("🔍 [DEBUG] __dirname =", __dirname);
+console.log("🔍 [DEBUG] frontEndDist resolves to =", frontEndDist);
+console.log(
+  `🔍 [DEBUG] index.html exists?`,
+  fs.existsSync(path.join(frontEndDist, "index.html"))
+);
+console.log(
+  `🔍 [DEBUG] app.html exists?`,
+  fs.existsSync(path.join(frontEndDist, "app.html"))
+);
+
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
   console.log(`🔑  Loaded env from ${envPath}`);
