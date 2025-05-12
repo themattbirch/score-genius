@@ -104,12 +104,16 @@ app.use(
   })
 );
 
-/* ───────────── 7)  SPA fallback for everything else ─────────────
-   - RegExp avoids path‑to‑regexp parsing
-   - We skip /api and /snapshots so those keep working
------------------------------------------------------------------- */
+// 7a) PWA shell: all /app/* routes get app.html
 app.get(
-  /^\/(?!api\/|snapshots\/).*/, // any path not starting with /api or /snapshots
+  /^\/app(?:\/.*)?$/, // any path under /app/
+  (_req, res) =>
+    res.sendFile(path.resolve(__dirname, "../../frontend/dist/app.html"))
+);
+
+// 7b) Marketing shell: all other non-API/non-snapshot paths get index.html
+app.get(
+  /^\/(?!api\/|snapshots\/).*/, // same as before
   (_req, res) =>
     res.sendFile(path.resolve(__dirname, "../../frontend/dist/index.html"))
 );
