@@ -11,13 +11,12 @@ const queryClient = new QueryClient();
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-const base = import.meta.env.BASE_URL;
-const swUrl = new URL("app-sw.js", location.origin + base).href;
+const swUrl = `${location.origin}/app/app-sw.js`;
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
-      .register(swUrl)
+      .register(swUrl, { scope: "/app/" })
       .then((reg) => {
         // 1) If there’s already a waiting SW, tell it to skip waiting.
         if (reg.waiting) {
