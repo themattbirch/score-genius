@@ -260,26 +260,31 @@ def clear_past_schedule_data() -> None:
         print("Successfully cleared past games.")
 
 def _fetch_games_for_date(date_iso: str) -> List[Dict[str, Any]]:
-    """Try strict date lookup first; if empty, fall back to `next`."""
-    # 1) primary query
+    """Fetch games for a given ET date by merging primary + ET-filtered 'next'."""
+    # 1) primary query (may drop cross-midnights)
     primary = get_games_by_date("12", "2024-2025", date_iso).get("response", [])
-    if primary:
-        return primary
 
-    # 2) fallback – grab next 10 fixtures, filter locally
-    fallback = make_api_request(
+    # 2) fallback: next N fixtures, then filter by ET date
+    raw = make_api_request(
         f"{NBA_SPORTS_API}/games",
         HEADERS_SPORTS,
         {"league": "12", "next": 10, "timezone": "America/New_York"},
     ).get("response", [])
 
-    return [
-        g for g in fallback
-        if datetime.fromisoformat(g["date"].replace("Z", "+00:00"))
-              .astimezone(ET_ZONE)
-              .date()
-              .isoformat() == date_iso
-    ]
+    def is_et_date(g):
+        dt = datetime.fromisoformat(
+            g["date"].replace("Z", "+00:00")
+        ).astimezone(ET_ZONE)
+        return dt.date().isoformat() == date_iso
+
+    fallback = [g for g in raw if is_et_date(g)]
+
+    # 3) merge, keyed by game ID to avoid duplicates
+    games_by_id = {g["id"]: g for g in primary}
+    for g in fallback:
+        games_by_id.setdefault(g["id"], g)
+
+    return list(games_by_id.values())
 
 # --- Game Preview Building/Upserting Functions ---
 def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
@@ -342,15 +347,18 @@ def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
             .date()
             .isoformat()
         )
-        previews.append(
-            {
-                "game_id": str(g["id"]),
-                "scheduled_time": g["date"],
-                "game_date": gd,
-                "venue": venue,
-                "away_team": g["teams"]["away"]["name"],
-                "home_team": g["teams"]["home"]["name"],
-                **odds,
+        sched_dt = (
+            datetime.fromisoformat(g["date"].replace("Z", "+00:00"))
+            .astimezone(ET_ZONE)
+        )
+        previews.append({
+            "game_id":    str(g["id"]),
+            "scheduled_time": sched_dt.isoformat(),
+            "game_date":  sched_dt.date().isoformat(),
+            "venue": venue,
+            "away_team": g["teams"]["away"]["name"],
+            "home_team": g["teams"]["home"]["name"],
+            **odds,
             }
         )
 

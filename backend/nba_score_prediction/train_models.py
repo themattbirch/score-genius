@@ -1714,12 +1714,12 @@ def run_training_pipeline(args: argparse.Namespace):
          sys.exit(1)
 
     SVR_PARAM_DIST_REFINED = {
-        'svr__kernel':     ['rbf', 'linear'],           # keep it simple
-        'svr__C':          loguniform(1, 20),           # tighten from [1,250] → [1,20]
-        'svr__epsilon':    uniform(0.01, 0.2),           # explore smaller epsilons <0.21
-        'svr__gamma':      ['scale','auto'] 
-                        + list(loguniform(1e-4,1e-2)
-                        .rvs(size=20, random_state=SEED))
+        'svr__kernel':     ['rbf', 'linear'],           
+        'svr__C':          loguniform(1, 20),           
+        'svr__epsilon':    uniform(0.01, 0.2),           
+        'svr__gamma':      ['scale','auto']
+                            + list(loguniform(1e-4,1e-2)
+                            .rvs(size=20, random_state=SEED))
     }
     # Mappings for easy access
     predictor_map = {

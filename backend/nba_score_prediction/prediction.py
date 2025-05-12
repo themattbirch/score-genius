@@ -204,16 +204,25 @@ def load_team_stats_data(supabase_client: Any) -> pd.DataFrame:
         return pd.DataFrame()
 
 def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.DataFrame:
-    # …
-    # Compute UTC start/end at midnight UTC
-    now_utc   = datetime.now(pytz.utc)
-    start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_utc   = start_utc + timedelta(days=days_window)
+    # Expand UTC cutoff to align with ET-midnight → UTC
+    from zoneinfo import ZoneInfo
+
+    ET  = ZoneInfo("America/New_York")
+    UTC = ZoneInfo("UTC")
+
+    # midnight at ET today, then + days_window
+    today_et = datetime.now(ET).date()
+    start_et = datetime(today_et.year, today_et.month, today_et.day, tzinfo=ET)
+    end_et   = start_et + timedelta(days=days_window)
+
+    # convert to UTC for querying
+    start_utc = start_et.astimezone(UTC)
+    end_utc   = end_et.astimezone(UTC)
 
     start_str = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_str   = end_utc.strftime(  "%Y-%m-%dT%H:%M:%SZ")
+    end_str   = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    logger.info(f"Fetching upcoming games between {start_str} and {end_str} (UTC)...")
+    logger.info(f"Fetching upcoming games between {start_str} and {end_str} (UTC ← ET window)...")
 
     try:
         resp = (
@@ -221,7 +230,7 @@ def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.Data
             .table("nba_game_schedule")
             .select(", ".join(UPCOMING_GAMES_COLS))
             .gte("scheduled_time", start_str)
-            .lt( "scheduled_time", end_str)
+            .lt("scheduled_time", end_str)
             .order("scheduled_time", desc=False)
             .execute()
         )
