@@ -1,151 +1,107 @@
-// src/components/schedule/mlb_schedule_display.tsx
-
-import React, { useState, useEffect, useMemo } from "react"; // Added useState, useEffect, useMemo
+// frontend/src/components/schedule/mlb_schedule_display.tsx
+import React, { useState, useEffect, useMemo } from "react";
 import { useDate } from "@/contexts/date_context";
 import { useMLBSchedule } from "@/api/use_mlb_schedule";
-import { UnifiedGame } from "@/types"; // Adjust path if needed
+import type { UnifiedGame } from "@/types";
 import GameCard from "@/components/games/game_card";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import { startOfDay, isBefore } from "date-fns";
 
-const formatLocalDate = (d: Date | null | undefined): string => {
-  if (!d) return "";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(d.getDate()).padStart(2, "0")}`;
-};
+interface ScheduleDisplayProps {
+  showHeader?: boolean;
+}
 
-const MLBScheduleDisplay: React.FC = () => {
+const formatLocalDate = (d: Date | null | undefined): string =>
+  !d
+    ? ""
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+      ).padStart(2, "0")}`;
+
+const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
+  showHeader = true,
+}) => {
+  // ── Hooks in stable order ─────────────────────────────────────────────────
   const { date } = useDate();
   const isoDate = formatLocalDate(date);
+  const displayDate = date?.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+  });
 
-  // --- State for Current Time ---
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
-
-  // --- Date Comparison Logic ---
   const today = startOfDay(new Date());
   const selectedDay = date ? startOfDay(date) : null;
   const isPastDate = selectedDay ? isBefore(selectedDay, today) : false;
-  // --- End Date Comparison ---
 
-  // --- Effect to Update Current Time ---
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      setCurrentTime(Date.now());
-      // console.log("Tick: Updating current time for MLB filtering"); // For debugging
-    }, 60000); // Update every minute
+    const id = setInterval(() => setCurrentTime(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
-    return () => clearInterval(intervalId); // Cleanup
-  }, []); // Run only once on mount
+  const {
+    data: games = [],
+    isLoading: isLoadingGames,
+    error: gamesError,
+  } = useMLBSchedule(isoDate);
 
-  // Get MLB schedule data
-  const { data: games, isLoading, error } = useMLBSchedule(isoDate);
-
-  // --- Filtered Games Logic (Identical to NBA) ---
   const filteredGames = useMemo(() => {
-    // --- If viewing a past date, show ALL fetched historical games ---
-    if (isPastDate) {
-      return games || []; // Return original games array (contains historical data)
-    }
-
-    // --- Otherwise (viewing TODAY), apply time filtering ---
-    if (!games) return [];
-
-    const nowMillis = currentTime; // Use state for current time
-    const bufferMillis = 3.5 * 60 * 60 * 1000; // 3.5 hours
-
-    return games.filter((game: UnifiedGame) => {
-      const startTimeString = game.gameTimeUTC;
-      if (!startTimeString) {
-        console.warn(
-          "MLB Game missing gameTimeUTC for filtering (today):",
-          game.id
-        );
-        return true; // Keep missing times? Decide policy
-      }
-      try {
-        const gameStartMillis = new Date(startTimeString).getTime();
-        if (isNaN(gameStartMillis)) {
-          console.warn("Invalid MLB game start time format (today):", game.id);
-          return true; // Keep invalid times? Decide policy
-        }
-        const estimatedEndMillis = gameStartMillis + bufferMillis;
-        return nowMillis < estimatedEndMillis; // Filter based on time
-      } catch (e) {
-        console.error("Error parsing MLB game date (today):", game.id, e);
-        return true; // Keep on error? Decide policy
-      }
+    if (isPastDate) return games;
+    const buffer = 3.5 * 60 * 60 * 1000; // 3.5 hours
+    return games.filter((g: UnifiedGame) => {
+      const start = g.gameTimeUTC;
+      if (!start) return true;
+      const ms = new Date(start).getTime();
+      return !Number.isNaN(ms) && currentTime < ms + buffer;
     });
-  }, [games, currentTime, isPastDate]); // Add isPastDate dependency
+  }, [games, currentTime, isPastDate]);
 
-  // --- Loading State ---
-  if (isLoading) {
-    // Loading display remains the same
-    return (
-      <div className="p-4">
-        <h2 className="text-lg text-center font-semibold mb-3 text-slate-800 dark:text-text-secondary italic animate-pulse">
-          Loading MLB Games for {isoDate}...
-        </h2>
-        <div className="space-y-4">
-          <SkeletonBox className="h-24 w-full" />
-          <SkeletonBox className="h-24 w-full" />
-          <SkeletonBox className="h-24 w-full" />
-        </div>
-      </div>
-    );
-  }
-
-  // --- Error State ---
-  if (error) {
-    // Error display remains the same
-    console.error("MLBScheduleDisplay: Error loading games.", error);
-    return (
-      <div className="p-4">
-        <h2 className="text-lg text-center font-semibold mb-3 text-red-600 dark:text-red-500">
-          Error Loading MLB Games for {isoDate}
-        </h2>
-        <p className="p-4 text-center text-red-500">
-          Could not load game data.
-        </p>
-      </div>
-    );
-  }
-
-  // --- Updated Data Display Logic ---
-  // Determine display state based on filtering
   const hasVisibleGames = filteredGames.length > 0;
-  const noGamesInitiallyScheduled = !Array.isArray(games) || games.length === 0;
-  const allGamesFilteredOut = !noGamesInitiallyScheduled && !hasVisibleGames;
+  const noGamesInitiallyScheduled = games.length === 0;
+  const allGamesFilteredOut = games.length > 0 && filteredGames.length === 0;
 
+  // ── Single return with conditional rendering ───────────────────────────────
   return (
-    <div className="p-4">
-      {/* Consistent Data Header */}
-      <h2 className="text-lg text-center font-semibold mb-3 text-slate-800 dark:text-text-primary">
-        MLB Games for {isoDate}
-      </h2>
-      <div className="space-y-4">
-        {/* Use filteredGames for rendering */}
-        {
-          hasVisibleGames ? (
-            <>
-              {filteredGames.map((game: UnifiedGame) => (
-                <GameCard key={game.id} game={game} />
-              ))}
-            </>
-          ) : // Handle cases with no games or all games finished
-          noGamesInitiallyScheduled ? (
-            <p className="text-text-secondary text-center mt-4">
-              No MLB games scheduled for {isoDate}.
+    <div className="pt-4">
+      {showHeader && (
+        <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
+          MLB Games for {displayDate}
+        </h2>
+      )}
+
+      {isLoadingGames ? (
+        <div className="p-4">
+          <h2 className="text-lg text-left font-semibold mb-3 italic animate-pulse text-gray-500 dark:text-text-primary">
+            Loading MLB Games for {isoDate}…
+          </h2>
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <SkeletonBox key={i} className="h-24 w-full" />
+            ))}
+          </div>
+        </div>
+      ) : gamesError ? (
+        <div className="pt-4">
+          <h2 className="mb-2 text-lg font-semibold text-red-600 dark:text-red-500">
+            Error Loading MLB Games.
+          </h2>
+          <p className="text-red-500">Could not load game data.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {hasVisibleGames ? (
+            filteredGames.map((g) => <GameCard key={g.id} game={g} />)
+          ) : noGamesInitiallyScheduled ? (
+            <p className="mt-4 text-left text-text-secondary">
+              No MLB games scheduled for {displayDate}.
             </p>
           ) : allGamesFilteredOut ? (
-            <p className="text-text-secondary text-center mt-4">
-              All MLB games for {isoDate} have concluded.
+            <p className="mt-4 text-left text-text-secondary">
+              All MLB games for {displayDate} have concluded.
             </p>
-          ) : null // Should not happen
-        }
-      </div>
-      {/* No Injury report section in MLB component */}
+          ) : null}
+        </div>
+      )}
     </div>
   );
 };
