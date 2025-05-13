@@ -23,7 +23,7 @@ const Layout: React.FC = () => {
   const isGamesRoute = useLocation().pathname.startsWith("/games");
   return (
     <div className="flex h-screen flex-col">
-      <Header showDatePicker={isGamesRoute} />
+      <Header />
       <main className="flex-1 overflow-auto pb-14 lg:pb-0">
         <Outlet />
       </main>

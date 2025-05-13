@@ -1,9 +1,10 @@
 // frontend/src/components/layout/Header.tsx
-
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { Calendar as CalendarIcon } from "lucide-react";
+
+import LogoWordmark from "./logo_wordmark";
 
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import { Calendar } from "../ui/calendar";
@@ -27,58 +28,41 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
   return (
     <header
       className={clsx(
-        "sticky top-0 z-40 flex items-center justify-between px-2 sm:px-4 py-2",
-        // --- light vs dark wrapper -----------------------------------
+        "sticky top-0 z-40 flex items-center justify-between px-4 py-2",
         "border-b bg-white/90 backdrop-blur-md shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-slate-300",
-        "dark:bg-github-dark dark:border-slate-700/40 dark:shadow-none"
+        "dark:bg-black dark:border-slate-700/40"
       )}
     >
-      {/* ───── Logo & Title ───── */}
+      {/* Logo */}
       <button
-        type="button"
-        className="flex flex-none items-center gap-1 sm:gap-2"
         onClick={() => navigate("/games")}
+        className="flex items-center gap-2"
       >
-        <img
-          src="/basketball_header_logo.png"
-          alt="Logo"
-          className="h-6 w-6 sm:h-8 sm:w-8 flex-none select-none"
-          draggable={false}
-        />
-        <span className="text-sm sm:text-base font-semibold tracking-tight text-slate-900 dark:text-white">
-          Score&nbsp;Genius
-        </span>
+        <LogoWordmark className="logo-svg h-6 sm:h-8 md:h-10 w-auto" />
       </button>
 
-      {/* ───── Right‑side controls ───── */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Sport toggle + optional date picker */}
+      <div className="flex items-center gap-3">
         <SportToggle active={sport} onChange={setSport} />
-
         {showDatePicker && (
           <Popover>
             <PopoverTrigger asChild>
               <button
-                data-tour="date-picker"
                 className={clsx(
-                  "inline-flex items-center gap-1 rounded-lg border px-2 sm:px-3 py-1 text-xs sm:text-sm transition-colors",
+                  "inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-sm",
                   "border-slate-300 bg-white text-slate-700 hover:bg-gray-50",
-                  "dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  "dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300"
                 )}
               >
-                <CalendarIcon
-                  size={14}
-                  strokeWidth={1.8}
-                  className="sm:size-4"
-                />
+                <CalendarIcon size={16} strokeWidth={1.8} />
                 {formattedDate}
               </button>
             </PopoverTrigger>
-
             <PopoverContent
               side="bottom"
-              align="center"
-              sideOffset={8}
-              className="bg-[var(--color-panel)] rounded-lg shadow-lg p-4 w-[20rem]"
+              align="end"
+              sideOffset={4}
+              className="bg-[var(--color-panel)] rounded-lg shadow-lg p-4 w-72"
             >
               <Calendar
                 selected={date}
@@ -137,3 +121,4 @@ const SportToggle: React.FC<SportToggleProps> = ({ active, onChange }) => {
 };
 
 export default Header;
+export { SportToggle };
