@@ -1,5 +1,5 @@
 {
-  "name": "score-genius-backend-server",
+  "name": "scoregenius-backend-server",
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",

@@ -83,23 +83,23 @@ const MoreScreen: React.FC = () => (
         Connect with Us
       </h2>
       <LinkItem
-        href="https://facebook.com/scoregeniusai"
-        label="Facebook – ScoreGenius"
+        href="https://facebook.com/scoregeniusapp"
+        label="Facebook – scoregeniusapp"
         Icon={Facebook}
       />
       <LinkItem
-        href="https://instagram.com/scoregeniusai"
-        label="Instagram – ScoreGenius"
+        href="https://instagram.com/scoregeniusapp"
+        label="Instagram – scoregeniusapp"
         Icon={Instagram}
       />
       <LinkItem
-        href="https://twitter.com/scoregeniusai"
-        label="Twitter – ScoreGenius"
+        href="https://x.com/scoregeniusapp"
+        label="X / Twitter – scoregeniusapp"
         Icon={Twitter}
       />
       <LinkItem
         href="https://youtube.com/@scoregenius"
-        label="YouTube – ScoreGenius"
+        label="YouTube – scoregenius"
         Icon={PlayCircle}
       />
     </div>

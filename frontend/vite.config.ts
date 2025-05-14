@@ -17,7 +17,7 @@ export default defineConfig({
         name: "ScoreGenius",
         short_name: "ScoreGenius",
         description:
-          "Score Genius: Powerful predictive stats for passionate fans",
+          "ScoreGenius: Powerful predictive stats for passionate fans",
         scope: "/app",
         start_url: "/app",
         theme_color: "#1F2937",
