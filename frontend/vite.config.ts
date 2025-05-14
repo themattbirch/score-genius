@@ -4,12 +4,17 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
+import fs from "fs";
 
 export default defineConfig({
   plugins: [
     react(),
     /* ---------- PWA  (scoped to /app) ---------- */
     VitePWA({
+      devOptions: {
+        enabled: true,
+        type: "module",
+      },
       strategies: "injectManifest",
       srcDir: "src",
       filename: "app-sw.ts",
@@ -76,12 +81,29 @@ export default defineConfig({
   build: {
     outDir: "dist",
     rollupOptions: {
-      input: { app: resolve(__dirname, "app.html") },
+      input: {
+        app: resolve(__dirname, "app.html"),
+      },
       output: {
         entryFileNames: "assets/[name].[hash].js",
         chunkFileNames: "assets/[name].[hash].js",
         assetFileNames: "assets/[name].[hash].[ext]",
       },
+      plugins: [
+        {
+          name: "copy-app-html-to-index",
+          writeBundle() {
+            const src = resolve(__dirname, "dist/app.html");
+            const dest = resolve(__dirname, "dist/index.html");
+            fs.copyFileSync(src, dest);
+          },
+        },
+      ],
     },
+  },
+
+  preview: {
+    port: 3000,
+    // (optional) if you still want the history fallback, add the middleware here
   },
 });

@@ -65,14 +65,14 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
     <div className="pt-4">
       {showHeader && (
         <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
-          MLB Games for {displayDate}
+          NBA Games for {displayDate}
         </h2>
       )}
 
       {isLoadingGames ? (
         <div className="p-4">
           <h2 className="text-lg text-left font-semibold mb-3 italic animate-pulse text-gray-500 dark:text-text-primary">
-            Loading MLB Games for {isoDate}…
+            Loading NBA Games for {isoDate}…
           </h2>
           <div className="space-y-4">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -93,11 +93,11 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
             filteredGames.map((g) => <GameCard key={g.id} game={g} />)
           ) : noGamesInitiallyScheduled ? (
             <p className="mt-4 text-left text-text-secondary">
-              No MLB games scheduled for {displayDate}.
+              No NBA games scheduled for {displayDate}.
             </p>
           ) : allGamesFilteredOut ? (
             <p className="mt-4 text-left text-text-secondary">
-              All MLB games for {displayDate} have concluded.
+              All NBA games for {displayDate} have concluded.
             </p>
           ) : null}
         </div>
