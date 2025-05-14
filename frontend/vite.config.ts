@@ -55,18 +55,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
         cleanupOutdatedCaches: true,
       },
-    }), // ← close your VitePWA call here
-
-    // ★ copy app.html → index.html after build
-    {
-      name: "copy-app-to-index",
-      apply: "build",
-      writeBundle() {
-        const src = resolve(__dirname, "dist/app.html");
-        const dest = resolve(__dirname, "dist/index.html");
-        fs.copyFileSync(src, dest);
-      },
-    },
+    }),
   ],
 
   publicDir: "public",
@@ -88,6 +77,7 @@ export default defineConfig({
     outDir: "dist",
     rollupOptions: {
       input: {
+        index: resolve(__dirname, "public/index.html"),
         app: resolve(__dirname, "app.html"),
       },
       output: {
@@ -95,16 +85,6 @@ export default defineConfig({
         chunkFileNames: "assets/[name].[hash].js",
         assetFileNames: "assets/[name].[hash].[ext]",
       },
-      plugins: [
-        {
-          name: "copy-app-html-to-index",
-          writeBundle() {
-            const src = resolve(__dirname, "dist/app.html");
-            const dest = resolve(__dirname, "dist/index.html");
-            fs.copyFileSync(src, dest);
-          },
-        },
-      ],
     },
   },
 
