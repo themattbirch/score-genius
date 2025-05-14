@@ -84,22 +84,22 @@ const MoreScreen: React.FC = () => (
       </h2>
       <LinkItem
         href="https://facebook.com/scoregeniusai"
-        label="Facebook"
+        label="Facebook – ScoreGenius"
         Icon={Facebook}
       />
       <LinkItem
         href="https://instagram.com/scoregeniusai"
-        label="Instagram"
+        label="Instagram – ScoreGenius"
         Icon={Instagram}
       />
       <LinkItem
         href="https://twitter.com/scoregeniusai"
-        label="Twitter"
+        label="Twitter – ScoreGenius"
         Icon={Twitter}
       />
       <LinkItem
-        href="https://youtube.com/scoregenius"
-        label="YouTube"
+        href="https://youtube.com/@scoregenius"
+        label="YouTube – ScoreGenius"
         Icon={PlayCircle}
       />
     </div>
