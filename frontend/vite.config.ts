@@ -14,7 +14,6 @@ export default defineConfig({
       srcDir: "src",
       filename: "app-sw.ts",
       injectRegister: false,
-      includeAssets: ["app/offline.html"],
       registerType: "autoUpdate",
       manifest: {
         name: "ScoreGenius",
