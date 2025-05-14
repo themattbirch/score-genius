@@ -71,7 +71,7 @@ const steps: Step[] = [
   {
     target: '[data-tour="game-card"]:first-of-type',
     content:
-      "Each card shows teams, game information and Score Genius' score prediction.",
+      "Each card shows teams, game information and ScoreGenius' score prediction.",
     disableBeacon: true,
     placement: "bottom",
   },

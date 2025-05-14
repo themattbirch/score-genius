@@ -14,7 +14,7 @@ export default defineConfig({
       injectRegister: false,
       registerType: "autoUpdate",
       manifest: {
-        name: "Score Genius",
+        name: "ScoreGenius",
         short_name: "ScoreGenius",
         description:
           "Score Genius: Powerful predictive stats for passionate fans",

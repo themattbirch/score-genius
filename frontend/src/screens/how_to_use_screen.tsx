@@ -22,7 +22,7 @@ const HowToUseScreen: React.FC = () => {
         <h1 className="text-xl font-semibold text-slate-800 dark:text-text-primary">
           {" "}
           {/* Explicit colors */}
-          How to Use Score Genius
+          How to Use ScoreGenius
         </h1>
       </header>
       {/* Step list */}
