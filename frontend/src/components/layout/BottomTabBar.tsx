@@ -45,6 +45,7 @@ const BottomTabBar: React.FC = () => {
         const tourAttr: Record<string, string | undefined> = {
           "/games": "tab-games",
           "/stats": "tab-stats",
+          "/how-to-use": "tab-how-to-use",
           "/more": "tab-more",
         };
 
