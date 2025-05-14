@@ -5,6 +5,7 @@ import {
   matchPrecache,
 } from "workbox-precaching";
 import { registerRoute } from "workbox-routing";
+import { NetworkOnly } from "workbox-strategies";
 import {
   NetworkFirst,
   StaleWhileRevalidate,
@@ -25,14 +26,11 @@ cleanupOutdatedCaches();
 registerRoute(
   ({ request, url }) =>
     request.mode === "navigate" && url.pathname.startsWith("/app"),
-  new NetworkFirst({
-    cacheName: "html-cache-v2",
-    networkTimeoutSeconds: 3,
+  new NetworkOnly({
     plugins: [
       {
         handlerDidError: () => matchPrecache("/app/offline.html"),
       },
-      new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 3600 }),
     ],
   })
 );
