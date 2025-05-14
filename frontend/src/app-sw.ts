@@ -29,7 +29,13 @@ registerRoute(
   new NetworkOnly({
     plugins: [
       {
-        handlerDidError: () => matchPrecache("/app/offline.html"),
+        handlerDidError: async () => {
+          // immediately reload all client windows into offline.html
+          const clientsList = await self.clients.matchAll({ type: "window" });
+          clientsList.forEach((win) => win.navigate("/app/offline.html"));
+          // then return the offline page from cache
+          return matchPrecache("/app/offline.html");
+        },
       },
     ],
   })
