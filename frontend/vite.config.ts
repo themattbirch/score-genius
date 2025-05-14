@@ -1,3 +1,5 @@
+// frontend/vite.config.ts
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -12,6 +14,7 @@ export default defineConfig({
       srcDir: "src",
       filename: "app-sw.ts",
       injectRegister: false,
+      includeAssets: ["app/offline.html"],
       registerType: "autoUpdate",
       manifest: {
         name: "ScoreGenius",
@@ -48,9 +51,8 @@ export default defineConfig({
       /* -------- Workbox config -------- */
       workbox: {
         /* Shell HTML served only for /app paths */
-        navigateFallback: "/app.html",
+        navigateFallback: "/app/offline.html",
         navigateFallbackAllowlist: [/^\/app(?:\/.*)?$/], // ⬅ key line
-
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
         cleanupOutdatedCaches: true,
       },
