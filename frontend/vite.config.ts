@@ -9,12 +9,10 @@ import fs from "fs";
 export default defineConfig({
   plugins: [
     react(),
-    /* ---------- PWA  (scoped to /app) ---------- */
+
+    // ---------- PWA (scoped to /app) ----------
     VitePWA({
-      devOptions: {
-        enabled: true,
-        type: "module",
-      },
+      devOptions: { enabled: true, type: "module" },
       strategies: "injectManifest",
       srcDir: "src",
       filename: "app-sw.ts",
@@ -51,16 +49,24 @@ export default defineConfig({
           },
         ],
       },
-
-      /* -------- Workbox config -------- */
       workbox: {
-        /* Shell HTML served only for /app paths */
         navigateFallback: "/app/offline.html",
-        navigateFallbackAllowlist: [/^\/app(?:\/.*)?$/], // ⬅ key line
+        navigateFallbackAllowlist: [/^\/app(?:\/.*)?$/],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
         cleanupOutdatedCaches: true,
       },
-    }),
+    }), // ← close your VitePWA call here
+
+    // ★ copy app.html → index.html after build
+    {
+      name: "copy-app-to-index",
+      apply: "build",
+      writeBundle() {
+        const src = resolve(__dirname, "dist/app.html");
+        const dest = resolve(__dirname, "dist/index.html");
+        fs.copyFileSync(src, dest);
+      },
+    },
   ],
 
   publicDir: "public",
