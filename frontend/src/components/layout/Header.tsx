@@ -48,6 +48,7 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
           <Popover>
             <PopoverTrigger asChild>
               <button
+                data-tour="date-picker"
                 className={clsx(
                   "inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-sm",
                   "border-slate-300 bg-white text-slate-700 hover:bg-gray-50",
