@@ -13,9 +13,9 @@ export default function LogoWordmark({
       aria-labelledby="sgTitle sgDesc"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <title id="sgTitle">Score Genius logo word-mark</title>
+      <title id="sgTitle">ScoreGenius logo word-mark</title>
       <desc id="sgDesc">
-        Text “SCORE GENIUS” with an American-football icon between the words;
+        Text “SCOREGENIUS” with an American-football icon between the words;
         orange and green swoosh arcs wrap the ball.
       </desc>
       <path

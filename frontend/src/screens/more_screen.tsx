@@ -57,7 +57,7 @@ const MoreScreen: React.FC = () => (
       </h2>
       <LinkItem
         href="https://scoregenius.io"
-        label="About Score Genius"
+        label="About ScoreGenius"
         Icon={Info}
       />
       <LinkItem
