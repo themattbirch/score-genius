@@ -76,7 +76,7 @@ def _mk(side: str, base: str, kind: str, w: int) -> str:
 def transform(
     df: pd.DataFrame,
     *,
-    window_sizes: List[int] = (5),
+    window_sizes: List[int] = (5, 10, 20),
     debug: bool = False,
 ) -> pd.DataFrame:
     """

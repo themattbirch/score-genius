@@ -39,20 +39,16 @@ __all__ = ["run_feature_pipeline"]
 # Adjust this order based on actual feature dependencies if they differ from legacy
 DEFAULT_EXECUTION_ORDER = [
     "advanced",
-    "rolling",
     "rest",
     "h2h",
-    "season",
     "form",
 ]
 
 # Map module names to their transform functions
 TRANSFORM_MAP = {
     "advanced": advanced_transform,
-    "rolling": rolling_transform,
     "rest": rest_transform,
     "h2h": h2h_transform,
-    "season": season_transform,
     "form": form_transform,
 }
 
