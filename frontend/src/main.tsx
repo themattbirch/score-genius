@@ -13,7 +13,10 @@ if (!container) throw new Error("Root element not found");
 
 const swUrl = "/app-sw.js";
 
-if (import.meta.env.PROD && "serviceWorker" in navigator) {
+if (
+  (import.meta.env.PROD || import.meta.env.DEV) &&
+  "serviceWorker" in navigator
+) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register(swUrl, { scope: "/app/" })
