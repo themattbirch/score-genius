@@ -1,7 +1,7 @@
 {
   "packageId": "io.scoregenius.twa",
   "host": "scoregenius.io",
-  "name": "Score Genius",
+  "name": "ScoreGenius",
   "launcherName": "ScoreGenius",
   "display": "standalone",
   "themeColor": "#1F2937",
