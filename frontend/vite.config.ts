@@ -66,7 +66,7 @@ export default defineConfig({
       // existing API proxy
       "/api/v1": "http://localhost:3001",
       // new snapshots proxy
-      "/snapshots": "http://localhost:3001",
+      //"/snapshots": "http://localhost:3001",
     },
     strictPort: true,
     port: 5173,

@@ -3,8 +3,8 @@ import React, { useState } from "react";
 import { UnifiedGame, Sport } from "@/types"; // Use UnifiedGame
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
-import SnapshotCard from "../ui/snapshot_card";
-import { NBAGameFeaturesPanel } from "../ui/nba_game_features_panel";
+//import SnapshotCard from "../ui/snapshot_card";
+//import { NBAGameFeaturesPanel } from "../ui/nba_game_features_panel";
 
 interface GameCardProps {
   game: UnifiedGame; // Expect the unified type
@@ -86,9 +86,9 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
         </div>
       </div>
 
-      {/* Snapshot + Drill-In */}
-      <div className="border-t pt-4">
-        <SnapshotCard gameId={gameId} />
+      {/* Snapshot + Drill-In 
+       <div className="border-t pt-4">
+       <SnapshotCard gameId={gameId} />
 
         <button
           className="mt-2 text-sm underline hover:text-green-600"
@@ -101,8 +101,9 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           <div className="mt-4">
             <NBAGameFeaturesPanel gameId={gameId} />
           </div>
-        )}
+                  )}
       </div>
+              */}
     </div>
   );
 };
