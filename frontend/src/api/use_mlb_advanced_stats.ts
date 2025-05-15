@@ -1,26 +1,11 @@
 // frontend/src/api/use_mlb_advanced_stats.ts
 
 import { useQuery } from "@tanstack/react-query";
-import type { Sport } from "@/types";
+import { apiFetch } from "@/api/client";
+import type { Sport, MlbAdvancedTeamStats } from "@/types";
 
-export interface MlbAdvancedTeamStats {
-  team_id: number;
-  team_name: string;
-
-  /* core advanced metrics we read in the UI */
-  win_pct: number;
-  pythagorean_win_pct: number;
-  run_differential: number;
-  run_differential_avg: number;
-  luck_factor: number;
-  games_played: number;
-
-  /* keep it open-ended */
-  [key: string]: string | number | undefined | null;
-}
-
-function isJson(res: Response) {
-  return (res.headers.get("content-type") ?? "").includes("application/json");
+function isJson(r: Response) {
+  return (r.headers.get("content-type") ?? "").includes("application/json");
 }
 
 async function fetchMlbAdvancedStats(
@@ -33,7 +18,7 @@ async function fetchMlbAdvancedStats(
 
   let res: Response;
   try {
-    res = await fetch(`/api/v1/mlb/team-stats/advanced?season=${season}`, {
+    res = await apiFetch(`/api/v1/mlb/team-stats/advanced?season=${season}`, {
       signal: controller.signal,
       headers: { accept: "application/json" },
       cache: "no-store",
@@ -46,8 +31,8 @@ async function fetchMlbAdvancedStats(
     throw new Error(`MLB advanced-stats request failed (${res.status})`);
   }
 
-  const json = (await res.json()) as { data: MlbAdvancedTeamStats[] };
-  return Array.isArray(json.data) ? json.data : [];
+  const { data } = (await res.json()) as { data: MlbAdvancedTeamStats[] };
+  return Array.isArray(data) ? data : [];
 }
 
 export function useMlbAdvancedStats({
@@ -64,7 +49,7 @@ export function useMlbAdvancedStats({
     queryFn: () => fetchMlbAdvancedStats(season),
     enabled: enabled && sport === "MLB",
     staleTime: 86_400_000, // 24 h
-    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
+    retry: (f) => navigator.onLine && f < 3,
     refetchOnWindowFocus: false,
   });
 }

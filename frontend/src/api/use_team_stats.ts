@@ -1,8 +1,11 @@
+// frontend/src/api/use_team_stats.ts
+
 import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/api/client";
 import type { Sport, UnifiedTeamStats } from "@/types";
 
-function isJson(res: Response) {
-  return (res.headers.get("content-type") ?? "").includes("application/json");
+function isJson(r: Response) {
+  return (r.headers.get("content-type") ?? "").includes("application/json");
 }
 
 async function fetchTeamStats({
@@ -19,7 +22,7 @@ async function fetchTeamStats({
 
   let res: Response;
   try {
-    res = await fetch(
+    res = await apiFetch(
       `/api/v1/${sport.toLowerCase()}/team-stats?season=${season}`,
       {
         signal: controller.signal,
@@ -35,8 +38,8 @@ async function fetchTeamStats({
     throw new Error(`${sport} team-stats request failed (${res.status})`);
   }
 
-  const json = (await res.json()) as { data: UnifiedTeamStats[] };
-  return Array.isArray(json.data) ? json.data : [];
+  const { data } = (await res.json()) as { data: UnifiedTeamStats[] };
+  return Array.isArray(data) ? data : [];
 }
 
 export function useTeamStats({
@@ -55,7 +58,7 @@ export function useTeamStats({
     queryFn: () => fetchTeamStats({ sport, season }),
     enabled,
     staleTime,
-    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
+    retry: (f) => navigator.onLine && f < 3,
     refetchOnMount: "always",
   });
 }

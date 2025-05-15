@@ -110,6 +110,3 @@ export interface NbaAdvancedTeamStats {
   /* allow extension */
   [key: string]: string | number | undefined | null;
 }
-
-/* Re‑export everything from one place */
-export * from "./";

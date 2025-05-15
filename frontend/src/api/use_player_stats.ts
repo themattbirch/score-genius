@@ -1,12 +1,11 @@
+// frontend/src/api/use_player_stats.ts
+
 import { useQuery } from "@tanstack/react-query";
-import type { Sport } from "@/types";
+import { apiFetch } from "@/api/client";
+import type { Sport, UnifiedPlayerStats } from "@/types";
 
-export interface UnifiedPlayerStats {
-  /* … unchanged … */
-}
-
-function isJson(res: Response) {
-  return (res.headers.get("content-type") ?? "").includes("application/json");
+function isJson(r: Response) {
+  return (r.headers.get("content-type") ?? "").includes("application/json");
 }
 
 async function fetchPlayerStats({
@@ -28,11 +27,14 @@ async function fetchPlayerStats({
 
   let res: Response;
   try {
-    res = await fetch(`/api/v1/${sport.toLowerCase()}/player-stats?${params}`, {
-      signal: controller.signal,
-      headers: { accept: "application/json" },
-      cache: "no-store",
-    });
+    res = await apiFetch(
+      `/api/v1/${sport.toLowerCase()}/player-stats?${params}`,
+      {
+        signal: controller.signal,
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      }
+    );
   } finally {
     clearTimeout(tid);
   }
@@ -41,34 +43,8 @@ async function fetchPlayerStats({
     throw new Error(`${sport} player-stats request failed (${res.status})`);
   }
 
-  const json = (await res.json()) as { data: UnifiedPlayerStats[] };
-  return Array.isArray(json.data) ? json.data : [];
-}
-
-export interface UnifiedPlayerStats {
-  player_id: string | number;
-  player_name: string;
-  team_name: string;
-  games_played: number | null;
-
-  minutes: number;
-  points: number;
-  rebounds: number;
-  assists: number;
-  steals: number | null;
-  blocks: number | null;
-
-  fg_made: number | null;
-  fg_attempted: number | null;
-  three_made: number;
-  three_attempted: number;
-  ft_made: number;
-  ft_attempted: number;
-
-  three_pct: number;
-  ft_pct: number;
-
-  [key: string]: string | number | undefined | null;
+  const { data } = (await res.json()) as { data: UnifiedPlayerStats[] };
+  return Array.isArray(data) ? data : [];
 }
 
 export function usePlayerStats({
@@ -87,7 +63,7 @@ export function usePlayerStats({
     queryFn: () => fetchPlayerStats({ sport, season, search }),
     enabled,
     staleTime: 1_800_000, // 30 min
-    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
+    retry: (f) => navigator.onLine && f < 3,
     refetchOnMount: "always",
   });
 }

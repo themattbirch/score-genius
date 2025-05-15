@@ -5,17 +5,16 @@ import { useSport } from "../contexts/sport_context";
 import { useDate } from "../contexts/date_context";
 import { useNetworkStatus } from "@/hooks/use_network_status";
 import { useTeamStats } from "../api/use_team_stats";
-import { usePlayerStats, UnifiedPlayerStats } from "../api/use_player_stats";
-// Import BOTH NBA and MLB advanced stats hooks and types
-import {
-  useAdvancedStats as useNbaAdvancedStats,
-  AdvancedTeamStats as NbaAdvancedTeamStats,
-} from "../api/use_nba_advanced_stats";
-import {
-  useMlbAdvancedStats,
+import { usePlayerStats } from "../api/use_player_stats";
+import { useAdvancedStats as useNbaAdvancedStats } from "../api/use_nba_advanced_stats";
+import { useMlbAdvancedStats } from "../api/use_mlb_advanced_stats";
+import type {
+  UnifiedPlayerStats,
+  UnifiedTeamStats,
+  NbaAdvancedTeamStats,
   MlbAdvancedTeamStats,
-} from "../api/use_mlb_advanced_stats"; // <-- IMPORTED
-import type { UnifiedTeamStats, Sport } from "../types";
+  Sport,
+} from "@/types";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import { ChevronsUpDown } from "lucide-react";
 
@@ -528,9 +527,11 @@ const StatsScreen: React.FC = () => {
             className="divide-y divide-gray-300 dark:divide-slate-600/60
             bg-white dark:bg-[var(--color-panel)]"
           >
-            {sortedPlayers.map((p) => (
+            {sortedPlayers.map((p, rowIdx) => (
               <tr
-                key={p.player_id}
+                /* ① use compound key so duplicates never collide            */
+                /* ② rowIdx is stable because list length doesn’t change     */
+                key={`${p.player_id}-${rowIdx}`}
                 className="hover:bg-gray-50 dark:hover:bg-gray-800/60"
               >
                 {playerHeaders.map(({ key }, i) => {
@@ -646,15 +647,15 @@ const StatsScreen: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-300 dark:divide-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
-            {nbaAdvancedData.map((team) => (
+            {nbaAdvancedData.map((team, rowIdx) => (
               <tr
-                key={`nba-adv-${team.team_name}`}
+                key={`nba-adv-${team.team_id ?? team.team_name}-${rowIdx}`}
                 className="hover:bg-gray-50 dark:hover:bg-gray-800/60"
               >
                 {nbaAdvancedHeaders.map(({ key }, idx) => {
                   const raw = team[key as keyof NbaAdvancedTeamStats];
                   const display = formatCell(raw, key);
-                  const cellKey = `nba-adv-${team.team_name}-${key}`;
+                  const cellKey = `nba-adv-${team.team_id}-${key}`;
                   return idx === 0 ? (
                     <td
                       key={cellKey}
