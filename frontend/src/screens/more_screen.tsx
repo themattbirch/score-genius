@@ -8,6 +8,7 @@ import {
   PlayCircle,
   FileText,
   Info,
+  ShieldCheck,
   BookOpen,
 } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
@@ -63,12 +64,17 @@ const MoreScreen: React.FC = () => (
       <LinkItem
         href="https://scoregenius.io/disclaimer"
         label="Disclaimer"
-        Icon={FileText}
+        Icon={ShieldCheck}
+      />
+      <LinkItem
+        href="https://scoregenius.io/documentation"
+        label="Documentation"
+        Icon={BookOpen}
       />
       <LinkItem
         href="https://scoregenius.io/terms"
         label="Terms of Service"
-        Icon={BookOpen}
+        Icon={ShieldCheck}
       />
       <LinkItem
         href="https://scoregenius.io/privacy"

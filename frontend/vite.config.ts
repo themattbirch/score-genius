@@ -1,5 +1,4 @@
 // frontend/vite.config.ts
-
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -62,7 +61,7 @@ export default defineConfig({
   resolve: { alias: { "@": resolve(__dirname, "src") } },
 
   server: {
-    open: "/app", // still auto‑opens the SPA
+    open: "/app", // still auto-opens the SPA
     proxy: {
       // existing API proxy
       "/api/v1": "http://localhost:3001",
@@ -84,6 +83,12 @@ export default defineConfig({
         entryFileNames: "assets/[name].[hash].js",
         chunkFileNames: "assets/[name].[hash].js",
         assetFileNames: "assets/[name].[hash].[ext]",
+        // ← manualChunks splits each npm package into its own chunk
+        manualChunks(id: string) {
+          if (id.includes("node_modules")) {
+            return id.split("node_modules/")[1].split("/")[0];
+          }
+        },
       },
     },
   },
