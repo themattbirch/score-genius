@@ -1,25 +1,31 @@
-// frontend/src/contexts/date_context.tsx
-
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
+// ── Context value interface ─────────────────────────────────
 interface DateCtx {
-  date: Date;
+  date: Date;                    // always a valid Date instance
   setDate: (d: Date) => void;
 }
 
+// ── Create context ───────────────────────────────────────────
 const DateContext = createContext<DateCtx | undefined>(undefined);
 
-export const DateProvider = ({ children }: { children: ReactNode }) => {
+// ── Provider component ───────────────────────────────────────
+export function DateProvider({ children }: { children: ReactNode }) {
+  // Initialize with current date so 'date' is never null
   const [date, setDate] = useState<Date>(new Date());
+
   return (
     <DateContext.Provider value={{ date, setDate }}>
       {children}
     </DateContext.Provider>
   );
-};
+}
 
-export const useDate = (): DateCtx => {
+// ── Hook for consuming context ───────────────────────────────
+export function useDate(): DateCtx {
   const ctx = useContext(DateContext);
-  if (!ctx) throw new Error('useDate must be used inside <DateProvider>');
+  if (!ctx) {
+    throw new Error('useDate must be used within a DateProvider');
+  }
   return ctx;
-};
+}
