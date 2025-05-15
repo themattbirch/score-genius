@@ -72,7 +72,7 @@ const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
       {!online ? (
         /* ---- offline ---- */
         <p className="text-center text-slate-500 dark:text-slate-400">
-          Error fetching MLB games for {displayDate}.
+          You’re offline. Can’t fetch MLB games for {displayDate}.
         </p>
       ) : isLoading ? (
         /* ---- loading ---- */
