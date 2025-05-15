@@ -148,10 +148,12 @@ export const fetchMlbTeamStatsBySeason = async (teamId, seasonYear) => {
       .eq("team_id", teamId)
       .eq("season", seasonYear)
       .maybeSingle();
-    if (error) throw error;
-    console.log(
-      `Workspaceed MLB team stats for ${teamId} ${seasonYear}. Caching.`
-    );
+    if (error) {
+      // add a status so the controller can emit 503
+      const dbErr = new Error(error.message || "Supabase query failed");
+      dbErr.status = status || 503;
+      throw dbErr;
+    }
     cache.set(cacheKey, data, ttl);
     return data;
   } catch (error) {

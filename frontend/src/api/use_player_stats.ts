@@ -1,36 +1,14 @@
-import { Sport } from "@/types";
 import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "@/api/client";
+import type { Sport } from "@/types";
 
-/* ────────────  DATA SHAPE  ──────────── */
 export interface UnifiedPlayerStats {
-  player_id: string | number; // Allow number from RPC (BIGINT), or string if cast
-  player_name: string;
-  team_name: string;
-  games_played: number; // Make sure this field (returned by RPC) is included
-  minutes: number;
-  points: number;
-  rebounds: number;
-  assists: number;
-  steals: number;
-  blocks: number;
-  // Include turnovers/fouls if your RPC function returns them and you need them
-  // turnovers?: number;
-  // fouls?: number;
-  fg_made: number;
-  fg_attempted: number;
-  three_made: number;
-  three_attempted: number;
-  ft_made: number;
-  ft_attempted: number;
-  // Percentages are provided by backend RPC now
-  fg_pct: number;
-  three_pct: number;
-  ft_pct: number;
-  // Index signature allows accessing properties dynamically if needed
-  // Added undefined for potential optional fields like turnovers/fouls
-  [key: string]: string | number | undefined;
+  /* … unchanged … */
 }
+
+function isJson(res: Response) {
+  return (res.headers.get("content-type") ?? "").includes("application/json");
+}
+
 async function fetchPlayerStats({
   sport,
   season,
@@ -40,35 +18,59 @@ async function fetchPlayerStats({
   season: number;
   search?: string;
 }): Promise<UnifiedPlayerStats[]> {
+  if (!navigator.onLine) throw new Error("Browser offline");
+
   const params = new URLSearchParams({ season: String(season) });
   if (search) params.set("search", search);
 
-  const res = await apiFetch(
-    `/api/v1/${sport.toLowerCase()}/player-stats?${params.toString()}`
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(
-      `Failed to fetch ${sport} player‐stats: ${res.status} ${text}`
-    );
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 10_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`/api/v1/${sport.toLowerCase()}/player-stats?${params}`, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(tid);
   }
 
-  const json = (await res.json()) as {
-    message: string;
-    retrieved: number;
-    data: UnifiedPlayerStats[];
-  };
-
-  if (!Array.isArray(json.data)) {
-    console.error("Invalid player‐stats response:", json);
-    return [];
+  if (!res.ok || !isJson(res)) {
+    throw new Error(`${sport} player-stats request failed (${res.status})`);
   }
-  return json.data;
+
+  const json = (await res.json()) as { data: UnifiedPlayerStats[] };
+  return Array.isArray(json.data) ? json.data : [];
 }
 
-/**
- * Hook: load & cache player stats for NBA or MLB
- */
+export interface UnifiedPlayerStats {
+  player_id: string | number;
+  player_name: string;
+  team_name: string;
+  games_played: number | null;
+
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number | null;
+  blocks: number | null;
+
+  fg_made: number | null;
+  fg_attempted: number | null;
+  three_made: number;
+  three_attempted: number;
+  ft_made: number;
+  ft_attempted: number;
+
+  three_pct: number;
+  ft_pct: number;
+
+  [key: string]: string | number | undefined | null;
+}
+
 export function usePlayerStats({
   sport,
   season,
@@ -83,8 +85,9 @@ export function usePlayerStats({
   return useQuery<UnifiedPlayerStats[]>({
     queryKey: ["playerStats", sport, season, search],
     queryFn: () => fetchPlayerStats({ sport, season, search }),
-    enabled, // ← add this
-    staleTime: 1000 * 60 * 30,
+    enabled,
+    staleTime: 1_800_000, // 30 min
+    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
     refetchOnMount: "always",
   });
 }

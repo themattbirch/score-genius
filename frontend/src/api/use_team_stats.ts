@@ -1,55 +1,61 @@
-// frontend/src/api/use_team_stats.ts
-import { Sport, UnifiedTeamStats } from "@/types";
 import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "./client"; // adjust path if needed
+import type { Sport, UnifiedTeamStats } from "@/types";
 
-/**
- * Fetches season-level stats for ALL teams of a given sport.
- */
-const fetchTeamStats = async ({
+function isJson(res: Response) {
+  return (res.headers.get("content-type") ?? "").includes("application/json");
+}
+
+async function fetchTeamStats({
   sport,
   season,
 }: {
   sport: Sport;
   season: number;
-}): Promise<UnifiedTeamStats[]> => {
-  const endpoint = `/api/v1/${sport.toLowerCase()}/team-stats?season=${season}`;
-  const res = await apiFetch(endpoint);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(
-      `Fetching ${endpoint} failed: ${res.status} ${res.statusText}\n${text}`
-    );
-  }
-  const json = (await res.json()) as {
-    message: string;
-    retrieved: number;
-    data: UnifiedTeamStats[];
-  };
-  return json.data;
-};
+}): Promise<UnifiedTeamStats[]> {
+  if (!navigator.onLine) throw new Error("Browser offline");
 
-/**
- * Hook to load and cache team stats for *any* sport.
- * Accepts an `enabled` flag so you can skip bad queries.
- */
-export const useTeamStats = ({
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 10_000);
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `/api/v1/${sport.toLowerCase()}/team-stats?season=${season}`,
+      {
+        signal: controller.signal,
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      }
+    );
+  } finally {
+    clearTimeout(tid);
+  }
+
+  if (!res.ok || !isJson(res)) {
+    throw new Error(`${sport} team-stats request failed (${res.status})`);
+  }
+
+  const json = (await res.json()) as { data: UnifiedTeamStats[] };
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+export function useTeamStats({
   sport,
   season,
   enabled = true,
-  staleTime = 1000 * 60 * 30,
+  staleTime = 1_800_000,
 }: {
   sport: Sport;
   season: number;
   enabled?: boolean;
   staleTime?: number;
-}) => {
+}) {
   return useQuery<UnifiedTeamStats[]>({
     queryKey: ["teamStats", sport, season],
     queryFn: () => fetchTeamStats({ sport, season }),
     enabled,
     staleTime,
-    // Always refetch whenever this hook remounts after being disabled:
+    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
     refetchOnMount: "always",
   });
-};
+}

@@ -1,39 +1,42 @@
 // backend/server/controllers/mlb_controller.js
-// Use snake_case filename for service import
 import * as mlbService from "../services/mlb_service.js";
 
-// Controller function for GET /schedule
-export const getMlbSchedule = async (req, res, next) => {
+/* --------------------------------------------------------------
+ * GET /api/v1/mlb/schedule?date=YYYY-MM-DD
+ * -------------------------------------------------------------*/
+export const getMlbSchedule = async (req, res /* , next */) => {
   try {
-    // 1. Get date from query
+    /* 1 ▸ Validate date ------------------------------------ */
     const { date } = req.query;
-
-    // 2. Validate date
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({
-        message: "Invalid or missing date parameter. Use YYYY-MM-DD format.",
+      return res
+        .status(400)
+        .json({ message: "Invalid or missing ?date=YYYY-MM-DD" });
+    }
+
+    /* 2 ▸ Service call ------------------------------------ */
+    const scheduleData = await mlbService.getMlbScheduleByDate(date);
+
+    /* 3 ▸ Empty vs. populated ------------------------------ */
+    if (scheduleData.length === 0) {
+      return res.status(204).json({
+        message: `No MLB games scheduled for ${date}`,
+        retrieved: 0,
+        data: [],
       });
     }
 
-    // 3. Call the NEW service function that filters by date
-    const scheduleData = await mlbService.getMlbScheduleByDate(date); // <-- CALL NEW FUNCTION
-
-    // 4. Send successful response (using existing format)
-    res.status(200).json({
+    /* 4 ▸ Success ----------------------------------------- */
+    return res.status(200).json({
       message: `MLB schedule fetched successfully for ${date}`,
-      retrieved: scheduleData?.length ?? 0,
-      data: scheduleData || [],
+      retrieved: scheduleData.length,
+      data: scheduleData,
     });
   } catch (error) {
-    console.error(
-      `Error in getMlbSchedule controller for date ${req.query.date}:`,
-      error
-    );
-    // Pass error using next() or send response directly
-    res
-      .status(error.status || 500)
+    console.error("getMlbSchedule ERROR:", error);
+    return res
+      .status(error.status || 503)
       .json({ message: error.message || "Failed to fetch MLB schedule" });
-    // next(error);
   }
 };
 

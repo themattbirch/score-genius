@@ -22,33 +22,37 @@ def get_current_season():
     else:  # January to June is latter part of current season
         return f"{today.year - 1}-{today.year}"
 
-def get_games_by_date(date_str, timezone='America/Los_Angeles'):
-    """Fetch NBA games for a specific date."""
+def get_games_by_date(date_str: str, timezone: str = "America/Los_Angeles"):
+    """Fetch NBA games for a specific date.
+
+    Returns
+    -------
+    list[dict]           -> API call succeeded (may be empty)
+    None                 -> network / API error
+    """
     season = get_current_season()
     url = f"{BASE_URL}/games"
     params = {
-        'league': '12',  # NBA league ID
-        'season': season,
-        'date': date_str,
-        'timezone': timezone
+        "league": "12",          # NBA
+        "season": season,
+        "date": date_str,
+        "timezone": timezone,
     }
-    
+
     try:
-        print(f"Fetching games for {date_str}...")
-        response = requests.get(url, headers=HEADERS, params=params)
-        response.raise_for_status()
-        data = response.json()
-        
-        if 'response' in data and data['response']:
-            games = data['response']
-            print(f"Found {len(games)} games for {date_str}")
-            return games
-        else:
-            print(f"No games found for {date_str}")
-            return []
-    except Exception as e:
-        print(f"Error fetching games for {date_str}: {e}")
-        return []
+        print(f"Fetching games for {date_str} …")
+        resp = requests.get(url, headers=HEADERS, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+
+        games = data.get("response", [])
+        print(f"Found {len(games)} games for {date_str}")
+        return games                    # ← success path (may be empty)
+
+    except requests.exceptions.RequestException as exc:
+        # Connectivity, DNS, 5xx, timeout, etc.
+        print(f"Error fetching games for {date_str}: {exc}")
+        return None                      # ← signal “could not fetch”
 
 def normalize_team_name(name):
     """Normalize team names for consistent comparison."""

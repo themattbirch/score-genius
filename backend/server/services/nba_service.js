@@ -29,29 +29,20 @@ export const fetchNbaScheduleForTodayAndTomorrow = async () => {
   const { data, error, status } = await supabase
     .from(NBA_SCHEDULE_TABLE)
     .select(
-      `
-      game_id,
-      game_date,
-      scheduled_time,
-      status,
-      home_team,
-      away_team,
-      venue,
-      predicted_home_score,
-      predicted_away_score,
-      moneyline_clean,
-      spread_clean,
-      total_clean
-    `
+      `game_id, game_date, scheduled_time, status,
+       home_team, away_team, venue,
+       predicted_home_score, predicted_away_score,
+       moneyline_clean, spread_clean, total_clean`
     )
     .in("game_date", [todayStr, tomorrowStr])
     .order("scheduled_time", { ascending: true });
 
   if (error) {
-    console.error("Supabase error fetching NBA schedule:", error);
-    const dbError = new Error(error.message || "Database query failed");
-    dbError.status = status || 500;
-    throw dbError;
+    const dbErr = new Error(
+      error.message || "Supabase query failed (schedule)"
+    );
+    dbErr.status = status || 503; // ← mark as “upstream unavailable”
+    throw dbErr;
   }
 
   console.log(`Service: Found ${data?.length ?? 0} NBA games.`);
@@ -378,125 +369,91 @@ export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
  * @returns {Promise<UnifiedNBAGameData[]>} - A promise resolving to an array of game data objects.
  */
 export async function getSchedule(date) {
-  console.log(`[nba_service getSchedule] Received date: ${date}`);
-  let isPastDate = false;
-  try {
-    const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
-    const inputDateEt = DateTime.fromISO(date, { zone: ET_ZONE_IDENTIFIER });
-    if (!inputDateEt.isValid) throw new Error(`Invalid date: ${date}`);
-    isPastDate = inputDateEt.startOf("day") < nowEt.startOf("day");
-    console.log(
-      `[nba_service getSchedule] Date ${date}. Is Past: ${isPastDate}`
+  console.log("[nba_service getSchedule] Received date:", date);
+
+  /* ---------- 1. Past-or-future check -------------------- */
+  const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
+  const inputEt = DateTime.fromISO(date, { zone: ET_ZONE_IDENTIFIER });
+  if (!inputEt.isValid) {
+    const bad = new Error(`Invalid date: ${date}`);
+    bad.status = 400;
+    throw bad;
+  }
+  const isPastDate = inputEt.startOf("day") < nowEt.startOf("day");
+
+  /* ---------- 2. Pick table & columns ------------------- */
+  const TABLE = isPastDate ? NBA_HISTORICAL_GAMES_TABLE : NBA_SCHEDULE_TABLE;
+
+  const columns = isPastDate
+    ? `game_id, game_date, home_team, away_team, home_score, away_score`
+    : `game_id, game_date, home_team, away_team, scheduled_time,
+       spread_clean, total_clean,
+       predicted_home_score, predicted_away_score`;
+
+  /* ---------- 3. Supabase query ------------------------- */
+  const { data, error, status } = await supabase
+    .from(TABLE)
+    .select(columns)
+    .eq("game_date", date)
+    .order(isPastDate ? "game_date" : "scheduled_time", { ascending: true });
+
+  if (error) {
+    const dbErr = new Error(
+      error.message || "Supabase query failed (getSchedule)"
     );
-  } catch (e) {
-    console.error(`[nba_service getSchedule] Error parsing date: ${date}`, e);
-    throw new Error("Invalid date format.");
+    dbErr.status = status || 503; // ← key line
+    throw dbErr;
   }
 
-  let data = null;
-  let error = null;
+  /* ---------- 4. Map rows to unified structure ---------- */
+  if (!Array.isArray(data)) {
+    console.warn("[nba_service] Supabase returned non-array:", data);
+    return [];
+  }
 
-  try {
+  return data.map((row) => {
     if (isPastDate) {
-      const HISTORICAL_TABLE = NBA_HISTORICAL_GAMES_TABLE;
-      console.log(
-        `[nba_service] Fetching historical NBA data for ${date} from ${HISTORICAL_TABLE}`
-      );
-      // Select needed columns using actual DB names for historical table
-      const historicalColumns = `game_id, game_date, home_team, away_team, home_score, away_score`;
-      const response = await supabase
-        .from(HISTORICAL_TABLE)
-        .select(historicalColumns)
-        .eq("game_date", date); // Assumes game_date column exists and works for filtering
-      data = response.data;
-      error = response.error;
+      return {
+        id: String(row.game_id),
+        game_date: row.game_date,
+        homeTeamName: row.home_team,
+        awayTeamName: row.away_team,
+        gameTimeUTC: null,
+        statusState: "Final",
+        spreadLine: null,
+        totalLine: null,
+        predictionHome: null,
+        predictionAway: null,
+        home_final_score: row.home_score,
+        away_final_score: row.away_score,
+        dataType: "historical",
+      };
     } else {
-      const SCHEDULE_TABLE = NBA_SCHEDULE_TABLE;
-      console.log(
-        `[nba_service] Fetching schedule NBA data for ${date} from ${SCHEDULE_TABLE}`
-      );
-      // Select needed columns using actual DB names for schedule table
-      const scheduleColumns = `game_id, game_date, home_team, away_team, scheduled_time, spread_clean, total_clean, predicted_home_score, predicted_away_score`;
-      const response = await supabase
-        .from(SCHEDULE_TABLE)
-        .select(scheduleColumns)
-        .eq("game_date", date) // Assumes game_date column exists and works for filtering
-        .order("scheduled_time", { ascending: true }); // Assumes scheduled_time exists
-      data = response.data;
-      error = response.error;
+      return {
+        id: String(row.game_id),
+        game_date: row.game_date,
+        homeTeamName: row.home_team,
+        awayTeamName: row.away_team,
+        gameTimeUTC: row.scheduled_time,
+        statusState: "Scheduled",
+        spreadLine: row.spread_clean
+          ? parseFloat(
+              (String(row.spread_clean).match(/-?\d+(\.\d+)?/) || ["0"])[0]
+            )
+          : null,
+        totalLine: row.total_clean
+          ? parseFloat(
+              (String(row.total_clean).match(/\d+(\.\d+)?/) || ["0"])[0]
+            )
+          : null,
+        predictionHome: row.predicted_home_score,
+        predictionAway: row.predicted_away_score,
+        home_final_score: null,
+        away_final_score: null,
+        dataType: "schedule",
+      };
     }
-
-    console.log(
-      `[nba_service getSchedule] Supabase returned ${
-        data?.length ?? 0
-      } rows for date ${date}. Error: ${error?.message ?? "No"}`
-    );
-    if (error) throw error;
-    if (!Array.isArray(data)) {
-      console.warn(
-        `[nba_service] Supabase data not array for ${date}. Data:`,
-        data
-      );
-      return [];
-    }
-
-    // --- CORRECTED: Map results to the UNIFIED Structure ---
-    const results = data.map((row) => {
-      if (isPastDate) {
-        /** @type {UnifiedNBAGameData} */
-        const gameData = {
-          id: String(row.game_id),
-          game_date: row.game_date,
-          homeTeamName: row.home_team, // Map DB home_team -> unified homeTeamName
-          awayTeamName: row.away_team, // Map DB away_team -> unified awayTeamName
-          gameTimeUTC: null, // No time in historical table?
-          statusState: "Final", // Assume 'Final' for historical
-          spreadLine: null, // Standardized odds field
-          totalLine: null, // Standardized odds field
-          predictionHome: null,
-          predictionAway: null,
-          home_final_score: row.home_score, // Map DB home_score
-          away_final_score: row.away_score, // Map DB away_score
-          dataType: "historical",
-        };
-        return gameData;
-      } else {
-        /** @type {UnifiedNBAGameData} */
-        const gameData = {
-          id: String(row.game_id),
-          game_date: row.game_date,
-          homeTeamName: row.home_team, // Map DB home_team -> unified homeTeamName
-          awayTeamName: row.away_team, // Map DB away_team -> unified awayTeamName
-          gameTimeUTC: row.scheduled_time, // Map DB scheduled_time -> unified gameTimeUTC
-          statusState: "Scheduled", // TODO: Use actual status column if available
-          // Map DB _clean odds to standardized names & parse
-          spreadLine: row.spread_clean
-            ? parseFloat(
-                (String(row.spread_clean).match(/-?\d+(\.\d+)?/) || ["0"])[0]
-              )
-            : null,
-          totalLine: row.total_clean
-            ? parseFloat(
-                (String(row.total_clean).match(/\d+(\.\d+)?/) || ["0"])[0]
-              )
-            : null,
-          predictionHome: row.predicted_home_score,
-          predictionAway: row.predicted_away_score,
-          home_final_score: null,
-          away_final_score: null,
-          dataType: "schedule",
-        };
-        return gameData;
-      }
-    });
-    return results; // Return the mapped array matching UnifiedNBAGameData structure
-  } catch (err) {
-    console.error(
-      `[nba_service getSchedule] Error processing date ${date}:`,
-      err
-    );
-    throw err; // Let controller handle sending error response
-  }
+  });
 }
 /* ---------------------------------------------------------
  * ALL-PLAYERS season stats

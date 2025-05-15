@@ -1,53 +1,42 @@
-// frontend/src/api/useAdvancedStats.ts
 import { useQuery } from "@tanstack/react-query";
 import type { Sport } from "@/types";
-import { apiFetch } from "@/api/client";
 
-// Define the shape of the data returned by the API/RPC function
-// Based on the columns defined in the SQL function's RETURNS TABLE
 export interface AdvancedTeamStats {
   team_name: string;
-  games_played: number | null; // Use number | null for safety
-  pace: number | null;
-  off_rtg: number | null;
-  def_rtg: number | null;
-  efg_pct: number | null;
-  tov_pct: number | null;
-  oreb_pct: number | null;
-  // Index signature allows dynamic access if needed later
-  [key: string]: string | number | undefined | null;
+  team_id: string;
 }
 
-/**
- * Fetches calculated advanced team stats for a given NBA season.
- */
-async function fetchAdvancedStats({
-  season,
-}: {
-  season: number;
-}): Promise<AdvancedTeamStats[]> {
-  const res = await apiFetch(`/api/v1/nba/advanced-stats?season=${season}`);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(
-      `Failed to fetch NBA advanced‐stats: ${res.status} ${text}`
-    );
-  }
-  const json = (await res.json()) as {
-    message: string;
-    retrieved: number;
-    data: AdvancedTeamStats[];
-  };
-  if (!Array.isArray(json.data)) {
-    console.error("Invalid NBA advanced‐stats response:", json);
-    return [];
-  }
-  return json.data;
+function isJson(res: Response) {
+  return (res.headers.get("content-type") ?? "").includes("application/json");
 }
 
-/**
- * Hook: load & cache advanced NBA team stats
- */
+async function fetchAdvancedStats(
+  season: number
+): Promise<AdvancedTeamStats[]> {
+  if (!navigator.onLine) throw new Error("Browser offline");
+
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 10_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`/api/v1/nba/advanced-stats?season=${season}`, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(tid);
+  }
+
+  if (!res.ok || !isJson(res)) {
+    throw new Error(`NBA advanced-stats request failed (${res.status})`);
+  }
+
+  const json = (await res.json()) as { data: AdvancedTeamStats[] };
+  return Array.isArray(json.data) ? json.data : [];
+}
+
 export function useAdvancedStats({
   sport,
   season,
@@ -59,9 +48,9 @@ export function useAdvancedStats({
 }) {
   return useQuery<AdvancedTeamStats[]>({
     queryKey: ["advancedStats", sport, season],
-    queryFn: () => fetchAdvancedStats({ season }),
+    queryFn: () => fetchAdvancedStats(season),
     enabled: enabled && sport === "NBA",
-    staleTime: 1000 * 60 * 60, // 1h
-    refetchOnMount: "always",
+    staleTime: 3_600_000, // 1 h
+    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
   });
 }
