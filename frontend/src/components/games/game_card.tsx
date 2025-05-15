@@ -1,7 +1,6 @@
 // frontend/src/components/games/game_card.tsx
 import React, { useState } from "react";
 import { UnifiedGame, Sport } from "@/types"; // Use UnifiedGame
-import { useInjuries, Injury } from "@/api/use_injuries";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
 import SnapshotCard from "../ui/snapshot_card";
