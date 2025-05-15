@@ -1,46 +1,38 @@
-// frontend/src/api/use_mlb_schedule.ts
 import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/api/client";
 import type { UnifiedGame } from "@/types";
 
 type GameWithET = UnifiedGame & { gameTimeET: string };
 
-interface Resp {
-  message: string;
-  retrieved: number;
-  data: UnifiedGame[];
-}
-
 export const useMLBSchedule = (date: string) =>
   useQuery<GameWithET[], Error>({
     queryKey: ["mlbSchedule", date],
-    enabled: !!date,
     staleTime: 60_000,
+    retry: (fails) => navigator.onLine && fails < 3,
+    enabled: !!date,
 
     queryFn: async () => {
-      /* ---- abort after 10 s ---- */
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), 10_000);
 
       let res: Response;
       try {
-        res = await fetch(`/api/v1/mlb/schedule?date=${date}`, {
+        res = await apiFetch(`/api/v1/mlb/schedule?date=${date}`, {
           signal: controller.signal,
-          headers: { accept: "application/json" },
           cache: "no-store",
+          headers: { accept: "application/json" },
         });
       } finally {
         clearTimeout(tid);
       }
 
-      if (!res.ok) {
+      if (!res.ok)
         throw new Error(
           `Schedule request failed (${res.status} ${res.statusText})`
         );
-      }
 
-      const json: Resp = await res.json();
-
-      return json.data.map((g) => ({
+      const { data } = (await res.json()) as { data: UnifiedGame[] };
+      return data.map((g) => ({
         ...g,
         gameTimeET: new Date(g.scheduled_time).toLocaleTimeString("en-US", {
           timeZone: "America/New_York",
@@ -49,6 +41,4 @@ export const useMLBSchedule = (date: string) =>
         }),
       }));
     },
-
-    retry: (failures) => navigator.onLine && failures < 3,
   });

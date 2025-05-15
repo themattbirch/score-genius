@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "20 4 * * *" # 04:20 UTC daily
+    - cron: "0 15 * * *" # 15:00 UTC daily
 
 concurrency:
   group: ingest-previews-${{ github.run_id }}

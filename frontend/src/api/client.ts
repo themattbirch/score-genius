@@ -1,15 +1,21 @@
 // frontend/src/api/client.ts
+const API = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+// e.g. "https://score-genius-backend.onrender.com"
 
-// frontend/src/api/client.ts
+export async function apiFetch(path: string, init: RequestInit = {}) {
+  // Allow callers to pass an absolute URL (handy for Supabase signed URLs etc.)
+  const url = /^https?:\/\//.test(path)
+    ? path
+    : `${API}/${path.replace(/^\/+/, "")}`; // ensure exactly one “/” between
 
-// Pull in the full URL from your env (set in .env/.env.local)
-const API = import.meta.env.VITE_API_BASE_URL || "";
+  const res = await fetch(url, {
+    cache: "no-store",
+    ...init,
+    headers: {
+      accept: "application/json",
+      ...(init.headers || {}),
+    },
+  });
 
-export async function apiFetch(
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
-  // In dev: API === "http://localhost:3001"
-  // In prod: API === "https://score-genius-backend.onrender.com"
-  return fetch(`${API}${path}`, init);
+  return res;
 }

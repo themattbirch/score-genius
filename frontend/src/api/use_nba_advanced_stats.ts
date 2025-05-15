@@ -1,13 +1,11 @@
+// frontend/src/api/use_nba_advanced_stats.ts
+
 import { useQuery } from "@tanstack/react-query";
-import type { Sport } from "@/types";
+import { apiFetch } from "@/api/client";
+import type { Sport, NbaAdvancedTeamStats as AdvancedTeamStats } from "@/types";
 
-export interface AdvancedTeamStats {
-  team_name: string;
-  team_id: string;
-}
-
-function isJson(res: Response) {
-  return (res.headers.get("content-type") ?? "").includes("application/json");
+function isJson(r: Response) {
+  return (r.headers.get("content-type") ?? "").includes("application/json");
 }
 
 async function fetchAdvancedStats(
@@ -20,7 +18,7 @@ async function fetchAdvancedStats(
 
   let res: Response;
   try {
-    res = await fetch(`/api/v1/nba/advanced-stats?season=${season}`, {
+    res = await apiFetch(`/api/v1/nba/advanced-stats?season=${season}`, {
       signal: controller.signal,
       headers: { accept: "application/json" },
       cache: "no-store",
@@ -33,8 +31,8 @@ async function fetchAdvancedStats(
     throw new Error(`NBA advanced-stats request failed (${res.status})`);
   }
 
-  const json = (await res.json()) as { data: AdvancedTeamStats[] };
-  return Array.isArray(json.data) ? json.data : [];
+  const { data } = (await res.json()) as { data: AdvancedTeamStats[] };
+  return Array.isArray(data) ? data : [];
 }
 
 export function useAdvancedStats({
@@ -51,6 +49,6 @@ export function useAdvancedStats({
     queryFn: () => fetchAdvancedStats(season),
     enabled: enabled && sport === "NBA",
     staleTime: 3_600_000, // 1 h
-    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
+    retry: (f) => navigator.onLine && f < 3,
   });
 }
