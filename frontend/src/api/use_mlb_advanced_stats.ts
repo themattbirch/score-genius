@@ -1,57 +1,55 @@
 // frontend/src/api/use_mlb_advanced_stats.ts
-import { useQuery } from "@tanstack/react-query";
-import type { Sport } from "@/types"; // Assuming Sport type is in '@/types'
-import { apiFetch } from "@/api/client";
 
-// Define the shape of the data returned by the MLB Advanced Stats API/RPC function
-// Based on the columns from the successful curl response
+import { useQuery } from "@tanstack/react-query";
+import type { Sport } from "@/types";
+
 export interface MlbAdvancedTeamStats {
   team_id: number;
   team_name: string;
-  season: number;
-  games_played: number;
-  wins: number;
-  runs_for: number;
-  runs_against: number;
-  run_differential: number;
-  run_differential_avg: number;
+
+  /* core advanced metrics we read in the UI */
   win_pct: number;
   pythagorean_win_pct: number;
-  expected_wins: number;
+  run_differential: number;
+  run_differential_avg: number;
   luck_factor: number;
-  home_away_win_pct_split: number;
-  home_away_run_diff_avg_split: number;
-  // Index signature allows dynamic access if needed later (optional but can be useful)
+  games_played: number;
+
+  /* keep it open-ended */
   [key: string]: string | number | undefined | null;
 }
 
-/**
- * Fetches calculated advanced team stats for a given MLB season via RPC endpoint.
- */
-async function fetchMlbAdvancedStats({
-  season,
-}: {
-  season: number;
-}): Promise<MlbAdvancedTeamStats[]> {
-  const endpoint = `/api/v1/mlb/team-stats/advanced?season=${season}`;
-  const res = await apiFetch(endpoint);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(
-      `Failed to fetch MLB advanced‐stats: ${res.status} ${text}`
-    );
+function isJson(res: Response) {
+  return (res.headers.get("content-type") ?? "").includes("application/json");
+}
+
+async function fetchMlbAdvancedStats(
+  season: number
+): Promise<MlbAdvancedTeamStats[]> {
+  if (!navigator.onLine) throw new Error("Browser offline");
+
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 10_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`/api/v1/mlb/team-stats/advanced?season=${season}`, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(tid);
   }
-  const json = (await res.json()) as {
-    message: string;
-    retrieved: number;
-    data: MlbAdvancedTeamStats[];
-  };
+
+  if (!res.ok || !isJson(res)) {
+    throw new Error(`MLB advanced-stats request failed (${res.status})`);
+  }
+
+  const json = (await res.json()) as { data: MlbAdvancedTeamStats[] };
   return Array.isArray(json.data) ? json.data : [];
 }
 
-/**
- * Hook: load & cache advanced MLB team stats
- */
 export function useMlbAdvancedStats({
   season,
   sport,
@@ -63,10 +61,10 @@ export function useMlbAdvancedStats({
 }) {
   return useQuery<MlbAdvancedTeamStats[]>({
     queryKey: ["mlbAdvancedStats", sport, season],
-    queryFn: () => fetchMlbAdvancedStats({ season }),
+    queryFn: () => fetchMlbAdvancedStats(season),
     enabled: enabled && sport === "MLB",
-    staleTime: 1000 * 60 * 60 * 24, // 24h
-    refetchOnMount: "always",
+    staleTime: 86_400_000, // 24 h
+    retry: (failureCount: number) => navigator.onLine && failureCount < 3,
     refetchOnWindowFocus: false,
   });
 }

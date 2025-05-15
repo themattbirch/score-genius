@@ -1,11 +1,13 @@
-// frontend/src/components/schedule/mlb_schedule_display.tsx
+// frontend/src/components/schedule/nba_schedule_display.tsx
 import React, { useState, useEffect, useMemo } from "react";
+import { startOfDay, isBefore } from "date-fns";
+
 import { useDate } from "@/contexts/date_context";
 import { useNBASchedule } from "@/api/use_nba_schedule";
-import type { UnifiedGame } from "@/types";
+import { useNetworkStatus } from "@/hooks/use_network_status";
+
 import GameCard from "@/components/games/game_card";
 import SkeletonBox from "@/components/ui/skeleton_box";
-import { startOfDay, isBefore } from "date-fns";
 
 interface ScheduleDisplayProps {
   showHeader?: boolean;
@@ -21,8 +23,10 @@ const formatLocalDate = (d: Date | null | undefined): string =>
 const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
   showHeader = true,
 }) => {
-  // ── Hooks in fixed order ───────────────────────────────────────────────────
+  /* ── Hooks ───────────────────────────────────────────── */
   const { date } = useDate();
+  const online = useNetworkStatus(); // ← NEW
+
   const isoDate = formatLocalDate(date);
   const displayDate = date?.toLocaleDateString("en-US", {
     month: "long",
@@ -33,34 +37,29 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
   const selectedDay = date ? startOfDay(date) : null;
   const isPastDate = selectedDay ? isBefore(selectedDay, today) : false;
 
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [currentTime, setCurrentTime] = useState(Date.now);
   useEffect(() => {
     const id = setInterval(() => setCurrentTime(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  const {
-    data: games = [],
-    isLoading: isLoadingGames,
-    error: gamesError,
-  } = useNBASchedule(isoDate);
+  const { data: games = [], isLoading, isError } = useNBASchedule(isoDate);
 
+  /* ── Filter out completed games on same day ──────────── */
   const filteredGames = useMemo(() => {
     if (isPastDate) return games;
-    const buffer = 3.5 * 60 * 60 * 1000; // 3.5h
+
+    const buffer = 3.5 * 60 * 60 * 1000; // 3.5 h
     return games.filter((g) => {
-      const start = g.gameTimeUTC;
-      if (!start) return true;
-      const ms = new Date(start).getTime();
-      return !Number.isNaN(ms) && currentTime < ms + buffer;
+      const ms = new Date(g.gameTimeUTC ?? "").getTime();
+      return Number.isNaN(ms) ? true : currentTime < ms + buffer;
     });
   }, [games, currentTime, isPastDate]);
 
-  const hasVisibleGames = filteredGames.length > 0;
   const noGamesInitiallyScheduled = games.length === 0;
   const allGamesFilteredOut = games.length > 0 && filteredGames.length === 0;
 
-  // ── Single return with conditional branches ────────────────────────────────
+  /* ── Render ──────────────────────────────────────────── */
   return (
     <div className="pt-4">
       {showHeader && (
@@ -69,10 +68,16 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
         </h2>
       )}
 
-      {isLoadingGames ? (
+      {/* ---- 1 ▸ browser offline ---- */}
+      {!online ? (
+        <p className="text-center text-slate-500 dark:text-slate-400">
+          Error fetching NBA games for {displayDate}.
+        </p>
+      ) : isLoading ? (
+        /* ---- 2 ▸ loading ---- */
         <div className="p-4">
-          <h2 className="text-lg text-left font-semibold mb-3 italic animate-pulse text-gray-500 dark:text-text-primary">
-            Loading NBA Games for {isoDate}…
+          <h2 className="text-lg font-semibold mb-3 italic animate-pulse text-gray-500 dark:text-text-primary">
+            Loading NBA games for {displayDate}…
           </h2>
           <div className="space-y-4">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -80,16 +85,15 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
             ))}
           </div>
         </div>
-      ) : gamesError ? (
-        <div className="pt-4">
-          <h2 className="mb-2 text-lg font-semibold text-red-600 dark:text-red-500">
-            Error Loading NBA Games.
-          </h2>
-          <p className="text-red-500">Could not load game data.</p>
-        </div>
+      ) : isError ? (
+        /* ---- 3 ▸ fetch error ---- */
+        <p className="text-center text-slate-500 dark:text-slate-400">
+          Error fetching NBA games for {displayDate}.
+        </p>
       ) : (
+        /* ---- 4 ▸ success ---- */
         <div className="space-y-4">
-          {hasVisibleGames ? (
+          {filteredGames.length ? (
             filteredGames.map((g) => <GameCard key={g.id} game={g} />)
           ) : noGamesInitiallyScheduled ? (
             <p className="mt-4 text-left text-text-secondary">
