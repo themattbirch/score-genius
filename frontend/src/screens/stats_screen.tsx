@@ -18,6 +18,14 @@ import type {
 import SkeletonBox from "@/components/ui/skeleton_box";
 import { ChevronsUpDown } from "lucide-react";
 
+import { Calendar as CalendarIcon } from "lucide-react";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+
 // --- Type definitions ---
 type SortDir = "asc" | "desc";
 type TeamSortKey = keyof UnifiedTeamStats | string;
@@ -69,7 +77,12 @@ const zeroDecimalKeys = new Set<string>([
 // --- Component Definition ---
 const StatsScreen: React.FC = () => {
   const { sport } = useSport();
-  const { date } = useDate();
+  const { date, setDate } = useDate();
+  const formattedDate = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+
   const online = useNetworkStatus();
 
   // --- Season Logic (unmodified) ---
@@ -799,62 +812,81 @@ const StatsScreen: React.FC = () => {
     <section className="p-6 md:px-8 lg:px-12 space-y-4 text-slate-800 dark:text-text-primary">
       {offlineBanner}
       {/* --- Row 1: Controls (Sub-Tabs + Season Picker) --- */}
+      {/* --- Row 1: Controls (Sub-Tabs + Season Picker) --- */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        {/* Container for the LEFT part (Sub-Tabs) */}
+        {/* Left: Sub-Tabs (unchanged) */}
         <div className="flex-shrink-0">
-          {/* --- Always render the sub-tab container div --- */}
           <div className="flex gap-1 rounded-lg bg-gray-200 dark:bg-[var(--color-panel)] p-1 text-sm">
-            {/* --- Conditionally select the TABS ARRAY to map over --- */}
             {(sport === "NBA"
-              ? (["teams", "players", "advanced"] as const) // Use NBA tabs array
+              ? (["teams", "players", "advanced"] as const)
               : (["teams", "advanced"] as const)
-            ) // Use MLB tabs array
-              .map((tab) => {
-                // Map over the selected array
-                // Apply tour attribute to the 'advanced' tab for both sports
-                const tourAttribute =
-                  tab === "advanced" ? "stats-subtab-advanced" : undefined;
-
-                return (
-                  <button
-                    key={tab}
-                    data-tour={tourAttribute}
-                    className={`rounded-md py-2 px-4 transition-colors text-xs sm:text-sm ${
-                      subTab === tab
-                        ? "bg-green-600 text-white shadow-sm" // Active
-                        : "text-gray-600 dark:text-text-secondary hover:bg-gray-300 dark:hover:bg-gray-700" // Inactive
-                    }`}
-                    onClick={() => setSubTab(tab)}
-                    // No 'disabled' needed here, as 'players' isn't in the MLB array
-                  >
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                );
-              })}
+            ).map((tab) => {
+              const tourAttribute =
+                tab === "advanced" ? "stats-subtab-advanced" : undefined;
+              return (
+                <button
+                  key={tab}
+                  data-tour={tourAttribute}
+                  className={`rounded-md py-2 px-4 transition-colors text-xs sm:text-sm ${
+                    subTab === tab
+                      ? "bg-green-600 text-white shadow-sm"
+                      : "text-gray-600 dark:text-text-secondary hover:bg-gray-300 dark:hover:bg-gray-700"
+                  }`}
+                  onClick={() => setSubTab(tab)}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              );
+            })}
           </div>
-          {/* --- End of sub-tab container div --- */}
         </div>
-        {/* --- End of LEFT container --- */}
 
-        {/* Season picker - Sibling element on the RIGHT */}
-        <select
-          value={season}
-          onChange={(e) => setSeason(Number(e.target.value))}
-          className="align-baseline appearance-none
-           [-webkit-appearance:none]
-           [-moz-appearance:none] rounded-lg
-           bg-gray-200 dark:bg-[var(--color-panel)] bg-none text-slate-800 dark:text-text-primary 
-           py-2 md:py-3 px-4 md:px-6 text-xs sm:text-sm outline-none focus:ring focus:ring-green-500/50"
-        >
-          {/* ... options ... */}
-          {seasonOptions.map(({ value, label }) => (
-            <option key={value} value={value}>
-              {" "}
-              {label}{" "}
-            </option>
-          ))}
-        </select>
-        {/* --- End of Season Picker --- */}
+        {/* Right: Season Picker as calendar-style button */}
+        <div className="flex items-center gap-3">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                data-tour="season-picker"
+                className="inline-flex items-center gap-1 rounded-lg border px-2 md:px-4 py-2 text-sm
+                     border-slate-300 bg-white text-slate-700 hover:bg-gray-50
+                     dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              >
+                <CalendarIcon size={16} strokeWidth={1.8} />
+                {
+                  // show the currently selected label:
+                  sport === "NBA"
+                    ? `${season}-${String(season + 1).slice(-2)}`
+                    : String(season)
+                }
+              </button>
+            </PopoverTrigger>
+
+            <PopoverContent
+              side="bottom"
+              align="end"
+              sideOffset={8}
+              className="bg-[var(--color-panel)] rounded-lg shadow-lg p-2 w-[12rem]"
+            >
+              <div className="space-y-1">
+                {seasonOptions.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setSeason(value)}
+                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors
+                          hover:bg-gray-100 dark:hover:bg-slate-700
+                          ${
+                            value === season
+                              ? "font-semibold text-green-600"
+                              : ""
+                          }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
       {/* --- END OF ROW 1 --- */}
 
