@@ -796,7 +796,7 @@ const StatsScreen: React.FC = () => {
   // --- FINAL RENDER ---
   return (
     // Main container with vertical spacing between direct children
-    <section className="p-4 space-y-4 text-slate-800 dark:text-text-primary">
+    <section className="p-6 md:px-8 lg:px-12 space-y-4 text-slate-800 dark:text-text-primary">
       {offlineBanner}
       {/* --- Row 1: Controls (Sub-Tabs + Season Picker) --- */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
@@ -819,7 +819,7 @@ const StatsScreen: React.FC = () => {
                   <button
                     key={tab}
                     data-tour={tourAttribute}
-                    className={`rounded-md px-3 py-1 transition-colors text-xs sm:text-sm ${
+                    className={`rounded-md py-2 px-4 transition-colors text-xs sm:text-sm ${
                       subTab === tab
                         ? "bg-green-600 text-white shadow-sm" // Active
                         : "text-gray-600 dark:text-text-secondary hover:bg-gray-300 dark:hover:bg-gray-700" // Inactive
@@ -844,7 +844,7 @@ const StatsScreen: React.FC = () => {
            [-webkit-appearance:none]
            [-moz-appearance:none] rounded-lg
            bg-gray-200 dark:bg-[var(--color-panel)] bg-none text-slate-800 dark:text-text-primary 
-           py-2 px-4 text-sm outline-none focus:ring focus:ring-green-500/50"
+           py-2 md:py-3 px-4 md:px-6 text-xs sm:text-sm outline-none focus:ring focus:ring-green-500/50"
         >
           {/* ... options ... */}
           {seasonOptions.map(({ value, label }) => (
@@ -859,7 +859,7 @@ const StatsScreen: React.FC = () => {
       {/* --- END OF ROW 1 --- */}
 
       {/* --- Row 2: Dynamic H1 Heading (Positioned correctly now) --- */}
-      <h1 className="text-xl font-semibold text-slate-800 dark:text-text-primary mb-2">
+      <h1 className="text-xl font-semibold text-slate-800 dark:text-text-primary py-2 md:py-4">
         {headingText}
       </h1>
 

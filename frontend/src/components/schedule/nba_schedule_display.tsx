@@ -38,9 +38,7 @@ interface ScheduleDisplayProps {
   showHeader?: boolean;
 }
 
-const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
-  showHeader = true,
-}) => {
+const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
   /* ── context & network status ─────────────────────────── */
   const dateCtx = useDate();
   if (!dateCtx) return null;
@@ -136,7 +134,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
 
   if (isLoadingGames)
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 px-4">
         <h2 className="animate-pulse text-center text-lg font-semibold italic text-gray-500 dark:text-text-secondary">
           Loading NBA games for {displayDate}…
         </h2>
@@ -148,20 +146,13 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
 
   if (gamesError)
     return (
-      <p className="text-center text-slate-500 dark:text-slate-400">
+      <p className="text-center text-slate-500 dark:text-slate-400 px-4">
         Error fetching NBA games for {displayDate}.
       </p>
     );
 
   return (
-    <div className="pt-4">
-      {/* ── headline ── */}
-      {showHeader && (
-        <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
-          NBA Games for {displayDate}
-        </h2>
-      )}
-
+    <div className="pt-4 space-y-8">
       {/* ── games list ── */}
       {filteredGames.length ? (
         <Suspense
@@ -192,20 +183,19 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
       {/* ── Injury Report ─────────────────────────────────────── */}
       {games.length > 0 && (
         <div className="mt-8 border-t border-border pt-6">
-          {/* 1 ▸ static header (always in the DOM) */}
-          <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
+          {/* static header */}
+          <h2 className="mb-3 pl-4 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
             Daily Injury Report
           </h2>
 
-          {/* 2 ▸ body is lazy-loaded / skeleton-swapped */}
+          {/* body is lazy-loaded / skeleton-swapped */}
           <Suspense
             fallback={
-              /* reserve the same footprint as the real list */
               <div className="space-y-4">
                 {teamsWithInjuries.map((team) => (
                   <SkeletonBox
                     key={team}
-                    className="h-9 w-full rounded bg-slate-700/50 animate-pulse"
+                    className="w-full rounded-md px-4 py-3 bg-slate-700/50 animate-pulse"
                   />
                 ))}
               </div>
