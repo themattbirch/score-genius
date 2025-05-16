@@ -203,8 +203,10 @@ const StatsScreen: React.FC = () => {
   });
   /* ---------- 🚧 EARLY-RETURN WHEN OFFLINE ------------------------------- */
   const offlineBanner = !online && (
-    <section className="p-4 space-y-4 text-slate-800 dark:text-text-primary">
-      <h1 className="text-xl font-semibold">Offline mode</h1>
+    <section className="p-4 space-y-4">
+      <h1 className="text-xl text-slate-800 dark:text-text-primary font-semibold">
+        Offline mode
+      </h1>
       <p className="text-gray-500 dark:text-text-secondary">
         You appear to be offline. Reconnect to load the latest stats.
       </p>
@@ -812,7 +814,6 @@ const StatsScreen: React.FC = () => {
     <section className="p-6 md:px-8 lg:px-12 space-y-4 text-slate-800 dark:text-text-primary">
       {offlineBanner}
       {/* --- Row 1: Controls (Sub-Tabs + Season Picker) --- */}
-      {/* --- Row 1: Controls (Sub-Tabs + Season Picker) --- */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         {/* Left: Sub-Tabs (unchanged) */}
         <div className="flex-shrink-0">
@@ -846,18 +847,15 @@ const StatsScreen: React.FC = () => {
           <Popover>
             <PopoverTrigger asChild>
               <button
-                data-tour="season-picker"
-                className="inline-flex items-center gap-1 rounded-lg border px-2 md:px-4 py-2 text-sm
-                     border-slate-300 bg-white text-slate-700 hover:bg-gray-50
-                     dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                className="inline-flex items-center gap-[1px] md:gap-1 /* << here */
+      rounded-lg border px-2 md:px-4 py-2 text-sm
+      border-slate-300 bg-white text-slate-700 hover:bg-gray-50
+      dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 <CalendarIcon size={16} strokeWidth={1.8} />
-                {
-                  // show the currently selected label:
-                  sport === "NBA"
-                    ? `${season}-${String(season + 1).slice(-2)}`
-                    : String(season)
-                }
+                {sport === "NBA"
+                  ? `${season}-${String(season + 1).slice(-2)}`
+                  : String(season)}
               </button>
             </PopoverTrigger>
 
@@ -865,20 +863,21 @@ const StatsScreen: React.FC = () => {
               side="bottom"
               align="end"
               sideOffset={8}
-              className="bg-[var(--color-panel)] rounded-lg shadow-lg p-2 w-[12rem]"
+              className="
+    bg-white dark:bg-[var(--color-panel)]
+    rounded-lg shadow-lg p-2 w-[12rem]"
             >
               <div className="space-y-1">
                 {seasonOptions.map(({ value, label }) => (
                   <button
                     key={value}
                     onClick={() => setSeason(value)}
-                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors
-                          hover:bg-gray-100 dark:hover:bg-slate-700
-                          ${
-                            value === season
-                              ? "font-semibold text-green-600"
-                              : ""
-                          }`}
+                    className={`
+          w-full text-left px-3 py-2 rounded text-sm transition-colors
+          text-slate-800 dark:text-slate-200             /* text colour */
+          hover:bg-gray-100 dark:hover:bg-slate-700      /* hover bg    */
+          ${value === season ? "font-semibold text-green-600" : ""}
+        `}
                   >
                     {label}
                   </button>

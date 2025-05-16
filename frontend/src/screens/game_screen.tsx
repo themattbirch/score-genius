@@ -35,7 +35,7 @@ const GamesScreen: React.FC = () => {
             <PopoverTrigger asChild>
               <button
                 data-tour="date-picker"
-                className="inline-flex items-center gap-1 rounded-lg border px-2 md:px-4 py-2 text-sm
+                className="inline-flex items-center gap-2 rounded-lg border px-2 md:px-4 py-2 text-sm
                      border-slate-300 bg-white text-slate-700 hover:bg-gray-50
                      dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
