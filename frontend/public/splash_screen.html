@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Score Genius</title>
+    <style>
+      /* ─── Vars & reset ─── */
+      :root {
+        --bg: #0d1117;
+        --fg: #ffffff;
+        --logo-size: 120px;
+        --graphic-size: 100px;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* ─── Full-screen container ─── */
+      body {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: var(--bg);
+        overflow: hidden;
+      }
+
+      .step1,
+      .step2 {
+        position: absolute;
+        text-align: center;
+        opacity: 0;
+      }
+
+      /* STEP 1: Logo + Name */
+      .step1 {
+        animation: fadeIn 1s ease forwards 0s;
+      }
+      .step1 img {
+        width: var(--logo-size);
+      }
+      .step1 h1 {
+        color: var(--fg);
+        font-family: sans-serif;
+        font-size: 1.4rem;
+        margin-top: 0.5rem;
+      }
+
+      /* STEP 2: Bouncing basketball + Tagline */
+      .step2 {
+        transform: translateY(20px);
+        animation: fadeInUp 1s ease forwards 1s, bounce 0.5s ease-in-out 1s;
+      }
+      .step2 img {
+        width: var(--graphic-size);
+      }
+      .step2 p {
+        color: var(--fg);
+        font-family: sans-serif;
+        font-size: 1rem;
+        margin-top: 0.4rem;
+      }
+
+      /* FADE-OUT */
+      .fade-out {
+        animation: fadeOut 0.6s ease forwards;
+      }
+
+      /* ─── Keyframes ─── */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes bounce {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-10px);
+        }
+      }
+      @keyframes fadeOut {
+        to {
+          opacity: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- STEP 1 -->
+    <div class="step1">
+      <img src="icons/icon-192x192.png" alt="Score Genius Logo" />
+      <h1>Score Genius</h1>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step2">
+      <img src="images/basketball.svg" alt="Bouncing Basketball" />
+      <p>Predicting NBA &amp; MLB scores with precision</p>
+    </div>
+
+    <script>
+      // step1 ≈1s + step2 animations ≈1.5s + fade-out 0.6s = ~3.1s total
+      const TOTAL = 1 + 1.5 + 0.6;
+
+      window.addEventListener("load", () => {
+        setTimeout(() => {
+          document.body.classList.add("fade-out");
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 600); // match fadeOut duration
+        }, TOTAL * 1000);
+      });
+    </script>
+  </body>
+</html>

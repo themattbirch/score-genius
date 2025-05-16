@@ -16,6 +16,7 @@ export default defineConfig({
       srcDir: "src",
       filename: "app-sw.ts",
       injectRegister: false,
+      includeAssets: ["splash_screen.html", "images/basketball.svg"],
       registerType: "autoUpdate",
       manifest: {
         name: "ScoreGenius",
@@ -29,6 +30,7 @@ export default defineConfig({
         display: "standalone",
         display_override: ["fullscreen", "standalone", "minimal-ui"],
         orientation: "portrait",
+        splash_pages: ["splash_screen.html"],
         icons: [
           {
             src: "/icons/football-icon-192.png",
@@ -47,7 +49,8 @@ export default defineConfig({
             purpose: "maskable",
           },
         ],
-      },
+      } as any,
+
       workbox: {
         navigateFallback: "/app/offline.html",
         navigateFallbackAllowlist: [/^\/app(?:\/.*)?$/],
