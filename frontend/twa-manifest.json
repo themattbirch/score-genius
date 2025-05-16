@@ -15,13 +15,14 @@
   "startUrl": "/app",
   "iconUrl": "https://scoregenius.io/icons/football-icon-512.png",
   "maskableIconUrl": "https://scoregenius.io/icons/football-icon-maskable-512.png",
+  "monochromeIconUrl": "https://scoregenius.io/icons/football-icon-monochrome-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "/Users/mattb/Desktop/Projects/score-genius/frontend/android.keystore",
     "alias": "score-genius"
   },
-  "appVersionName": "12",
-  "appVersionCode": 12,
+  "appVersionName": "13",
+  "appVersionCode": 13,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://scoregenius.io/manifest.webmanifest",
@@ -40,5 +41,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "protocolHandlers": [],
-  "appVersion": "12"
+  "appVersion": "13"
 }
