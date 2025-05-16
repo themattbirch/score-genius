@@ -23,8 +23,8 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.scoregenius.twa"
-    android:versionCode="13"
-    android:versionName="13" >
+    android:versionCode="14"
+    android:versionName="14" >
 
     <uses-sdk
         android:minSdkVersion="21"

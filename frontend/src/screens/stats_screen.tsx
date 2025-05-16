@@ -847,7 +847,7 @@ const StatsScreen: React.FC = () => {
           <Popover>
             <PopoverTrigger asChild>
               <button
-                className="inline-flex items-center gap-[1px] md:gap-1 /* << here */
+                className="inline-flex items-center gap-2
       rounded-lg border px-2 md:px-4 py-2 text-sm
       border-slate-300 bg-white text-slate-700 hover:bg-gray-50
       dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
