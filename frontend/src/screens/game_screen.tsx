@@ -23,10 +23,10 @@ const GamesScreen: React.FC = () => {
   });
 
   return (
-    <main className="pt-6 px-4 md:px-8 lg:px-1">
+    <main className="pt-6 px-6 md:px-8 lg:px-12">
       {/* ─── Toolbar: Title + Date picker ─── */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold">
+        <h1 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
           {sport} Games for {formattedDate}
         </h1>
 
@@ -35,7 +35,7 @@ const GamesScreen: React.FC = () => {
             <PopoverTrigger asChild>
               <button
                 data-tour="date-picker"
-                className="inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-sm
+                className="inline-flex items-center gap-1 rounded-lg border px-2 md:px-4 py-2 text-sm
                      border-slate-300 bg-white text-slate-700 hover:bg-gray-50
                      dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >

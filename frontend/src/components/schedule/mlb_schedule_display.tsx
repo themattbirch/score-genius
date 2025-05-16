@@ -21,9 +21,7 @@ const formatLocalDate = (d: Date | null | undefined): string =>
         d.getDate()
       ).padStart(2, "0")}`;
 
-const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
-  showHeader = true,
-}) => {
+const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
   /* ── Hooks ───────────────────────────────────────────── */
   const { date } = useDate();
   const online = useNetworkStatus(); // ← NEW
@@ -63,12 +61,6 @@ const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
   /* ── Render ──────────────────────────────────────────── */
   return (
     <div className="pt-4">
-      {showHeader && (
-        <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
-          MLB Games for {displayDate}
-        </h2>
-      )}
-
       {!online ? (
         /* ---- offline ---- */
         <p className="text-center text-slate-500 dark:text-slate-400">

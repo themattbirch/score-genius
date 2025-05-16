@@ -71,7 +71,7 @@ body {
 
 /* Card / panel wrapper */
 .app-card {
-  @apply rounded-xl border border-slate-700/60 bg-[var(--color-panel)] p-4;
+  @apply rounded-xl border border-slate-700/60 bg-[var(--color-panel)] py-6 px-4;
 }
 
 /* Pill badge (status chips, sport selector) */

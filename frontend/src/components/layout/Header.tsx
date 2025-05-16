@@ -28,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
   return (
     <header
       className={clsx(
-        "sticky top-0 z-40 flex items-center justify-between px-4 py-2",
+        "sticky top-0 z-40 flex items-center justify-between px-6 md:px-8 lg:px-12 py-2",
         "border-b bg-white/90 backdrop-blur-md shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-slate-300",
         "dark:bg-black dark:border-slate-700/40"
       )}
