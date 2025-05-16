@@ -13,12 +13,13 @@ import SkeletonBox from "@/components/ui/skeleton_box";
 /* Helpers                                                   */
 /* ────────────────────────────────────────────────────────── */
 
-const formatLocalDate = (d: Date | null | undefined): string =>
-  !d
-    ? ""
-    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-        d.getDate()
-      ).padStart(2, "0")}`;
+const formatLocalDate = (d: Date | null | undefined): string => {
+  if (!d) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 /* ────────────────────────────────────────────────────────── */
 /* Lazy-loaded sub-components                                */
@@ -42,7 +43,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
 }) => {
   /* ── context & network status ─────────────────────────── */
   const dateCtx = useDate();
-  if (!dateCtx) return null; // provider not ready yet
+  if (!dateCtx) return null;
 
   const online = useNetworkStatus();
   const { date } = dateCtx;
@@ -59,7 +60,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
   const isPastDate = selectedDay ? isBefore(selectedDay, today) : false;
 
   /* ── current time ticker (for live-game filtering) ─────── */
-  const [now, setNow] = useState(Date.now);
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
@@ -97,7 +98,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
       const t = inj.team_display_name?.trim();
       if (!t) return;
       const key = t.toLowerCase();
-      if (!playingTeams.has(key)) return; // ignore non-playing teams
+      if (!playingTeams.has(key)) return;
       (grouped[t] ||= []).push(inj);
     });
     return grouped;
@@ -112,7 +113,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
   const filteredGames = useMemo(() => {
     if (isPastDate) return games;
 
-    const bufferMs = 3.5 * 60 * 60 * 1000; // 3.5 h after tip-off
+    const bufferMs = 3.5 * 60 * 60 * 1000;
     return games.filter(({ gameTimeUTC }) => {
       const ms = new Date(gameTimeUTC ?? "").getTime();
       return Number.isNaN(ms) ? true : now < ms + bufferMs;
@@ -188,19 +189,39 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({
         </p>
       ) : null}
 
-      {/* ── injury report (lazy-loaded) ── */}
+      {/* ── Injury Report ─────────────────────────────────────── */}
       {games.length > 0 && (
-        <Suspense fallback={<SkeletonBox className="mt-8 h-40 w-full" />}>
-          <LazyInjuryReport
-            displayDate={displayDate}
-            isPastDate={isPastDate}
-            allGamesFilteredOut={allGamesFilteredOut}
-            isLoadingInjuries={isLoadingInjuries}
-            injuriesError={injuriesError ?? undefined}
-            teamsWithInjuries={teamsWithInjuries}
-            injuriesByTeam={injuriesByTeam}
-          />
-        </Suspense>
+        <div className="mt-8 border-t border-border pt-6">
+          {/* 1 ▸ static header (always in the DOM) */}
+          <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
+            Daily Injury Report
+          </h2>
+
+          {/* 2 ▸ body is lazy-loaded / skeleton-swapped */}
+          <Suspense
+            fallback={
+              /* reserve the same footprint as the real list */
+              <div className="space-y-4">
+                {teamsWithInjuries.map((team) => (
+                  <SkeletonBox
+                    key={team}
+                    className="h-9 w-full rounded bg-slate-700/50 animate-pulse"
+                  />
+                ))}
+              </div>
+            }
+          >
+            <LazyInjuryReport
+              displayDate={displayDate}
+              isPastDate={isPastDate}
+              allGamesFilteredOut={allGamesFilteredOut}
+              isLoadingInjuries={isLoadingInjuries}
+              injuriesError={injuriesError ?? undefined}
+              teamsWithInjuries={teamsWithInjuries}
+              injuriesByTeam={injuriesByTeam}
+            />
+          </Suspense>
+        </div>
       )}
     </div>
   );
