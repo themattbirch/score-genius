@@ -240,10 +240,17 @@ const StatsScreen: React.FC = () => {
   const [playerSort, setPlayerSort] = useState<{
     key: PlayerSortKey;
     dir: SortDir;
-  } | null>(null); // NBA only
-  // TODO: Add sorting state for NBA Advanced and MLB Advanced if desired
-  // const [nbaAdvancedSort, setNbaAdvancedSort] = useState<...>(null);
-  // const [mlbAdvancedSort, setMlbAdvancedSort] = useState<...>(null);
+  } | null>(null);
+
+  const [nbaAdvancedSort, setNbaAdvancedSort] = useState<{
+    key: NbaAdvancedSortKey;
+    dir: SortDir;
+  } | null>({ key: "off_rtg", dir: "desc" });
+
+  const [mlbAdvancedSort, setMlbAdvancedSort] = useState<{
+    key: MlbAdvancedSortKey;
+    dir: SortDir;
+  } | null>({ key: "run_differential", dir: "desc" });
 
   // Update default team sort when sport changes
   useEffect(() => {
@@ -268,7 +275,20 @@ const StatsScreen: React.FC = () => {
         ? { key: k, dir: prev.dir === "asc" ? "desc" : "asc" }
         : { key: k, dir: "asc" }
     );
-  // TODO: Add toggle functions for NBA/MLB Advanced if sorting is implemented
+
+  const toggleNbaAdvancedSort = (k: NbaAdvancedSortKey) =>
+    setNbaAdvancedSort((p) =>
+      p?.key === k
+        ? { key: k, dir: p.dir === "asc" ? "desc" : "asc" }
+        : { key: k, dir: "asc" }
+    );
+
+  const toggleMlbAdvancedSort = (k: MlbAdvancedSortKey) =>
+    setMlbAdvancedSort((p) =>
+      p?.key === k
+        ? { key: k, dir: p.dir === "asc" ? "desc" : "asc" }
+        : { key: k, dir: "asc" }
+    );
 
   // --- Dynamic Headers Definitions (keep existing logic) ---
   /* ---------------- TEAM HEADERS ---------------- */
@@ -350,7 +370,44 @@ const StatsScreen: React.FC = () => {
     }
     return out;
   }, [playerData, playerSort]);
-  // TODO: Add sorted memoized data for NBA/MLB Advanced if sorting is implemented
+
+  // --- Sorted NBA Advanced ---
+  const sortedNbaAdvanced = useMemo(() => {
+    if (!nbaAdvancedData) return [];
+    const out = [...nbaAdvancedData];
+    if (nbaAdvancedSort) {
+      const { key, dir } = nbaAdvancedSort;
+      out.sort((a, b) => {
+        const av = a[key] ?? -Infinity;
+        const bv = b[key] ?? -Infinity;
+        const diff =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
+        return dir === "asc" ? diff : -diff;
+      });
+    }
+    return out;
+  }, [nbaAdvancedData, nbaAdvancedSort]);
+
+  // --- Sorted MLB Advanced ---
+  const sortedMlbAdvanced = useMemo(() => {
+    if (!mlbAdvancedData) return [];
+    const out = [...mlbAdvancedData];
+    if (mlbAdvancedSort) {
+      const { key, dir } = mlbAdvancedSort;
+      out.sort((a, b) => {
+        const av = a[key] ?? -Infinity;
+        const bv = b[key] ?? -Infinity;
+        const diff =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
+        return dir === "asc" ? diff : -diff;
+      });
+    }
+    return out;
+  }, [mlbAdvancedData, mlbAdvancedSort]);
 
   // --- Reusable header cell component (unmodified) ---
   const HeaderCell = ({
@@ -650,7 +707,9 @@ const StatsScreen: React.FC = () => {
                   key={key}
                   label={label}
                   active={false}
-                  onClick={() => {}}
+                  onClick={() =>
+                    toggleNbaAdvancedSort(key as NbaAdvancedSortKey)
+                  }
                   align={idx === 0 ? "left" : "right"}
                   className={
                     idx === 0
@@ -662,7 +721,7 @@ const StatsScreen: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-300 dark:divide-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
-            {nbaAdvancedData.map((team, rowIdx) => (
+            {sortedNbaAdvanced.map((team, rowIdx) => (
               <tr
                 key={`nba-adv-${team.team_id ?? team.team_name}-${rowIdx}`}
                 className="hover:bg-gray-50 dark:hover:bg-gray-800/60"
@@ -755,9 +814,9 @@ const StatsScreen: React.FC = () => {
                   key={key}
                   label={label}
                   active={false}
-                  onClick={() => {
-                    /* add sort later */
-                  }}
+                  onClick={() =>
+                    toggleMlbAdvancedSort(key as MlbAdvancedSortKey)
+                  }
                   align={i === 0 ? "left" : "right"}
                   className={
                     i === 0
@@ -771,7 +830,7 @@ const StatsScreen: React.FC = () => {
 
           {/* ─────── BODY ─────── */}
           <tbody className="divide-y divide-gray-300 dark:divide-slate-600/60 bg-white dark:bg-[var(--color-panel)]">
-            {mlbAdvancedData.map(
+            {sortedMlbAdvanced.map(
               (
                 team // Use unsorted data for now
               ) => (
