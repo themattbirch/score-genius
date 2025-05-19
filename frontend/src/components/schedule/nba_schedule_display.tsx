@@ -184,7 +184,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
       {games.length > 0 && (
         <div className="mt-8 border-t border-border pt-6">
           {/* static header */}
-          <h2 className="mb-3 pl-4 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
+          <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
             Daily Injury Report
           </h2>
 

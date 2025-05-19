@@ -6,6 +6,7 @@ then upserts the preview data into a Supabase table. Pitcher info is updated sep
 """
 
 import time
+import random
 import os
 import sys
 import re
@@ -21,6 +22,8 @@ import subprocess, sys, shutil
 import undetected_chromedriver as uc
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.common.exceptions import InvalidSessionIdException, WebDriverException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
@@ -103,6 +106,41 @@ def _detect_chrome_major() -> int:
             continue
     return 0
 
+# ────────────────────────────────────────────────────────────
+# Helper to create a UC driver with either headless=new | legacy
+# ────────────────────────────────────────────────────────────
+# --- helper -------------------------------------------------
+def _uc_driver(headless_mode: str = "new") -> uc.Chrome:
+    """Launch undetected-chromedriver with minimal, Chrome-136-safe options."""
+    opts = Options()
+    if headless_mode == "new":
+        opts.add_argument("--headless=new")
+    else:
+        opts.add_argument("--headless")
+
+    # safe CI / container flags
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--remote-allow-origins=*")
+    opts.add_argument("--window-size=1920,1080")
+
+    # ⚠️  Do NOT set 'prefs' – Chrome 136 rejects it in UC
+    #     (we gave up on image-blocking for stability)
+
+    caps = DesiredCapabilities.CHROME.copy()
+    caps["pageLoadStrategy"] = "none"          # we’ll poll the DOM ourselves
+
+    major = _detect_chrome_major()
+    print(f"Launching UC (headless={headless_mode}) Chrome {major}")
+    driver = uc.Chrome(
+        options=opts,
+        desired_capabilities=caps,
+        version_main=major or None
+    )
+    driver.set_script_timeout(LOAD_WAIT * 3)
+    driver.implicitly_wait(5)
+    return driver
 
 def normalize_team_name(name: str) -> str:
     """
@@ -399,121 +437,121 @@ LOAD_WAIT       = 15
 UTC             = ZoneInfo("UTC")
 CHROME_HEADLESS = True
 
-def scrape_fangraphs_probables(base_date: date) -> dict:
-    opts = Options()
-    if CHROME_HEADLESS:
-        opts.add_argument("--headless=new")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--window-size=1920,1080")
+# --- completely rewired navigation --------------------------
+def _fetch_html_via_selenium() -> str | None:
+    """Try headless=new then legacy; return HTML or None without noisy stacktraces."""
+    for mode in ("new", "legacy"):
+        try:
+            driver = _uc_driver(mode)
+            driver.get(FANGRAPHS_URL)
 
-    major = _detect_chrome_major()
-    if major:
-        print(f"Launching uc.Chrome for v{major}")
-    driver = uc.Chrome(options=opts, version_main=major or None)  # fallback to default finder
-    driver.set_page_load_timeout(LOAD_WAIT * 2)
-    driver.set_script_timeout(LOAD_WAIT * 2)
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                if driver.execute_script(
+                        "return document.querySelector('th[data-stat=\"Team\"]') !== null"):
+                    html = driver.page_source
+                    driver.quit()
+                    return html
+                time.sleep(2)
 
+            print(f"[{mode}] timeout waiting for Team header; closing driver …")
+            driver.quit()
+
+        except (InvalidSessionIdException, WebDriverException, TimeoutException) as e:
+            # concise one-liner; no huge stacktrace flood
+            print(f"[{mode}] Selenium launch/navigation failed: {e.__class__.__name__}: {e}")
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+    return None
+
+def _fetch_html_via_httpx() -> str | None:
+    """
+    Last-ditch fallback: raw HTTP GET with Cloudflare bypass (random UA).
+    Works because the probables grid is fully SSR.
+    """
+    ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) "
+          "AppleWebKit/537.36 (KHTML, like Gecko) "
+          f"Chrome/136.0.0.{random.randint(3000, 5000)} Safari/537.36")
+    headers = {
+        "User-Agent": ua,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+    }
     try:
-        driver.get(FANGRAPHS_URL)
-        for _ in range(4):
-            time.sleep(SCROLL_DELAY)
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
-        WebDriverWait(driver, LOAD_WAIT * 2).until(
-            EC.presence_of_element_located((By.TAG_NAME, "table"))
-        )
-    except Exception:
-        pass
-    html = driver.page_source
-    driver.quit()
+        resp = httpx.get(FANGRAPHS_URL, headers=headers, timeout=60)
+        resp.raise_for_status()
+        return resp.text
+    except Exception as e:
+        print(f"httpx fallback failed: {e}")
+        return None
 
+# --- Main scraper function ----------------------------------
+def scrape_fangraphs_probables(base_date: date) -> dict:
+    html = None
+    for attempt in range(2):
+        try:
+            html = _fetch_html_via_selenium()
+            if html:
+                break
+            print(f"Scrape attempt {attempt+1} returned no HTML, retrying…")
+        except Exception as e:
+            print(f"Scrape attempt {attempt+1} error: {e}")
+        time.sleep(5)   # back off before retry
+
+    # ─── If both Selenium attempts fail, fall back to HTTP ───
+    if not html:
+        print("Both Selenium attempts failed; trying plain HTTP fetch…")
+        html = _fetch_html_via_httpx()
+
+    # ─── If still no HTML, abort ───
+    if not html:
+        raise RuntimeError("Unable to retrieve Fangraphs HTML by any method")
+
+    # ─── Continue with parsing as before ───
     soup = BeautifulSoup(html, "html.parser")
-
-    # --- MODIFIED TABLE FINDING LOGIC ---
-    target_table = None
-
-    # 1) Find the specific header cell using its data-stat attribute
-    #    We use a CSS selector: 'th[data-stat="Team"]' looks for a <th> element
-    #    that has an attribute 'data-stat' with the value 'Team'.
     team_header_cell = soup.select_one('th[data-stat="Team"]')
 
-    if team_header_cell:
-        # 2) If we found the header, navigate up the HTML tree to find its parent table
-        target_table = team_header_cell.find_parent('table')
-        if target_table:
-             print("Successfully located target table via header 'th[data-stat=\"Team\"]'.")
-        else:
-            # This would be odd, but possible if HTML is malformed
-            print("Found the 'Team' header cell, but failed to find its parent table.")
-            return {}
-    else:
-        # If the header cell itself wasn't found
-        print("Could not find the crucial header cell: 'th[data-stat=\"Team\"]'. FanGraphs page structure has likely changed.")
-        return {}
+    if not team_header_cell:
+        raise RuntimeError("Team header not found – HTML structure changed?")
 
-    # --- END OF MODIFIED LOGIC ---
+    target_table = team_header_cell.find_parent("table")
+    if not target_table:
+        raise RuntimeError("Found header but not its table")
 
-    # The rest of your logic should proceed using the found 'target_table'
-    # Make sure the subsequent selectors operate on 'target_table', not 'soup' if they were global before.
-
-    # 2) Figure out how many days across (using the found target_table)
-    first_row = next(
-        (r for r in target_table.select("tbody tr") if len(r.find_all("td")) > 1),
-        None
-    )
+    first_row = next((r for r in target_table.select("tbody tr")
+                      if len(r.find_all("td")) > 1), None)
     if not first_row:
-        print("No data rows found in the identified table.")
+        print("No data rows found")
         return {}
-    # Subtract 1 because the first cell is the team name
     num_days = len(first_row.find_all("td")) - 1
     if num_days <= 0:
-        print(f"Warning: Found table but detected {num_days} data columns. Check structure.")
         return {}
 
-    # 3) Build the date headers
     headers = [(base_date + timedelta(days=i)).isoformat() for i in range(num_days)]
+    lookup: dict[tuple[str, str], dict[str, str | None]] = {}
 
-    # 4) Extract all pitchers (using the found target_table)
-    lookup: Dict[Tuple[str,str],Dict[str,Optional[str]]] = {}
-    # Use target_table.select to search only within the correct table
     for row in target_table.select("tbody tr"):
         cells = row.find_all("td")
-        if len(cells) <= 1: # Should be team + at least one day
+        if len(cells) <= 1:
             continue
-
-        # Ensure the first cell contains the team name
-        team_cell = cells[0]
-        # You might want to add robustness here, e.g., check if team_cell looks like a team
-        team = normalize_team_name(team_cell.get_text(strip=True))
-        if not team: # Skip rows where team name isn't found/parsed
+        team = normalize_team_name(cells[0].get_text(strip=True))
+        if not team:
             continue
-
-        # Process pitcher cells for the detected number of days
-        for i, cell in enumerate(cells[1:]):
-            if i >= num_days: # Don't process more cells than expected days
-                break
-
-            # Your existing pitcher name extraction logic
-            links = cell.find_all("a")
-            name = links[-1].get_text(strip=True) if links else cell.get_text(" ", strip=True)
-
-            # Clean up '@ TEAM' prefixes which sometimes appear
-            name = re.sub(r'^@\s*[A-Z]{2,3}\s+', "", name).strip()
-
-            # Extract handedness
+        for i, cell in enumerate(cells[1: num_days + 1]):
+            name = cell.get_text(" ", strip=True)
+            name = re.sub(r"^@\s*[A-Z]{2,3}\s+", "", name).strip()
             m = re.search(r"\(([RLS])\)", name)
             hand = m.group(1) if m else None
             if hand:
                 name = re.sub(r"\s*\([RLS]\)", "", name).strip()
-
-            # Skip if no valid name found
-            if not name or name.lower() in ("tbd", "off", "ppd", ""):
+            if not name or name.lower() in ("tbd", "off", "ppd"):
                 continue
-
-            # Store the found pitcher info
             lookup[(headers[i], team)] = {"pitcher_name": name, "handedness": hand}
 
-    print(f"Mapped {len(lookup)} probables via Selenium using specific table.")
+    print(f"Mapped {len(lookup)} probables.")
     return lookup
 
 def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:

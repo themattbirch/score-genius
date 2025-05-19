@@ -67,83 +67,53 @@ def _extract_form_metrics_single(form_string: Optional[str]) -> Dict[str, float]
         "momentum_direction": momentum_direction,
     }
 
-def transform(
-    df: pd.DataFrame,
-    *,
-    debug: bool = False,
-    team_stats_df: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
-    original_level = logger.level
-    if debug:
-        logger.setLevel(logging.DEBUG)
-        logger.debug("DEBUG mode enabled for form.transform")
+def transform(df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    df = df.copy()
+    n = len(df)
 
-    if df is None or df.empty:
-        logger.warning("form.transform: empty input, returning empty DataFrame")
-        if debug:
-            logger.setLevel(original_level)
-        return pd.DataFrame()
+    # pull raw form strings (or NaN if column missing)
+    home_raw = df.get("home_current_form", pd.Series([np.nan] * n, index=df.index))
+    away_raw = df.get("away_current_form", pd.Series([np.nan] * n, index=df.index))
 
-    result_df = df.copy()
-    form_col = "current_form"
-    metric_keys = list(_extract_form_metrics_single("").keys())  # ['form_win_pct','current_streak','momentum_direction']
+    # extract per-row metrics
+    home_metrics = [_extract_form_metrics_single(x) for x in home_raw]
+    away_metrics = [_extract_form_metrics_single(x) for x in away_raw]
 
-    # 1) If there's no current_form on the games DF, try to pull it from team_stats_df
-    if form_col not in result_df.columns:
-        if (
-            team_stats_df is not None
-            and "team_name" in team_stats_df.columns
-            and form_col in team_stats_df.columns
-        ):
-            logger.info("Pulling 'current_form' from team_stats_df")
-            uniq = (
-                team_stats_df
-                .loc[:, ["team_name", "current_form"]]
-                .drop_duplicates(subset="team_name", keep="last")
-            )
-            mapping = (
-                uniq
-                .set_index("team_name")["current_form"]
-                .fillna("")
-            )
-
-            result_df[form_col] = (
-                result_df["home_team"]
-                .map(mapping)
-                .fillna("")   # fallback if a team wasn’t in team_stats_df
-            )
-        else:
-            logger.warning(f"Missing '{form_col}' and no team_stats_df available; filling with defaults")
-            # fill metrics with defaults & skip extraction
-            for key in metric_keys:
-                result_df[key] = DEFAULTS.get(key, 0.0)
-            if debug:
-                logger.setLevel(original_level)
-            return result_df  # we’re done
-
-    # 2) At this point, we have a 'current_form' column (maybe injected, maybe original)
-    #    Clean it and then apply the extractor:
-    result_df[form_col] = (
-        result_df[form_col]
-        .fillna("")
-        .astype(str)
-        .replace("N/A", "")
+    # build DataFrames and rename
+    df_home = (
+        pd.DataFrame(home_metrics, index=df.index)
+        .rename(columns={
+            "form_win_pct":        "home_form_win_pct",
+            "current_streak":      "home_current_streak",
+            "momentum_direction":  "home_momentum_direction"
+        })
     )
-    metrics_series = result_df[form_col].apply(_extract_form_metrics_single)
-    metrics_df = pd.DataFrame(metrics_series.tolist(), index=result_df.index)
-    result_df = result_df.join(metrics_df)
+    df_away = (
+        pd.DataFrame(away_metrics, index=df.index)
+        .rename(columns={
+            "form_win_pct":        "away_form_win_pct",
+            "current_streak":      "away_current_streak",
+            "momentum_direction":  "away_momentum_direction"
+        })
+    )
 
-    # 3) Enforce types & fill any remaining NaNs (shouldn’t be any):
-    for key in metric_keys:
-        default_val = DEFAULTS.get(key, 0.0 if key != "current_streak" else 0)
-        result_df[key] = pd.to_numeric(
-            result_df.get(key, default_val), errors="coerce"
-        ).fillna(default_val)
-        if key == "current_streak":
-            result_df[key] = result_df[key].round().astype(int)
+    # stitch back on
+    df = pd.concat([df, df_home, df_away], axis=1)
 
-    if debug:
-        logger.debug("form.transform: done, output shape=%s", result_df.shape)
-        logger.setLevel(original_level)
+    # compute the three diff columns
+    df["form_win_pct_diff"] = df["home_form_win_pct"] - df["away_form_win_pct"]
+    df["streak_advantage"]   = df["home_current_streak"] - df["away_current_streak"]
+    df["momentum_diff"]      = df["home_momentum_direction"] - df["away_momentum_direction"]
 
-    return result_df
+    # fill any stragglers with defaults / zeros
+    df["home_form_win_pct"].fillna(DEFAULTS["form_win_pct"], inplace=True)
+    df["away_form_win_pct"].fillna(DEFAULTS["form_win_pct"], inplace=True)
+    df["home_current_streak"].fillna(DEFAULTS["current_streak"], inplace=True)
+    df["away_current_streak"].fillna(DEFAULTS["current_streak"], inplace=True)
+    df["home_momentum_direction"].fillna(DEFAULTS["momentum_direction"], inplace=True)
+    df["away_momentum_direction"].fillna(DEFAULTS["momentum_direction"], inplace=True)
+    df["form_win_pct_diff"].fillna(0.0, inplace=True)
+    df["streak_advantage"].fillna(0.0, inplace=True)
+    df["momentum_diff"].fillna(0.0, inplace=True)
+
+    return df
