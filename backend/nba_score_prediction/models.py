@@ -7,7 +7,7 @@ This module defines:
     - Utility functions for recency weight computation.
     - An abstract base predictor class (BaseScorePredictor) with common training,
       prediction, saving, and loading logic.
-    - Specific model classes: XGBoostScorePredictor, RandomForestScorePredictor, and RidgeScorePredictor.
+    - Specific model classes: XGBoostScorePredictor, SVRScorePredictor and RidgeScorePredictor.
     - A QuarterSpecificModelSystem for quarter-level predictions with ensemble weighting.
 """
 
@@ -17,6 +17,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+from xgboost import XGBRegressor
 
 import numpy as np
 import pandas as pd
@@ -310,8 +311,41 @@ class BaseScorePredictor:
             logger.error(f"Pipeline build failed: {build_e}", exc_info=True)
             return
 
+        # ← initialize per-model fit kwargs first
         fit_kwargs_home = fit_params.copy() if fit_params else {}
         fit_kwargs_away = fit_params.copy() if fit_params else {}
+
+        # if we're doing early stopping on XGB, we must preprocess X_val exactly the same as X_train
+        if eval_set_data is not None and 'xgb' in self.pipeline_home.named_steps:
+            X_val_raw, y_val_home, y_val_away = eval_set_data
+
+            # grab your preprocessing transformer
+            preprocessing = self.pipeline_home.named_steps.get('preprocessing')
+            if preprocessing is None:
+                raise RuntimeError("Cannot find 'preprocessing' step in pipeline for eval_set transformation")
+
+            # ≪ fit it on the training data first so it's ready ≫
+            preprocessing.fit(X_train_for_fit)
+
+            # transform the raw validation features
+            X_val_transformed = preprocessing.transform(X_val_raw)
+
+            # ensure it's a DataFrame with the original column names
+            if not hasattr(X_val_transformed, 'columns'):
+                X_val_transformed = pd.DataFrame(
+                    X_val_transformed,
+                    columns=self.feature_names_in_,
+                    index=X_val_raw.index
+                )
+
+            # now hand that into XGB for early stopping
+            fit_kwargs_home['xgb__eval_set'] = [(X_val_transformed, y_val_home)]
+            fit_kwargs_home['xgb__early_stopping_rounds'] = 30
+            fit_kwargs_home['xgb__eval_metric'] = 'rmse'
+
+            fit_kwargs_away['xgb__eval_set'] = [(X_val_transformed, y_val_away)]
+            fit_kwargs_away['xgb__early_stopping_rounds'] = 30
+            fit_kwargs_away['xgb__eval_metric'] = 'rmse'
 
         if sample_weights is not None:
             if len(sample_weights) == len(X_train_for_fit):
@@ -515,6 +549,58 @@ class SVRScorePredictor(BaseScorePredictor):
         except Exception as e:
              logger.error(f"Validation error for SVR model: {e}", exc_info=True)
              raise
+        
+class XGBoostScorePredictor(BaseScorePredictor):
+    """XGBoost-based predictor with imputation+scaling pipeline."""
+
+    def __init__(self, model_dir=MODELS_BASE_DIR_DEFAULT, model_name="xgb_score_predictor"):
+        super().__init__(model_name=model_name, model_dir=model_dir)
+        # default hyperparams you can override via tuning
+        self._default_xgb_params = {
+            'n_estimators': 100,
+            'max_depth': 4,
+            'learning_rate': 0.1,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'random_state': SEED,
+            'verbosity': 0,
+        }
+
+    def _build_pipeline(self, xgb_params):
+        params = self._default_xgb_params.copy()
+        params.update(xgb_params)
+        preprocessing = _preprocessing_pipeline()
+        pipeline = Pipeline([
+            ('preprocessing', preprocessing),
+            ('xgb', XGBRegressor(**params))
+        ])
+        return pipeline
+
+    def train(self, X_train, y_train_home, y_train_away,
+              hyperparams_home=None, hyperparams_away=None,
+              sample_weights=None, fit_params=None, eval_set_data=None):
+        # you can pass eval_set_data to get early stopping if desired
+        default = self._default_xgb_params
+        self._common_train_logic(
+            X_train, y_train_home, y_train_away,
+            hyperparams_home, hyperparams_away,
+            sample_weights, default,
+            fit_params=fit_params, eval_set_data=eval_set_data
+        )
+
+    def predict(self, X):
+        preds = self._common_predict_logic(X)
+        if preds is None: return None
+        ph, pa = preds
+        return pd.DataFrame({
+            'predicted_home_score': np.maximum(0, np.round(ph)).astype(int),
+            'predicted_away_score': np.maximum(0, np.round(pa)).astype(int)
+        }, index=X.index)
+
+    def load_model(self, filepath=None, model_name=None):
+        inst = super().load_model(filepath, model_name)
+        # optionally validate instance of XGBRegressor
+        return inst
 
 
 # --- Quarter-Specific Model System ---

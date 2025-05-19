@@ -77,6 +77,7 @@ from backend.nba_features.engine import run_feature_pipeline
 from backend.nba_score_prediction.models import (
     RidgeScorePredictor,
     SVRScorePredictor,
+    XGBoostScorePredictor,
     compute_recency_weights,
 )
 
@@ -263,16 +264,33 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
         # --- Load Team Stats Data from Supabase ---
         logger.info("Loading team stats from Supabase...")
         try:
-            select_str_team = ", ".join(TEAM_STATS_REQUIRED_COLS)
-            response_team = supabase_client.table("nba_historical_team_stats").select(select_str_team).execute()
+            # build select string without spaces to avoid any whitespace mismatches
+            select_str_team = ",".join(TEAM_STATS_REQUIRED_COLS)
+            logger.debug("Team stats SELECT string: %s", select_str_team)
+
+            response_team = (
+                supabase_client
+                .table("nba_historical_team_stats")
+                .select(select_str_team)
+                .execute()
+            )
+
             if response_team.data:
                 team_stats_df = pd.DataFrame(response_team.data)
                 logger.info(f"Loaded {len(team_stats_df)} team stat records.")
+                
+                # debug checks
+                logger.debug("team_stats_df columns → %s", team_stats_df.columns.tolist())
+                logger.debug("team_stats_df head:\n%s", team_stats_df.head())
+                assert "current_form" in team_stats_df.columns, "current_form missing from Supabase result!"
             else:
-                logger.warning("No team stats found in Supabase.")
+                logger.warning("No team stats found in Supabase; team_stats_df will be empty.")
+                team_stats_df = pd.DataFrame()
+
         except Exception as e:
             logger.error(f"Error loading team stats from Supabase: {e}", exc_info=True)
-            team_stats_df = pd.DataFrame() 
+            team_stats_df = pd.DataFrame()
+
 
     elif source_type == "csv":
         logger.info("Loading data from CSV files...")
@@ -1460,7 +1478,7 @@ def run_training_pipeline(args: argparse.Namespace):
         features_df = run_feature_pipeline(
             df=historical_df.copy(), # Pass the main historical data
             historical_games_df=historical_df.copy(), # Pass historical again for H2H lookup
-            team_stats_df=team_stats_df.copy() if team_stats_df is not None and not team_stats_df.empty else None, # Pass team stats if available
+            team_stats_df=team_stats_df, 
             rolling_windows=rolling_windows_list,
             h2h_window=args.h2h_window,
             debug=args.debug # Pass debug flag
@@ -1721,14 +1739,29 @@ def run_training_pipeline(args: argparse.Namespace):
                             + list(loguniform(1e-4,1e-2)
                             .rvs(size=20, random_state=SEED))
     }
-    # Mappings for easy access
+    xgb_param_dist = {
+        'xgb__n_estimators':       randint(100, 500),
+        'xgb__learning_rate':      uniform(0.01, 0.2),
+        'xgb__max_depth':          randint(3, 8),
+        'xgb__subsample':          uniform(0.6, 0.4),
+        'xgb__colsample_bytree':   uniform(0.6, 0.4),
+        'xgb__gamma':              uniform(0.0, 5.0),
+        'xgb__min_child_weight':   randint(1, 10),
+        'xgb__reg_alpha':          uniform(0.0, 1.0),
+        'xgb__reg_lambda':         uniform(0.0, 1.0),
+        'xgb__tree_method':        ['hist'],
+    }
+        # Mappings for easy access
     predictor_map = {
         "ridge": RidgeScorePredictor,
         "svr": SVRScorePredictor,
+        "xgb": XGBoostScorePredictor
     }
     param_dist_map = {
         "svr": SVR_PARAM_DIST_REFINED,
+        "xgb": xgb_param_dist
     }
+
 
     # --- Base Model Training Loop ---
     models_to_run = [m.strip().lower() for m in args.models.split(',') if m.strip().lower() in predictor_map]

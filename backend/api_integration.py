@@ -22,7 +22,7 @@ from typing import Optional, List, Dict, Any  # Added missing type imports
 # --- Refined Project Module Imports ---
 try:
     # Import classes/functions needed AT THE TOP LEVEL for instantiation
-    from backend.features.legacy.feature_engineering import FeatureEngine    
+    from backend.nba_features.engine import FeatureEngine    
     from backend.nba_score_prediction.models import QuarterSpecificModelSystem
     from backend.nba_score_prediction.simulation import PredictionUncertaintyEstimator
     from backend.nba_score_prediction.ensemble import EnsembleWeightManager  # Import the weight manager
@@ -31,7 +31,7 @@ try:
     # Use TYPE_CHECKING to potentially avoid circular imports if needed, though often better structure avoids it
     from typing import TYPE_CHECKING
     if TYPE_CHECKING:
-        from backend.nba_score_prediction.models import XGBoostScorePredictor, RandomForestScorePredictor, RidgeScorePredictor
+        from backend.nba_score_prediction.models import XGBoostScorePredictor, RidgeScorePredictor
         from backend.nba_score_prediction.prediction import generate_predictions  # For pre-game static ensemble
         from backend.nba_score_prediction.ensemble import generate_enhanced_predictions  # For live/dynamic ensemble
 

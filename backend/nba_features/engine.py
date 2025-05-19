@@ -101,7 +101,7 @@ def run_feature_pipeline(
         t0 = time.time()
 
         # build module-specific kwargs
-        kwargs = {'debug': debug}
+        kwargs: dict[str,Any] = {'debug': debug}
         if module_name == "rolling":
             # rolling only needs the combined DataFrame + window sizes
             kwargs['window_sizes'] = rolling_windows
@@ -109,6 +109,9 @@ def run_feature_pipeline(
             kwargs['historical_df'] = historical_games_df
             kwargs['max_games']     = h2h_window
         elif module_name == "season":
+            kwargs['team_stats_df'] = team_stats_df
+        elif module_name == "form":
+            # give form access to team_stats_df so it can look up current_form
             kwargs['team_stats_df'] = team_stats_df
 
         try:

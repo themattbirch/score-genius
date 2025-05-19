@@ -55,7 +55,7 @@ def transform(
     # Define placeholder columns to ensure they exist even if merge fails
     placeholder_cols = [
         'home_season_win_pct', 'away_season_win_pct', 'home_season_avg_pts_for', 'away_season_avg_pts_for',
-        'home_season_avg_pts_against', 'away_season_avg_pts_against', 'home_current_form', 'away_current_form',
+        'home_season_avg_pts_against', 'away_season_avg_pts_against', 'current_form',
         'season_win_pct_diff', 'season_pts_for_diff', 'season_pts_against_diff',
         'home_season_net_rating', 'away_season_net_rating', 'season_net_rating_diff'
     ]
@@ -173,13 +173,11 @@ def transform(
                 'wins_all_percentage': 'home_season_win_pct',
                 'points_for_avg_all': 'home_season_avg_pts_for',
                 'points_against_avg_all': 'home_season_avg_pts_against',
-                'current_form': 'home_current_form'
             }
             away_rename = {
                 'wins_all_percentage': 'away_season_win_pct',
                 'points_for_avg_all': 'away_season_avg_pts_for',
                 'points_against_avg_all': 'away_season_avg_pts_against',
-                'current_form': 'away_current_form'
             }
 
             logger.debug("Attempting to merge season stats using keys...")
