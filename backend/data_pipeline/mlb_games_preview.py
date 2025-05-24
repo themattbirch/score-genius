@@ -27,6 +27,7 @@ from selenium.common.exceptions import InvalidSessionIdException, WebDriverExcep
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
+from collections import defaultdict
 
 # allow `from caching.supabase_client import supabase` no matter where we run from
 HERE = os.path.dirname(__file__)
@@ -489,70 +490,61 @@ def _fetch_html_via_httpx() -> str | None:
         return None
 
 # --- Main scraper function ----------------------------------
-def scrape_fangraphs_probables(base_date: date) -> dict:
+def scrape_fangraphs_probables(base_date: date) -> Dict[Tuple[str, str], List[Dict[str, Optional[str]]]]:
+    """
+    Scrape Fangraphs probables-grid and return a lookup:
+      { (iso_date, normalized_team_name): [ {name, handedness}, … ] }
+    """
+    # — fetch HTML exactly as before —
     html = None
-    for attempt in range(2):
+    for mode in ("new", "legacy"):
         try:
-            html = _fetch_html_via_selenium()
-            if html:
-                break
-            print(f"Scrape attempt {attempt+1} returned no HTML, retrying…")
-        except Exception as e:
-            print(f"Scrape attempt {attempt+1} error: {e}")
-        time.sleep(5)   # back off before retry
-
-    # ─── If both Selenium attempts fail, fall back to HTTP ───
+            driver = _uc_driver(mode)
+            driver.get(FANGRAPHS_URL)
+            deadline = time.time() + LOAD_WAIT * 8
+            while time.time() < deadline:
+                if driver.execute_script("return !!document.querySelector('th[data-stat=\"Team\"]')"):
+                    html = driver.page_source
+                    break
+                time.sleep(SCROLL_DELAY)
+        finally:
+            try: driver.quit()
+            except: pass
+        if html:
+            break
     if not html:
-        print("Both Selenium attempts failed; trying plain HTTP fetch…")
-        html = _fetch_html_via_httpx()
-
-    # ─── If still no HTML, abort ───
-    if not html:
-        raise RuntimeError("Unable to retrieve Fangraphs HTML by any method")
-
-    # ─── Continue with parsing as before ───
+        html = _fetch_html_via_httpx() or ""
     soup = BeautifulSoup(html, "html.parser")
-    team_header_cell = soup.select_one('th[data-stat="Team"]')
 
-    if not team_header_cell:
-        raise RuntimeError("Team header not found – HTML structure changed?")
-
-    target_table = team_header_cell.find_parent("table")
-    if not target_table:
-        raise RuntimeError("Found header but not its table")
-
-    first_row = next((r for r in target_table.select("tbody tr")
-                      if len(r.find_all("td")) > 1), None)
-    if not first_row:
-        print("No data rows found")
-        return {}
-    num_days = len(first_row.find_all("td")) - 1
-    if num_days <= 0:
-        return {}
-
+    # — locate table and compute headers —
+    th = soup.select_one('th[data-stat="Team"]')
+    tbl = th.find_parent("table")
+    first = next((r for r in tbl.select("tbody tr") if len(r.find_all("td")) > 1), None)
+    num_days = len(first.find_all("td")) - 1
     headers = [(base_date + timedelta(days=i)).isoformat() for i in range(num_days)]
-    lookup: dict[tuple[str, str], dict[str, str | None]] = {}
 
-    for row in target_table.select("tbody tr"):
+    lookup: Dict[Tuple[str, str], List[Dict[str, Optional[str]]]] = {}
+    for row in tbl.select("tbody tr"):
         cells = row.find_all("td")
         if len(cells) <= 1:
             continue
         team = normalize_team_name(cells[0].get_text(strip=True))
         if not team:
             continue
-        for i, cell in enumerate(cells[1: num_days + 1]):
-            name = cell.get_text(" ", strip=True)
-            name = re.sub(r"^@\s*[A-Z]{2,3}\s+", "", name).strip()
-            m = re.search(r"\(([RLS])\)", name)
-            hand = m.group(1) if m else None
-            if hand:
-                name = re.sub(r"\s*\([RLS]\)", "", name).strip()
-            if not name or name.lower() in ("tbd", "off", "ppd"):
-                continue
-            lookup[(headers[i], team)] = {"pitcher_name": name, "handedness": hand}
-
-    print(f"Mapped {len(lookup)} probables.")
+        for i, cell in enumerate(cells[1 : num_days + 1]):
+            raw = cell.get_text("\n", strip=True)
+            lines = [ln.strip() for ln in raw.split("\n") if ln.strip()]
+            # only keep lines with a handedness marker
+            pitcher_lines = [ln for ln in lines if re.search(r"\([RLS]\)", ln)]
+            parsed: List[Dict[str, Optional[str]]] = []
+            for ln in pitcher_lines:
+                m = re.search(r"\(([RLS])\)", ln)
+                hand = m.group(1) if m else None
+                name_only = re.sub(r"\s*\([RLS]\)", "", ln).strip()
+                parsed.append({"name": name_only, "handedness": hand})
+            lookup[(headers[i], team)] = parsed
     return lookup
+
 
 def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
     """Always use Selenium scraper now."""
@@ -560,8 +552,8 @@ def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Option
 
 def update_pitchers_for_date(target_date: date) -> int:
     """
-    For the given date (ET), scrape FanGraphs and upsert starting pitchers
-    into Supabase. Returns count of updated records.
+    For each game on target_date, assign Fangraphs pitchers in order:
+    first listed → first (earlier) game, second → second game.
     """
     print(f"\n--- Updating pitchers for {target_date} ---")
     supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -569,12 +561,10 @@ def update_pitchers_for_date(target_date: date) -> int:
 
     resp = (
         supa.table(SUPABASE_TABLE_NAME)
-        .select(
-            "game_id, home_team_name, away_team_name, "
-            "home_probable_pitcher_name, away_probable_pitcher_name, game_date_et"
-        )
-        .eq("game_date_et", iso)
-        .execute()
+            .select("game_id, home_team_name, away_team_name, scheduled_time_utc, "
+                    "home_probable_pitcher_name, away_probable_pitcher_name")
+            .eq("game_date_et", iso)
+            .execute()
     )
     games = resp.data or []
     if not games:
@@ -584,101 +574,46 @@ def update_pitchers_for_date(target_date: date) -> int:
     fg_lookup = get_probables_lookup(target_date)
     updated = 0
 
+    # Group games by team and sort by scheduled_time_utc
+    games_by_home = defaultdict(list)
+    games_by_away = defaultdict(list)
     for g in games:
-        gid = g["game_id"]
-        d   = g["game_date_et"]
-        h   = normalize_team_name(g["home_team_name"])
-        a   = normalize_team_name(g["away_team_name"])
-        payload: Dict[str, Any] = {}
+        games_by_home[g["home_team_name"]].append(g)
+        games_by_away[g["away_team_name"]].append(g)
+    for grp in games_by_home.values():
+        grp.sort(key=lambda x: x.get("scheduled_time_utc") or "")
+    for grp in games_by_away.values():
+        grp.sort(key=lambda x: x.get("scheduled_time_utc") or "")
 
-        new_h = fg_lookup.get((d, h), {}).get("pitcher_name")
-        if new_h and new_h != (g.get("home_probable_pitcher_name") or "").strip():
-            payload["home_probable_pitcher_name"]      = new_h
-            payload["home_probable_pitcher_handedness"] = fg_lookup[(d, h)]["handedness"]
-
-        new_a = fg_lookup.get((d, a), {}).get("pitcher_name")
-        if new_a and new_a != (g.get("away_probable_pitcher_name") or "").strip():
-            payload["away_probable_pitcher_name"]      = new_a
-            payload["away_probable_pitcher_handedness"] = fg_lookup[(d, a)]["handedness"]
-
-        # Check if payload has data (meaning an update is needed)
-        if payload:
-            # Set the updated_at timestamp just before attempting the update
-            payload["updated_at"] = dt.now(UTC).isoformat()
-            print(f" → Attempting to patch game {gid}: {payload}") # Updated print message slightly
-
-            # --- Retry Logic Start ---
-            max_retries = 3
-            retry_delay_seconds = 10  # Wait 10 seconds between retries
-            success = False # Flag to track if update succeeded within retries
-
-            # Loop for retry attempts
-            for attempt in range(max_retries):
-                try:
-                    # Attempt the Supabase update API call
-                    r = (
-                        supa.table(SUPABASE_TABLE_NAME)
-                        .update(payload)
-                        .eq("game_id", gid)
-                        .execute()
-                    )
-
-                    # Check if Supabase returned data in the response.
-                    # The presence of 'data' often indicates a successful update operation.
-                    # Note: Behavior might vary based on RLS or if 'return=minimal' is set.
-                    if getattr(r, "data", None):
-                        print(f"   ✅ Successfully updated game {gid} on attempt {attempt + 1}.")
-                        success = True
-                        break # Exit the retry loop successfully
-
-                    else:
-                        # Handle case where execute() succeeds without exception but returns no data.
-                        # This *might* be normal (e.g., using 'return=minimal') or could indicate
-                        # an issue like RLS preventing the update but not raising an HTTP error.
-                        # We'll log it as a warning but treat it as success for now, assuming no error means OK.
-                        # You might need to adjust this based on your specific Supabase setup/expectations.
-                        print(f"   ⚠️ Update command executed for game {gid} on attempt {attempt + 1}, but no data returned. Assuming success (verify if RLS/permissions are involved).")
-                        success = True
-                        break # Exit the retry loop
-
-                # --- Exception Handling during the Supabase API call ---
-
-                # Catch specific httpx network/HTTP errors (more specific than general Exception)
-                # TransportError includes SSL errors like EOF, ConnectError, etc.
-                # TimeoutException handles timeouts.
-                # HTTPStatusError handles responses >= 400.
-                except (httpx.TransportError, httpx.TimeoutException, httpx.HTTPStatusError) as e_http:
-                    error_type = type(e_http).__name__
-                    # For HTTPStatusError, include the status code
-                    status_code_info = f" (Status Code: {e_http.response.status_code})" if isinstance(e_http, httpx.HTTPStatusError) else ""
-                    print(f"   ⚠️ Network/HTTP error ({error_type}{status_code_info}) on attempt {attempt + 1}/{max_retries} for game {gid}: {e_http}")
-                    if attempt < max_retries - 1:
-                        print(f"      Retrying in {retry_delay_seconds} seconds...")
-                        time.sleep(retry_delay_seconds)
-                    # Failure message is handled after the loop if 'success' remains False
-
-                # Catch any other unexpected exceptions during the API call
-                except Exception as e:
-                    error_type = type(e).__name__
-                    print(f"   ⚠️ Unexpected error ({error_type}) on attempt {attempt + 1}/{max_retries} for game {gid}: {e}")
-                    # Decide if this error is retryable. We'll retry for now.
-                    if attempt < max_retries - 1:
-                        print(f"      Retrying in {retry_delay_seconds} seconds...")
-                        time.sleep(retry_delay_seconds)
-                    # Failure message is handled after the loop if 'success' remains False
-
-            # --- After the retry loop finishes ---
-            if success:
-                # Increment the overall count only if one of the attempts was successful
+    # Patch home pitchers
+    for team, grp in games_by_home.items():
+        norm = normalize_team_name(team)
+        pitchers = fg_lookup.get((iso, norm), [])
+        for idx, g in enumerate(grp):
+            if idx < len(pitchers):
+                p = pitchers[idx]
+                payload = {
+                    "home_probable_pitcher_name": p["name"],
+                    "home_probable_pitcher_handedness": p["handedness"],
+                    "updated_at": dt.now(UTC).isoformat()
+                }
+                supa.table(SUPABASE_TABLE_NAME).update(payload).eq("game_id", g["game_id"]).execute()
                 updated += 1
-            else:
-                # Log the final failure only if all retries were exhausted without success
-                print(f"   ✖️ Failed to update game {gid} after {max_retries} attempts.")
-            # --- Retry Logic End ---
 
-# The print and return statements outside the 'if payload:' block remain unchanged
-# print(f"--- Done: {updated} updated. ---")
-# return updated
+    # Patch away pitchers
+    for team, grp in games_by_away.items():
+        norm = normalize_team_name(team)
+        pitchers = fg_lookup.get((iso, norm), [])
+        for idx, g in enumerate(grp):
+            if idx < len(pitchers):
+                p = pitchers[idx]
+                payload = {
+                    "away_probable_pitcher_name": p["name"],
+                    "away_probable_pitcher_handedness": p["handedness"],
+                    "updated_at": dt.now(UTC).isoformat()
+                }
+                supa.table(SUPABASE_TABLE_NAME).update(payload).eq("game_id", g["game_id"]).execute()
+                updated += 1
 
     print(f"--- Done: {updated} updated. ---")
     return updated
