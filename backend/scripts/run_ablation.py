@@ -27,11 +27,14 @@ import numpy as np
 import pandas as pd
 from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import Ridge
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import TimeSeriesSplit
 from supabase import create_client
 
 # your modular thin‐proxies
-from backend.nba_features import advanced, momentum, rolling, rest, h2h, season, form
+from backend.nba_features import advanced, rolling, rest, h2h, season, form
 from backend import config
 
 import logging
@@ -47,21 +50,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------- #
 # canonical execution order & explicit deps
 # ---------------------------------------------------------------------------- #
-EXECUTION_ORDER = ["advanced", "momentum", "rest", "h2h", "season", "form"]
+EXECUTION_ORDER = ["rest", "advanced", "h2h", "season", "form", "rolling"]
 MODULES: Mapping[str, callable] = {
-    "advanced": advanced.transform,
-    "momentum": momentum.transform,
     "rolling":  rolling.transform,
-    "rest":     rest.transform,
+    "advanced": advanced.transform,
     "h2h":      h2h.transform,
+    "rest":     rest.transform,
     "season":   season.transform,
     "form":     form.transform,
 }
 REQUIRES = {
-    "rolling": ("advanced", "momentum"),
-    "h2h":     ("rolling",),
-    "season":  ("advanced",),
-    "form":    ("season",),
 }
 
 def _closure(blocks: Iterable[str]) -> list[str]:
@@ -239,7 +237,12 @@ def main() -> None:
     ).mean()
     print(f"Baseline (mean) RMSE: {baseline_rmse:.3f}")
 
-    ridge = Ridge(alpha=1.0, random_state=42)
+    # scale every block’s numeric features before Ridge
+    ridge = make_pipeline(
+    StandardScaler(),
+    Ridge(alpha=1.0, random_state=42)
+    )
+
     results: dict[str, float] = {"baseline": baseline_rmse}
 
     rolling_windows = [5,10,20]
@@ -249,46 +252,64 @@ def main() -> None:
     # --- memo cache for feature‐blocks outputs ------------------------------ #
     cache: dict[str, pd.DataFrame] = {}
 
-    # --- ablation ----------------------------------------------------------- #
-    for L in range(args.min_blocks, min(args.max_blocks, len(blocks)) + 1):
-            for combo in itertools.combinations(blocks, L):
-              full_combo = _closure(combo)
-              combo_key  = " + ".join(combo)
-              key        = " + ".join(full_combo)
+    # --- ablation: leave-one-out with time-series CV ---------------------- #
+    tscv = TimeSeriesSplit(n_splits=args.folds)
 
-            # memoize
-            if key not in cache:
-                cache[key] = apply_blocks(
-                    raw,
-                    full_combo,
-                    hist_df=raw,
-                    team_stats_df=team_stats_df,
-                    rolling_windows=rolling_windows,
-                    h2h_window=h2h_window
-                )
-            feats = cache[key]
+    full_blocks = ["rest", "advanced", "h2h", "season", "form", "rolling"]
+    results: dict[str, float] = {"baseline": baseline_rmse}
 
-            # drop any direct‐leak cols, keep only numeric
-            X = numeric_features(drop_target_leak(feats))
-            X = whitelist_pregame_features(X)
+    # for each block, drop it and measure the impact
+    for block in full_blocks:
+        print(f"\n>>> Leaving out block: {block}")
+        blocks_minus = [b for b in full_blocks if b != block]
 
-            # **DEBUG INSPECTION**
-            print(f">>> combo = {combo_key}")
-            print("  Columns:", X.columns.tolist())
-            print("  Feature count:", len(X.columns))
+        fold_rmses: list[float] = []
+        for train_idx, val_idx in tscv.split(raw):
+            # split the raw data
+            train_raw = raw.iloc[train_idx].reset_index(drop=True)
+            val_raw   = raw.iloc[val_idx].reset_index(drop=True)
 
-            rmse = -cross_val_score(
-                ridge, X, y,
-                cv=args.folds,
-                scoring="neg_root_mean_squared_error",
-                n_jobs=args.jobs
-            ).mean()
+            # build features on train set
+            train_feats = apply_blocks(
+                train_raw, blocks_minus,
+                hist_df=train_raw,
+                team_stats_df=team_stats_df,
+                rolling_windows=rolling_windows,
+                h2h_window=h2h_window
+            )
+            # build features on val set, but only feed it train history
+            val_feats = apply_blocks(
+                val_raw, blocks_minus,
+                hist_df=train_raw,
+                team_stats_df=team_stats_df,
+                rolling_windows=rolling_windows,
+                h2h_window=h2h_window
+            )
 
-            delta = baseline_rmse - rmse
-            results[combo_key] = rmse
-            print(f"{combo_key:45}  RMSE {rmse:.3f}  Δ {delta:+.3f}")
+            # cast any _imputed flags to int
+            for df_ in (train_feats, val_feats):
+                for c in df_.columns:
+                    if c.endswith("_imputed"):
+                        df_[c] = df_[c].astype(int)
 
-    # --- write out ---------------------------------------------------------- #
+            # drop leakage, keep only numeric
+            X_train = whitelist_pregame_features(numeric_features(drop_target_leak(train_feats)))
+            X_val   = whitelist_pregame_features(numeric_features(drop_target_leak(val_feats)))
+            y_train = (train_raw["home_score"] + train_raw["away_score"])
+            y_val   = (val_raw  ["home_score"] + val_raw  ["away_score"])
+
+            # fit & score
+            ridge.fit(X_train, y_train)
+            preds = ridge.predict(X_val)
+            fold_rmses.append(np.sqrt(((preds - y_val) ** 2).mean()))
+
+        # average over folds
+        rmse = float(np.mean(fold_rmses))
+        delta = baseline_rmse - rmse
+        results[f"without {block}"] = rmse
+        print(f"Without {block:8} → RMSE {rmse:.3f}  Δ {delta:+.3f}")
+
+    # write out as before…
     with args.out.open("w") as fp:
         json.dump(results, fp, indent=2)
     print(f"\n✅ Ablation results written to {args.out}")

@@ -42,6 +42,8 @@ DEFAULT_EXECUTION_ORDER = [
     "rest",
     "h2h",
     "form",
+    "season",
+    "rolling",
 ]
 
 # Map module names to their transform functions
@@ -50,6 +52,8 @@ TRANSFORM_MAP = {
     "rest": rest_transform,
     "h2h": h2h_transform,
     "form": form_transform,
+    "season": season_transform,
+    "rolling": rolling_transform,
 }
 
 # -- Main Pipeline Function --

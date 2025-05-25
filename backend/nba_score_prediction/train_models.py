@@ -1679,7 +1679,7 @@ def run_training_pipeline(args: argparse.Namespace):
         try:
             MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
             with open(selected_features_path, 'w') as f:
-                json.dump(final_feature_list_for_models, f, indent=4)
+                json.dump(sorted(final_feature_list_for_models), f, indent=4)
             logger.info(f"Successfully wrote selected_features.json ({num_selected} features) to {selected_features_path}")
         except Exception as e:
             logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)

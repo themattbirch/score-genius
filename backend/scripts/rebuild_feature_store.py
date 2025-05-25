@@ -204,7 +204,7 @@ def apply_features(df: pd.DataFrame) -> pd.DataFrame:
     try:
         logging.info("Applying rolling features...")
         # Define window sizes you want
-        windows = [5, 10, 20, 30] # Example window sizes
+        windows = [5, 10, 20] # Example window sizes
         features_df = rolling.transform(features_df, window_sizes=windows, debug=False) # Ensure rolling.py is the updated version
         logging.info(f"Rolling features applied. Shape: {features_df.shape}")
     except Exception as e:
