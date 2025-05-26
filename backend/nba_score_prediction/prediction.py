@@ -14,15 +14,11 @@ import re
 from typing import List, Dict, Optional, Any, Tuple
 
 import logging
-
-# -----------------------------------------------------------------------------
-# Logging: kill WARNING/INFO in CI (or when LOG_LEVEL_OVERRIDE=ERROR)
-#if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
-   # logging.disable(logging.ERROR - 1)      # == disable < ERROR
-# -----------------------------------------------------------------------------
-
-# Nothing else to configure – ERROR and CRITICAL will still show
-logger = logging.getLogger(__name__)               # ← overwrite handlers added earlier
+# Send all DEBUG+ messages to console
+logging.basicConfig(format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                    level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # ensure project root is on PYTHONPATH
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -51,7 +47,7 @@ DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
 DEFAULT_UPCOMING_DAYS_WINDOW = 3
 
 ENSEMBLE_WEIGHTS_FILENAME = "ensemble_weights.json"
-FALLBACK_ENSEMBLE_WEIGHTS: Dict[str, float] = {"ridge": 0.5, "svr": 0.5}
+FALLBACK_ENSEMBLE_WEIGHTS: Dict[str, float] = {"svr": 0.75, "ridge": 0.25}
 
 REQUIRED_HISTORICAL_COLS = [
     "game_id", "game_date", "home_team", "away_team", "home_score", "away_score",
@@ -74,8 +70,8 @@ UPCOMING_GAMES_COLS = ["game_id", "scheduled_time", "home_team", "away_team"]
 
 # --- Project module imports (left as-is) ---
 try:
-    from nba_features.engine import run_feature_pipeline
-    from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor
+    from nba_features.engine import run_feature_pipeline, DEFAULT_EXECUTION_ORDER
+    from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor, XGBoostScorePredictor
     from nba_score_prediction.simulation import PredictionUncertaintyEstimator
     import nba_score_prediction.utils as utils
     PROJECT_MODULES_IMPORTED = True
@@ -662,24 +658,58 @@ def generate_predictions(
     # ————— ENSEMBLE WEIGHTS —————
     weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
     wfile   = model_dir / ENSEMBLE_WEIGHTS_FILENAME
+
     if wfile.is_file():
         try:
-            loaded = json.loads(wfile.read_text())
-            keys = set(weights)
-            if abs(sum(loaded.values()) - 1.0) < 1e-5 and keys.issubset(loaded):
-                subset = {k: float(loaded[k]) for k in keys}
-                tot = sum(subset.values())
-                if abs(tot - 1.0) > 1e-5 and tot > 0:
-                    subset = {k: v/tot for k, v in subset.items()}
-                weights = subset
-                logger.info("Using ensemble weights: %s", weights)
-            else:
-                logger.warning("Invalid ensemble_weights.json – falling back to 50/50.")
+            raw = json.loads(wfile.read_text())
+            if not isinstance(raw, dict) or not raw:
+                raise ValueError("must be a non-empty dict")
+
+            # strip "_score_predictor" suffix to get base keys
+            base_weights: Dict[str, float] = {}
+            for fullname, val in raw.items():
+                if fullname.endswith("_score_predictor"):
+                    base = fullname[: -len("_score_predictor")]
+                else:
+                    base = fullname
+                base_weights[base] = float(val)
+
+            total = sum(base_weights.values())
+            expected = set(weights.keys())   # e.g. {"ridge","svr","xgb"}
+            loaded   = set(base_weights.keys())
+
+            # reject only if sum ≉1 or any extra keys
+            if abs(total - 1.0) > 1e-6 or not loaded.issubset(expected):
+                raise ValueError(f"sum={total:.4f}, keys={loaded}")
+
+            # zero‐fill any missing
+            for m in expected - loaded:
+                base_weights[m] = 0.0
+
+            # renormalize (just in case)
+            subtotal = sum(base_weights.values())
+            if abs(subtotal - 1.0) > 1e-6 and subtotal > 0:
+                base_weights = {k: v / subtotal for k, v in base_weights.items()}
+
+            weights = base_weights
+            logger.info("Loaded ensemble weights from %s: %s", wfile.name, weights)
+
         except Exception as e:
-            logger.error("Error reading ensemble weights: %s", e)
+            logger.warning(
+                "%s invalid (%s); falling back to defaults %s",
+                wfile.name, e, FALLBACK_ENSEMBLE_WEIGHTS
+            )
+            weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
+    else:
+        logger.warning(
+            "%s not found in %s; using defaults %s",
+            wfile.name, model_dir, FALLBACK_ENSEMBLE_WEIGHTS
+        )
+
+    logger.debug("Final ensemble weights = %s", weights)
+
 
     # ————— FEATURE ENGINEERING —————
-    from backend.nba_features.engine import DEFAULT_EXECUTION_ORDER
 
     # Merge historical + upcoming so advanced→rolling sees box scores
     if hist_df is not None:
@@ -741,6 +771,7 @@ def generate_predictions(
                 columns=["predicted_home_score","predicted_away_score"],
                 index=X.index
             )
+            
         except Exception as e:
             logger.error("Error in %s.predict(): %s", name, e, exc_info=debug_mode)
 
@@ -768,6 +799,11 @@ def generate_predictions(
         }
         if not comps:
             continue
+        
+        logger.debug(
+        "Blending models %s at idx %s with weights %s",
+        list(comps.keys()), idx, weights
+        )
 
         # ensemble blend
         w_sum = sum(weights.get(m,0) for m in comps)

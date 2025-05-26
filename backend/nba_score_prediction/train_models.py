@@ -92,8 +92,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__) # Get logger for this module (__main__ when run directly)
 
 # Silence overly verbose loggers from libraries
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 plt.style.use('fivethirtyeight')
@@ -566,7 +564,7 @@ def compute_inverse_error_weights(validation_metrics: Dict[str, float]) -> Dict[
     logger.info(f"Calculated normalized inverse error weights: {weights}")
     # Save weights to JSON file
     try:
-        weights_path = MAIN_MODELS_DIR / "ensemble_weights.json"
+        weights_path = MAIN_MODELS_DIR / "ensemble_weights_optimized.json"
         with open(weights_path, 'w') as f:
             json.dump(weights, f, indent=4)
         logger.info(f"Ensemble weights saved to {weights_path}")
@@ -686,19 +684,27 @@ def optimize_ensemble_weights(
                  logger.warning("All optimized weights were zero after clipping. Returning equal weights.")
                  optimized_weights = np.array([1.0 / num_models] * num_models)
 
-            final_weights_dict = dict(zip(model_keys, optimized_weights))
-            logger.info(f"Optimal Weights (Regularized, Lambda={l2_lambda}): {final_weights_dict}")
+            # Build raw optimized weights
+            raw_weights = dict(zip(model_keys, optimized_weights))
+            logger.info(f"Optimal Weights (Regularized, Lambda={l2_lambda}): {raw_weights}")
+
+            # Remap to full predictor names for prediction loader
+            full_weights = {
+                f"{model_key}_score_predictor": weight
+                for model_key, weight in raw_weights.items()
+            }
 
             # Save optimized weights
             try:
                 weights_path = MAIN_MODELS_DIR / "ensemble_weights_optimized.json"
                 with open(weights_path, 'w') as f:
-                    json.dump(final_weights_dict, f, indent=4)
+                    json.dump(full_weights, f, indent=4)
                 logger.info(f"Optimized ensemble weights saved to {weights_path}")
             except Exception as e:
                 logger.error(f"Failed to save optimized ensemble weights: {e}", exc_info=True)
 
-            return final_weights_dict
+            # Return the full-key dict so downstream code uses the same naming
+            return full_weights
         else:
             logger.error(f"Weight optimization failed: {result.message}")
             return None 
@@ -1425,6 +1431,7 @@ def tune_and_evaluate_predictor(
     # Make sure the metrics dict is returned even if validation predictions fail
     return metrics, val_predictions_dict
 
+
 # ==============================================================================
 # Main Execution Block
 # ==============================================================================
@@ -1482,7 +1489,6 @@ def run_training_pipeline(args: argparse.Namespace):
             rolling_windows=rolling_windows_list,
             h2h_window=args.h2h_window,
             debug=args.debug # Pass debug flag
-            # execution_order can be omitted to use the default from engine.py
         )
     # Keep general exception handling for the pipeline call
     except Exception as fe_gen_e:
@@ -1648,8 +1654,9 @@ def run_training_pipeline(args: argparse.Namespace):
     logger.info(f"LassoCV (Away) completed. Optimal alpha: {lasso_cv_away.alpha_:.6f}")
 
     # Combine selected features
-    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=1e-5) 
-    selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=1e-5)
+    thresh = args.importance_threshold
+    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=thresh)
+    selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=thresh)
     selected_mask = selector_home.get_support() | selector_away.get_support() 
     final_feature_list_for_models = X_lasso.columns[selected_mask].tolist()
 
@@ -1679,7 +1686,7 @@ def run_training_pipeline(args: argparse.Namespace):
         try:
             MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
             with open(selected_features_path, 'w') as f:
-                json.dump(sorted(final_feature_list_for_models), f, indent=4)
+                json.dump(final_feature_list_for_models, f, indent=4)
             logger.info(f"Successfully wrote selected_features.json ({num_selected} features) to {selected_features_path}")
         except Exception as e:
             logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
@@ -1753,9 +1760,9 @@ def run_training_pipeline(args: argparse.Namespace):
     }
         # Mappings for easy access
     predictor_map = {
+        "xgb": XGBoostScorePredictor,
         "ridge": RidgeScorePredictor,
         "svr": SVRScorePredictor,
-        "xgb": XGBoostScorePredictor
     }
     param_dist_map = {
         "svr": SVR_PARAM_DIST_REFINED,
@@ -2092,6 +2099,7 @@ if __name__ == '__main__':
     parser.add_argument("--historical-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_game_stats.csv'), help="Path to historical games CSV (if using --data-source csv)")
     parser.add_argument("--team-stats-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_team_stats.csv'), help="Path to team stats CSV (if using --data-source csv)")
     parser.add_argument("--lookback-days", type=int, default=1095, help="Number of days of historical data to load (approx 3 seasons)")
+    
 
     # Feature Engineering Arguments
     parser.add_argument("--rolling-windows", type=str, default="5,10,20", help="Comma-separated rolling window sizes for feature generation")
@@ -2103,6 +2111,7 @@ if __name__ == '__main__':
     # Data Splitting Arguments
     parser.add_argument("--test-size", type=float, default=0.15, help="Fraction of data for the final test set")
     parser.add_argument("--val-size", type=float, default=0.15, help="Fraction of data for the validation set (taken from before test set)")
+    parser.add_argument("--importance-threshold", type=float, default=0.01, help="Minimum absolute Lasso coefficient to keep a feature")
 
     # Training Options
     parser.add_argument("--use-weights", action="store_true", help="Use recency weighting during model training")

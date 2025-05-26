@@ -17,6 +17,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from typing import Dict, Any, Optional, List, Union
 from sklearn.inspection import permutation_importance
 from sklearn.pipeline import Pipeline
+from xgboost import XGBRegressor
 
 # Configure logging
 import logging
@@ -452,16 +453,26 @@ def plot_shap_summary(
         logger.warning("SHAP unavailable—skipping SHAP summary plot.")
         return
 
-    # If it’s a Pipeline, grab the final estimator
-    estimator = model
-    if isinstance(model, Pipeline):
-        estimator = model.steps[-1][1]
+    # unwrap Pipeline
+    estimator = model.steps[-1][1] if isinstance(model, Pipeline) else model
 
-    # Use a small background sample for speed
+    # sample for speed
     background = X.sample(min(100, len(X)), random_state=42)
-    explainer = shap.Explainer(estimator.predict, background)
-    shap_values = explainer(X)
 
+    # choose the best explainer
+    try:
+        if isinstance(estimator, XGBRegressor) or hasattr(estimator, "feature_importances_"):
+            # TreeExplainer is fast and exact for tree models
+            explainer = shap.TreeExplainer(estimator)
+        else:
+            # shap.Explainer will pick a model-specific explainer (but often KernelExplainer)
+            explainer = shap.Explainer(estimator.predict, background)
+        shap_values = explainer(X)
+    except Exception as e:
+        logger.error(f"SHAP explainer failed for {type(estimator).__name__}: {e}")
+        return
+
+    # the rest stays the same…
     plt.figure(figsize=(8, max_display * 0.3 + 1))
     shap.plots.bar(shap_values, max_display=max_display, show=False)
     plt.title("SHAP Feature Importance (mean |SHAP value|)")
@@ -501,27 +512,10 @@ def plot_feature_importances(
     data: Dict[str, pd.Series] = {}
     for name, model in models_dict.items():
         # 1) Try to get built-in importance
+        # 1) Try to get built-in importance
         imp = _get_feature_importance(model, feature_names)
-
-        # 2) Fallback to permutation importances if nothing found
-        if imp is None and X is not None and y is not None:
-            logger.info(f"Computing permutation importance for '{name}'")
-            try:
-                perm = permutation_importance(
-                    model,
-                    X[feature_names],
-                    y,
-                    n_repeats=10,
-                    random_state=0,
-                    n_jobs=-1
-                )
-                imp = dict(zip(feature_names, perm.importances_mean))
-            except Exception as e:
-                logger.warning(f"Permutation importance failed for '{name}': {e}")
-                continue
-
-        if not imp:
-            logger.warning(f"No feature importance available for '{name}' – skipping.")
+        if imp is None:
+            logger.warning(f"No native importances for '{name}'; skipping.")
             continue
 
         # 3) Sort & store in-memory
