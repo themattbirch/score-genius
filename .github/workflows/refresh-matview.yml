@@ -8,7 +8,7 @@ jobs:
   refresh-matviews:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL_POOLER }}
       PGSSLMODE: require # keep SSL
 
     steps:
