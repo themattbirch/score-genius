@@ -8,8 +8,8 @@ jobs:
   refresh-matviews:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL_POOLER }}
-      PGSSLMODE: require # keep SSL
+      DATABASE_URL: ${{ secrets.DATABASE_URL_POOLER }} # pooler URL
+      PGSSLMODE: require
 
     steps:
       - uses: actions/checkout@v4
@@ -19,52 +19,24 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client dnsutils
 
-      - name: Debug – show URL pieces (password masked)
+      - name: Build IPv4-only URI
+        id: ipv4
         run: |
-          echo "Raw URL from secret:"
-          echo "${DATABASE_URL}" | sed -E 's#//[^:]+:[^@]+@#//****:****@#'
-          HOST=$(echo "${DATABASE_URL}" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
-          echo "Extracted host: $HOST"
-
-      - name: Parse DATABASE_URL & resolve IPv4
-        id: parse
-        run: |
-          regex='postgresql://([^:]+):([^@]+)@([^/:]+)(:([0-9]+))?/([^?]+)'
-          [[ "$DATABASE_URL" =~ $regex ]]
-
-          PGUSER=${BASH_REMATCH[1]}
-          PGPASSWORD=${BASH_REMATCH[2]}
-          HOST=${BASH_REMATCH[3]}
-          PGPORT=${BASH_REMATCH[5]:-5432}
-          PGDATABASE=${BASH_REMATCH[6]}
-
-          echo "::add-mask::$PGPASSWORD"
-
-          # get first IPv4 address, following any CNAME chain
-          PGHOST=$(getent ahostsv4 "$(cut -d@ -f2 <<< "$DATABASE_URL" | cut -d: -f1)" | awk '{print $1; exit}')
-
-
+          # pull hostname part
+          HOST=$(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
+          PGHOST=$(getent ahostsv4 "$HOST" | awk '{print $1; exit}')
           if [[ -z "$PGHOST" ]]; then
-            echo "::error::Could not resolve an IPv4 address for $HOST"
-            exit 1
+            echo "::error::No IPv4 address for $HOST"; exit 1
           fi
 
-          echo "Using $HOST → $PGHOST (port $PGPORT)"
-
-          {
-            echo "PGUSER=$PGUSER"
-            echo "PGPASSWORD=$PGPASSWORD"
-            echo "PGHOST=$PGHOST"
-            echo "PGPORT=$PGPORT"
-            echo "PGDATABASE=$PGDATABASE"
-          } >> "$GITHUB_ENV"
+          # replace hostname with its IPv4 and expose new URL
+          DB_URL_V4=${DATABASE_URL//$HOST/$PGHOST}
+          echo "DB_URL_V4=$DB_URL_V4" >> "$GITHUB_ENV"
+          echo "Will connect via $PGHOST"
 
       - name: Refresh NBA & MLB mat-views
-        env:
-          PGPASSWORD: ${{ env.PGPASSWORD }} # needed for non-interactive auth
         run: |
-          psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
-               --set ON_ERROR_STOP=on <<'SQL'
+          psql "$DB_URL_V4" --set ON_ERROR_STOP=on <<'SQL'
           REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;
           REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;
           SQL
