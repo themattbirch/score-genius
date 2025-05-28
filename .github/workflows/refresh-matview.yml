@@ -19,6 +19,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client dnsutils
 
+      - name: Debug – show URL pieces (password masked)
+        run: |
+          echo "Raw URL from secret:"
+          echo "${DATABASE_URL}" | sed -E 's#//[^:]+:[^@]+@#//****:****@#'
+          HOST=$(echo "${DATABASE_URL}" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
+          echo "Extracted host: $HOST"
+
       - name: Parse DATABASE_URL & resolve IPv4
         id: parse
         run: |
@@ -34,7 +41,8 @@ jobs:
           echo "::add-mask::$PGPASSWORD"
 
           # get first IPv4 address, following any CNAME chain
-          PGHOST=$(getent ahostsv4 "$HOST" | awk '{print $1; exit}')
+          PGHOST=$(getent ahostsv4 "$(cut -d@ -f2 <<< "$DATABASE_URL" | cut -d: -f1)" | awk '{print $1; exit}')
+
 
           if [[ -z "$PGHOST" ]]; then
             echo "::error::Could not resolve an IPv4 address for $HOST"
