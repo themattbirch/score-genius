@@ -19,10 +19,31 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
 
+      - name: Build IPv4-pinned URI
+        id: ipv4
+        run: |
+          # pull hostname
+          HOST=$(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
+
+          # first A-record → IPv4 literal
+          IP=$(getent ahostsv4 "$HOST" | awk '{print $1; exit}')
+          if [[ -z "$IP" ]]; then
+            echo "::error::No IPv4 address for $HOST"; exit 1
+          fi
+          echo "Resolved $HOST → $IP"
+
+          # inject hostaddr param
+          if [[ "$DATABASE_URL" == *\?* ]]; then
+            DB_URL_V4="${DATABASE_URL}&hostaddr=${IP}"
+          else
+            DB_URL_V4="${DATABASE_URL}?hostaddr=${IP}"
+          fi
+          echo "DB_URL_V4=$DB_URL_V4" >> "$GITHUB_ENV"
+
       - name: Refresh NBA & MLB materialized views
         run: |
           for q in \
             "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;" \
             "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;" ; do
-              psql -4 "$DATABASE_URL" --set ON_ERROR_STOP=on -c "$q"
+              psql "$DB_URL_V4" --set ON_ERROR_STOP=on -c "$q"
           done
