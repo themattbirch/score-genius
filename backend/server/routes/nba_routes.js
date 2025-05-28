@@ -11,6 +11,7 @@ import {
   getNbaPlayerGameHistory,
   getNbaAllPlayersSeasonStats,
   getNbaAdvancedStats,
+  getNbaSnapshot,
 } from "../controllers/nba_controller.js";
 
 const router = express.Router();
@@ -31,4 +32,8 @@ router.get("/player-stats", getNbaAllPlayersSeasonStats);
 router.get("/advanced-stats", getNbaAdvancedStats);
 // **Original Player Stats Lookup
 router.get("/players/:player_id/stats/history", getNbaPlayerGameHistory);
+// ── Snapshot endpoint ──
+// GET /api/v1/nba/snapshots/:gameId
+router.get("/snapshots/:gameId", getNbaSnapshot);
+
 export default router;

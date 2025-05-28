@@ -1,4 +1,4 @@
-# backend/features/season.py
+# backend/nba_features/season.py
 
 import logging
 from typing import Optional

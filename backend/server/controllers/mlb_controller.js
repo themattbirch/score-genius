@@ -1,5 +1,6 @@
 // backend/server/controllers/mlb_controller.js
 import * as mlbService from "../services/mlb_service.js";
+import { fetchMlbSnapshotData } from "../services/mlb_service.js";
 
 /* --------------------------------------------------------------
  * GET /api/v1/mlb/schedule?date=YYYY-MM-DD
@@ -163,7 +164,7 @@ export const getMlbAdvancedTeamStats = async (req, res, next) => {
     // Call the service function using the mlbService object ***
     const advancedTeamStats = await mlbService.fetchMlbAdvancedTeamStatsFromRPC(
       season
-    ); // <--- FIXED LINE
+    );
 
     // Send response
     res.status(200).json({
@@ -196,3 +197,14 @@ export const getMlbAdvancedTeamStats = async (req, res, next) => {
     // next(error); // Consider using next(error) if you have a global error handler middleware
   }
 };
+export async function getMlbSnapshot(req, res, next) {
+  try {
+    const { gameId } = req.params;
+    const snapshot = await fetchMlbSnapshotData(gameId);
+    if (!snapshot)
+      return res.status(404).json({ message: "Snapshot not found" });
+    return res.json(snapshot);
+  } catch (err) {
+    next(err);
+  }
+}

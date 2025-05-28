@@ -1,4 +1,4 @@
-# backend/features/h2h.py
+# backend/nba_features/h2h.py
 
 from __future__ import annotations
 import logging

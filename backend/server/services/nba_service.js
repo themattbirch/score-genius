@@ -14,6 +14,7 @@ const NBA_HISTORICAL_GAMES_TABLE = "nba_historical_game_stats";
 const NBA_HISTORICAL_TEAM_STATS_TABLE = "nba_historical_team_stats";
 const NBA_HISTORICAL_PLAYER_STATS_TABLE = "nba_historical_player_stats";
 const ET_ZONE_IDENTIFIER = "America/New_York";
+const NBA_SNAPSHOT_TABLE = "nba_snapshots";
 
 // --- Helper function for dates (ensure consistent formatting YYYY-MM-DD) ---
 const getUTCDateString = (date) => date.toISOString().split("T")[0];
@@ -558,3 +559,18 @@ export const fetchNbaAdvancedStatsBySeason = async (seasonYear) => {
   cache.set(cacheKey, results, ttl); // Cache the results
   return results;
 };
+export async function fetchNbaSnapshotData(gameId) {
+  const { data, error, status } = await supabase
+    .from(NBA_SNAPSHOT_TABLE)
+    .select("headline_stats, bar_data, radar_data, pie_data")
+    .eq("game_id", gameId)
+    .maybeSingle();
+
+  if (error) {
+    const err = new Error(error.message || "Failed fetching NBA snapshot data");
+    err.status = status || 503;
+    throw err;
+  }
+  // your JSON columns should already be the shape SnapshotData expects
+  return data ?? null;
+}

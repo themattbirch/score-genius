@@ -1,9 +1,7 @@
 // backend/server/controllers/nba_controller.js
 import * as nbaService from "../services/nba_service.js";
 import { getSchedule } from "../services/nba_service.js";
-
-// Controller to handle GET /api/v1/nba/schedule
-// backend/server/controllers/nba_controller.js
+import { fetchNbaSnapshotData } from "../services/nba_service.js";
 
 // Controller to handle GET /api/v1/nba/schedule
 export const getNbaSchedule = async (req, res, next) => {
@@ -308,3 +306,14 @@ export const getNbaAdvancedStats = async (req, res, next) => {
     next(error);
   }
 };
+export async function getNbaSnapshot(req, res, next) {
+  try {
+    const { gameId } = req.params;
+    const snapshot = await fetchNbaSnapshotData(gameId);
+    if (!snapshot)
+      return res.status(404).json({ message: "Snapshot not found" });
+    return res.json(snapshot);
+  } catch (err) {
+    next(err);
+  }
+}

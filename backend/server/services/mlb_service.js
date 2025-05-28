@@ -8,6 +8,7 @@ const MLB_SCHEDULE_TABLE = "mlb_game_schedule";
 const MLB_HISTORICAL_GAMES_TABLE = "mlb_historical_game_stats";
 const MLB_HISTORICAL_TEAM_STATS_TABLE = "mlb_historical_team_stats";
 const ET_ZONE_IDENTIFIER = "America/New_York";
+const MLB_SNAPSHOT_TABLE = "mlb_snapshots";
 
 const getUTCDateString = (date) => {
   return date.toISOString().split("T")[0];
@@ -454,3 +455,17 @@ export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
     throw err; // Re-throw to controller
   }
 };
+export async function fetchMlbSnapshotData(gameId) {
+  const { data, error, status } = await supabase
+    .from(MLB_SNAPSHOT_TABLE)
+    .select("headline_stats, bar_data, radar_data, pie_data")
+    .eq("game_id", gameId)
+    .maybeSingle();
+
+  if (error) {
+    const err = new Error(error.message || "Failed fetching MLB snapshot data");
+    err.status = status || 503;
+    throw err;
+  }
+  return data ?? null;
+}

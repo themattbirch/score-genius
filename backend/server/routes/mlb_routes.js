@@ -7,6 +7,7 @@ import {
   getMlbTeamSeasonStats,
   getMlbAllTeamsSeasonStats,
   getMlbAdvancedTeamStats,
+  getMlbSnapshot,
 } from "../controllers/mlb_controller.js";
 
 const router = express.Router();
@@ -22,6 +23,8 @@ router.get("/team-stats/advanced", getMlbAdvancedTeamStats);
 // **Old: Single team** season stats
 router.get("/teams/:team_id/stats/:season", getMlbTeamSeasonStats);
 
-// Add more MLB routes here later.
+// ── Snapshot endpoint ──
+// GET /api/v1/mlb/snapshots/:gameId
+router.get("/snapshots/:gameId", getMlbSnapshot);
 
 export default router;
