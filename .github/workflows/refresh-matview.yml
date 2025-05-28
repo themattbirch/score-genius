@@ -1,16 +1,15 @@
 name: Refresh Remote Materialized Views
-
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 4 * * *" # daily 04:30 UTC
+    - cron: "30 4 * * *"
 
 jobs:
   refresh-matviews:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      PGSSLMODE: require
+      PGSSLMODE: require # keep SSL
 
     steps:
       - uses: actions/checkout@v4
@@ -20,22 +19,40 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client dnsutils
 
-      - name: Build IPv4-only connection URI
-        id: ipv4
+      - name: Parse DATABASE_URL & resolve IPv4
+        id: parse
         run: |
-          # pull hostname from DATABASE_URL
-          HOST=$(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
-          IPV4=$(dig +short A "$HOST" | head -1)
+          # break the URI into parts
+          regex='postgresql://([^:]+):([^@]+)@([^/:]+)(:([0-9]+))?/([^?]+)'
+          [[ "$DATABASE_URL" =~ $regex ]]
 
-          echo "Using $HOST → $IPV4"
-          DB_URL_V4=${DATABASE_URL//$HOST/$IPV4}
+          PGUSER=${BASH_REMATCH[1]}
+          PGPASSWORD=${BASH_REMATCH[2]}
+          HOST=${BASH_REMATCH[3]}
+          PGPORT=${BASH_REMATCH[5]:-5432}
+          PGDATABASE=${BASH_REMATCH[6]}
 
-          # make it available to later steps
-          echo "DB_URL_V4=$DB_URL_V4" >> "$GITHUB_ENV"
+          # mask secret so it never shows in logs
+          echo "::add-mask::$PGPASSWORD"
 
-      - name: Refresh NBA & MLB materialized views
+          # first A-record → IPv4 literal
+          PGHOST=$(dig +short A "$HOST" | head -1)
+          echo "Using $HOST → $PGHOST (port $PGPORT)"
+
+          {
+            echo "PGUSER=$PGUSER"
+            echo "PGPASSWORD=$PGPASSWORD"
+            echo "PGHOST=$PGHOST"
+            echo "PGPORT=$PGPORT"
+            echo "PGDATABASE=$PGDATABASE"
+          } >> "$GITHUB_ENV"
+
+      - name: Refresh NBA & MLB mat-views
+        env:
+          PGPASSWORD: ${{ env.PGPASSWORD }} # needed for non-interactive auth
         run: |
-          psql "$DB_URL_V4" --set ON_ERROR_STOP=on <<'SQL'
+          psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+               --set ON_ERROR_STOP=on <<'SQL'
           REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;
           REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;
           SQL
