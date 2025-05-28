@@ -96,7 +96,7 @@ config_status = {
 }
 logger.info(f"Configuration Loading Status (Read from Environment): {config_status}")
 
-# --- Warnings for Missing Non-Critical Variables ---
+# -- Warnings for Missing Non-Critical Variables --
 if not SUPABASE_ANON_KEY:
     logger.warning("SUPABASE_ANON_KEY not configured (might be needed for some operations).")
 if not DATABASE_URL:
