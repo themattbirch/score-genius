@@ -9,42 +9,43 @@ jobs:
   refresh-remote-matviews:
     runs-on: ubuntu-latest
     env:
-      # Use a single DATABASE_URL secret (your full Postgres URI)
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      PGSSLMODE: require
+      # Supabase service role key for CLI access
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # Your Supabase project ref (found in your project URL)
+      SUPABASE_PROJECT_REF: qaytaxyflvafblirxgdr
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
-      - name: Refresh NBA MV
+      - name: Refresh NBA MV via Supabase CLI
         run: |
-          psql -4 "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;"
+          supabase db query \
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;" \
+            --project-ref $SUPABASE_PROJECT_REF \
+            --service-role-key "$SUPABASE_SERVICE_KEY"
 
-      - name: Smoke-test NBA
+      - name: Smoke-test NBA via Supabase CLI
         run: |
-          psql -4 "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "SELECT COUNT(*) FROM public.nba_team_rolling_20_features;"
+          supabase db query \
+            "SELECT COUNT(*) AS cnt FROM public.nba_team_rolling_20_features;" \
+            --project-ref $SUPABASE_PROJECT_REF \
+            --service-role-key "$SUPABASE_SERVICE_KEY"
 
-      - name: Refresh MLB MV
+      - name: Refresh MLB MV via Supabase CLI
         run: |
-          psql -4 "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;"
+          supabase db query \
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;" \
+            --project-ref $SUPABASE_PROJECT_REF \
+            --service-role-key "$SUPABASE_SERVICE_KEY"
 
-      - name: Smoke-test MLB
+      - name: Smoke-test MLB via Supabase CLI
         run: |
-          psql -4 "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "SELECT COUNT(*) FROM public.mlb_team_rolling_10_features;"
+          supabase db query \
+            "SELECT COUNT(*) AS cnt FROM public.mlb_team_rolling_10_features;" \
+            --project-ref $SUPABASE_PROJECT_REF \
+            --service-role-key "$SUPABASE_SERVICE_KEY"
