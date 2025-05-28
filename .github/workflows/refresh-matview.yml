@@ -2,41 +2,27 @@ name: Refresh Remote Materialized Views
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "30 4 * * *" # daily 04:30 UTC
 
 jobs:
   refresh-matviews:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL_POOLER }} # pooler URL
+      DATABASE_URL: ${{ secrets.DATABASE_URL_POOLER }} # session-mode pooler URL
       PGSSLMODE: require
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install psql + dig
+      - name: Ensure psql ≥15 (already 16 on ubuntu-latest, but keep explicit)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client dnsutils
+          sudo apt-get install -y postgresql-client
 
-      - name: Build IPv4-only URI
-        id: ipv4
+      - name: Refresh NBA & MLB materialized views
         run: |
-          # pull hostname part
-          HOST=$(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
-          PGHOST=$(getent ahostsv4 "$HOST" | awk '{print $1; exit}')
-          if [[ -z "$PGHOST" ]]; then
-            echo "::error::No IPv4 address for $HOST"; exit 1
-          fi
-
-          # replace hostname with its IPv4 and expose new URL
-          DB_URL_V4=${DATABASE_URL//$HOST/$PGHOST}
-          echo "DB_URL_V4=$DB_URL_V4" >> "$GITHUB_ENV"
-          echo "Will connect via $PGHOST"
-
-      - name: Refresh NBA & MLB mat-views
-        run: |
-          psql "$DB_URL_V4" --set ON_ERROR_STOP=on <<'SQL'
-          REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;
-          REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;
-          SQL
+          for q in \
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;" \
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;" ; do
+              psql -4 "$DATABASE_URL" --set ON_ERROR_STOP=on -c "$q"
+          done
