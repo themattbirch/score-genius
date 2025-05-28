@@ -15,48 +15,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install modern psql (14+) that supports -4
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client dnsutils
+          sudo apt-get install -y postgresql-client-15 dnsutils
 
-      - name: Resolve Supabase IPv4 address
-        id: resolve
+      - name: Resolve Supabase IPv4 and expose connection bits
+        id: parse-url
         run: |
-          # extract host from DATABASE_URL
-          HOST=$(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
+          # Break connection URI into parts
+          regex='postgresql://([^:]+):([^@]+)@([^/:]+)(:[0-9]+)?/([^?]+)'
+          [[ "$DATABASE_URL" =~ $regex ]]
+          PGUSER=${BASH_REMATCH[1]}
+          PGPASSWORD=${BASH_REMATCH[2]}
+          HOST=${BASH_REMATCH[3]}
+          PGPORT=${BASH_REMATCH[4]#:5432}
+          PGDATABASE=${BASH_REMATCH[5]}
+
+          # Get first A record
           IPV4=$(dig +short A "$HOST" | head -1)
-          echo "PGHOST=$IPV4" >> $GITHUB_ENV
-          echo "Resolved $HOST → $IPV4"
 
-      - name: Refresh NBA Materialized View
-        run: |
-          psql \
-            "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;"
+          # Mask secret, export env for later steps
+          echo "::add-mask::$PGPASSWORD"
+          {
+            echo "PGUSER=$PGUSER"
+            echo "PGPASSWORD=$PGPASSWORD"
+            echo "PGDATABASE=$PGDATABASE"
+            echo "PGHOST=$IPV4"
+            echo "PGPORT=${PGPORT:-5432}"
+          } >> "$GITHUB_ENV"
 
-      - name: Smoke-test NBA View
+      - name: Refresh + smoke-test NBA mat-view
         run: |
-          psql \
-            "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "SELECT COUNT(*) FROM public.nba_team_rolling_20_features;"
+          psql -4 --set ON_ERROR_STOP=on \
+               -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;" \
+               -c "SELECT COUNT(*) FROM public.nba_team_rolling_20_features;"
 
-      - name: Refresh MLB Materialized View
+      - name: Refresh + smoke-test MLB mat-view
         run: |
-          psql \
-            "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;"
-
-      - name: Smoke-test MLB View
-        run: |
-          psql \
-            "$DATABASE_URL" \
-            --no-password \
-            --set ON_ERROR_STOP=on \
-            -c "SELECT COUNT(*) FROM public.mlb_team_rolling_10_features;"
+          psql -4 --set ON_ERROR_STOP=on \
+               -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;" \
+               -c "SELECT COUNT(*) FROM public.mlb_team_rolling_10_features;"
