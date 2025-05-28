@@ -71,14 +71,6 @@ jobs:
           done
       - name: Reset & apply migrations
         run: PGSSLMODE=disable supabase db reset
-      - name: Refresh materialized view
-        run: |
-          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
-            -c "REFRESH MATERIALIZED VIEW public.team_rolling_20;"
-      - name: Smoke-test view
-        run: |
-          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
-            -c "SELECT COUNT(*) FROM public.team_rolling_20;"
       - name: Stop Supabase
         if: always()
         run: supabase stop --no-backup

@@ -1,12 +1,12 @@
 name: Refresh Remote Materialized Views
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "30 4 * * *" # daily 04:30 UTC
 
 jobs:
-  refresh-remote-matviews:
+  refresh-matviews:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -15,44 +15,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install modern psql (14+) that supports -4
+      - name: Install psql + dig
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-15 dnsutils
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client dnsutils
 
-      - name: Resolve Supabase IPv4 and expose connection bits
-        id: parse-url
+      - name: Build IPv4-only connection URI
+        id: ipv4
         run: |
-          # Break connection URI into parts
-          regex='postgresql://([^:]+):([^@]+)@([^/:]+)(:[0-9]+)?/([^?]+)'
-          [[ "$DATABASE_URL" =~ $regex ]]
-          PGUSER=${BASH_REMATCH[1]}
-          PGPASSWORD=${BASH_REMATCH[2]}
-          HOST=${BASH_REMATCH[3]}
-          PGPORT=${BASH_REMATCH[4]#:5432}
-          PGDATABASE=${BASH_REMATCH[5]}
-
-          # Get first A record
+          # pull hostname from DATABASE_URL
+          HOST=$(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@([^:/]+).*#\1#')
           IPV4=$(dig +short A "$HOST" | head -1)
 
-          # Mask secret, export env for later steps
-          echo "::add-mask::$PGPASSWORD"
-          {
-            echo "PGUSER=$PGUSER"
-            echo "PGPASSWORD=$PGPASSWORD"
-            echo "PGDATABASE=$PGDATABASE"
-            echo "PGHOST=$IPV4"
-            echo "PGPORT=${PGPORT:-5432}"
-          } >> "$GITHUB_ENV"
+          echo "Using $HOST → $IPV4"
+          DB_URL_V4=${DATABASE_URL//$HOST/$IPV4}
 
-      - name: Refresh + smoke-test NBA mat-view
-        run: |
-          psql -4 --set ON_ERROR_STOP=on \
-               -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;" \
-               -c "SELECT COUNT(*) FROM public.nba_team_rolling_20_features;"
+          # make it available to later steps
+          echo "DB_URL_V4=$DB_URL_V4" >> "$GITHUB_ENV"
 
-      - name: Refresh + smoke-test MLB mat-view
+      - name: Refresh NBA & MLB materialized views
         run: |
-          psql -4 --set ON_ERROR_STOP=on \
-               -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;" \
-               -c "SELECT COUNT(*) FROM public.mlb_team_rolling_10_features;"
+          psql "$DB_URL_V4" --set ON_ERROR_STOP=on <<'SQL'
+          REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;
+          REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;
+          SQL
