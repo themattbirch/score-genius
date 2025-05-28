@@ -23,28 +23,28 @@ jobs:
 
       - name: Refresh NBA MV
         run: |
-          psql "$DATABASE_URL" \
+          psql -4 "$DATABASE_URL" \
             --no-password \
             --set ON_ERROR_STOP=on \
             -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;"
 
       - name: Smoke-test NBA
         run: |
-          psql "$DATABASE_URL" \
+          psql -4 "$DATABASE_URL" \
             --no-password \
             --set ON_ERROR_STOP=on \
             -c "SELECT COUNT(*) FROM public.nba_team_rolling_20_features;"
 
       - name: Refresh MLB MV
         run: |
-          psql "$DATABASE_URL" \
+          psql -4 "$DATABASE_URL" \
             --no-password \
             --set ON_ERROR_STOP=on \
             -c "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;"
 
       - name: Smoke-test MLB
         run: |
-          psql "$DATABASE_URL" \
+          psql -4 "$DATABASE_URL" \
             --no-password \
             --set ON_ERROR_STOP=on \
             -c "SELECT COUNT(*) FROM public.mlb_team_rolling_10_features;"
