@@ -22,7 +22,6 @@ jobs:
       - name: Parse DATABASE_URL & resolve IPv4
         id: parse
         run: |
-          # break the URI into parts
           regex='postgresql://([^:]+):([^@]+)@([^/:]+)(:([0-9]+))?/([^?]+)'
           [[ "$DATABASE_URL" =~ $regex ]]
 
@@ -32,11 +31,16 @@ jobs:
           PGPORT=${BASH_REMATCH[5]:-5432}
           PGDATABASE=${BASH_REMATCH[6]}
 
-          # mask secret so it never shows in logs
           echo "::add-mask::$PGPASSWORD"
 
-          # first A-record → IPv4 literal
-          PGHOST=$(dig +short A "$HOST" | head -1)
+          # get first IPv4 address, following any CNAME chain
+          PGHOST=$(getent ahostsv4 "$HOST" | awk '{print $1; exit}')
+
+          if [[ -z "$PGHOST" ]]; then
+            echo "::error::Could not resolve an IPv4 address for $HOST"
+            exit 1
+          fi
+
           echo "Using $HOST → $PGHOST (port $PGPORT)"
 
           {
