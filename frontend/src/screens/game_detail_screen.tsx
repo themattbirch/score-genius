@@ -1,16 +1,18 @@
+// frontend/src/screens/game_detail_screen.tsx
+
 import React from "react";
 import { useParams } from "react-router-dom";
 
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import { useInjuries } from "@/api/use_injuries";
 import type { UnifiedGame } from "@/types";
+import SnapshotCard from "@/components/ui/snapshot_card";
 
 import SkeletonBox from "@/components/ui/skeleton_box";
 
 const GameDetailScreen: React.FC = () => {
-  const { gameId } = useParams<{ gameId: string }>();
-
-  /* ── TEMP: until this screen is wired to Date/Sport context ── */
+  const { gameId = "" } = useParams<{ gameId?: string }>();
+  console.log("🏷️ GameDetailScreen mounted with gameId:", gameId);
   const isoDate = new Date().toISOString().slice(0, 10);
 
   /* ── Fetch schedule row ─────────────────────────────────────── */
@@ -49,8 +51,11 @@ const GameDetailScreen: React.FC = () => {
   /* ── Render ─────────────────────────────────────────────────── */
   return (
     <div className="p-4 space-y-6">
+      if (true) return <p className="p-4 bg-yellow-100 text-black">[DEBUG] detail screen for gameId: {gameId}</p>;
       {/* ── Game summary ── */}
       <div className="app-card p-4">
+        <h3 className="mb-2 font-semibold">Game Snapshot</h3>
+        <SnapshotCard gameId={gameId} />
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-semibold">
