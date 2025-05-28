@@ -2,7 +2,7 @@
 -- NBA 20-game window materialized view, named 'nba_team_rolling_20_features',
 -- sourcing from nba_historical_game_stats via CTE.
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS nba_team_rolling_20_features AS -- <<< RENAMED HERE
+CREATE MATERIALIZED VIEW IF NOT EXISTS nba_team_rolling_20_features AS
 WITH nba_team_game_box_scores_cte AS (
     -- Unpivot data for home teams
     SELECT
@@ -77,9 +77,10 @@ WINDOW w AS (
   ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
 );
 
--- Update index names and the ON clause to reflect the new view name
-CREATE INDEX IF NOT EXISTS idx_nba_team_rolling_20_features_team_date
-  ON nba_team_rolling_20_features(team_id, game_date); 
+-- ✅ UNIQUE so CONCURRENTLY works
+CREATE UNIQUE INDEX IF NOT EXISTS idx_nba_team_roll20_uq
+  ON nba_team_rolling_20_features (game_id, team_id);
 
-CREATE INDEX IF NOT EXISTS idx_nba_team_rolling_20_features_game_id -- <<< RENAMED HERE
-ON nba_team_rolling_20_features(game_id);
+-- optional supporting (non-unique) indexes for query patterns
+CREATE INDEX IF NOT EXISTS idx_nba_team_roll20_team_date
+  ON nba_team_rolling_20_features (team_id, game_date);

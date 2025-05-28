@@ -75,5 +75,6 @@ ORDER BY s.team_id, s.game_date;
 CREATE INDEX IF NOT EXISTS idx_mlb_team_rolling_10_features_team_date -- <<< Adjust index name if view name changed
 ON mlb_team_rolling_10_features(team_id, game_date); -- <<< Adjust table name in ON if view name changed
 
-CREATE INDEX IF NOT EXISTS idx_mlb_team_rolling_10_features_game_id -- <<< Adjust index name
-ON mlb_team_rolling_10_features(game_id); -- <<< Adjust table name
+-- ✅ UNIQUE so CONCURRENTLY will work
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mlb_team_roll10_uq
+  ON mlb_team_rolling_10_features (game_id, team_id);
