@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -- Constants --
-ROLLING_VIEW = "team_rolling_20"   # Materialized view name in Supabase
+ROLLING_VIEW = "nba_team_rolling_20_features"   # Materialized view name in Supabase
 # EPSILON = 1e-6 # Likely belongs in utils.py if needed globally
 
 # -- Module Functions --

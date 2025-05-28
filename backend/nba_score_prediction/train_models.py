@@ -1925,8 +1925,11 @@ def run_training_pipeline(args: argparse.Namespace):
                      logger.warning(f"Prediction from loaded '{model_key}' failed or returned invalid format.")
                      base_model_test_preds[model_key] = None
                 else:
-                     base_model_test_preds[model_key] = preds_df.reindex(X_test_final_features.index)
-                     logger.info(f"Successfully generated test predictions for '{model_key}'.")
+                    # Use the full predictor name so it matches the keys in 
+                    # ensemble_weights_optimized.json (e.g. “ridge_score_predictor”)
+                    full_model_key = f"{model_key}_score_predictor"
+                    base_model_test_preds[full_model_key] = preds_df.reindex(X_test_final_features.index)        
+                    logger.info(f"Successfully generated test predictions for '{model_key}'.")
 
             except Exception as load_pred_err:
                 logger.error(f"Error loading or predicting with final model '{model_key}': {load_pred_err}", exc_info=True)

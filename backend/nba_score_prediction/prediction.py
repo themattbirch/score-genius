@@ -20,6 +20,12 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# suppress all HTTPX / HTTPCore / HPACK / bit debug spam
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
+logging.getLogger("bit").setLevel(logging.WARNING)
+
 # ensure project root is on PYTHONPATH
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent

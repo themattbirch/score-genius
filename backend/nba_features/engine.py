@@ -1,18 +1,35 @@
-# backend/nba_features/engine.py
 """
-Orchestrates the execution of the modular feature engineering pipeline.
-Calls transform function of each individual feature module in sequence.
+Orchestrates the execution of the modular feature-engineering pipeline for NBA games.
+Each module exports a `transform(df, **kwargs)` function; we call them in order.
+The engine can run fully offline (pass your own DataFrames) or auto-fetch the
+needed helpers (season stats, historical games, rolling windows) from Supabase
+when you hand in a `db_conn`.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+from dotenv import load_dotenv
+
+# ─────────────────────────────── .env loading ──────────────────────────────
+# Look for .env in backend/ or project root – first hit wins.
+for _env in (
+    Path(__file__).resolve().parents[1] / ".env",  # …/backend/.env
+    Path(__file__).resolve().parents[2] / ".env",  # project-root /.env
+):
+    if _env.is_file():
+        load_dotenv(_env, override=True)
+        break
+
+# ────────────────────────────────── Imports ─────────────────────────────────
 import logging
 import time
-from typing import Any, List, Optional # Keep Any for DEFAULTS typing if needed
+from typing import Any, Optional, List
 
 import pandas as pd
-import numpy as np # Keep numpy if needed for NaN checks etc.
+import numpy as np  # noqa: F401 – downstream modules may expect np present
 
-# Import the transform function from each feature module, aliasing for clarity
+# Feature modules
 from .advanced import transform as advanced_transform
 from .rolling import transform as rolling_transform
 from .rest import transform as rest_transform
@@ -20,24 +37,23 @@ from .h2h import transform as h2h_transform
 from .season import transform as season_transform
 from .form import transform as form_transform
 
-# Import utilities if needed (e.g., for profile_time, though removed for now)
-# from .utils import profile_time, DEFAULTS # DEFAULTS might not be needed directly here
+# Rolling helper
+from .base_windows import fetch_rolling
 
-# --- Logger Configuration ---
-# Configure logging for this module
+# Optional Supabase client singleton
+from caching.supabase_client import supabase as supabase_client
+
+# ─────────────────────────────── Logger setup ──────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
+    format="%(asctime)s | %(levelname)s | [%(name)s:%(funcName)s:%(lineno)d] – %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# Explicitly export the main pipeline function
-__all__ = ["run_feature_pipeline"]
+__all__: list[str] = ["run_feature_pipeline"]
 
-# -- Constants --
-# Define the standard execution order
-# Adjust this order based on actual feature dependencies if they differ from legacy
-DEFAULT_EXECUTION_ORDER = [
+# ─────────────────────────────── Constants ─────────────────────────────────
+DEFAULT_EXECUTION_ORDER: list[str] = [
     "advanced",
     "rest",
     "h2h",
@@ -46,8 +62,7 @@ DEFAULT_EXECUTION_ORDER = [
     "rolling",
 ]
 
-# Map module names to their transform functions
-TRANSFORM_MAP = {
+TRANSFORM_MAP: dict[str, callable] = {
     "advanced": advanced_transform,
     "rest": rest_transform,
     "h2h": h2h_transform,
@@ -56,117 +71,183 @@ TRANSFORM_MAP = {
     "rolling": rolling_transform,
 }
 
-# -- Main Pipeline Function --
+# ───────────────────────────── Helper fetchers ─────────────────────────────
+
+def _fetch_team_stats(db):
+    """Pull season-to-date team stats from Supabase."""
+    rows = (
+        db.table("nba_historical_team_stats")
+        .select("*")
+        .execute()
+        .data
+    )
+    return pd.DataFrame(rows or [])
+
+
+def _fetch_historical_games(db):
+    """Pull full historical game log for H2H calculations."""
+    rows = (
+        db.table("nba_historical_game_stats")
+        .select("*")
+        .execute()
+        .data
+    )
+    return pd.DataFrame(rows or [])
+
+# ───────────────────────────── Main entrypoint ─────────────────────────────
+
 def run_feature_pipeline(
     df: pd.DataFrame,
     *,
+    db_conn: Optional[Any] = None,
     historical_games_df: pd.DataFrame | None = None,
     team_stats_df: pd.DataFrame | None = None,
-    rolling_windows: list[int] = [5,10,20],
+    rolling_windows: List[int] | None = None,
     h2h_window: int = 7,
-    execution_order: list[str] = DEFAULT_EXECUTION_ORDER,
+    execution_order: List[str] | None = None,
     debug: bool = False,
 ) -> pd.DataFrame:
-    """
-    Runs feature transformations in the specified order.
-    """
-    # Adjust order if rolling is disabled
-    if not rolling_windows and 'rolling' in execution_order:
-        execution_order = [m for m in execution_order if m != 'rolling']
+    """Run all feature-engineering modules and return the enriched DataFrame.
 
-    # Setup logging level
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain at least ``game_id``, ``game_date``, ``home_team``, ``away_team``.
+    db_conn : Any, optional
+        Supabase client. If provided and helper DataFrames are missing, we fetch them.
+    historical_games_df : pd.DataFrame, optional
+        Pre-loaded game log. Required when the ``h2h`` module runs.
+    team_stats_df : pd.DataFrame, optional
+        Season-to-date team stats. Required when the ``season`` or ``form`` modules run.
+    rolling_windows : list[int]
+        Window sizes for the rolling module. Empty list disables the module.
+    h2h_window : int
+        How many prior games per matchup to consider in the H2H transform.
+    execution_order : list[str]
+        Override the default module order.
+    debug : bool
+        Toggle extra logging & tracebacks.
+    """
+
+    rolling_windows = rolling_windows or [5, 10, 20]
+    execution_order = execution_order or DEFAULT_EXECUTION_ORDER.copy()
+
+    # Disable modules if configured off
+    if not rolling_windows and "rolling" in execution_order:
+        execution_order.remove("rolling")
+
+    # Logging verbosity
     original_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
-        logger.debug("DEBUG mode enabled for feature pipeline.")
+    logger.info("Starting feature pipeline → %s", execution_order)
 
-    start_total = time.time()
-    logger.info(f"Starting feature engineering pipeline (Order: {execution_order})...")
-
-    # Validate input
+    # Sanity-check the input DataFrame
+    required = ["game_id", "game_date", "home_team", "away_team"]
     if df is None or df.empty:
-        logger.error("Input DataFrame is empty--nothing to process.")
-        if debug: logger.setLevel(original_level)
+        logger.error("Input DataFrame is empty – nothing to process.")
         return pd.DataFrame()
-    for col in ['game_id','game_date','home_team','away_team']:
-        if col not in df.columns:
-            logger.error(f"Missing essential column: {col}")
-            if debug: logger.setLevel(original_level)
-            return pd.DataFrame()
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        logger.error("Missing required columns: %s", missing)
+        return pd.DataFrame()
 
     processed_df = df.copy()
-    # Execute each transform
-    for module_name in execution_order:
-        if module_name not in TRANSFORM_MAP:
-            logger.warning(f"Unknown module '{module_name}', skipping.")
+
+    # ─── Auto-fetch helper tables ────────────────────────────────────────────
+    if db_conn is not None:
+        if team_stats_df is None and "season" in execution_order:
+            logger.info("Auto-fetching team stats from Supabase …")
+            team_stats_df = _fetch_team_stats(db_conn)
+        if historical_games_df is None and "h2h" in execution_order:
+            logger.info("Auto-fetching historical games from Supabase …")
+            historical_games_df = _fetch_historical_games(db_conn)
+
+        # Pre-fetch rolling stats and merge before rolling transform
+        if "rolling" in execution_order:
+            logger.info("Pre-fetching rolling stats from Supabase …")
+            try:
+                game_ids = processed_df['game_id'].unique().tolist()
+                rolling_df = fetch_rolling(db_conn, game_ids)
+                if {'game_id','team_id'}.issubset(rolling_df.columns):
+                    processed_df = processed_df.merge(
+                        rolling_df,
+                        on=['game_id','team_id'],
+                        how='left'
+                    )
+                else:
+                    logger.warning(
+                        "Skipping rolling pre-merge: missing 'game_id' or 'team_id' in rolling_df columns: %s",
+                        list(rolling_df.columns)
+                    )
+            except Exception as e:
+                logger.error("Error fetching or merging rolling stats: %s", e)
+
+    # ─── Execute modules ────────────────────────────────────────────────────
+    start_total = time.time()
+    for module in execution_order:
+        func = TRANSFORM_MAP.get(module)
+        if func is None:
+            logger.warning("Unknown module '%s' – skipping", module)
             continue
-        transform_func = TRANSFORM_MAP[module_name]
-        logger.info(f"Running module: {module_name}...")
+
+        logger.info("Running '%s'…", module)
         t0 = time.time()
 
-        # build module-specific kwargs
-        kwargs: dict[str,Any] = {'debug': debug}
-        if module_name == "rolling":
-            # rolling only needs the combined DataFrame + window sizes
-            kwargs['window_sizes'] = rolling_windows
-        elif module_name == "h2h":
-            kwargs['historical_df'] = historical_games_df
-            kwargs['max_games']     = h2h_window
-        elif module_name == "season":
-            kwargs['team_stats_df'] = team_stats_df
-        elif module_name == "form":
-            # give form access to team_stats_df so it can look up current_form
-            kwargs['team_stats_df'] = team_stats_df
+        kwargs: dict[str, Any] = {"debug": debug}
+        if module == "rolling":
+            kwargs["window_sizes"] = rolling_windows
+        elif module == "h2h":
+            kwargs.update({
+                "historical_df": historical_games_df,
+                "max_games": h2h_window,
+            })
+        elif module in ("season", "form"):
+            kwargs["team_stats_df"] = team_stats_df
 
         try:
-            processed_df = transform_func(processed_df, **kwargs)
-            elapsed = time.time() - t0
-            logger.debug(f"Module '{module_name}' completed in {elapsed:.3f}s; shape={processed_df.shape}")
-            if processed_df is None or processed_df.empty:
-                logger.error(f"After '{module_name}', DataFrame empty. Aborting.")
-                if debug: logger.setLevel(original_level)
-                return pd.DataFrame()
+            processed_df = func(processed_df, **kwargs)
         except Exception as e:
-            logger.error(f"Error in module '{module_name}': {e}", exc_info=debug)
-            if debug: logger.setLevel(original_level)
-            return processed_df
+            logger.error("'%s' error: %s", module, e, exc_info=debug)
+            break
 
-    total_elapsed = time.time() - start_total
-    logger.info(f"Pipeline completed in {total_elapsed:.2f}s. Final shape: {processed_df.shape}")
-    if debug: logger.setLevel(original_level)
+        logger.debug(
+            "%s done in %.2fs – rows=%s cols=%s",
+            module,
+            time.time() - t0,
+            *processed_df.shape,
+        )
+        if processed_df.empty:
+            logger.error("DataFrame empty after '%s' – stopping.", module)
+            break
+
+    logger.info(
+        "Pipeline complete in %.2fs – final shape=%s",
+        time.time() - start_total,
+        processed_df.shape,
+    )
+    if debug:
+        logger.setLevel(original_level)
     return processed_df
 
-# --- Example Usage (Optional) ---
-if __name__ == '__main__':
-    logger.info("Feature engine script executed directly (usually imported).")
-    # Example of how to potentially use the pipeline function
-    # This requires setting up sample dataframes (df, historical_df, team_stats_df)
+# ─────────────────────────────── CLI smoke test ─────────────────────────────
+if __name__ == "__main__":
+    logger.info("Running smoke test with dummy data…")
 
-    # Placeholder for demonstration
-    # sample_df = pd.DataFrame({
-    #     'game_id': ['1', '2'],
-    #     'game_date': pd.to_datetime(['2024-01-01', '2024-01-02']),
-    #     'home_team': ['Team A', 'Team C'],
-    #     'away_team': ['Team B', 'Team D'],
-    #     'home_q1': [25, 30], 'away_q1': [20, 28],
-    #     'home_q2': [28, 25], 'away_q2': [26, 27],
-    #     'home_q3': [30, 29], 'away_q3': [28, 31],
-    #     'home_q4': [22, 26], 'away_q4': [24, 25],
-    # })
-    # sample_hist_df = pd.DataFrame(...) # Needs historical data for H2H
-    # sample_team_stats_df = pd.DataFrame(...) # Needs seasonal stats for Season
+    dummy_games = pd.DataFrame({
+        "game_id": [101, 102],
+        # Use standard ASCII hyphens
+        "game_date": pd.to_datetime(["2025-01-01", "2025-01-02"]),
+        "home_team": ["BOS", "LAL"],
+        "away_team": ["NYK", "CHI"],
+        # Dummy team IDs for rolling merge
+        "team_id": [1, 2],
+    })
 
-    # logger.info("Running pipeline with sample data (placeholders)...")
-    # try:
-    #     # final_features = run_feature_pipeline(
-    #     #     df=sample_df,
-    #     #     historical_games_df=None, # Provide sample data here
-    #     #     team_stats_df=None,       # Provide sample data here
-    #     #     debug=True
-    #     # )
-    #     # logger.info("Sample pipeline run complete.")
-    #     # print(final_features.info())
-    #     pass # Avoid running without actual sample data
-    # except Exception as ex:
-    #      logger.error(f"Error running example usage: {ex}")
-    pass
+    features = run_feature_pipeline(
+        dummy_games,
+        db_conn=supabase_client,
+        debug=True,
+    )
+
+    print("Generated columns:", len(features.columns))
