@@ -18,8 +18,6 @@ WITH nba_team_game_box_scores_cte AS (
         home_turnovers     AS tov
     FROM
         nba_historical_game_stats
-    -- Consider adding a WHERE clause if nba_historical_game_stats contains many incomplete/future games
-    -- e.g., WHERE home_score IS NOT NULL AND away_score IS NOT NULL AND home_score > 0
 
     UNION ALL
 
@@ -49,45 +47,33 @@ nba_team_game_metrics_cte AS (
         score_against,
         net_score,
         tov,
-        -- Possessions Estimate: FGA + 0.44 * FTA - OREB + TOV
+        -- Possessions Estimate: FGA + 0.44*FTA - OREB + TOV
         (
-          COALESCE(fga, 0)
-          + (0.44 * COALESCE(fta, 0))
-          - COALESCE(oreb, 0)
-          + COALESCE(tov, 0)
+            COALESCE(fga, 0)
+            + (0.44*COALESCE(fta, 0))
+            - COALESCE(oreb, 0)
+            + COALESCE(tov, 0)
         ) AS possessions_est
     FROM
         nba_team_game_box_scores_cte
 )
 
--- Main query for the materialized view, using the CTEs
-
 SELECT
     s.game_id,
     s.game_date,
     s.team_id,
-    AVG   (s.score_for)    OVER w AS rolling_score_for_mean_20,
-    STDDEV(s.score_for)    OVER w AS rolling_score_for_std_20,
-    AVG   (s.score_against) OVER w AS rolling_score_against_mean_20,
-    STDDEV(s.score_against) OVER w AS rolling_score_against_std_20,
-    AVG   (s.net_score)    OVER w AS rolling_net_rating_mean_20,
-    STDDEV(s.net_score)    OVER w AS rolling_net_rating_std_20,
-    AVG   (s.possessions_est) OVER w AS rolling_pace_mean_20,
+    AVG(s.score_for) OVER w          AS rolling_score_for_mean_20,
+    STDDEV(s.score_for) OVER w       AS rolling_score_for_std_20,
+    AVG(s.score_against) OVER w      AS rolling_score_against_mean_20,
+    STDDEV(s.score_against) OVER w   AS rolling_score_against_std_20,
+    AVG(s.net_score) OVER w          AS rolling_net_rating_mean_20,
+    STDDEV(s.net_score) OVER w       AS rolling_net_rating_std_20,
+    AVG(s.possessions_est) OVER w    AS rolling_pace_mean_20,
     STDDEV(s.possessions_est) OVER w AS rolling_pace_std_20,
-    AVG(
-        CASE
-            WHEN s.possessions_est > 0
-            THEN COALESCE(s.tov, 0) / s.possessions_est
-            ELSE 0
-        END
-    ) OVER w AS rolling_tov_rate_mean_20,
-    STDDEV(
-        CASE
-            WHEN s.possessions_est > 0
-            THEN COALESCE(s.tov, 0) / s.possessions_est
-            ELSE 0
-        END
-    ) OVER w AS rolling_tov_rate_std_20
+    AVG(CASE WHEN s.possessions_est>0 THEN COALESCE(s.tov,0)/s.possessions_est ELSE 0 END) OVER w
+                                      AS rolling_tov_rate_mean_20,
+    STDDEV(CASE WHEN s.possessions_est>0 THEN COALESCE(s.tov,0)/s.possessions_est ELSE 0 END) OVER w
+                                      AS rolling_tov_rate_std_20
 FROM
     nba_team_game_metrics_cte AS s
 WINDOW w AS (
@@ -96,10 +82,8 @@ WINDOW w AS (
     ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
 );
 
--- ✅ UNIQUE so CONCURRENTLY works
 CREATE UNIQUE INDEX IF NOT EXISTS idx_nba_team_roll20_uq
-    ON nba_team_rolling_20_features (game_id, team_id);
+    ON nba_team_rolling_20_features(game_id, team_id);
 
--- optional supporting (non-unique) indexes for query patterns
 CREATE INDEX IF NOT EXISTS idx_nba_team_roll20_team_date
-    ON nba_team_rolling_20_features (team_id, game_date);
+    ON nba_team_rolling_20_features(team_id, game_date);
