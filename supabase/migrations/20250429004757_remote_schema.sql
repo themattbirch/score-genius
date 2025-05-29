@@ -575,26 +575,46 @@ ALTER TABLE ONLY "public"."nba_historical_player_stats" FORCE ROW LEVEL SECURITY
 ALTER TABLE "public"."nba_historical_player_stats" OWNER TO "postgres";
 
 
-ALTER TABLE "public"."nba_historical_player_stats" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME "public"."nba_historical_game_stats_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_class
+     WHERE relname = 'nba_historical_game_stats_id_seq'
+  ) THEN
+    ALTER TABLE public.nba_historical_player_stats
+      ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+        SEQUENCE NAME public.nba_historical_game_stats_id_seq
+        START WITH 1
+        INCREMENT BY 1
+        NO MINVALUE
+        NO MAXVALUE
+        CACHE 1
+      );
+  END IF;
+END;
+$$;
 
-
-
-ALTER TABLE "public"."nba_historical_game_stats" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME "public"."nba_historical_game_stats_id_seq1"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
+-- Guard for nba_historical_game_stats.id
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_class
+     WHERE relname = 'nba_historical_game_stats_id_seq1'
+  ) THEN
+    ALTER TABLE public.nba_historical_game_stats
+      ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+        SEQUENCE NAME public.nba_historical_game_stats_id_seq1
+        START WITH 1
+        INCREMENT BY 1
+        NO MINVALUE
+        NO MAXVALUE
+        CACHE 1
+      );
+  END IF;
+END;
+$$;
 
 
 CREATE TABLE IF NOT EXISTS "public"."nba_historical_team_stats" (
