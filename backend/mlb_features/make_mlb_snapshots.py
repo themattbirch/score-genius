@@ -1,4 +1,4 @@
-# backend/nba_features/make_nba_snapshots.py
+# backend/nba_features/make_mlb_snapshots.py
 
 import os
 import sys

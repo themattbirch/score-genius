@@ -1,188 +1,172 @@
-# backend/nba_features/advanced.py
+# backend/mlb_features/advanced.py
+"""
+Attaches advanced MLB features: home/away splits and offensive vs pitcher handedness.
+"""
 
 from __future__ import annotations
 import logging
-from typing import Any # Keep Any for DEFAULTS typing if needed
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-# Import necessary components from the utils module
-from .utils import safe_divide, DEFAULTS # Assuming DEFAULTS and safe_divide are in utils.py
-
-# --- Logger Configuration ---
-# Configure logging for this module
+# ────── LOGGER SETUP ──────
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
+    format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Explicitly export the transform function
-__all__ = ["transform"]
+# ────── DEFAULTS & HELPERS ──────
+try:
+    from .utils import DEFAULTS as MLB_DEFAULTS, normalize_team_name
+    logger.info("Imported MLB_DEFAULTS and normalize_team_name")
+except ImportError:
+    logger.warning("Could not import DEFAULTS or normalize_team_name; using fallbacks")
+    MLB_DEFAULTS: Dict[str, float] = {}
+    def normalize_team_name(team_id: Any) -> str:
+        return str(team_id).strip() if pd.notna(team_id) else "unknown"
 
-# -- Constants --
-# EPSILON = 1e-6 # Moved to utils.py if needed globally, otherwise define here if only used here
+
+def _attach_split(
+    df: pd.DataFrame,
+    team_col_key: str, # e.g., 'home_team_id' or 'away_team_id' (from main df)
+    hist_lookup_df: pd.DataFrame, # This is the 'hist' df, indexed by 'team_norm'
+    col_mappings: Dict[str, Tuple[str, str, float]], # new_col -> (hist_col_name, defaults_key, fallback_val)
+    flag_imputations: bool
+) -> pd.DataFrame:
+    """Helper to attach home/away split stats."""
+    # Get the series of normalized team IDs for mapping
+    # Assumes team_col_key refers to a column in df with the original team IDs
+    normalized_team_id_series = df[team_col_key].apply(normalize_team_name)
+
+    for new_col_name, (hist_col_name, defaults_key, fallback_value) in col_mappings.items():
+        default_to_use = MLB_DEFAULTS.get(defaults_key, fallback_value)
+
+        if hist_col_name in hist_lookup_df.columns:
+            # Map normalized team IDs to the historical stat column
+            mapped_values = normalized_team_id_series.map(hist_lookup_df[hist_col_name])
+            
+            if flag_imputations:
+                df[f"{new_col_name}_imputed"] = mapped_values.isna()
+            
+            df[new_col_name] = mapped_values.fillna(default_to_use)
+        else:
+            # If the historical column doesn't even exist in hist_lookup_df
+            logger.warning(f"Column '{hist_col_name}' for feature '{new_col_name}' not found in historical_team_stats_df. Using default.")
+            df[new_col_name] = default_to_use
+            if flag_imputations:
+                df[f"{new_col_name}_imputed"] = True # Definitely imputed
+
+        df[new_col_name] = pd.to_numeric(df[new_col_name], errors='coerce').fillna(default_to_use).astype(float)
+    return df
+
+
+def _attach_vs_hand(
+    df: pd.DataFrame,
+    team_col: str,
+    opp_hand_col: str,
+    hist: pd.DataFrame,
+    def_cols: Dict[str, Tuple[str, str, float]]
+) -> pd.DataFrame:
+    """
+    Attach offensive stats vs LHP/RHP.
+    def_cols: new_col -> (vs_L_col, vs_R_col, defaults_key, fallback)
+    """
+    norm = df[team_col].map(normalize_team_name)
+    for new_col, (vs_L, vs_R, def_key, fallback) in def_cols.items():
+        default = MLB_DEFAULTS.get(def_key, fallback)
+        values = []
+        imputed = []
+        for team, hand in zip(norm, df[opp_hand_col].str.upper().fillna('')):
+            if team in hist.index and hand in ('L', 'R') and vs_L in hist.columns and vs_R in hist.columns:
+                val = hist.at[team, vs_L if hand == 'L' else vs_R]
+            else:
+                val = np.nan
+            if pd.isna(val):
+                values.append(default)
+                imputed.append(True)
+            else:
+                values.append(val)
+                imputed.append(False)
+        df[new_col] = pd.to_numeric(values, errors='coerce').astype(float)
+        df[f"{new_col}_imputed"] = imputed
+    return df
+
 
 def transform(
     df: pd.DataFrame,
-    *,
+    historical_team_stats_df: pd.DataFrame,
+    season_to_lookup: int,
+    flag_imputations: bool = True,
     debug: bool = False,
+    # schedule cols
+    game_id_col: str = "game_id",
+    home_team_col: str = "home_team_id",
+    away_team_col: str = "away_team_id",
+    home_hand_col: str = "home_probable_pitcher_handedness",
+    away_hand_col: str = "away_probable_pitcher_handedness",
+    # hist splits
+    hist_team_col: str = "team_id",
+    hist_season_col: str = "season",
+    hist_w_home_pct: str = "wins_home_percentage",
+    hist_rf_home: str = "runs_for_avg_home",
+    hist_ra_home: str = "runs_against_avg_home",
+    hist_w_away_pct: str = "wins_away_percentage",
+    hist_rf_away: str = "runs_for_avg_away",
+    hist_ra_away: str = "runs_against_avg_away",
+    # vs hand
+    hist_vs_lhp: str = "season_avg_runs_vs_lhp",
+    hist_vs_rhp: str = "season_avg_runs_vs_rhp",
 ) -> pd.DataFrame:
     """
-    Calculates advanced metrics: eFG%, FT%, Reb%, Possessions, Pace, Ratings, TOV%.
-
-    Args:
-        df: Input DataFrame containing necessary base stats (scores, fg, ft, reb, tov, ot).
-        debug: If True, sets logging level to DEBUG for this function call.
-
-    Returns:
-        DataFrame with added advanced feature columns.
+    Attach advanced MLB features: HA splits + offense vs pitcher hand.
     """
-    # Set logger level based on debug flag for this specific call
-    current_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
-        logger.debug("DEBUG mode enabled for advanced.transform")
+        logger.debug(f"advanced.transform start: df_shape={df.shape}")
 
     if df is None or df.empty:
-        logger.warning("advanced.transform: Input DataFrame is empty. Returning empty DataFrame.")
-        # Restore logger level
-        if debug: logger.setLevel(current_level)
-        return pd.DataFrame() # Return empty DF to avoid errors downstream
+        logger.warning("Empty input df; returning copy.")
+        return df.copy()
 
-    logger.debug("Integrating advanced metrics (Revised Pace/Poss/Ratings)...")
-    # Work on a copy to avoid modifying the original DataFrame
-    result_df = df.copy()
+    # Prepare hist
+    hist = historical_team_stats_df.copy()
+    hist = hist[hist[hist_season_col] == season_to_lookup]
+    hist['team_norm'] = hist[hist_team_col].apply(normalize_team_name)
+    hist = hist.set_index('team_norm')
 
-    # --- 1. Ensure Required Base Stats Exist & Are Numeric ---
-    # Define the essential base statistics needed for calculations
-    stat_cols = [
-        'home_score', 'away_score', 'home_fg_made', 'home_fg_attempted',
-        'away_fg_made', 'away_fg_attempted', 'home_3pm', 'home_3pa',
-        'away_3pm', 'away_3pa', 'home_ft_made', 'home_ft_attempted',
-        'away_ft_made', 'away_ft_attempted', 'home_off_reb', 'home_def_reb',
-        'home_total_reb', 'away_off_reb', 'away_def_reb', 'away_total_reb',
-        'home_turnovers', 'away_turnovers', 'home_ot', 'away_ot'
-    ]
-    # Check for missing columns and fill with 0
-    for col in stat_cols:
-        if col not in result_df.columns:
-            logger.warning(f"Advanced Metrics: Column '{col}' not found. Adding with default value 0.")
-            result_df[col] = 0
-        # Convert to numeric, coercing errors and filling NaNs with 0
-        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
+    result = df.copy()
+    # Home/Away splits
+    split_map = {
+        'h_team_hist_HA_win_pct': (hist_w_home_pct, 'mlb_hist_win_pct', 0.5),
+        'h_team_hist_HA_runs_for_avg': (hist_rf_home, 'mlb_hist_runs_avg', 4.5),
+        'h_team_hist_HA_runs_against_avg': (hist_ra_home, 'mlb_hist_runs_avg', 4.5),
+        'a_team_hist_HA_win_pct': (hist_w_away_pct, 'mlb_hist_win_pct', 0.5),
+        'a_team_hist_HA_runs_for_avg': (hist_rf_away, 'mlb_hist_runs_avg', 4.5),
+        'a_team_hist_HA_runs_against_avg': (hist_ra_away, 'mlb_hist_runs_avg', 4.5),
+    }
+    home_split_definitions = {k: v for k, v in split_map.items() if k.startswith('h_team_')}
+    result = _attach_split(result, home_team_col, hist, home_split_definitions, flag_imputations)
 
-    # --- 2. Calculate Basic Shooting / Rebounding / FT Rates ---
-    logger.debug("Calculating basic rates (eFG%, FT%, Reb%)...")
-    # Use safe_divide imported from utils and DEFAULTS constant
-    result_df['home_efg_pct'] = safe_divide(result_df['home_fg_made'] + 0.5 * result_df['home_3pm'], result_df['home_fg_attempted'], DEFAULTS['efg_pct'])
-    result_df['away_efg_pct'] = safe_divide(result_df['away_fg_made'] + 0.5 * result_df['away_3pm'], result_df['away_fg_attempted'], DEFAULTS['efg_pct'])
-    result_df['home_ft_rate'] = safe_divide(result_df['home_ft_attempted'], result_df['home_fg_attempted'], DEFAULTS['ft_rate'])
-    result_df['away_ft_rate'] = safe_divide(result_df['away_ft_attempted'], result_df['away_fg_attempted'], DEFAULTS['ft_rate'])
-    result_df['home_oreb_pct'] = safe_divide(result_df['home_off_reb'], result_df['home_off_reb'] + result_df['away_def_reb'], DEFAULTS['oreb_pct'])
-    result_df['away_dreb_pct'] = safe_divide(result_df['away_def_reb'], result_df['away_def_reb'] + result_df['home_off_reb'], DEFAULTS['dreb_pct'])
-    result_df['away_oreb_pct'] = safe_divide(result_df['away_off_reb'], result_df['away_off_reb'] + result_df['home_def_reb'], DEFAULTS['oreb_pct'])
-    result_df['home_dreb_pct'] = safe_divide(result_df['home_def_reb'], result_df['home_def_reb'] + result_df['away_off_reb'], DEFAULTS['dreb_pct'])
-    result_df['home_trb_pct'] = safe_divide(result_df['home_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], DEFAULTS['trb_pct'])
-    result_df['away_trb_pct'] = safe_divide(result_df['away_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], DEFAULTS['trb_pct'])
+    away_split_definitions = {k: v for k, v in split_map.items() if k.startswith('a_team_')}
+    result = _attach_split(result, away_team_col, hist, away_split_definitions, flag_imputations)
+    
+    # Offense vs hand
+    hand_map = {
+        'h_team_off_avg_runs_vs_opp_hand': (hist_vs_lhp, hist_vs_rhp, 'mlb_avg_runs_vs_hand', 4.5),
+        'a_team_off_avg_runs_vs_opp_hand': (hist_vs_lhp, hist_vs_rhp, 'mlb_avg_runs_vs_hand', 4.5),
+    }
+    result = _attach_vs_hand(result, home_team_col, away_hand_col, hist, {'h_team_off_avg_runs_vs_opp_hand': hand_map['h_team_off_avg_runs_vs_opp_hand']})
+    result = _attach_vs_hand(result, away_team_col, home_hand_col, hist, {'a_team_off_avg_runs_vs_opp_hand': hand_map['a_team_off_avg_runs_vs_opp_hand']})
 
-    # --- 3. Calculate Pace and Possessions ---
-    logger.debug("Calculating raw possessions, average possessions, and Pace...")
-    # Calculate Raw Possessions per team using standard formula
-    home_poss_raw = (
-        result_df['home_fg_attempted']
-        + 0.44 * result_df['home_ft_attempted']
-        - result_df['home_off_reb']
-        + result_df['home_turnovers']
-    )
-    away_poss_raw = (
-        result_df['away_fg_attempted']
-        + 0.44 * result_df['away_ft_attempted']
-        - result_df['away_off_reb']
-        + result_df['away_turnovers']
-    )
-    result_df['home_poss_raw'] = home_poss_raw
-    result_df['away_poss_raw'] = away_poss_raw
-    # Create denominators for safe division, replacing 0 with NaN
-    home_poss_safe_denom = home_poss_raw.replace(0, np.nan)
-    away_poss_safe_denom = away_poss_raw.replace(0, np.nan)
+    if not flag_imputations:
+        # drop *_imputed columns
+        result = result.drop(columns=[c for c in result.columns if c.endswith('_imputed')], errors='ignore')
 
-    # Calculate Average Possessions per Team (for Pace calculation)
-    avg_poss_per_team = 0.5 * (home_poss_raw + away_poss_raw)
+    # Cleanup
+    result = result.drop(columns=[home_team_col, away_team_col], errors='ignore')
 
-    # Clip and Store Average Possessions Estimate
-    possessions_est = avg_poss_per_team.clip(lower=50, upper=120) # Apply reasonable clipping
-    result_df['possessions_est'] = possessions_est.fillna(DEFAULTS['estimated_possessions'])
-
-    # Calculate Game Minutes Played, accounting for overtime
-    num_ot = np.maximum(result_df.get('home_ot', 0), result_df.get('away_ot', 0)).clip(lower=0)
-    game_minutes_calc = 48.0 + num_ot * 5.0
-    result_df['game_minutes_played'] = np.maximum(48.0, game_minutes_calc) # Ensure minimum 48 mins
-
-    # Calculate Game Pace (Pace per 48 minutes, using average possessions estimate)
-    result_df['game_pace'] = safe_divide(
-        result_df['possessions_est'] * 48.0,
-        result_df['game_minutes_played'],
-        DEFAULTS['pace']
-    )
-    # Assign the same game pace to both teams
-    result_df['home_pace'] = result_df['game_pace']
-    result_df['away_pace'] = result_df['game_pace']
-
-    # --- 4. Calculate Efficiency (Ratings) and TOV% using RAW possessions ---
-    logger.debug("Calculating ratings and TOV% using raw possessions...")
-    # Calculate Offensive Ratings
-    result_df['home_offensive_rating'] = safe_divide(result_df['home_score'] * 100, home_poss_safe_denom, DEFAULTS['offensive_rating'])
-    result_df['away_offensive_rating'] = safe_divide(result_df['away_score'] * 100, away_poss_safe_denom, DEFAULTS['offensive_rating'])
-    # Defensive Rating is simply the opponent's Offensive Rating
-    result_df['home_defensive_rating'] = result_df['away_offensive_rating']
-    result_df['away_defensive_rating'] = result_df['home_offensive_rating']
-
-    # Apply clipping to ratings to keep them within reasonable bounds
-    rating_cols = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating']
-    for col in rating_cols:
-        # Use the generic default rating if specific one isn't found (shouldn't happen with comprehensive DEFAULTS)
-        default_key = col.replace('home_', '').replace('away_', '')
-        result_df[col] = result_df[col].clip(lower=70, upper=150).fillna(DEFAULTS.get(default_key, 115.0))
-
-    # Calculate Net Ratings
-    result_df['home_net_rating'] = result_df['home_offensive_rating'] - result_df['home_defensive_rating']
-    result_df['away_net_rating'] = result_df['away_offensive_rating'] - result_df['away_defensive_rating']
-
-    # Calculate TOV% using raw possessions
-    result_df['home_tov_rate'] = safe_divide(result_df['home_turnovers'] * 100, home_poss_safe_denom, DEFAULTS['tov_rate'])
-    result_df['away_tov_rate'] = safe_divide(result_df['away_turnovers'] * 100, away_poss_safe_denom, DEFAULTS['tov_rate'])
-
-    # Apply clipping to TOV%
-    result_df['home_tov_rate'] = result_df['home_tov_rate'].clip(lower=5, upper=25).fillna(DEFAULTS['tov_rate'])
-    result_df['away_tov_rate'] = result_df['away_tov_rate'].clip(lower=5, upper=25).fillna(DEFAULTS['tov_rate'])
-
-    # --- 5. Calculate Differentials & Convenience Columns ---
-    logger.debug("Calculating differential features...")
-    result_df['efficiency_differential'] = result_df['home_net_rating'] - result_df['away_net_rating']
-    result_df['efg_pct_diff'] = result_df['home_efg_pct'] - result_df['away_efg_pct']
-    result_df['ft_rate_diff'] = result_df['home_ft_rate'] - result_df['away_ft_rate']
-    result_df['oreb_pct_diff'] = result_df['home_oreb_pct'] - result_df['away_oreb_pct']
-    result_df['dreb_pct_diff'] = result_df['home_dreb_pct'] - result_df['away_dreb_pct']
-    result_df['trb_pct_diff'] = result_df['home_trb_pct'] - result_df['away_trb_pct']
-    # 'pace_differential' is intentionally omitted as home_pace == away_pace
-    result_df['tov_rate_diff'] = result_df['away_tov_rate'] - result_df['home_tov_rate'] # Note: Away - Home
-
-    # Add total score and point diff if they don't exist (useful for analysis)
-    if 'total_score' not in result_df.columns:
-        result_df['total_score'] = result_df['home_score'] + result_df['away_score']
-    if 'point_diff' not in result_df.columns:
-        result_df['point_diff'] = result_df['home_score'] - result_df['away_score']
-
-    # --- 6. Clean Up ---
-    # Remove intermediate columns if they exist (e.g., from older versions)
-    result_df = result_df.drop(columns=['home_possessions', 'away_possessions'], errors='ignore')
-
-    logger.debug("Finished integrating advanced features with revised Pace/Poss/Ratings.")
-    logger.debug("advanced.transform: done, output shape=%s", result_df.shape)
-
-    # Restore original logger level if it was changed
-    if debug: logger.setLevel(current_level)
-
-    return result_df
+    if debug:
+        logger.debug(f"advanced.transform complete: output_shape={result.shape}")
+    return result

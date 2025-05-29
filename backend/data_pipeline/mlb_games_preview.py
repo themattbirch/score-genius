@@ -195,6 +195,43 @@ def normalize_team_name(name: str) -> str:
         return mapping[temp]
     return temp.title()
 
+def propagate_handedness_to_historical(target_date: date) -> None:
+    """
+    Copy home/away starter handedness from mlb_game_schedule into
+    mlb_historical_game_stats for all games on target_date.
+    """
+    supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    iso = target_date.isoformat()
+    # 1) fetch schedule rows for that date
+    resp = (
+        supa.table("mlb_game_schedule")
+            .select("game_id, home_probable_pitcher_handedness, away_probable_pitcher_handedness")
+            .eq("game_date_et", iso)
+            .execute()
+    )
+    for g in resp.data or []:
+        payload = {
+            "home_starter_pitcher_handedness": g["home_probable_pitcher_handedness"],
+            "away_starter_pitcher_handedness": g["away_probable_pitcher_handedness"],
+            "updated_at": dt_datetime.now(UTC).isoformat()
+        }
+        supa.table("mlb_historical_game_stats") \
+            .update(payload) \
+            .eq("game_id", g["game_id"]) \
+            .execute()
+
+def run_handedness_aggregation_rpc(season: int) -> None:
+    """
+    Calls the Supabase RPC to aggregate LHP/RHP run splits into mlb_historical_team_stats.
+    """
+    supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    resp = supa.rpc(
+        "update_team_handedness_run_splits",
+        {"p_season": season}
+    ).execute()
+    print(f"Called update_team_handedness_run_splits({season}), returned: {resp.data}")
+
+
 def clear_old_games():
     """
     Deletes any mlb_game_schedule rows whose game_date_et is before today (ET).
@@ -735,16 +772,24 @@ def build_and_upsert_mlb_previews() -> int:
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    print("Starting MLB Games Preview Script (Schedule, Odds, and Pitcher Updates)…")
+    today     = dt_datetime.now(ET_ZONE).date()
+    yesterday = today - timedelta(days=1)
 
-    # Step 0: Clear old games from table
-    clear_old_games()  
+    # Step 1: Copy yesterday’s handedness into historical stats
+    propagate_handedness_to_historical(yesterday)
 
-    # Step 1: Build and upsert game previews
+    # Step 2: Prune any schedule rows before today
+    clear_old_games()
+
+    # Step 3: Upsert today’s + tomorrow’s previews
     build_and_upsert_mlb_previews()
 
-    # Step 2: Update probable pitcher info for today's games
-    today_et_date = dt_datetime.now(ET_ZONE).date()
-    update_pitchers_for_date(today_et_date)
+    # Step 4: Scrape & patch today’s probable pitchers
+    update_pitchers_for_date(today)
 
-    print("\nMLB Games Preview Script finished.")
+    # Step 5: Aggregate LHP/RHP splits into team stats
+    season = today.year
+    print(f"Running handedness‐split aggregation for season {season}")
+    run_handedness_aggregation_rpc(season)
+
+    print("MLB Games Preview Script finished.")

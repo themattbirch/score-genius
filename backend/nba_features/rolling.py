@@ -1,6 +1,4 @@
-# ---------------------------------------------------------------------
-# backend/nba_features/rolling.py - Using robust helper functions
-# ---------------------------------------------------------------------
+# backend/nba_features/rolling.py
 from __future__ import annotations
 
 import logging

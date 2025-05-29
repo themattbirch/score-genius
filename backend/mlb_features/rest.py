@@ -1,6 +1,4 @@
 # backend/mlb_features/rest.py
-
-# backend/mlb_features/rest.py
 """
 Calculates rest-based features for MLB games.
 

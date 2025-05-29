@@ -1,4 +1,4 @@
-# backend/features/utils.py
+# backend/mlb_features/utils.py
 
 from __future__ import annotations
 import numpy as np
