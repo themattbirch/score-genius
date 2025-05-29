@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Exclude Supabase remote_schema migration
+        run: rm -f supabase/migrations/*remote_schema*.sql
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -56,21 +58,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Exclude Supabase remote_schema migration
+        run: rm -f supabase/migrations/*remote_schema*.sql
+
       - name: Install Postgres client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+
       - name: Start Supabase
         run: supabase start
+
       - name: Wait for Postgres
         run: |
           for _ in {1..10}; do
             pg_isready -h 127.0.0.1 -p 54322 -U postgres && break
             sleep 3
           done
+
       - name: Reset & apply migrations
         run: PGSSLMODE=disable supabase db reset
+
       - name: Stop Supabase
         if: always()
         run: supabase stop --no-backup
