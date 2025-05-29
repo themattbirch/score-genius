@@ -17,42 +17,42 @@ SET row_security = off;
 -- Name: auth; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA auth;
+--CREATE SCHEMA auth;
 
 
 --
 -- Name: extensions; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA extensions;
+--CREATE SCHEMA extensions;
 
 
 --
 -- Name: graphql; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA graphql;
+--CREATE SCHEMA graphql;
 
 
 --
 -- Name: graphql_public; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA graphql_public;
+--CREATE SCHEMA graphql_public;
 
 
 --
 -- Name: pgbouncer; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA pgbouncer;
+--CREATE SCHEMA pgbouncer;
 
 
 --
 -- Name: pgsodium; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA pgsodium;
+--CREATE SCHEMA pgsodium;
 
 
 --
@@ -73,28 +73,28 @@ COMMENT ON EXTENSION pgsodium IS 'Pgsodium is a modern cryptography library for 
 -- Name: realtime; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA realtime;
+--CREATE SCHEMA realtime;
 
 
 --
 -- Name: storage; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA storage;
+--CREATE SCHEMA storage;
 
 
 --
 -- Name: supabase_migrations; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA supabase_migrations;
+--CREATE SCHEMA supabase_migrations;
 
 
 --
 -- Name: vault; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA vault;
+--CREATE SCHEMA vault;
 
 
 --
