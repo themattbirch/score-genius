@@ -74,4 +74,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python backend/scripts/populate_advanced_splits.py
+        run: python backend/nba_features/populate_advanced_splits.py
