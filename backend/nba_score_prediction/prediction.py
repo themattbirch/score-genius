@@ -76,7 +76,7 @@ UPCOMING_GAMES_COLS = ["game_id", "scheduled_time", "home_team", "away_team"]
 
 # --- Project module imports (left as-is) ---
 try:
-    from nba_features.engine import run_feature_pipeline, DEFAULT_EXECUTION_ORDER
+    from nba_features.engine import run_feature_pipeline, DEFAULT_ORDER
     from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor, XGBoostScorePredictor
     from nba_score_prediction.simulation import PredictionUncertaintyEstimator
     import nba_score_prediction.utils as utils
@@ -725,12 +725,13 @@ def generate_predictions(
 
     try:
         features_all = run_feature_pipeline(
-            df=combined,
-            historical_games_df=hist_df,
-            team_stats_df=team_stats_df,
-            rolling_windows=[5,10,20],
-            h2h_window=7,
-            execution_order=DEFAULT_EXECUTION_ORDER,
+            df=combined,                       # The main DataFrame to process
+            db_conn=supabase,                  # Pass the Supabase client for data fetching
+            rolling_windows=[5, 10, 20],       # Or from config/args
+            h2h_lookback=7,                    # Or from config/args (parameter name is h2h_lookback)
+            execution_order=DEFAULT_ORDER,     # Use the correctly imported name
+            adv_splits_lookup_offset=-1,       # Provide this, or make it configurable
+            flag_imputations_all=True,         # Provide this, or make it configurable
             debug=debug_mode
         )
     except Exception as e:

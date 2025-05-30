@@ -1483,13 +1483,15 @@ def run_training_pipeline(args: argparse.Namespace):
     try:
         # Call the imported run_feature_pipeline function directly
         features_df = run_feature_pipeline(
-            df=historical_df.copy(), # Pass the main historical data
-            historical_games_df=historical_df.copy(), # Pass historical again for H2H lookup
-            team_stats_df=team_stats_df, 
-            rolling_windows=rolling_windows_list,
-            h2h_window=args.h2h_window,
-            debug=args.debug # Pass debug flag
+            df=historical_df.copy(),
+            db_conn=supabase_client,
+            h2h_lookback=args.h2h_window, # Or your corresponding variable
+            rolling_windows=rolling_windows_list, # Or your corresponding variable
+            adv_splits_lookup_offset=getattr(args, 'adv_offset', -1), # Or your value
+            flag_imputations_all=getattr(args, 'flag_imputations', True), # Or your value
+            debug=args.debug
         )
+
     # Keep general exception handling for the pipeline call
     except Exception as fe_gen_e:
          logger.error(f"Feature generation pipeline failed: {fe_gen_e}", exc_info=True)

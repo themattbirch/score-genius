@@ -1,188 +1,190 @@
 # backend/nba_features/advanced.py
+"""
+Attaches pre-calculated historical/seasonal advanced statistical splits to game data.
+
+This module takes an input DataFrame of games and another DataFrame containing
+pre-calculated seasonal advanced stats (with home/away splits, often from an RPC
+or a processed data source like 'nba_team_seasonal_advanced_splits').
+It looks up the relevant season's home performance stats for the home team and
+away performance stats for the away team, and attaches them to each game.
+Differentials between these historical stats are also calculated.
+"""
 
 from __future__ import annotations
 import logging
-from typing import Any # Keep Any for DEFAULTS typing if needed
+from typing import Mapping, Sequence, Dict # Added Dict
 
-import numpy as np
+import numpy as np # Not strictly needed here now, but pandas uses it
 import pandas as pd
 
-# Import necessary components from the utils module
-from .utils import safe_divide, DEFAULTS # Assuming DEFAULTS and safe_divide are in utils.py
+# Assuming profile_time is for performance measurement, keep if used
+from .utils import normalize_team_name, DEFAULTS, profile_time 
 
-# --- Logger Configuration ---
-# Configure logging for this module
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
-)
 logger = logging.getLogger(__name__)
-
-# Explicitly export the transform function
 __all__ = ["transform"]
 
-# -- Constants --
-# EPSILON = 1e-6 # Moved to utils.py if needed globally, otherwise define here if only used here
+# Expected base advanced stat names (these should align with keys in DEFAULTS
+# and the base names in the columns of stats_df, e.g., 'pace' for 'pace_home')
+EXPECTED_STATS: Sequence[str] = [
+    "pace", "off_rtg", "def_rtg", "net_rtg", "efg_pct", "tov_pct", "oreb_pct", "ft_rate"
+]
 
+@profile_time # If you want to profile this function
 def transform(
     df: pd.DataFrame,
     *,
+    stats_df: pd.DataFrame, # DataFrame from 'nba_team_seasonal_advanced_splits' table
+    season: str | None = None,            # The season year for which stats_df is filtered/relevant
+    flag_imputations: bool = True,
     debug: bool = False,
 ) -> pd.DataFrame:
     """
-    Calculates advanced metrics: eFG%, FT%, Reb%, Possessions, Pace, Ratings, TOV%.
+    Attaches seasonal advanced splits (home vs. away from stats_df for the given season) 
+    to the input df and computes differentials.
 
     Args:
-        df: Input DataFrame containing necessary base stats (scores, fg, ft, reb, tov, ot).
-        debug: If True, sets logging level to DEBUG for this function call.
-
-    Returns:
-        DataFrame with added advanced feature columns.
+        df: Games DataFrame with ['game_id','home_team','away_team'].
+        stats_df: DataFrame containing pre-calculated seasonal advanced stats. Expected
+                  columns include 'team_name' (or 'team_norm'), 'season', and split stats
+                  like 'pace_home', 'off_rtg_away', etc., for the specified 'season'.
+        season: The specific season year (e.g., 2022 for 2022-23) for which the stats
+                in `stats_df` should be used. This function will filter `stats_df` by this season.
+        flag_imputations: If True, add boolean '_imputed' flags for attached stats.
+        debug: If True, enable DEBUG logging for this function call.
     """
-    # Set logger level based on debug flag for this specific call
-    current_level = logger.level
+    original_logger_level = logger.level # Renamed to avoid conflict
+    if season is None and "game_date" in stats_df:
+        from .utils import determine_season
+        season = determine_season(pd.to_datetime(stats_df["game_date"].iloc[0]))
+    
     if debug:
         logger.setLevel(logging.DEBUG)
-        logger.debug("DEBUG mode enabled for advanced.transform")
+        logger.debug(f"historical_advanced_splits.transform: Attaching stats for season={season}")
 
-    if df is None or df.empty:
-        logger.warning("advanced.transform: Input DataFrame is empty. Returning empty DataFrame.")
-        # Restore logger level
-        if debug: logger.setLevel(current_level)
-        return pd.DataFrame() # Return empty DF to avoid errors downstream
+    if df.empty:
+        logger.warning("historical_advanced_splits.transform: Input 'df' is empty. Returning copy.")
+        if debug: logger.setLevel(original_logger_level)
+        return df.copy()
+    
+    if stats_df is None or stats_df.empty: # Added check for stats_df being None
+        logger.warning("historical_advanced_splits.transform: Input 'stats_df' is empty. Cannot attach stats. Returning copy of df.")
+        # Optionally, could add placeholder columns with NaNs or defaults to df here if a strict output schema is always needed.
+        if debug: logger.setLevel(original_logger_level)
+        return df.copy()
 
-    logger.debug("Integrating advanced metrics (Revised Pace/Poss/Ratings)...")
-    # Work on a copy to avoid modifying the original DataFrame
-    result_df = df.copy()
+    out_df = df.copy() # Renamed to avoid confusion with 'df' parameter
+    out_df['home_norm'] = out_df['home_team'].astype(str).map(normalize_team_name)
+    out_df['away_norm'] = out_df['away_team'].astype(str).map(normalize_team_name)
 
-    # --- 1. Ensure Required Base Stats Exist & Are Numeric ---
-    # Define the essential base statistics needed for calculations
-    stat_cols = [
-        'home_score', 'away_score', 'home_fg_made', 'home_fg_attempted',
-        'away_fg_made', 'away_fg_attempted', 'home_3pm', 'home_3pa',
-        'away_3pm', 'away_3pa', 'home_ft_made', 'home_ft_attempted',
-        'away_ft_made', 'away_ft_attempted', 'home_off_reb', 'home_def_reb',
-        'home_total_reb', 'away_off_reb', 'away_def_reb', 'away_total_reb',
-        'home_turnovers', 'away_turnovers', 'home_ot', 'away_ot'
-    ]
-    # Check for missing columns and fill with 0
-    for col in stat_cols:
-        if col not in result_df.columns:
-            logger.warning(f"Advanced Metrics: Column '{col}' not found. Adding with default value 0.")
-            result_df[col] = 0
-        # Convert to numeric, coercing errors and filling NaNs with 0
-        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
+    # Prepare and filter stats_df for the specified season
+    # Ensure 'season' column exists for filtering
+    if 'season' not in stats_df.columns:
+        logger.error("historical_advanced_splits.transform: 'stats_df' is missing 'season' column. Cannot proceed.")
+        if debug: logger.setLevel(original_logger_level)
+        return out_df # Return df as is, without new features
+        
+    # Ensure 'team_name' or 'team_norm' exists for normalization
+    if 'team_norm' not in stats_df.columns and 'team_name' not in stats_df.columns:
+        logger.error("historical_advanced_splits.transform: 'stats_df' must have 'team_name' or 'team_norm'. Cannot proceed.")
+        if debug: logger.setLevel(original_logger_level)
+        return out_df
 
-    # --- 2. Calculate Basic Shooting / Rebounding / FT Rates ---
-    logger.debug("Calculating basic rates (eFG%, FT%, Reb%)...")
-    # Use safe_divide imported from utils and DEFAULTS constant
-    result_df['home_efg_pct'] = safe_divide(result_df['home_fg_made'] + 0.5 * result_df['home_3pm'], result_df['home_fg_attempted'], DEFAULTS['efg_pct'])
-    result_df['away_efg_pct'] = safe_divide(result_df['away_fg_made'] + 0.5 * result_df['away_3pm'], result_df['away_fg_attempted'], DEFAULTS['efg_pct'])
-    result_df['home_ft_rate'] = safe_divide(result_df['home_ft_attempted'], result_df['home_fg_attempted'], DEFAULTS['ft_rate'])
-    result_df['away_ft_rate'] = safe_divide(result_df['away_ft_attempted'], result_df['away_fg_attempted'], DEFAULTS['ft_rate'])
-    result_df['home_oreb_pct'] = safe_divide(result_df['home_off_reb'], result_df['home_off_reb'] + result_df['away_def_reb'], DEFAULTS['oreb_pct'])
-    result_df['away_dreb_pct'] = safe_divide(result_df['away_def_reb'], result_df['away_def_reb'] + result_df['home_off_reb'], DEFAULTS['dreb_pct'])
-    result_df['away_oreb_pct'] = safe_divide(result_df['away_off_reb'], result_df['away_off_reb'] + result_df['home_def_reb'], DEFAULTS['oreb_pct'])
-    result_df['home_dreb_pct'] = safe_divide(result_df['home_def_reb'], result_df['home_def_reb'] + result_df['away_off_reb'], DEFAULTS['dreb_pct'])
-    result_df['home_trb_pct'] = safe_divide(result_df['home_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], DEFAULTS['trb_pct'])
-    result_df['away_trb_pct'] = safe_divide(result_df['away_total_reb'], result_df['home_total_reb'] + result_df['away_total_reb'], DEFAULTS['trb_pct'])
+    # Use a copy for modifications
+    seasonal_stats_filtered = stats_df[stats_df['season'] == season].copy()
+    if 'team_norm' not in seasonal_stats_filtered.columns: # Ensure team_norm exists for merging
+        seasonal_stats_filtered['team_norm'] = seasonal_stats_filtered['team_name'].astype(str).map(normalize_team_name)
+    
+    if seasonal_stats_filtered.empty:
+        logger.warning(f"historical_advanced_splits.transform: No data in 'stats_df' for season {season}. Features will be defaults.")
+        # Proceeding will result in NaNs for all lookups, which will then be default-filled.
 
-    # --- 3. Calculate Pace and Possessions ---
-    logger.debug("Calculating raw possessions, average possessions, and Pace...")
-    # Calculate Raw Possessions per team using standard formula
-    home_poss_raw = (
-        result_df['home_fg_attempted']
-        + 0.44 * result_df['home_ft_attempted']
-        - result_df['home_off_reb']
-        + result_df['home_turnovers']
-    )
-    away_poss_raw = (
-        result_df['away_fg_attempted']
-        + 0.44 * result_df['away_ft_attempted']
-        - result_df['away_off_reb']
-        + result_df['away_turnovers']
-    )
-    result_df['home_poss_raw'] = home_poss_raw
-    result_df['away_poss_raw'] = away_poss_raw
-    # Create denominators for safe division, replacing 0 with NaN
-    home_poss_safe_denom = home_poss_raw.replace(0, np.nan)
-    away_poss_safe_denom = away_poss_raw.replace(0, np.nan)
+    # Merge home and away splits
+    for side_type in ('home', 'away'): # 'home' performance for home_team, 'away' performance for away_team
+        # Determine the prefix for new columns ('h_' for home team's stats, 'a_' for away team's stats)
+        output_col_prefix = 'h' if side_type == 'home' else 'a'
+        # Determine the team column from out_df to join on
+        join_on_team_col = 'home_norm' if side_type == 'home' else 'away_norm'
+        
+        # Define how to rename columns from seasonal_stats_filtered for this side
+        # Source columns in seasonal_stats_filtered are like 'pace_home', 'off_rtg_home', 'pace_away', 'off_rtg_away'
+        # Target columns in out_df are like 'h_pace_home', 'a_pace_away'
+        rename_map_for_merge: Dict[str,str] = {}
+        cols_to_select_from_seasonal = ['team_norm'] # Start with the join key
 
-    # Calculate Average Possessions per Team (for Pace calculation)
-    avg_poss_per_team = 0.5 * (home_poss_raw + away_poss_raw)
+        for stat_base_name in EXPECTED_STATS:
+            # Source column from seasonal_stats_filtered (e.g., 'pace_home' if side_type is 'home')
+            source_col = f"{stat_base_name}_{side_type}" 
+            # Target column in out_df (e.g., 'h_pace_home' if side_type is 'home' and output_col_prefix is 'h')
+            target_col = f"{output_col_prefix}_{stat_base_name}_{side_type}" 
+            
+            if source_col in seasonal_stats_filtered.columns:
+                rename_map_for_merge[source_col] = target_col
+                cols_to_select_from_seasonal.append(source_col)
+            else:
+                logger.warning(f"Expected column '{source_col}' not found in stats_df for season {season}.")
+        
+        if len(cols_to_select_from_seasonal) > 1: # If there are actual stats to merge (beyond just team_norm)
+            temp_df_to_merge = seasonal_stats_filtered[cols_to_select_from_seasonal].rename(columns=rename_map_for_merge)
+            
+            out_df = out_df.merge(
+                temp_df_to_merge,
+                left_on=join_on_team_col,
+                right_on='team_norm', # team_norm from temp_df_to_merge
+                how='left',
+                suffixes=('', '_drop') # Suffix for the 'team_norm' from right if it conflicts
+            )
+            if 'team_norm_drop' in out_df.columns:
+                out_df = out_df.drop(columns=['team_norm_drop'])
+        else:
+            logger.warning(f"No source columns found in stats_df to merge for side '{side_type}' and stats {EXPECTED_STATS}")
 
-    # Clip and Store Average Possessions Estimate
-    possessions_est = avg_poss_per_team.clip(lower=50, upper=120) # Apply reasonable clipping
-    result_df['possessions_est'] = possessions_est.fillna(DEFAULTS['estimated_possessions'])
 
-    # Calculate Game Minutes Played, accounting for overtime
-    num_ot = np.maximum(result_df.get('home_ot', 0), result_df.get('away_ot', 0)).clip(lower=0)
-    game_minutes_calc = 48.0 + num_ot * 5.0
-    result_df['game_minutes_played'] = np.maximum(48.0, game_minutes_calc) # Ensure minimum 48 mins
+    # Impute defaults and set flags for all newly created columns
+    for stat_base_name in EXPECTED_STATS:
+        for side_type, output_col_prefix in (('home', 'h'), ('away', 'a')):
+            # This is the column name in out_df, e.g. h_pace_home, a_off_rtg_away
+            final_col_name = f"{output_col_prefix}_{stat_base_name}_{side_type}"
+            
+            # Use the base stat name (e.g., "pace", "off_rtg") for default lookup
+            default_value = DEFAULTS.get(stat_base_name, 0.0) 
 
-    # Calculate Game Pace (Pace per 48 minutes, using average possessions estimate)
-    result_df['game_pace'] = safe_divide(
-        result_df['possessions_est'] * 48.0,
-        result_df['game_minutes_played'],
-        DEFAULTS['pace']
-    )
-    # Assign the same game pace to both teams
-    result_df['home_pace'] = result_df['game_pace']
-    result_df['away_pace'] = result_df['game_pace']
+            if final_col_name not in out_df.columns: # If merge didn't create the column
+                out_df[final_col_name] = default_value # Create with default
+                if flag_imputations:
+                    out_df[f"{final_col_name}_imputed"] = True # Fully imputed
+            else:
+                if flag_imputations:
+                    out_df[f"{final_col_name}_imputed"] = out_df[final_col_name].isnull()
+                out_df[final_col_name] = pd.to_numeric(out_df[final_col_name], errors='coerce').fillna(default_value)
+            
+            # Ensure types
+            out_df[final_col_name] = out_df[final_col_name].astype(float)
+            if flag_imputations and f"{final_col_name}_imputed" in out_df.columns:
+                 out_df[f"{final_col_name}_imputed"] = out_df[f"{final_col_name}_imputed"].astype(bool)
 
-    # --- 4. Calculate Efficiency (Ratings) and TOV% using RAW possessions ---
-    logger.debug("Calculating ratings and TOV% using raw possessions...")
-    # Calculate Offensive Ratings
-    result_df['home_offensive_rating'] = safe_divide(result_df['home_score'] * 100, home_poss_safe_denom, DEFAULTS['offensive_rating'])
-    result_df['away_offensive_rating'] = safe_divide(result_df['away_score'] * 100, away_poss_safe_denom, DEFAULTS['offensive_rating'])
-    # Defensive Rating is simply the opponent's Offensive Rating
-    result_df['home_defensive_rating'] = result_df['away_offensive_rating']
-    result_df['away_defensive_rating'] = result_df['home_offensive_rating']
 
-    # Apply clipping to ratings to keep them within reasonable bounds
-    rating_cols = ['home_offensive_rating', 'away_offensive_rating', 'home_defensive_rating', 'away_defensive_rating']
-    for col in rating_cols:
-        # Use the generic default rating if specific one isn't found (shouldn't happen with comprehensive DEFAULTS)
-        default_key = col.replace('home_', '').replace('away_', '')
-        result_df[col] = result_df[col].clip(lower=70, upper=150).fillna(DEFAULTS.get(default_key, 115.0))
+    # Compute differentials
+    logger.debug("Calculating differentials for historical seasonal splits...")
+    for stat_base_name in EXPECTED_STATS:
+        # Home team's historical home stat vs Away team's historical away stat
+        home_team_stat_col = f"h_{stat_base_name}_home" 
+        away_team_stat_col = f"a_{stat_base_name}_away"
+        diff_col_name = f"hist_{stat_base_name}_split_diff" # More descriptive diff name
 
-    # Calculate Net Ratings
-    result_df['home_net_rating'] = result_df['home_offensive_rating'] - result_df['home_defensive_rating']
-    result_df['away_net_rating'] = result_df['away_offensive_rating'] - result_df['away_defensive_rating']
+        if home_team_stat_col in out_df.columns and away_team_stat_col in out_df.columns:
+            out_df[diff_col_name] = (out_df[home_team_stat_col] - out_df[away_team_stat_col]).astype(float)
+        else:
+            logger.warning(f"Cannot calculate {diff_col_name}, missing components: {home_team_stat_col} or {away_team_stat_col}.")
+            out_df[diff_col_name] = 0.0 # Default diff to 0.0
 
-    # Calculate TOV% using raw possessions
-    result_df['home_tov_rate'] = safe_divide(result_df['home_turnovers'] * 100, home_poss_safe_denom, DEFAULTS['tov_rate'])
-    result_df['away_tov_rate'] = safe_divide(result_df['away_turnovers'] * 100, away_poss_safe_denom, DEFAULTS['tov_rate'])
-
-    # Apply clipping to TOV%
-    result_df['home_tov_rate'] = result_df['home_tov_rate'].clip(lower=5, upper=25).fillna(DEFAULTS['tov_rate'])
-    result_df['away_tov_rate'] = result_df['away_tov_rate'].clip(lower=5, upper=25).fillna(DEFAULTS['tov_rate'])
-
-    # --- 5. Calculate Differentials & Convenience Columns ---
-    logger.debug("Calculating differential features...")
-    result_df['efficiency_differential'] = result_df['home_net_rating'] - result_df['away_net_rating']
-    result_df['efg_pct_diff'] = result_df['home_efg_pct'] - result_df['away_efg_pct']
-    result_df['ft_rate_diff'] = result_df['home_ft_rate'] - result_df['away_ft_rate']
-    result_df['oreb_pct_diff'] = result_df['home_oreb_pct'] - result_df['away_oreb_pct']
-    result_df['dreb_pct_diff'] = result_df['home_dreb_pct'] - result_df['away_dreb_pct']
-    result_df['trb_pct_diff'] = result_df['home_trb_pct'] - result_df['away_trb_pct']
-    # 'pace_differential' is intentionally omitted as home_pace == away_pace
-    result_df['tov_rate_diff'] = result_df['away_tov_rate'] - result_df['home_tov_rate'] # Note: Away - Home
-
-    # Add total score and point diff if they don't exist (useful for analysis)
-    if 'total_score' not in result_df.columns:
-        result_df['total_score'] = result_df['home_score'] + result_df['away_score']
-    if 'point_diff' not in result_df.columns:
-        result_df['point_diff'] = result_df['home_score'] - result_df['away_score']
-
-    # --- 6. Clean Up ---
-    # Remove intermediate columns if they exist (e.g., from older versions)
-    result_df = result_df.drop(columns=['home_possessions', 'away_possessions'], errors='ignore')
-
-    logger.debug("Finished integrating advanced features with revised Pace/Poss/Ratings.")
-    logger.debug("advanced.transform: done, output shape=%s", result_df.shape)
-
-    # Restore original logger level if it was changed
-    if debug: logger.setLevel(current_level)
-
-    return result_df
+    # Drop helper columns
+    helper_cols = ['home_norm', 'away_norm']
+    # Drop team_norm if it was added by merge and not original, or if only one was kept after merge
+    if 'team_norm' in out_df.columns and 'team_norm' not in df.columns: 
+        helper_cols.append('team_norm')
+    out_df = out_df.drop(columns=[c for c in helper_cols if c in out_df.columns], errors='ignore')
+    
+    if debug:
+        logger.setLevel(original_logger_level)
+    logger.debug(f"historical_advanced_splits.transform completed. Output df shape: {out_df.shape}")
+    return out_df

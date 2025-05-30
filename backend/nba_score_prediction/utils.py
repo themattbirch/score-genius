@@ -148,13 +148,22 @@ def safe_divide(numerator: pd.Series, denominator: pd.Series, default_val: float
     return result.fillna(default_val) #
 
 # --- String/Date Helpers (Moved from Feature Engine) ---
-
-@lru_cache(maxsize=512) 
+@lru_cache(maxsize=512)
 def normalize_team_name(team_name: Optional[str]) -> str:
     """Normalize team names using a predefined mapping."""
-    if not isinstance(team_name, str): return "Unknown"
+    # Add a print statement HERE to see exactly what's coming in,
+    # and what's going out, EVERY time it's called.
+    # print(f"normalize_team_name INPUT: '{team_name}' (type: {type(team_name)})")
+
+    if not isinstance(team_name, str) or not team_name.strip(): # Check for empty string too
+        # print(f"normalize_team_name OUTPUT (due to non-string/empty): 'Unknown'")
+        return "Unknown"
+        
     team_lower = team_name.lower().strip()
+    
     mapping = {
+        "team alpha": "teamalpha",   # Ensure this line exists and is correct
+        "team beta": "teambeta",     # Ensure this line exists and is correct
         "atlanta hawks": "hawks", "atlanta": "hawks", "atl": "hawks", "hawks": "hawks", "atlanta h": "hawks",
         "boston celtics": "celtics", "boston": "celtics", "bos": "celtics", "celtics": "celtics",
         "brooklyn nets": "nets", "brooklyn": "nets", "bkn": "nets", "nets": "nets", "new jersey nets": "nets",
@@ -191,13 +200,18 @@ def normalize_team_name(team_name: Optional[str]) -> str:
         "chuck’s global stars": "other_team", "shaq’s ogs": "other_team",
         "kenny’s young stars": "other_team", "candace’s rising stars": "other_team",
     }
-    if team_lower in mapping: return mapping[team_lower]
-    # Fallback substring matching (less reliable)
-    for name, norm in mapping.items():
-        if len(team_lower) > 3 and team_lower in name: return norm
-        if len(name) > 3 and name in team_lower: return norm
-    logger.warning(f"Team name '{team_name}' normalized to '{team_lower}' - no mapping found!")
-    return team_lower 
+    if team_lower in mapping:
+        # print(f"normalize_team_name OUTPUT (from mapping for '{team_lower}'): '{mapping[team_lower]}'")
+        return mapping[team_lower]
+    
+    # Fallback substring matching (careful with this, it can be error-prone)
+    # for name, norm in mapping.items():
+    #     if len(team_lower) > 3 and team_lower in name: return norm
+    #     if len(name) > 3 and name in team_lower: return norm
+            
+    logger.warning(f"Team name '{team_name}' normalized to '{team_lower}' - no explicit mapping found, returning processed name.")
+    # print(f"normalize_team_name OUTPUT (fallback for '{team_lower}'): '{team_lower}'")
+    return team_lower # If it's not in the map, it should return the lowercased, stripped name.
 
 def to_datetime_naive(series: pd.Series) -> pd.Series:
     """Converts a Series to datetime objects, coercing errors and making timezone naive."""
