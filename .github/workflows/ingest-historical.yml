@@ -75,4 +75,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python backend/nba_features/populate_advanced_splits.py

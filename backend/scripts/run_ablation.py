@@ -192,13 +192,35 @@ def main() -> None:
 
     team_stats = _fetch_team_stats(supa)
 
-    # determine lookup season for advanced splits
+    # Determine lookup season for advanced splits
     lookup_season: Optional[int] = None
     adv_splits: pd.DataFrame = pd.DataFrame()
+    
+    # Define the earliest season for which you have populated nba_team_seasonal_advanced_splits
+    MIN_ADV_SPLITS_SEASON_AVAILABLE = 2018 # <<<< Your starting season for splits data
+
     if not raw["game_date"].dropna().empty:
-        date0 = raw["game_date"].min()
-        lookup_season = int(determine_season(date0).split("-")[0]) - 1
-        adv_splits = _fetch_ablation_adv_splits(supa, lookup_season)
+        date0 = raw["game_date"].min() # Earliest game date in your history.parquet
+        game_s_start_year = int(determine_season(date0).split("-")[0]) # e.g., 2018 if date0 is in 2018-19 season
+        
+        # Calculate the desired previous season
+        desired_lookup_season = game_s_start_year - 1 # e.g., 2017
+        
+        # Ensure the lookup season is not earlier than your available data
+        actual_lookup_season = max(desired_lookup_season, MIN_ADV_SPLITS_SEASON_AVAILABLE)
+        
+        lookup_season = actual_lookup_season # Store it for passing to apply_blocks
+
+        logger.info(f"Ablation: Game data starts in season {game_s_start_year}. Desired lookup season (previous) is {desired_lookup_season}.")
+        logger.info(f"Ablation: Earliest available splits data is for season {MIN_ADV_SPLITS_SEASON_AVAILABLE}.")
+        logger.info(f"Ablation: Actual lookup season for 'adv_splits' will be: {actual_lookup_season}")
+        
+        adv_splits = _fetch_ablation_adv_splits(supa, actual_lookup_season)
+        logger.info(f"Shape of fetched adv_splits for season {actual_lookup_season}: {adv_splits.shape}")
+        if adv_splits.empty:
+            logger.warning(f"No advanced splits data found for lookup season {actual_lookup_season} in the database.")
+    else:
+        logger.warning("Ablation: Cannot determine lookup season for 'adv_splits'; 'game_date' in raw data is empty or all NaT.")
 
     # baseline
     y = raw["home_score"] + raw["away_score"]
