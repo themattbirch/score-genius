@@ -1,0 +1,1 @@
+{"get":"games","parameters":{"league":"12","next":"10","timezone":"America\/New_York"},"errors":{"season":"The Season field is required.","next":"The Next field do not exist."},"results":0,"response":[]}

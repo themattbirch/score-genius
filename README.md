@@ -164,19 +164,6 @@ score-genius/
     # venv_pytorch\Scripts\activate
     pip install -r requirements.txt
     ```
-
-3.  **Configure backend environment:**
-    Create a file named `.env` inside the `backend/` directory with your keys. Example:
-    ```dotenv
-    SUPABASE_URL=YOUR_SUPABASE_URL
-    SUPABASE_SERVICE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
-    SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-    API_SPORTS_KEY=YOUR_API_SPORTS_KEY
-    ODDS_API_KEY=YOUR_ODDS_API_KEY
-    RAPIDAPI_KEY=YOUR_RAPIDAPI_KEY
-    RAPIDAPI_HOST=YOUR_RAPIDAPI_HOST
-    ```
-
 4.  **Setup frontend:**
     ```bash
     cd ../frontend
