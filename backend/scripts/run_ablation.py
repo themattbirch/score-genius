@@ -9,310 +9,281 @@ Faster Ablation‐study runner with:
 from __future__ import annotations
 import sys
 from pathlib import Path
-
-# 1) ensure project root on PYTHONPATH so `import backend…` works
-SCRIPT_PATH = Path(__file__).resolve()
-PROJECT_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(PROJECT_ROOT))
-
-# 2) auto‐load .env for Supabase keys, etc.
-from dotenv import load_dotenv
-load_dotenv(PROJECT_ROOT / "backend" / ".env")
-
 import argparse
 import itertools
 import json
-from typing import Iterable, Mapping
+import logging
+from typing import Iterable, Mapping, Any, Optional, Dict, List
+
 import numpy as np
 import pandas as pd
+
 from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import cross_val_score, TimeSeriesSplit
+from sklearn.metrics import mean_squared_error
+
+from dotenv import load_dotenv
 from supabase import create_client
 
-# your modular thin‐proxies
-from backend.nba_features import advanced, rolling, rest, h2h, season, form
-from backend import config
+# ──────────────────────────── project root setup ────────────────────────────
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(PROJECT_ROOT / "backend" / ".env")
 
-import logging
-
-# Configure logging at module level
+# ───────────────────────────── logger setup ──────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
 )
-
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------- #
-# canonical execution order & explicit deps
-# ---------------------------------------------------------------------------- #
-EXECUTION_ORDER = ["rest", "advanced", "h2h", "season", "form", "rolling"]
+# ────────────────────── import your feature modules ──────────────────────
+from backend.nba_features import (
+    advanced,
+    rolling,
+    rest,
+    h2h,
+    season,
+    form,
+    game_advanced_metrics,
+)
+from backend import config
+from backend.nba_features.utils import determine_season
+
+# ─────────────────── canonical execution order & deps ────────────────────
+EXECUTION_ORDER = [
+    "game_advanced_metrics",
+    "rest",
+    "advanced",
+    "h2h",
+    "season",
+    "form",
+    "rolling",
+]
 MODULES: Mapping[str, callable] = {
-    "rolling":  rolling.transform,
-    "advanced": advanced.transform,
-    "h2h":      h2h.transform,
-    "rest":     rest.transform,
-    "season":   season.transform,
-    "form":     form.transform,
+    "game_advanced_metrics": game_advanced_metrics.transform,
+    "rest":               rest.transform,
+    "advanced":           advanced.transform,
+    "h2h":                h2h.transform,
+    "season":             season.transform,
+    "form":               form.transform,
+    "rolling":            rolling.transform,
 }
-REQUIRES = {
-}
+REQUIRES: Mapping[str, Iterable[str]] = {}
 
-def _closure(blocks: Iterable[str]) -> list[str]:
-    """Expand blocks with transitive deps, return in canonical order."""
-    need = set(blocks)
-    changed = True
-    while changed:
-        changed = False
-        for b in list(need):
-            for dep in REQUIRES.get(b, ()):
-                if dep not in need:
-                    need.add(dep)
-                    changed = True
-    return [b for b in EXECUTION_ORDER if b in need]
+# ────────────────────── data‐fetching helpers ──────────────────────────
+def _fetch_team_stats(db_conn: Any) -> pd.DataFrame:
+    logger.info("Ablation: Fetching historical team stats...")
+    try:
+        resp = db_conn.from_("nba_historical_team_stats").select("*").execute()
+        return pd.DataFrame(resp.data or [])
+    except Exception as e:
+        logger.error(f"Failed to fetch team stats: {e}")
+        return pd.DataFrame()
 
+def _fetch_ablation_adv_splits(db_conn: Any, season_year: int) -> pd.DataFrame:
+    logger.info(f"Ablation: Fetching advanced splits for season {season_year}...")
+    try:
+        resp = (
+            db_conn
+            .from_("nba_team_seasonal_advanced_splits")
+            .select("*")
+            .eq("season", season_year)
+            .execute()
+        )
+        return pd.DataFrame(resp.data or [])
+    except Exception as e:
+        logger.error(f"Failed to fetch adv_splits for season {season_year}: {e}")
+        return pd.DataFrame()
+
+# ─────────────────── core feature‐application logic ───────────────────
 def apply_blocks(
     df: pd.DataFrame,
     blocks: Iterable[str],
     *,
-    hist_df: pd.DataFrame,
-    team_stats_df: pd.DataFrame,
-    rolling_windows: list[int],
-    h2h_window: int,
+    game_history_for_h2h: pd.DataFrame,
+    general_team_stats_df: pd.DataFrame,
+    seasonal_adv_splits_lookup_df: pd.DataFrame,
+    lookup_season_for_adv_splits: Optional[int],
+    rolling_windows_list: List[int],
+    h2h_window_val: int,
+    flag_all_imputations: bool = True,
+    debug_mode_feature_gen: bool = False,
 ) -> pd.DataFrame:
-    out = df.copy()
-    active = set(blocks)
+    out_df = df.copy()
+    to_run = set(blocks)
 
     for name in EXECUTION_ORDER:
-        if name not in active:
+        if name not in to_run:
             continue
+        func = MODULES[name]
+        kwargs: dict = {"debug": debug_mode_feature_gen}
 
-        # ✂️ auto‑skip momentum when no quarter data
-        if name == "momentum":
-            required = {
-                "home_q1","home_q2","home_q3","home_q4",
-                "away_q1","away_q2","away_q3","away_q4"
-            }
-            if not required.issubset(out.columns):
-                logger.info("Skipping 'momentum' block: no quarter data present.")
-                continue
-
-        fn = MODULES[name]
-        logger.debug(f"Applying block: {name}")
-
-        kwargs = {'debug': False}
-        if name == "rolling":
-            kwargs['window_sizes'] = rolling_windows
-            out = fn(out, **kwargs)
-        elif name == "h2h":
-            kwargs['historical_df'] = hist_df
-            kwargs['max_games']     = h2h_window
-            out = fn(out, **kwargs)
+        if name == "h2h":
+            kwargs.update(historical_df=game_history_for_h2h, max_games=h2h_window_val)
         elif name == "season":
-            kwargs['team_stats_df'] = team_stats_df
-            out = fn(out, **kwargs)
-        else:
-            # advanced, rest, form
-            out = fn(out, **kwargs)
+            kwargs.update(team_stats_df=general_team_stats_df, flag_imputations=flag_all_imputations)
+        elif name == "form":
+            kwargs.update(team_stats_df=general_team_stats_df)
+        elif name == "advanced":
+            kwargs.update(
+                stats_df=seasonal_adv_splits_lookup_df,
+                season=lookup_season_for_adv_splits,
+                flag_imputations=flag_all_imputations,
+            )
+        elif name == "rolling":
+            kwargs.update(window_sizes=rolling_windows_list, flag_imputation=flag_all_imputations)
 
-    return out
+        logger.debug(f"Ablation: Applying block '{name}'")
+        out_df = func(out_df, **kwargs)
+
+    return out_df
 
 def numeric_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Keep only numeric columns with at least one non‐NA value."""
     num = df.select_dtypes(include=[np.number]).copy()
     return num.loc[:, num.notna().any()]
 
 def drop_target_leak(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Drop columns directly related to or calculated from the final game outcome
-    to prevent data leakage during cross-validation or training.
-    """
-    # --- Columns directly from history.parquet (post-game raw stats/scores) ---
-    raw_post_game_stats = [
-        'home_score', 'away_score', # Direct Targets
-        'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted',
-        'home_3pm', 'home_3pa', 'away_3pm', 'away_3pa',
-        'home_ft_made', 'home_ft_attempted', 'away_ft_made', 'away_ft_attempted',
-        'home_off_reb', 'home_def_reb', 'home_total_reb',
-        'away_off_reb', 'away_def_reb', 'away_total_reb',
-        'home_turnovers', 'away_turnovers',
-        'home_ot', 'away_ot',
-        # Add any others if present in history.parquet (e.g., assists, steals, blocks, fouls)
-        # 'home_assists', 'away_assists', 'home_steals', 'away_steals', etc.
-    ]
-
-    # --- Columns derived BY FEATURE MODULES using the above raw stats (also leaky) ---
-    # Add ALL columns generated by your feature modules that rely on the current game's raw stats.
-    # Check the 'Columns:' output from the previous ablation run carefully.
-    derived_leaky_stats = [
-        'total_score', 'point_diff', # Basic score derivations
-        'home_offensive_rating', 'away_offensive_rating', # Ratings likely derived from score/poss
-        'home_defensive_rating', 'away_defensive_rating',
-        'home_net_rating', 'away_net_rating',
-        'efficiency_differential',
-        'home_efg_pct', 'away_efg_pct',           # Derived from FGM/3PM/FGA
-        'home_ft_rate', 'away_ft_rate',           # Derived from FTM/FGA
-        'home_oreb_pct', 'away_dreb_pct',         # Derived from rebounds (check calculation context)
-        'away_oreb_pct', 'home_dreb_pct',         # Derived from rebounds (check calculation context)
-        'home_trb_pct', 'away_trb_pct',           # Derived from rebounds (check calculation context)
-        'home_poss_raw', 'away_poss_raw',         # Possessions often derived from box score
-        'possessions_est',
-        'game_minutes_played',                    # Might be okay, but can vary with OT
-        'game_pace', 'home_pace', 'away_pace',    # Pace derived from possessions/minutes
-        'home_tov_rate', 'away_tov_rate',         # Derived from turnovers/possessions
-        'efg_pct_diff', 'ft_rate_diff',           # Differentials of leaky stats are leaky
-        'oreb_pct_diff', 'dreb_pct_diff',
-        'trb_pct_diff', 'tov_rate_diff',
-        # Any other stat calculated within feature modules using current-game raw data
-    ]
-
-    # --- Identifiers (usually safe to remove for modeling) ---
-    identifiers = ['game_id', 'game_date'] # Keep game_date if used carefully as a feature (e.g., day of week)
-
-    # --- Combine all columns to drop ---
-    columns_to_drop = list(set(raw_post_game_stats + derived_leaky_stats + identifiers)) # Use set to avoid duplicates
-
-    # --- Drop columns ---
-    df_cleaned = df.drop(columns=columns_to_drop, errors='ignore')
-
-    # --- Logging ---
-    dropped_cols = [col for col in columns_to_drop if col in df.columns]
-    if dropped_cols:
-         # Consider changing level to INFO if you want this visible normally
-         logger.debug(f"drop_target_leak removed {len(dropped_cols)} columns: {sorted(dropped_cols)}")
-    else:
-         logger.debug("drop_target_leak: No target-related columns found to remove.")
-    logger.debug(f"Columns remaining after drop_target_leak: {len(df_cleaned.columns)}")
-
-
-    return df_cleaned
-
-def whitelist_pregame_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    (Optional) further restrict to a safe‐only whitelist if you want.
-    For now we just use numeric_features + drop_target_leak.
-    """
+    # TODO: insert your actual leak-dropping column list here
     return df
 
-# ---------------------------------------------------------------------------- #
-# main
-# ---------------------------------------------------------------------------- #
+def whitelist_pregame_features(df: pd.DataFrame) -> pd.DataFrame:
+    return df
+
+# ────────────────────────────── main ──────────────────────────────
 def main() -> None:
     p = argparse.ArgumentParser(description="Dependency-aware, memoized ablation CV")
-    p.add_argument("--sample",    type=int,    default=5_000, help="0=full")
-    p.add_argument("--folds",     type=int,    default=3,     help="CV folds")
-    p.add_argument("--jobs",      type=int,    default=-1,    help="n_jobs for CV")
-    p.add_argument("--min-blocks",type=int,    default=1,     help="skip combos smaller than this")
-    p.add_argument("--max-blocks",type=int,    default=7,     help="skip combos larger than this")
-    p.add_argument("--out",       type=Path,   default=Path("reports/ablation_results.json"))
+    p.add_argument("--sample", type=int, default=5_000)
+    p.add_argument("--folds",  type=int, default=3)
+    p.add_argument("--jobs",   type=int, default=-1)
+    p.add_argument("--out",    type=Path, default=Path("reports/ablation_results.json"))
+    p.add_argument("--debug-features", action="store_true")
     args = p.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
-    # --- load history.parquet ------------------------------------------------ #
-    for cand in (Path("data/history.parquet"), Path("backend/data/history.parquet")):
+    logger.info(f"Starting ablation study with args: {args}")
+
+    # load raw history
+    for cand in (
+        Path("data/history.parquet"),
+        Path("backend/data/history.parquet"),
+        PROJECT_ROOT / "data" / "history.parquet",
+    ):
         if cand.exists():
             raw = pd.read_parquet(cand)
+            logger.info(f"Loaded raw game data from {cand}")
             break
     else:
-        sys.exit("ERROR: history.parquet not found")
+        logger.error("history.parquet not found. Exiting.")
+        sys.exit(1)
 
     if args.sample and len(raw) > args.sample:
         raw = raw.sample(args.sample, random_state=42).reset_index(drop=True)
+    raw["game_date"] = pd.to_datetime(raw["game_date"])
 
-    # --- pull team stats once (for season block) ----------------------------- #
     supa = create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY)
-    resp = supa.table("nba_historical_team_stats").select("*").execute()
-    team_stats_df = pd.DataFrame(resp.data or [])
+    if not supa:
+        logger.error("Failed to init Supabase client. Exiting.")
+        sys.exit(1)
 
-    # --- target & baseline -------------------------------------------------- #
+    team_stats = _fetch_team_stats(supa)
+
+    # determine lookup season for advanced splits
+    lookup_season: Optional[int] = None
+    adv_splits: pd.DataFrame = pd.DataFrame()
+    if not raw["game_date"].dropna().empty:
+        date0 = raw["game_date"].min()
+        lookup_season = int(determine_season(date0).split("-")[0]) - 1
+        adv_splits = _fetch_ablation_adv_splits(supa, lookup_season)
+
+    # baseline
     y = raw["home_score"] + raw["away_score"]
     dummy = DummyRegressor(strategy="mean")
-    baseline_rmse = -cross_val_score(
-        dummy, np.zeros((len(y),1)), y,
-        cv=args.folds, scoring="neg_root_mean_squared_error", n_jobs=args.jobs
+    base_rmse = -cross_val_score(
+        dummy,
+        np.zeros((len(y), 1)),
+        y,
+        cv=args.folds,
+        scoring="neg_root_mean_squared_error",
+        n_jobs=args.jobs,
     ).mean()
-    print(f"Baseline (mean) RMSE: {baseline_rmse:.3f}")
+    logger.info(f"Baseline RMSE: {base_rmse:.3f}")
 
-    # scale every block’s numeric features before Ridge
-    ridge = make_pipeline(
-    StandardScaler(),
-    Ridge(alpha=1.0, random_state=42)
-    )
+    ridge = make_pipeline(StandardScaler(), Ridge(alpha=1.0, random_state=42))
+    results: Dict[str, float] = {"baseline_mean_target": base_rmse}
 
-    results: dict[str, float] = {"baseline": baseline_rmse}
-
-    rolling_windows = [5,10,20]
-    h2h_window     = 7
-    blocks         = list(MODULES)
-
-    # --- memo cache for feature‐blocks outputs ------------------------------ #
-    cache: dict[str, pd.DataFrame] = {}
-
-    # --- ablation: leave-one-out with time-series CV ---------------------- #
+    all_blocks = EXECUTION_ORDER.copy()
     tscv = TimeSeriesSplit(n_splits=args.folds)
 
-    full_blocks = ["rest", "advanced", "h2h", "season", "form", "rolling"]
-    results: dict[str, float] = {"baseline": baseline_rmse}
+    for leave_out in all_blocks:
+        logger.info(f"Evaluating without block '{leave_out}'")
+        to_apply = [b for b in all_blocks if b != leave_out]
+        scores: List[float] = []
 
-    # for each block, drop it and measure the impact
-    for block in full_blocks:
-        print(f"\n>>> Leaving out block: {block}")
-        blocks_minus = [b for b in full_blocks if b != block]
-
-        fold_rmses: list[float] = []
         for train_idx, val_idx in tscv.split(raw):
-            # split the raw data
-            train_raw = raw.iloc[train_idx].reset_index(drop=True)
-            val_raw   = raw.iloc[val_idx].reset_index(drop=True)
+            tr, va = raw.iloc[train_idx], raw.iloc[val_idx]
 
-            # build features on train set
-            train_feats = apply_blocks(
-                train_raw, blocks_minus,
-                hist_df=train_raw,
-                team_stats_df=team_stats_df,
-                rolling_windows=rolling_windows,
-                h2h_window=h2h_window
+            X_tr = apply_blocks(
+                tr, to_apply,
+                game_history_for_h2h=tr,
+                general_team_stats_df=team_stats,
+                seasonal_adv_splits_lookup_df=adv_splits,
+                lookup_season_for_adv_splits=lookup_season,
+                rolling_windows_list=[5, 10, 20],
+                h2h_window_val=7,
+                flag_all_imputations=True,
+                debug_mode_feature_gen=args.debug_features,
             )
-            # build features on val set, but only feed it train history
-            val_feats = apply_blocks(
-                val_raw, blocks_minus,
-                hist_df=train_raw,
-                team_stats_df=team_stats_df,
-                rolling_windows=rolling_windows,
-                h2h_window=h2h_window
+            X_va = apply_blocks(
+                va, to_apply,
+                game_history_for_h2h=tr,
+                general_team_stats_df=team_stats,
+                seasonal_adv_splits_lookup_df=adv_splits,
+                lookup_season_for_adv_splits=lookup_season,
+                rolling_windows_list=[5, 10, 20],
+                h2h_window_val=7,
+                flag_all_imputations=True,
+                debug_mode_feature_gen=args.debug_features,
             )
 
             # cast any _imputed flags to int
-            for df_ in (train_feats, val_feats):
+            for df_ in (X_tr, X_va):
                 for c in df_.columns:
                     if c.endswith("_imputed"):
                         df_[c] = df_[c].astype(int)
 
-            # drop leakage, keep only numeric
-            X_train = whitelist_pregame_features(numeric_features(drop_target_leak(train_feats)))
-            X_val   = whitelist_pregame_features(numeric_features(drop_target_leak(val_feats)))
-            y_train = (train_raw["home_score"] + train_raw["away_score"])
-            y_val   = (val_raw  ["home_score"] + val_raw  ["away_score"])
+            Xtr_num = numeric_features(drop_target_leak(whitelist_pregame_features(X_tr)))
+            Xva_num = numeric_features(drop_target_leak(whitelist_pregame_features(X_va)))
+            common = Xtr_num.columns.intersection(Xva_num.columns)
+            Xtr_num, Xva_num = Xtr_num[common], Xva_num[common]
 
-            # fit & score
-            ridge.fit(X_train, y_train)
-            preds = ridge.predict(X_val)
-            fold_rmses.append(np.sqrt(((preds - y_val) ** 2).mean()))
+            if common.empty or Xtr_num.empty or Xva_num.empty:
+                scores.append(np.nan)
+                continue
 
-        # average over folds
-        rmse = float(np.mean(fold_rmses))
-        delta = baseline_rmse - rmse
-        results[f"without {block}"] = rmse
-        print(f"Without {block:8} → RMSE {rmse:.3f}  Δ {delta:+.3f}")
+            y_tr = tr["home_score"] + tr["away_score"]
+            y_va = va["home_score"] + va["away_score"]
+            try:
+                ridge.fit(Xtr_num, y_tr)
+                preds = ridge.predict(Xva_num)
+                scores.append(np.sqrt(mean_squared_error(y_va, preds)))
+            except Exception as e:
+                logger.error(f"Error fitting '{leave_out}' fold: {e}")
+                scores.append(np.nan)
 
-    # write out as before…
+        avg = float(np.nanmean(scores))
+        results[f"without_{leave_out}"] = avg
+        logger.info(f"Avg RMSE without '{leave_out}': {avg:.3f}")
+
+    # write results
     with args.out.open("w") as fp:
-        json.dump(results, fp, indent=2)
-    print(f"\n✅ Ablation results written to {args.out}")
+        serial = {k: (float(v) if pd.notna(v) else None) for k, v in results.items()}
+        json.dump(serial, fp, indent=4)
+    logger.info(f"Ablation results written to {args.out}")
 
 if __name__ == "__main__":
     main()
