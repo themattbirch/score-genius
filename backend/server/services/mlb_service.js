@@ -432,7 +432,7 @@ export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
   try {
     // Call the Supabase RPC function
     const { data, error } = await supabase.rpc("get_mlb_advanced_team_stats", {
-      p_season_year: seasonYear, // Pass the integer year as the argument
+      p_season: seasonYear, // Pass the integer year as the argument
     });
 
     if (error) {

@@ -287,7 +287,7 @@ def _fetch_games_for_date(date_iso: str) -> List[Dict[str, Any]]:
     return list(games_by_id.values())
 
 # --- Game Preview Building/Upserting Functions ---
-def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
+def build_game_preview(window_days: int = 3) -> List[Dict[str, Any]]:
     """Fetch pregame NBA schedule + odds and return a list of preview dicts for today + next window_days-1 days."""
 
     all_games: List[Dict[str, Any]] = []
@@ -551,7 +551,7 @@ def main():
         update_injuries_table_clear_insert(normalized)
 
         # 3) Previews + odds for today & tomorrow
-        previews = build_game_preview(window_days=2)
+        previews = build_game_preview(window_days=3)
         if previews:
             upsert_previews(previews)
             from nba_score_prediction.prediction import fetch_and_parse_betting_odds
@@ -562,7 +562,7 @@ def main():
             # 4) Generate & upsert predictions
             print("\n--- Generating Predictions ---")
             preds, _ = generate_predictions(
-                days_window=2,
+                days_window=3,
                 model_dir=MODELS_DIR,
                 historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
                 debug_mode=False
