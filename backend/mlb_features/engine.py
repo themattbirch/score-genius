@@ -1,9 +1,12 @@
 # backend/mlb_features/engine.py
+
 """
 Orchestrates the MLB feature engineering pipeline by sequentially applying
 transform functions from each feature module.
 """
+
 from __future__ import annotations
+
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -70,8 +73,9 @@ def run_mlb_feature_pipeline(
         logger.setLevel(logging.DEBUG)
         logger.debug("Starting MLB feature pipeline with debug mode ON.")
 
+    # ←– HERE is the only change: log exactly "Input DataFrame is empty"
     if df is None or df.empty:
-        logger.error("Input DataFrame is empty. Returning empty DataFrame.")
+        logger.error("Input DataFrame is empty")
         return pd.DataFrame()
 
     required = ["game_id", "game_date_et", "home_team_id", "away_team_id"]
