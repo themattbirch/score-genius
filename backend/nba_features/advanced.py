@@ -12,12 +12,12 @@ Differentials between these historical stats are also calculated.
 
 from __future__ import annotations
 import logging
-from typing import Sequence # Removed Dict as it's not directly used in signature
+from typing import Sequence
 
-import pandas as pd # numpy is used by pandas
+import pandas as pd
 import numpy as np
 
-from .utils import normalize_team_name, DEFAULTS, profile_time 
+from .utils import normalize_team_name, DEFAULTS, profile_time
 
 logger = logging.getLogger(__name__)
 __all__ = ["transform"]
@@ -25,13 +25,6 @@ __all__ = ["transform"]
 EXPECTED_STATS: Sequence[str] = [
     "pace", "off_rtg", "def_rtg", "net_rtg", "efg_pct", "tov_pct", "oreb_pct", "ft_rate"
 ]
-
-# _STAT_MAP is not used in the provided transform, can be removed if truly unused.
-# _STAT_MAP = {
-#     "pace":               "pace",
-#     "off_rtg":            "offensive_rating",
-#     # ...
-# }
 
 @profile_time
 def transform(
@@ -41,13 +34,15 @@ def transform(
                                           # Must contain 'season' (season stats pertain to),
                                           # 'team_name' or 'team_norm', and stat_home/stat_away cols.
     flag_imputations: bool = True,
-    debug: bool = False,
+    debug: bool = False, # debug parameter is present but not explicitly used in this version
 ) -> pd.DataFrame:
     out = df.copy()
 
     if 'adv_stats_lookup_season' not in out.columns:
         logger.error("'adv_stats_lookup_season' column is missing from input df. Cannot perform advanced stat lookup.")
-        return out # Or raise error
+        # Consider raising an error or returning 'out' as is, based on desired behavior
+        # For now, returning 'out' to prevent downstream crashes if this module is optional.
+        return out
 
     # 1) Normalize team names in the main DataFrame
     out["home_norm"] = out["home_team"].map(normalize_team_name)
@@ -56,11 +51,12 @@ def transform(
     # 2) Prepare the historical seasonal splits DataFrame
     if all_historical_splits_df.empty:
         logger.warning("Received empty 'all_historical_splits_df'. Advanced features will be NaNs or defaults.")
-        # Create empty columns to prevent key errors later
-        for side, prefix in (("home", "h"), ("away", "a")):
+        # Create placeholder columns for all expected stats to ensure downstream consistency
+        for side_label, team_prefix in (("home", "h"), ("away", "a")):
             for stat in EXPECTED_STATS:
-                tgt_col = f"{prefix}_{stat}_{side}"
-                out[tgt_col] = pd.NA
+                # Standard column names like h_pace_home, a_efg_pct_away
+                tgt_col = f"{team_prefix}_{stat}_{side_label}"
+                out[tgt_col] = pd.NA # These will be filled by default values in the imputation step
                 if flag_imputations:
                     out[f"{tgt_col}_imputed"] = True # Mark all as imputed
     else:
@@ -68,24 +64,22 @@ def transform(
         if "team_norm" not in seasonal_stats_processed.columns and "team_name" in seasonal_stats_processed.columns:
             seasonal_stats_processed["team_norm"] = seasonal_stats_processed["team_name"].map(normalize_team_name)
         elif "team_norm" not in seasonal_stats_processed.columns:
-            logger.error("'team_norm' or 'team_name' column missing in 'all_historical_splits_df'.")
-            # Handle error or return 'out' with NaNs for these features
-            return out # Or fill with NaNs as above
+            logger.error("'team_norm' or 'team_name' column missing in 'all_historical_splits_df'. Cannot proceed with merge.")
+            return out # Or fill with NaNs/defaults as in the empty case
 
-        # Ensure 'season' column (season the stats pertain to) exists for merging
         if "season" not in seasonal_stats_processed.columns:
-            logger.error("'season' column (identifying the season of the stats) missing in 'all_historical_splits_df'.")
-            return out
+            logger.error("'season' column (identifying the season of the stats) missing in 'all_historical_splits_df'. Cannot proceed with merge.")
+            return out # Or fill with NaNs/defaults
 
         # 3) Merge stats for home teams
         home_stats_to_join = seasonal_stats_processed.copy()
-        home_rename_mapping = {}
-        for stat in EXPECTED_STATS:
-            home_rename_mapping[f"{stat}_home"] = f"h_{stat}_home" # e.g., pace_home -> h_pace_home
+        home_rename_mapping = {f"{stat}_home": f"h_{stat}_home" for stat in EXPECTED_STATS}
         home_stats_to_join = home_stats_to_join.rename(columns=home_rename_mapping)
         
+        # Select only relevant columns for merging (keys + desired stats)
         relevant_home_cols = ['team_norm', 'season'] + [f"h_{stat}_home" for stat in EXPECTED_STATS]
-        home_stats_to_join = home_stats_to_join[home_stats_to_join.columns.intersection(relevant_home_cols)]
+        # Use intersection to robustly handle cases where some expected stats might not be in home_stats_to_join
+        home_stats_to_join = home_stats_to_join[list(set(home_stats_to_join.columns).intersection(relevant_home_cols))]
 
         out = pd.merge(
             out,
@@ -93,22 +87,22 @@ def transform(
             left_on=['home_norm', 'adv_stats_lookup_season'],
             right_on=['team_norm', 'season'], # 'season' in home_stats_to_join is the season stats are FOR
             how='left',
-            suffixes=('', '_drop_home') # Suffix for duplicated columns from right if any
+            suffixes=('', '_home_overlap') # Suffix for other overlapping columns from the right DataFrame
         )
-        cols_to_drop_home = [col for col in out.columns if col.endswith('_drop_home')]
-        cols_to_drop_home.extend(['team_norm_drop_home', 'season_drop_home']) # Explicitly add if they exist with this exact suffix
-        out.drop(columns=list(set(cols_to_drop_home).intersection(out.columns)), inplace=True, errors='ignore')
-
+        # Drop helper columns from merge:
+        # 1. Columns created due to overlap (suffixed)
+        # 2. Key columns from the right DataFrame ('team_norm', 'season')
+        home_cols_to_drop = [col for col in out.columns if col.endswith('_home_overlap')]
+        home_cols_to_drop.extend(['team_norm', 'season']) # Add right-side key names
+        out.drop(columns=[col for col in home_cols_to_drop if col in out.columns], inplace=True, errors='ignore')
 
         # 4) Merge stats for away teams
         away_stats_to_join = seasonal_stats_processed.copy()
-        away_rename_mapping = {}
-        for stat in EXPECTED_STATS:
-            away_rename_mapping[f"{stat}_away"] = f"a_{stat}_away" # e.g., pace_away -> a_pace_away
+        away_rename_mapping = {f"{stat}_away": f"a_{stat}_away" for stat in EXPECTED_STATS}
         away_stats_to_join = away_stats_to_join.rename(columns=away_rename_mapping)
 
         relevant_away_cols = ['team_norm', 'season'] + [f"a_{stat}_away" for stat in EXPECTED_STATS]
-        away_stats_to_join = away_stats_to_join[away_stats_to_join.columns.intersection(relevant_away_cols)]
+        away_stats_to_join = away_stats_to_join[list(set(away_stats_to_join.columns).intersection(relevant_away_cols))]
 
         out = pd.merge(
             out,
@@ -116,52 +110,57 @@ def transform(
             left_on=['away_norm', 'adv_stats_lookup_season'],
             right_on=['team_norm', 'season'],
             how='left',
-            suffixes=('', '_drop_away')
+            suffixes=('', '_away_overlap')
         )
-        cols_to_drop_away = [col for col in out.columns if col.endswith('_drop_away')]
-        cols_to_drop_away.extend(['team_norm_drop_away', 'season_drop_away'])
-        out.drop(columns=list(set(cols_to_drop_away).intersection(out.columns)), inplace=True, errors='ignore')
+        away_cols_to_drop = [col for col in out.columns if col.endswith('_away_overlap')]
+        away_cols_to_drop.extend(['team_norm', 'season'])
+        out.drop(columns=[col for col in away_cols_to_drop if col in out.columns], inplace=True, errors='ignore')
 
-    # 5) Imputation for all generated h_... and a_... columns
-    for side, prefix in (("home", "h"), ("away", "a")):
+    # 5) Imputation for all generated h_..._home and a_..._away columns
+    for side_label, team_prefix in (("home", "h"), ("away", "a")):
         for stat in EXPECTED_STATS:
-            # Determine the correct target column name based on merge results
-            if side == "home":
-                tgt_col = f"h_{stat}_home"
-            else: # away
-                tgt_col = f"a_{stat}_away"
-
+            tgt_col = f"{team_prefix}_{stat}_{side_label}" # e.g., h_pace_home or a_efg_pct_away
             impute_col = f"{tgt_col}_imputed"
-            default = DEFAULTS.get(stat, 0.0)
+            default = DEFAULTS.get(stat, 0.0) # Get default value for the stat
 
-            if tgt_col not in out.columns: # If merge failed to create the column (e.g. no relevant stats)
-                out[tgt_col] = pd.NA    # Ensure column exists before imputation
+            # If target column doesn't exist (e.g., merge failed or stat was missing from source)
+            if tgt_col not in out.columns:
+                out[tgt_col] = default # Create column with default value
+                if flag_imputations:
+                    out[impute_col] = True # All values are considered imputed
+            else:
+                # Column exists, may contain NaNs or non-numeric values that need coercion
+                if flag_imputations:
+                    # Determine NAs: either existing or resulting from coercion to numeric
+                    # This must be done *before* fillna
+                    out[impute_col] = pd.to_numeric(out[tgt_col], errors='coerce').isna()
+                
+                # Convert to numeric (coercing errors to NaN) and then fill with default
+                out[tgt_col] = pd.to_numeric(out[tgt_col], errors='coerce').fillna(default)
 
+            # Ensure final types
+            out[tgt_col] = out[tgt_col].astype(float)
             if flag_imputations:
-                out[impute_col] = out[tgt_col].isna()
-            
-            out[tgt_col] = pd.to_numeric(out[tgt_col], errors='coerce').fillna(default).astype(float)
-            
-            if flag_imputations:
-                # Ensure impute_col also exists if tgt_col was just created as all NA
-                if impute_col not in out.columns:
-                     out[impute_col] = True # If tgt_col was all NA and then filled, it was all imputed
+                # Ensure imputation flag column exists and is boolean
+                if impute_col not in out.columns: # Should have been created if tgt_col was missing or if it existed
+                    out[impute_col] = False # If somehow missed, assume no imputation occurred for safety
                 out[impute_col] = out[impute_col].astype(bool)
 
-
-    # 6) Compute split diffs (using the now correctly sourced h_... and a_... columns)
+    # 6) Compute split diffs (using the now correctly sourced and imputed h_... and a_... columns)
     for stat in EXPECTED_STATS:
-        home_col_name = f"h_{stat}_home"
-        away_col_name = f"a_{stat}_away"
-        # Ensure columns exist before trying to subtract
+        home_col_name = f"h_{stat}_home" # e.g. h_pace_home
+        away_col_name = f"a_{stat}_away" # e.g. a_pace_away
+        
+        # Ensure columns exist before trying to subtract (they should, due to imputation step)
         if home_col_name in out.columns and away_col_name in out.columns:
             out[f"hist_{stat}_split_diff"] = out[home_col_name] - out[away_col_name]
         else:
+            # This case should ideally not be reached if imputation logic is comprehensive
+            logger.warning(f"Missing one or both columns for diff: {home_col_name}, {away_col_name}. Diff will be NaN.")
             out[f"hist_{stat}_split_diff"] = np.nan
 
 
-    # 7) Mirror the specific rating columns into the names rolling expects
-    # Ensure source columns exist before assignment
+    # 7) Mirror specific rating columns to names expected by downstream processes (e.g., rolling features)
     ratings_map = {
         "home_offensive_rating": "h_off_rtg_home",
         "away_offensive_rating": "a_off_rtg_away",
@@ -171,19 +170,19 @@ def transform(
         "away_net_rating": "a_net_rtg_away",
     }
     for target_rating_col, source_adv_col in ratings_map.items():
-        if source_adv_col in out.columns:
+        if source_adv_col in out.columns: # Source columns (e.g., h_off_rtg_home) should exist
             out[target_rating_col] = out[source_adv_col]
         else:
+            # This implies an issue in earlier steps if source_adv_col is missing
+            logger.warning(f"Source column '{source_adv_col}' for rating mirroring is missing. '{target_rating_col}' will be NaN.")
             out[target_rating_col] = np.nan
 
 
-    # 8) Cleanup
+    # 8) Cleanup helper columns
     columns_to_drop_final = ["home_norm", "away_norm"]
-    # The 'adv_stats_lookup_season' column was added by engine.py.
-    # If it's not needed downstream from advanced.py, it can be dropped here too.
-    # For now, let's assume it might be useful for debugging or later stages,
-    # or it can be dropped by engine.py after all modules run.
-    # If you want advanced.py to explicitly drop it:
+    # 'adv_stats_lookup_season' is kept by default unless specified to be dropped.
+    # It might be useful for debugging or if other modules also key off it.
+    # If it must be dropped here:
     # columns_to_drop_final.append('adv_stats_lookup_season')
 
     out.drop(columns=[col for col in columns_to_drop_final if col in out.columns], inplace=True, errors='ignore')
