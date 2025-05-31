@@ -1657,7 +1657,9 @@ def run_training_pipeline(args: argparse.Namespace):
 
     # Combine selected features
     thresh = args.importance_threshold
-    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=thresh)
+    selector_home = SelectFromModel(
+        lasso_cv_home, prefit=True, threshold=0.25 * np.std(lasso_cv_home.coef_)
+    )
     selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=thresh)
     selected_mask = selector_home.get_support() | selector_away.get_support() 
     final_feature_list_for_models = X_lasso.columns[selected_mask].tolist()

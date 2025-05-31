@@ -39,6 +39,7 @@ import warnings
 import traceback # Still needed for potential dummy import error handling
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
+from sklearn.impute import SimpleImputer
 
 # --- Third-Party Imports ---
 import joblib
@@ -60,6 +61,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.dummy import DummyRegressor
 from sklearn.metrics import mean_absolute_error
+from sklearn.linear_model import LassoCV, Lasso
 
 # SciPy Imports
 from scipy.optimize import minimize
@@ -1578,181 +1580,191 @@ def run_training_pipeline(args: argparse.Namespace):
         except Exception as e_summary:
             logger.error(f"Error generating feature value summary: {e_summary}", exc_info=True)
 
-    # --- LASSO Feature Selection (on Pre-Game Features) ---
-    logger.info("--- Starting LASSO Feature Selection ---")
+    # 1) Identify numeric feature columns & exclude non‐features:
+    potential_feature_cols = features_df.select_dtypes(include=np.number).columns
+    cols_to_exclude = set(TARGET_COLUMNS + ['game_id', 'game_date'])
+
+    # 2) Rebuild the “safe” pool:
     SAFE_PREFIXES = (
         'home_rolling_', 'away_rolling_', 'rolling_',
-        'home_season_', 'away_season_', 'season_',      
-        'matchup_',                                    
-        'rest_days_', 'is_back_to_back_',              
-        'games_last_',                                 
-        'home_form_', 'away_form_',
-        # --- ADDITIONS FOR advanced.py features ---
-        'h_',    # For features like h_pace_home, h_off_rtg_home etc.
-        'a_',    # For features like a_pace_away, a_off_rtg_away etc.
-        'hist_', # For features like hist_pace_split_diff etc.
-        # --- END ADDITIONS ---
+        'home_season_', 'away_season_', 'season_',
+        'matchup_',
+        'rest_days_', 'is_back_to_back_',
+        'games_last_',
+        'home_form_', 'away_form_'
     )
     SAFE_EXACT_NAMES = {
-        # Manually curated list of other potentially safe features
-        'rest_advantage', 'schedule_advantage', 'form_win_pct_diff', # Note: form_win_pct_diff was (all_nan_or_zero_variance) before
-        'streak_advantage', 'momentum_diff', 'home_current_streak', # Note: some of these exact names were (all_nan_or_zero_variance)
+        'rest_advantage', 'schedule_advantage', 'form_win_pct_diff',
+        'streak_advantage', 'momentum_diff', 'home_current_streak',
         'home_momentum_direction', 'away_current_streak', 'away_momentum_direction',
         'game_importance_rank', 'home_win_last10', 'away_win_last10',
-        'home_trend_rating', 'away_trend_rating', 'home_rank', 'away_rank',
-        
-        # --- ADDITIONS FOR advanced.py mirrored features ---
-        'home_offensive_rating', 'away_offensive_rating',
-        'home_defensive_rating', 'away_defensive_rating',
-        'home_net_rating', 'away_net_rating',
-        # --- END ADDITIONS ---
+        'home_trend_rating', 'away_trend_rating', 'home_rank', 'away_rank'
     }
-    potential_feature_cols = features_df.select_dtypes(include=np.number).columns
-    cols_to_exclude_lasso = set(TARGET_COLUMNS + ['game_id', 'game_date'])
 
-    feature_candidates_for_lasso = []
-    excluded_or_leaky_lasso = []
-
+    feature_candidates = []
     for col in potential_feature_cols:
-        if col in cols_to_exclude_lasso:
+        if col in cols_to_exclude:
             continue
         if features_df[col].isnull().all() or features_df[col].var() < 1e-8:
-            excluded_or_leaky_lasso.append(f"{col} (all_nan_or_zero_variance)")
             continue
-
-        is_safe = False
         if col.startswith(SAFE_PREFIXES) or col in SAFE_EXACT_NAMES:
-            is_safe = True
+            feature_candidates.append(col)
 
-        if is_safe:
-            feature_candidates_for_lasso.append(col)
-        else:
-            excluded_or_leaky_lasso.append(f"{col} (potentially_leaky)")
-
-    # THIS IS THE EXISTING LOG LINE FOR THE COUNT:
-    logger.info(f"Identified {len(feature_candidates_for_lasso)} candidate features for LASSO based on naming conventions.")
-    
-    # ==> ADD THIS LINE TO LOG THE ACTUAL FEATURES <==
-    logger.info(f"CANDIDATE FEATURES FOR LASSO ({len(feature_candidates_for_lasso)}): {sorted(feature_candidates_for_lasso)}")
-    # ==> END OF ADDITION <==
-
-    if excluded_or_leaky_lasso and args.debug:
-        # THIS EXISTING DEBUG LOG IS ALSO VERY USEFUL:
-        logger.debug(f"Excluded {len(excluded_or_leaky_lasso)} features from LASSO pool: {sorted(excluded_or_leaky_lasso)}")
-
-    if not feature_candidates_for_lasso:
-        logger.error("No candidate features remaining for LASSO selection. Exiting.")
-        sys.exit(1)
-
-    # Prepare data for LASSO  
-    X_lasso = features_df[feature_candidates_for_lasso].copy()
+    # 3) Extract X_lasso and y targets:
+    X_lasso = features_df[feature_candidates].copy()
     y_home_lasso = features_df[TARGET_COLUMNS[0]].copy()
     y_away_lasso = features_df[TARGET_COLUMNS[1]].copy()
 
+    # 4) Impute missing values if any:
     if X_lasso.isnull().any().any():
-        logger.warning("NaNs found in LASSO feature candidates! Imputing with median.")
-        from sklearn.impute import SimpleImputer
         imputer = SimpleImputer(strategy='median')
-        X_lasso = pd.DataFrame(imputer.fit_transform(X_lasso), columns=X_lasso.columns, index=X_lasso.index)
+        X_lasso = pd.DataFrame(
+            imputer.fit_transform(X_lasso),
+            columns=X_lasso.columns,
+            index=X_lasso.index
+        )
 
-    logger.info("Scaling features for LASSO...")
+    # 5) Scale features:
     scaler = StandardScaler()
     X_lasso_scaled = scaler.fit_transform(X_lasso)
 
-    logger.info("Running LassoCV for Home Score...")
-    lasso_cv_home = LassoCV(cv=args.cv_splits, random_state=SEED, n_jobs=-1, max_iter=3000, tol=1e-3) 
-    lasso_cv_home.fit(X_lasso_scaled, y_home_lasso)
-    logger.info(f"LassoCV (Home) completed. Optimal alpha: {lasso_cv_home.alpha_:.6f}")
+    # 6) Define a dense α‐grid:
+    alphas = np.logspace(-4, 1, 60)
 
-    logger.info("Running LassoCV for Away Score...")
-    lasso_cv_away = LassoCV(cv=args.cv_splits, random_state=SEED, n_jobs=-1, max_iter=3000, tol=1e-3) 
-    lasso_cv_away.fit(X_lasso_scaled, y_away_lasso)
-    logger.info(f"LassoCV (Away) completed. Optimal alpha: {lasso_cv_away.alpha_:.6f}")
-
-    # Combine selected features
-    thresh = args.importance_threshold
-    selector_home = SelectFromModel(lasso_cv_home, prefit=True, threshold=thresh)
-    selector_away = SelectFromModel(lasso_cv_away, prefit=True, threshold=thresh)
-    selected_mask = selector_home.get_support() | selector_away.get_support() 
-    final_feature_list_for_models = X_lasso.columns[selected_mask].tolist()
-
-    # Right after final_feature_list_for_models is built:
-    missing_lasso = [c for c in final_feature_list_for_models if c not in features_df.columns]
-    if missing_lasso:
-        logger.error(
-        "LASSO claimed to select features that aren't in features_df: %s",
-        missing_lasso
-        )
-        sys.exit(1)
-
-    num_selected = len(final_feature_list_for_models)
-    logger.info(f"LASSO selected {num_selected} features in total (union of home/away).")
-
-    if num_selected == 0:
-        logger.error("LASSO selected 0 features. Cannot proceed with model training. Exiting.")
-        sys.exit(1)
-    elif num_selected < 15: 
-        logger.warning(f"LASSO selected a relatively small number of features ({num_selected}). Model performance might be limited.")
-    if args.debug:
-        logger.debug(f"Final selected features by LASSO: {final_feature_list_for_models}")
-
-     # only write the JSON and quit if the flag is set
-    if args.write_selected_features:
-        selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
-        try:
-            MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-            with open(selected_features_path, 'w') as f:
-                json.dump(final_feature_list_for_models, f, indent=4)
-            logger.info(f"Successfully wrote selected_features.json ({num_selected} features) to {selected_features_path}")
-        except Exception as e:
-            logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
-        logger.info("Exiting after writing selected features (flag --write-selected-features).")
-        sys.exit(0)
-
-    # --- Data Splitting (using LASSO-selected features) ---
-    logger.info("Splitting data (time-based) using LASSO-selected features...")
-    essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
-    cols_for_split_df = essential_non_feature_cols + final_feature_list_for_models
-    missing_split_cols = [col for col in cols_for_split_df if col not in features_df.columns]
-    if missing_split_cols:
-        logger.error(f"Columns required for splitting are missing from features_df: {missing_split_cols}")
-        sys.exit(1)
-
-    features_df_selected = (
-        features_df[cols_for_split_df]
-        .sort_values('game_date')
-        .reset_index(drop=True)
+    # 7) Run LassoCV (home) over that grid to get CV MSE & optimal α:
+    lasso_cv_home = LassoCV(
+        cv=5,
+        random_state=SEED,
+        n_jobs=-1,
+        alphas=alphas,
+        max_iter=3000,
+        tol=1e-3
     )
-    logger.info(f"Created features_df_selected for splitting with shape: {features_df_selected.shape}")
+    fixed_alphas = [0.10, 0.15]
 
-    n_total = len(features_df_selected)
-    test_split_idx = int(n_total * (1 - args.test_size))
-    val_split_frac_adjusted = min(args.val_size, 1.0 - args.test_size - 0.01) 
-    val_split_idx = int(n_total * (1 - args.test_size - val_split_frac_adjusted))
+    for alpha in fixed_alphas:
+        logger.info(f"--- Running fixed‐α Lasso selection at α = {alpha:.2f} ---")
 
-    if val_split_idx <= 0 or test_split_idx <= val_split_idx:
-         logger.error(f"Invalid split indices: Train end={val_split_idx}, Val end={test_split_idx}. Check test/val sizes.")
-         sys.exit(1)
+        # 2) Fit Lasso(home) at this α and record nonzero features:
+        lasso_home_fixed = Lasso(alpha=alpha, max_iter=3000, tol=1e-3)
+        lasso_home_fixed.fit(X_lasso_scaled, y_home_lasso)
 
-    train_df = features_df_selected.iloc[:val_split_idx].copy()
-    val_df   = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
-    test_df  = features_df_selected.iloc[test_split_idx:].copy()
+        nz_idx_home = np.where(lasso_home_fixed.coef_ != 0)[0]
+        selected_home = [X_lasso.columns[i] for i in nz_idx_home]
+        logger.info(f"Home Lasso (α={alpha:.2f}) nonzero count: {len(selected_home)}")
+        logger.debug(f" Home‐features@{alpha:.2f}: {selected_home}")
 
-    # Prepare X and y splits
-    feature_cols_with_date = final_feature_list_for_models + (['game_date'] if args.use_weights else [])
+        # 3) Fit Lasso(away) at this α and record nonzero features:
+        lasso_away_fixed = Lasso(alpha=alpha, max_iter=3000, tol=1e-3)
+        lasso_away_fixed.fit(X_lasso_scaled, y_away_lasso)
 
-    X_train = train_df[[col for col in feature_cols_with_date if col in train_df.columns]].copy()
-    X_val   = val_df[[col for col in feature_cols_with_date if col in val_df.columns]].copy()
-    X_test  = test_df[final_feature_list_for_models].copy() 
+        nz_idx_away = np.where(lasso_away_fixed.coef_ != 0)[0]
+        selected_away = [X_lasso.columns[i] for i in nz_idx_away]
+        logger.info(f"Away Lasso (α={alpha:.2f}) nonzero count: {len(selected_away)}")
+        logger.debug(f" Away‐features@{alpha:.2f}: {selected_away}")
 
-    y_train_home, y_train_away = train_df[TARGET_COLUMNS[0]], train_df[TARGET_COLUMNS[1]]
-    y_val_home, y_val_away     = val_df[TARGET_COLUMNS[0]], val_df[TARGET_COLUMNS[1]]
-    y_test_home, y_test_away   = test_df[TARGET_COLUMNS[0]], test_df[TARGET_COLUMNS[1]]
+        # 4) Union of home/away features:
+        mask_home = (lasso_home_fixed.coef_ != 0)
+        mask_away = (lasso_away_fixed.coef_ != 0)
+        combined_mask = mask_home | mask_away
+        final_features = list(np.array(X_lasso.columns)[combined_mask])
 
-    logger.info(f"Data Split Sizes: Train={len(X_train)}, Validation={len(X_val)}, Test={len(X_test)}")
-    if X_train.empty or X_val.empty or X_test.empty:
-         logger.error("One or more data splits are empty after splitting. Exiting.")
-         sys.exit(1)
+        logger.info(f"Total features selected at α={alpha:.2f}: {len(final_features)}")
+        if args.debug:
+            logger.debug(f" Combined features@{alpha:.2f}: {final_features}")
+
+        final_feature_list_for_models = final_features
+
+        # ─── WRITE‐SELECTED‐FEATURES (NEW) ───
+        if args.write_selected_features:
+            selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
+            try:
+                MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+                with open(selected_features_path, "w") as f:
+                    json.dump(final_feature_list_for_models, f, indent=4)
+                logger.info(
+                    f"Successfully wrote selected_features.json ({len(final_feature_list_for_models)} features) "
+                    f"to {selected_features_path}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
+            logger.info("Exiting after writing selected features (flag --write-selected-features).")
+            sys.exit(0)
+        # ─── END WRITE‐SELECTED‐FEATURES ───
+
+
+        missing_lasso = [c for c in final_feature_list_for_models if c not in features_df.columns]
+        if missing_lasso:
+            logger.error(
+                "LASSO (fixed‐α) claimed to select features not in features_df: %s",
+                missing_lasso
+            )
+            sys.exit(1)
+
+        num_selected = len(final_feature_list_for_models)
+        logger.info(f"LASSO (fixed‐α={alpha:.2f}) selected {num_selected} features in total.")
+        if num_selected == 0:
+            logger.error("LASSO selected 0 features. Exiting.")
+            sys.exit(1)
+        elif num_selected < 15:
+            logger.warning(
+                f"Only {num_selected} features selected at α={alpha:.2f}. "
+                "Model performance might be limited."
+            )
+        if args.debug:
+            logger.debug(f"Final features@{alpha:.2f}: {final_feature_list_for_models}")
+
+        # ── Everything below must be at this same indentation (inside the loop but outside the if args.debug) ──
+
+        logger.info("Splitting data (time-based) using LASSO-selected features...")
+        essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
+        cols_for_split_df = essential_non_feature_cols + final_feature_list_for_models
+        missing_split_cols = [col for col in cols_for_split_df if col not in features_df.columns]
+        if missing_split_cols:
+            logger.error(f"Columns required for splitting are missing: {missing_split_cols}")
+            sys.exit(1)
+
+        features_df_selected = (
+            features_df[cols_for_split_df]
+            .sort_values('game_date')
+            .reset_index(drop=True)
+        )
+        logger.info(f"Created features_df_selected (α={alpha:.2f}) with shape: "
+                    f"{features_df_selected.shape}")
+
+        n_total = len(features_df_selected)
+        test_split_idx = int(n_total * (1 - args.test_size))
+        val_split_frac_adjusted = min(args.val_size, 1.0 - args.test_size - 0.01)
+        val_split_idx = int(n_total * (1 - args.test_size - val_split_frac_adjusted))
+
+        if val_split_idx <= 0 or test_split_idx <= val_split_idx:
+            logger.error(
+                f"Invalid split indices at α={alpha:.2f}: "
+                f"Train end={val_split_idx}, Val end={test_split_idx}."
+            )
+            sys.exit(1)
+
+        train_df = features_df_selected.iloc[:val_split_idx].copy()
+        val_df   = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
+        test_df  = features_df_selected.iloc[test_split_idx:].copy()
+
+        feature_cols_with_date = final_feature_list_for_models + (
+            ['game_date'] if args.use_weights else []
+        )
+        X_train = train_df[[col for col in feature_cols_with_date if col in train_df.columns]].copy()
+        X_val   = val_df[[col for col in feature_cols_with_date if col in val_df.columns]].copy()
+        X_test  = test_df[final_feature_list_for_models].copy()
+
+        y_train_home, y_train_away = train_df[TARGET_COLUMNS[0]], train_df[TARGET_COLUMNS[1]]
+        y_val_home, y_val_away     = val_df[TARGET_COLUMNS[0]], val_df[TARGET_COLUMNS[1]]
+        y_test_home, y_test_away   = test_df[TARGET_COLUMNS[0]], test_df[TARGET_COLUMNS[1]]
+
+        logger.info(f"Data Split Sizes (α={alpha:.2f}): "
+                    f"Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
+        if X_train.empty or X_val.empty or X_test.empty:
+            logger.error(f"One or more data splits are empty at α={alpha:.2f}. Exiting.")
+            sys.exit(1)
+
 
     SVR_PARAM_DIST_REFINED = {
         'svr__kernel':     ['rbf', 'linear'],           
