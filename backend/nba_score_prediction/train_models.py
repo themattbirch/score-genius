@@ -1582,21 +1582,31 @@ def run_training_pipeline(args: argparse.Namespace):
     logger.info("--- Starting LASSO Feature Selection ---")
     SAFE_PREFIXES = (
         'home_rolling_', 'away_rolling_', 'rolling_',
-        'home_season_', 'away_season_', 'season_',     
-        'matchup_',                                   
+        'home_season_', 'away_season_', 'season_',      
+        'matchup_',                                    
         'rest_days_', 'is_back_to_back_',              
-        'games_last_',                                
-        'home_form_', 'away_form_'  
+        'games_last_',                                 
+        'home_form_', 'away_form_',
+        # --- ADDITIONS FOR advanced.py features ---
+        'h_',    # For features like h_pace_home, h_off_rtg_home etc.
+        'a_',    # For features like a_pace_away, a_off_rtg_away etc.
+        'hist_', # For features like hist_pace_split_diff etc.
+        # --- END ADDITIONS ---
     )
     SAFE_EXACT_NAMES = {
         # Manually curated list of other potentially safe features
-        'rest_advantage', 'schedule_advantage', 'form_win_pct_diff',
-        'streak_advantage', 'momentum_diff', 'home_current_streak',
+        'rest_advantage', 'schedule_advantage', 'form_win_pct_diff', # Note: form_win_pct_diff was (all_nan_or_zero_variance) before
+        'streak_advantage', 'momentum_diff', 'home_current_streak', # Note: some of these exact names were (all_nan_or_zero_variance)
         'home_momentum_direction', 'away_current_streak', 'away_momentum_direction',
         'game_importance_rank', 'home_win_last10', 'away_win_last10',
-        'home_trend_rating', 'away_trend_rating', 'home_rank', 'away_rank'
+        'home_trend_rating', 'away_trend_rating', 'home_rank', 'away_rank',
+        
+        # --- ADDITIONS FOR advanced.py mirrored features ---
+        'home_offensive_rating', 'away_offensive_rating',
+        'home_defensive_rating', 'away_defensive_rating',
+        'home_net_rating', 'away_net_rating',
+        # --- END ADDITIONS ---
     }
-
     potential_feature_cols = features_df.select_dtypes(include=np.number).columns
     cols_to_exclude_lasso = set(TARGET_COLUMNS + ['game_id', 'game_date'])
 

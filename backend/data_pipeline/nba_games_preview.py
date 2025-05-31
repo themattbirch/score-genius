@@ -318,41 +318,90 @@ def clear_past_schedule_data() -> None:
 
 def _fetch_games_for_date(date_iso: str) -> List[Dict[str, Any]]:
     """
-    Fetch games for a given ET date by merging primary + ET-filtered 'next', 
-    and fall back to ESPN if both are empty.
-    """
-    # 1) primary query (may drop cross-midnights)
-    primary = get_games_by_date("12", "2024-2025", date_iso).get("response", [])
+    Fetch games for a given ET date by first trying:
+      1) API-Sports “/games?league=12&season=2024-2025&date=<date_iso>”
+      2) If that returns nothing, API-Sports “/games?league=12&next=10&timezone=America/New_York”
+         filtered down to games whose ET date == date_iso
+      3) If *still* nothing, fall back to ESPN’s scoreboard for that ET date.
 
-    # 2) fallback: next N fixtures, then filter by ET date
+    At each stage, we key games by their `id`, so if API-Sports ever returns duplicates
+    (two different JSON objects with different `"id"` values but the same home/way matchup),
+    they will be kept separately—but in practice API-Sports rarely duplicates IDs in stage (1).
+    The merging logic ensures we never get more than one “primary” or “fallback” entry per ID.
+    ESPN is only consulted if the union of primary+fallback is empty.
+    """
+
+    # 1) PRIMARY: “/games?league=12&season=2024-2025&date=<date_iso>”
+    primary_resp = get_games_by_date("12", "2024-2025", date_iso)
+    primary = primary_resp.get("response", []) or []
+
+    # 2) FALLBACK: “/games?league=12&next=10&timezone=America/New_York” → keep only those whose ET date == date_iso
     raw = make_api_request(
         f"{NBA_SPORTS_API}/games",
         HEADERS_SPORTS,
         {"league": "12", "next": 10, "timezone": "America/New_York"},
-    ).get("response", [])
+    ) or {}
+    raw_list = raw.get("response", []) or []
 
-    def is_et_date(g):
-        # Convert the ISO date string to ET and compare date
-        dt = datetime.fromisoformat(g["date"].replace("Z", "+00:00")).astimezone(ET_ZONE)
-        return dt.date().isoformat() == date_iso
+    def _is_et_date(g: Dict[str, Any]) -> bool:
+        """
+        Convert g["date"] (ISO UTC, e.g. "2025-05-31T19:00:00Z") → ET timezone,
+        then compare that .date().isoformat() to date_iso.
+        """
+        try:
+            dt_utc = datetime.fromisoformat(g["date"].replace("Z", "+00:00"))
+            dt_et = dt_utc.astimezone(ET_ZONE)
+            return dt_et.date().isoformat() == date_iso
+        except Exception:
+            return False
 
-    fallback = [g for g in raw if is_et_date(g)]
+    fallback = [g for g in raw_list if _is_et_date(g)]
 
-    # 3) merge, keyed by game ID to avoid duplicates
-    games_by_id: Dict[int, Dict[str, Any]] = {g["id"]: g for g in primary}
+    # 3) MERGE primary + fallback BY game ID (so no duplicate IDs in the union)
+    #    In the old script, this was exactly:
+    #      games_by_id = {g["id"]: g for g in primary}
+    #      for g in fallback: games_by_id.setdefault(g["id"], g)
+    #      return list(games_by_id.values())
+    #
+    #    We’ll do that, then check if it’s empty. If it is empty, call ESPN fallback:
+    games_by_id: Dict[int, Dict[str, Any]] = {}
+    for g in primary:
+        # Ensure g["id"] is an integer:
+        try:
+            gid = int(g.get("id"))
+        except Exception:
+            continue
+        games_by_id[gid] = g
+
     for g in fallback:
-        games_by_id.setdefault(g["id"], g)
+        try:
+            gid = int(g.get("id"))
+        except Exception:
+            continue
+        # Only insert if we did not already see that ID in `primary`
+        games_by_id.setdefault(gid, g)
 
-    merged = list(games_by_id.values())
+    # If after merging primary+fallback we already have ≥1 game, return them now:
+    if games_by_id:
+        return list(games_by_id.values())
 
-    # 4) If nothing found, fall back to ESPN’s scoreboard
-    if not merged:
-        espn_games = espn_scoreboard_fallback(date_iso)
-        for g in espn_games:
-            games_by_id.setdefault(g["id"], g)
-        merged = list(games_by_id.values())
+    # 4) ESPN fallback (only if both primary and fallback were empty)
+    espn_games = espn_scoreboard_fallback(date_iso)
+    if not espn_games:
+        # Nothing from any source
+        return []
 
-    return merged
+    # Merge ESPN by ID to avoid duplicates if ESPN itself somehow returned two events with same ID
+    espn_by_id: Dict[int, Dict[str, Any]] = {}
+    for g in espn_games:
+        try:
+            gid = int(g.get("id"))
+        except Exception:
+            continue
+        if gid not in espn_by_id:
+            espn_by_id[gid] = g
+
+    return list(espn_by_id.values())
 
 # --- Game Preview Building/Upserting Functions ---
 def build_game_preview(window_days: int = 3) -> List[Dict[str, Any]]:
@@ -560,6 +609,15 @@ def main():
         # 3) Previews + odds for today & tomorrow
         previews = build_game_preview(window_days=3)
         if previews:
+            # ─── REMOVE ANY EXISTING schedule rows for these preview dates ─────────────────
+            # We extract the distinct game_date values from the new `previews` list,
+            # then delete old rows for exactly those dates. This prevents stale IDs
+            # (like 449706) from lingering in Supabase.
+            dates_to_delete = sorted({p["game_date"] for p in previews})
+            # Perform a delete WHERE game_date IN dates_to_delete
+            supabase.table(NBA_SCHEDULE_TABLE).delete().in_("game_date", dates_to_delete).execute()
+
+            # Now upsert only the fresh preview rows
             upsert_previews(previews)
             from nba_score_prediction.prediction import fetch_and_parse_betting_odds
             game_ids = [p["game_id"] for p in previews]
