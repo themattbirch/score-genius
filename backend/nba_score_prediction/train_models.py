@@ -1619,15 +1619,22 @@ def run_training_pipeline(args: argparse.Namespace):
         else:
             excluded_or_leaky_lasso.append(f"{col} (potentially_leaky)")
 
+    # THIS IS THE EXISTING LOG LINE FOR THE COUNT:
     logger.info(f"Identified {len(feature_candidates_for_lasso)} candidate features for LASSO based on naming conventions.")
+    
+    # ==> ADD THIS LINE TO LOG THE ACTUAL FEATURES <==
+    logger.info(f"CANDIDATE FEATURES FOR LASSO ({len(feature_candidates_for_lasso)}): {sorted(feature_candidates_for_lasso)}")
+    # ==> END OF ADDITION <==
+
     if excluded_or_leaky_lasso and args.debug:
-        logger.debug(f"Excluded {len(excluded_or_leaky_lasso)} features from LASSO pool: {excluded_or_leaky_lasso}")
+        # THIS EXISTING DEBUG LOG IS ALSO VERY USEFUL:
+        logger.debug(f"Excluded {len(excluded_or_leaky_lasso)} features from LASSO pool: {sorted(excluded_or_leaky_lasso)}")
 
     if not feature_candidates_for_lasso:
         logger.error("No candidate features remaining for LASSO selection. Exiting.")
         sys.exit(1)
 
-    # Prepare data for LASSO 
+    # Prepare data for LASSO  
     X_lasso = features_df[feature_candidates_for_lasso].copy()
     y_home_lasso = features_df[TARGET_COLUMNS[0]].copy()
     y_away_lasso = features_df[TARGET_COLUMNS[1]].copy()
