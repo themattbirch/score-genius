@@ -28,6 +28,8 @@ PROJECT_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.config import MAIN_MODELS_DIR, REPORTS_DIR
+report_dir = MAIN_MODELS_DIR.parent / "reports"
+report_dir.mkdir(parents=True, exist_ok=True)
 
 # --- Standard Library Imports ---
 import argparse
@@ -40,6 +42,9 @@ import traceback # Still needed for potential dummy import error handling
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
 from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import ElasticNetCV, enet_path
+
 
 # --- Third-Party Imports ---
 import joblib
@@ -1628,54 +1633,199 @@ def run_training_pipeline(args: argparse.Namespace):
     scaler = StandardScaler()
     X_lasso_scaled = scaler.fit_transform(X_lasso)
 
-    # 6) Define a dense α‐grid:
+    # 6) Define a dense α‐grid (same for both methods):
     alphas = np.logspace(-4, 1, 60)
 
-    # 7) Run LassoCV (home) over that grid to get CV MSE & optimal α:
-    lasso_cv_home = LassoCV(
-        cv=5,
-        random_state=SEED,
-        n_jobs=-1,
-        alphas=alphas,
-        max_iter=3000,
-        tol=1e-3
-    )
-    fixed_alphas = [0.10, 0.15]
+    if args.feature_selection == "lasso":
 
-    for alpha in fixed_alphas:
-        logger.info(f"--- Running fixed‐α Lasso selection at α = {alpha:.2f} ---")
+        fixed_alphas = [0.10, 0.15]
+        for alpha in fixed_alphas:
+            logger.info(f"--- Running fixed‐α Lasso selection at α = {alpha:.2f} ---")
 
-        # 2) Fit Lasso(home) at this α and record nonzero features:
-        lasso_home_fixed = Lasso(alpha=alpha, max_iter=3000, tol=1e-3)
-        lasso_home_fixed.fit(X_lasso_scaled, y_home_lasso)
+            # 2) Fit Lasso(home) at this α and record nonzero features:
+            lasso_home_fixed = Lasso(alpha=alpha, max_iter=3000, tol=1e-3)
+            lasso_home_fixed.fit(X_lasso_scaled, y_home_lasso)
 
-        nz_idx_home = np.where(lasso_home_fixed.coef_ != 0)[0]
-        selected_home = [X_lasso.columns[i] for i in nz_idx_home]
-        logger.info(f"Home Lasso (α={alpha:.2f}) nonzero count: {len(selected_home)}")
-        logger.debug(f" Home‐features@{alpha:.2f}: {selected_home}")
+            nz_idx_home = np.where(lasso_home_fixed.coef_ != 0)[0]
+            selected_home = [X_lasso.columns[i] for i in nz_idx_home]
+            logger.info(f"Home Lasso (α={alpha:.2f}) nonzero count: {len(selected_home)}")
+            logger.debug(f" Home‐features@{alpha:.2f}: {selected_home}")
 
-        # 3) Fit Lasso(away) at this α and record nonzero features:
-        lasso_away_fixed = Lasso(alpha=alpha, max_iter=3000, tol=1e-3)
-        lasso_away_fixed.fit(X_lasso_scaled, y_away_lasso)
+            # 3) Fit Lasso(away) at this α and record nonzero features:
+            lasso_away_fixed = Lasso(alpha=alpha, max_iter=3000, tol=1e-3)
+            lasso_away_fixed.fit(X_lasso_scaled, y_away_lasso)
 
-        nz_idx_away = np.where(lasso_away_fixed.coef_ != 0)[0]
-        selected_away = [X_lasso.columns[i] for i in nz_idx_away]
-        logger.info(f"Away Lasso (α={alpha:.2f}) nonzero count: {len(selected_away)}")
-        logger.debug(f" Away‐features@{alpha:.2f}: {selected_away}")
+            nz_idx_away = np.where(lasso_away_fixed.coef_ != 0)[0]
+            selected_away = [X_lasso.columns[i] for i in nz_idx_away]
+            logger.info(f"Away Lasso (α={alpha:.2f}) nonzero count: {len(selected_away)}")
+            logger.debug(f" Away‐features@{alpha:.2f}: {selected_away}")
 
-        # 4) Union of home/away features:
-        mask_home = (lasso_home_fixed.coef_ != 0)
-        mask_away = (lasso_away_fixed.coef_ != 0)
+            # 4) Union of home/away features:
+            mask_home = (lasso_home_fixed.coef_ != 0)
+            mask_away = (lasso_away_fixed.coef_ != 0)
+            combined_mask = mask_home | mask_away
+            final_features = list(np.array(X_lasso.columns)[combined_mask])
+
+            logger.info(f"Total features selected at α={alpha:.2f}: {len(final_features)}")
+            if args.debug:
+                logger.debug(f" Combined features@{alpha:.2f}: {final_features}")
+
+            final_feature_list_for_models = final_features
+
+            # ─── WRITE‐SELECTED‐FEATURES (NEW) ───
+            if args.write_selected_features:
+                selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
+                try:
+                    MAIN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+                    with open(selected_features_path, "w") as f:
+                        json.dump(final_feature_list_for_models, f, indent=4)
+                    logger.info(
+                        f"Successfully wrote selected_features.json ({len(final_feature_list_for_models)} features) "
+                        f"to {selected_features_path}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
+                logger.info("Exiting after writing selected features (flag --write-selected-features).")
+                sys.exit(0)
+            # ─── END WRITE‐SELECTED‐FEATURES ───
+
+            # (the rest of your “sanity check + train/test split + fit ridge+svr” code goes here…)
+
+            missing_lasso = [c for c in final_feature_list_for_models if c not in features_df.columns]
+            if missing_lasso:
+                logger.error(
+                    "LASSO (fixed‐α) claimed to select features not in features_df: %s",
+                    missing_lasso
+                )
+                sys.exit(1)
+
+            num_selected = len(final_feature_list_for_models)
+            logger.info(f"LASSO (fixed‐α={alpha:.2f}) selected {num_selected} features in total.")
+            if num_selected == 0:
+                logger.error("LASSO selected 0 features. Exiting.")
+                sys.exit(1)
+            elif num_selected < 15:
+                logger.warning(
+                    f"Only {num_selected} features selected at α={alpha:.2f}. "
+                    "Model performance might be limited."
+                )
+            if args.debug:
+                logger.debug(f"Final features@{alpha:.2f}: {final_feature_list_for_models}")
+
+            logger.info("Splitting data (time-based) using LASSO-selected features…")
+            essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
+            cols_for_split_df = essential_non_feature_cols + final_feature_list_for_models
+            missing_split_cols = [col for col in cols_for_split_df if col not in features_df.columns]
+            if missing_split_cols:
+                logger.error(f"Columns required for splitting are missing: {missing_split_cols}")
+                sys.exit(1)
+
+            features_df_selected = (
+                features_df[cols_for_split_df]
+                .sort_values('game_date')
+                .reset_index(drop=True)
+            )
+            logger.info(f"Created features_df_selected (α={alpha:.2f}) with shape: {features_df_selected.shape}")
+
+            # … the rest of your train/val/test splitting + ridge/SVR training code …
+
+    elif args.feature_selection == "elasticnet":
+
+        # 7) ElasticNetCV on the HOME target
+        enet_cv_home = ElasticNetCV(
+            l1_ratio=0.5,        # mix of ℓ₁ & ℓ₂
+            alphas=alphas,
+            cv=5,
+            random_state=SEED,
+            max_iter=3000,
+            tol=1e-3,
+            n_jobs=-1
+        )
+        enet_cv_home.fit(X_lasso_scaled, y_home_lasso)
+
+        best_alpha_home = enet_cv_home.alpha_
+        best_l1_home    = enet_cv_home.l1_ratio_
+        logger.info(f"ElasticNetCV(Home) chose α = {best_alpha_home:.5f}, l1_ratio = {best_l1_home:.2f}")
+
+        # 8) Recompute full coefficient path for HOME (drop return_models)
+        alphas_path_home, coefs_path_home, _ = enet_path(
+            X_lasso_scaled,
+            y_home_lasso,
+            l1_ratio=best_l1_home,
+            alphas=alphas,
+            max_iter=3000,
+            tol=1e-3
+        )
+        nonzero_counts_home = (coefs_path_home != 0).sum(axis=0)
+
+        if args.plot_elasticnet_path:
+            plt.figure(figsize=(6,4))
+            plt.plot(alphas_path_home, nonzero_counts_home, marker='o', linewidth=1)
+            plt.xscale('log')
+            plt.xlabel('α (log scale)')
+            plt.ylabel('Number of Nonzero Coefficients')
+            plt.title(f"ElasticNet Path (Home) [l1_ratio={best_l1_home:.2f}]")
+            plt.axvline(best_alpha_home, color='red', linestyle='--',
+                        label=f"Chosen α ≈ {best_alpha_home:.3f}")
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(report_dir, "elasticnet_home_coefpath.png"))
+            plt.close()
+
+        # 10) ElasticNetCV on the AWAY target
+        enet_cv_away = ElasticNetCV(
+            l1_ratio=0.5,
+            alphas=alphas,
+            cv=5,
+            random_state=SEED,
+            max_iter=3000,
+            tol=1e-3,
+            n_jobs=-1
+        )
+        enet_cv_away.fit(X_lasso_scaled, y_away_lasso)
+
+        best_alpha_away = enet_cv_away.alpha_
+        best_l1_away    = enet_cv_away.l1_ratio_
+        logger.info(f"ElasticNetCV(Away) chose α = {best_alpha_away:.5f}, l1_ratio = {best_l1_away:.2f}")
+
+        # 11) Recompute full coefficient path for AWAY
+        alphas_path_away, coefs_path_away, _ = enet_path(
+            X_lasso_scaled,
+            y_away_lasso,
+            l1_ratio=best_l1_away,
+            alphas=alphas,
+            max_iter=3000,
+            tol=1e-3
+        )
+        nonzero_counts_away = (coefs_path_away != 0).sum(axis=0)
+
+        if args.plot_elasticnet_path:
+            plt.figure(figsize=(6,4))
+            plt.plot(alphas_path_away, nonzero_counts_away, marker='o', linewidth=1)
+            plt.xscale('log')
+            plt.xlabel('α (log scale)')
+            plt.ylabel('Number of Nonzero Coefficients')
+            plt.title(f"ElasticNet Path (Away) [l1_ratio={best_l1_away:.2f}]")
+            plt.axvline(best_alpha_away, color='red', linestyle='--',
+                        label=f"Chosen α ≈ {best_alpha_away:.3f}")
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(report_dir, "elasticnet_away_coefpath.png"))
+            plt.close()
+
+        # 13) Union of nonzero indices in HOME‐and‐AWAY at chosen αs
+        mask_home = (enet_cv_home.coef_ != 0)
+        mask_away = (enet_cv_away.coef_ != 0)
         combined_mask = mask_home | mask_away
         final_features = list(np.array(X_lasso.columns)[combined_mask])
 
-        logger.info(f"Total features selected at α={alpha:.2f}: {len(final_features)}")
+        logger.info(f"ELASTICNET selected {len(final_features)} features in total.")
         if args.debug:
-            logger.debug(f" Combined features@{alpha:.2f}: {final_features}")
+            logger.debug(f"Combined ElasticNet features: {final_features}")
 
         final_feature_list_for_models = final_features
 
-        # ─── WRITE‐SELECTED‐FEATURES (NEW) ───
+        # 14) WRITE‐SELECTED‐FEATURES & exit if requested
         if args.write_selected_features:
             selected_features_path = MAIN_MODELS_DIR / "selected_features.json"
             try:
@@ -1690,33 +1840,27 @@ def run_training_pipeline(args: argparse.Namespace):
                 logger.error(f"Failed to write selected_features.json: {e}", exc_info=True)
             logger.info("Exiting after writing selected features (flag --write-selected-features).")
             sys.exit(0)
-        # ─── END WRITE‐SELECTED‐FEATURES ───
 
-
-        missing_lasso = [c for c in final_feature_list_for_models if c not in features_df.columns]
-        if missing_lasso:
-            logger.error(
-                "LASSO (fixed‐α) claimed to select features not in features_df: %s",
-                missing_lasso
-            )
+        missing_enet = [c for c in final_feature_list_for_models if c not in features_df.columns]
+        if missing_enet:
+            logger.error("ElasticNet claimed to select features not in features_df: %s", missing_enet)
             sys.exit(1)
 
         num_selected = len(final_feature_list_for_models)
-        logger.info(f"LASSO (fixed‐α={alpha:.2f}) selected {num_selected} features in total.")
+        logger.info(f"ElasticNet (l1_ratio=0.5) selected {num_selected} features in total.")
         if num_selected == 0:
-            logger.error("LASSO selected 0 features. Exiting.")
+            logger.error("ElasticNet selected 0 features. Exiting.")
             sys.exit(1)
         elif num_selected < 15:
             logger.warning(
-                f"Only {num_selected} features selected at α={alpha:.2f}. "
-                "Model performance might be limited."
+                f"Only {num_selected} features selected via ElasticNet. Model performance might be limited."
             )
         if args.debug:
-            logger.debug(f"Final features@{alpha:.2f}: {final_feature_list_for_models}")
+            logger.debug(f"Final ElasticNet features: {final_feature_list_for_models}")
 
-        # ── Everything below must be at this same indentation (inside the loop but outside the if args.debug) ──
-
-        logger.info("Splitting data (time-based) using LASSO-selected features...")
+        # 16) Now do exactly the same downstream splitting + ridge/SVR as before,
+        #     except using `final_feature_list_for_models` from ElasticNet.
+        logger.info("Splitting data (time-based) using ElasticNet‐selected features…")
         essential_non_feature_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
         cols_for_split_df = essential_non_feature_cols + final_feature_list_for_models
         missing_split_cols = [col for col in cols_for_split_df if col not in features_df.columns]
@@ -1729,8 +1873,7 @@ def run_training_pipeline(args: argparse.Namespace):
             .sort_values('game_date')
             .reset_index(drop=True)
         )
-        logger.info(f"Created features_df_selected (α={alpha:.2f}) with shape: "
-                    f"{features_df_selected.shape}")
+        logger.info(f"Created features_df_selected with shape: {features_df_selected.shape}")
 
         n_total = len(features_df_selected)
         test_split_idx = int(n_total * (1 - args.test_size))
@@ -1738,10 +1881,7 @@ def run_training_pipeline(args: argparse.Namespace):
         val_split_idx = int(n_total * (1 - args.test_size - val_split_frac_adjusted))
 
         if val_split_idx <= 0 or test_split_idx <= val_split_idx:
-            logger.error(
-                f"Invalid split indices at α={alpha:.2f}: "
-                f"Train end={val_split_idx}, Val end={test_split_idx}."
-            )
+            logger.error(f"Invalid split indices: Train end={val_split_idx}, Val end={test_split_idx}.")
             sys.exit(1)
 
         train_df = features_df_selected.iloc[:val_split_idx].copy()
@@ -1759,12 +1899,14 @@ def run_training_pipeline(args: argparse.Namespace):
         y_val_home, y_val_away     = val_df[TARGET_COLUMNS[0]], val_df[TARGET_COLUMNS[1]]
         y_test_home, y_test_away   = test_df[TARGET_COLUMNS[0]], test_df[TARGET_COLUMNS[1]]
 
-        logger.info(f"Data Split Sizes (α={alpha:.2f}): "
-                    f"Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
+        logger.info(f"Data Split Sizes: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
         if X_train.empty or X_val.empty or X_test.empty:
-            logger.error(f"One or more data splits are empty at α={alpha:.2f}. Exiting.")
+            logger.error("One or more data splits are empty. Exiting.")
             sys.exit(1)
 
+    else:
+        logger.error(f"Unknown feature_selection method: {args.feature_selection}")
+        sys.exit(1)
 
     SVR_PARAM_DIST_REFINED = {
         'svr__kernel':     ['rbf', 'linear'],           
@@ -2126,47 +2268,88 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="NBA Score Prediction Model Tuning & Training Pipeline")
 
     # Data Source Arguments
-    parser.add_argument("--data-source", type=str, default="supabase", choices=["csv", "supabase"], help="Data source type (Supabase recommended)")
-    parser.add_argument("--historical-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_game_stats.csv'), help="Path to historical games CSV (if using --data-source csv)")
-    parser.add_argument("--team-stats-csv-path", type=str, default=str(PROJECT_ROOT / 'data' / 'nba_historical_team_stats.csv'), help="Path to team stats CSV (if using --data-source csv)")
-    parser.add_argument("--lookback-days", type=int, default=1095, help="Number of days of historical data to load (approx 3 seasons)")
-    
+    parser.add_argument("--data-source", type=str, default="supabase",
+                        choices=["csv", "supabase"],
+                        help="Data source type (Supabase recommended)")
+    parser.add_argument("--historical-csv-path", type=str,
+                        default=str(PROJECT_ROOT / 'data' / 'nba_historical_game_stats.csv'),
+                        help="Path to historical games CSV (if using --data-source csv)")
+    parser.add_argument("--team-stats-csv-path", type=str,
+                        default=str(PROJECT_ROOT / 'data' / 'nba_historical_team_stats.csv'),
+                        help="Path to team stats CSV (if using --data-source csv)")
+    parser.add_argument("--lookback-days", type=int, default=1095,
+                        help="Number of days of historical data to load (approx 3 seasons)")
 
     # Feature Engineering Arguments
-    parser.add_argument("--rolling-windows", type=str, default="5,10,20", help="Comma-separated rolling window sizes for feature generation")
-    parser.add_argument("--h2h-window", type=int, default=5, help="Number of recent games for Head-to-Head features")
+    parser.add_argument("--rolling-windows", type=str, default="5,10,20",
+                        help="Comma-separated rolling window sizes for feature generation")
+    parser.add_argument("--h2h-window", type=int, default=5,
+                        help="Number of recent games for Head-to-Head features")
 
     # Model Selection Arguments
-    parser.add_argument("--models", type=str, default="ridge,svr", help="Comma-separated models to train (e.g., 'ridge,svr')")
+    parser.add_argument("--models", type=str, default="ridge,svr",
+                        help="Comma-separated models to train (e.g., 'ridge,svr')")
 
     # Data Splitting Arguments
-    parser.add_argument("--test-size", type=float, default=0.15, help="Fraction of data for the final test set")
-    parser.add_argument("--val-size", type=float, default=0.15, help="Fraction of data for the validation set (taken from before test set)")
-    parser.add_argument("--importance-threshold", type=float, default=0.01, help="Minimum absolute Lasso coefficient to keep a feature")
+    parser.add_argument("--test-size", type=float, default=0.15,
+                        help="Fraction of data for the final test set")
+    parser.add_argument("--val-size", type=float, default=0.15,
+                        help="Fraction of data for the validation set (taken from before test set)")
+    parser.add_argument("--importance-threshold", type=float, default=0.01,
+                        help="Minimum absolute Lasso coefficient to keep a feature")
 
     # Training Options
-    parser.add_argument("--use-weights", action="store_true", help="Use recency weighting during model training")
-    parser.add_argument("--weight-method", type=str, default="exponential", choices=["exponential", "half_life"], help="Method for recency weighting")
-    parser.add_argument("--weight-half-life", type=int, default=90, help="Half-life in days (if using half_life weighting)")
+    parser.add_argument("--use-weights", action="store_true",
+                        help="Use recency weighting during model training")
+    parser.add_argument("--weight-method", type=str, default="exponential",
+                        choices=["exponential", "half_life"],
+                        help="Method for recency weighting")
+    parser.add_argument("--weight-half-life", type=int, default=90,
+                        help="Half-life in days (if using half_life weighting)")
 
     # Hyperparameter Tuning Arguments
-    parser.add_argument("--skip-tuning", action="store_true", help="Skip hyperparameter tuning (train with default parameters)")
-    parser.add_argument("--tune-iterations", type=int, default=250, help="Number of iterations for RandomizedSearchCV")
-    parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS, help="Number of time-series cross-validation splits for tuning")
-    parser.add_argument("--scoring-metric", type=str, default='neg_mean_absolute_error', help="Scoring metric used for hyperparameter tuning (e.g., 'neg_mean_absolute_error', 'r2')")
+    parser.add_argument("--skip-tuning", action="store_true",
+                        help="Skip hyperparameter tuning (train with default parameters)")
+    parser.add_argument("--tune-iterations", type=int, default=250,
+                        help="Number of iterations for RandomizedSearchCV")
+    parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS,
+                        help="Number of time-series cross-validation splits for tuning")
+    parser.add_argument("--scoring-metric", type=str,
+                        default="neg_mean_absolute_error",
+                        help="Scoring metric used for hyperparameter tuning (e.g., 'neg_mean_absolute_error', 'r2')")
 
     # Output and Debugging Arguments
-    parser.add_argument("--run-analysis", action="store_true", help="Run optional analysis (feature summary, correlations)")
-    parser.add_argument("--visualize", action="store_true", help="Show performance plots interactively during the run")
-    parser.add_argument("--save-plots", action="store_true", help="Save generated plots to the reports directory")
-    parser.add_argument("--allow-dummy", action="store_true", help="Allow script to run using dummy classes if local module imports fail")
-    parser.add_argument("--debug", action="store_true", help="Enable detailed DEBUG level logging")
+    parser.add_argument("--run-analysis", action="store_true",
+                        help="Run optional analysis (feature summary, correlations)")
+    parser.add_argument("--visualize", action="store_true",
+                        help="Show performance plots interactively during the run")
+    parser.add_argument("--save-plots", action="store_true",
+                        help="Save generated plots to the reports directory")
+    parser.add_argument("--allow-dummy", action="store_true",
+                        help="Allow script to run using dummy classes if local module imports fail")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enable detailed DEBUG level logging")
+
+    # ─── KEEP THIS ONCE ───
     parser.add_argument(
-    "--write-selected-features",
-    action="store_true",
-    help="After training completes, write selected_features.json and exit")
+        "--write-selected-features",
+        action="store_true",
+        help="After training completes, write selected_features.json and exit"
+    )
+    parser.add_argument(
+        "--feature-selection",
+        choices=["lasso", "elasticnet"],
+        default="lasso",
+        help="Which feature-selection method to run (default: lasso)."
+    )
+    parser.add_argument(
+        "--plot-elasticnet-path",
+        action="store_true",
+        help="If set, save the ElasticNet coefficient-path plots."
+    )
 
     cli_args = parser.parse_args()
+
 
     # --- Run Pipeline ---
     run_training_pipeline(cli_args)
