@@ -44,6 +44,7 @@ except Exception as path_e:
     # For now, let's allow continuing to see if env vars load standalone
 
 # --- Load Environment Variables from backend/.env ---
+
 try:
     logger.info(f"Looking for .env file at: {env_path}")
     if env_path.is_file():

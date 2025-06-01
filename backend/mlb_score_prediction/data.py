@@ -1,4 +1,4 @@
-# backend/nba_score_prediction/data.py
+# backend/mlb_score_prediction/data.py
 
 import pandas as pd
 import numpy as np
@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 
 # -------------------- Data Fetching Class --------------------
 class SupabaseDataFetcher:
-    """ Handles data fetching from Supabase for NBA prediction models. """
+    """ Handles data fetching from Supabase for MLB prediction models. """
 
     def __init__(self, supabase_client: Any, debug: bool = False):
         """
@@ -30,7 +30,7 @@ class SupabaseDataFetcher:
 
     def fetch_historical_games(self, days_lookback: int = 365) -> pd.DataFrame:
         """
-        Fetches historical game stats from the 'nba_historical_game_stats' table
+        Fetches historical game stats from the 'mlb_historical_game_stats' table
         for the specified lookback period using efficient pagination.
 
         Args:
@@ -44,7 +44,7 @@ class SupabaseDataFetcher:
         threshold_date = (datetime.now() - timedelta(days=days_lookback)).strftime('%Y-%m-%d')
         self._print_debug(f"Fetching historical game data since {threshold_date}")
 
-        # Explicitly list all required columns from the nba_historical_game_stats table
+        # Explicitly list all required columns from the mlb_historical_game_stats table
         required_columns = [
             'id', 'game_id', 'home_team', 'away_team', 'game_date',
             'home_score', 'away_score', 'home_q1', 'home_q2', 'home_q3', 'home_q4', 'home_ot',
@@ -66,7 +66,7 @@ class SupabaseDataFetcher:
         start_index = 0
         try:
             while True:
-                response = self.supabase.table("nba_historical_game_stats") \
+                response = self.supabase.table("mlb_historical_game_stats") \
                     .select(", ".join(required_columns)) \
                     .gte("game_date", threshold_date) \
                     .order('game_date') \
@@ -114,7 +114,7 @@ class SupabaseDataFetcher:
 
     def fetch_team_stats(self) -> pd.DataFrame:
         """
-        Fetches team performance stats from the 'nba_historical_team_stats' table.
+        Fetches team performance stats from the mlb_historical_team_stats' table.
 
         Returns:
             pd.DataFrame: Contains team season stats.
@@ -137,7 +137,7 @@ class SupabaseDataFetcher:
         ]
 
         try:
-            response = self.supabase.table("nba_historical_team_stats") \
+            response = self.supabase.table("mlb_historical_team_stats") \
                 .select(", ".join(required_columns)) \
                 .execute()
 
@@ -169,7 +169,7 @@ class SupabaseDataFetcher:
     def fetch_upcoming_games(self, days_ahead: int = 7) -> pd.DataFrame:
         """
         Fetches upcoming games within the specified timeframe from the
-        'nba_upcoming_games' table, including related team names.
+        'mlb_game_schedule' table, including related team names.
 
         Args:
             days_ahead: Number of days into the future to fetch games for.
@@ -186,7 +186,7 @@ class SupabaseDataFetcher:
 
             select_query = "game_id, game_date, home_team:home_team_id(team_name), away_team:away_team_id(team_name)"
 
-            response = self.supabase.table("nba_upcoming_games") \
+            response = self.supabase.table("mlb_game_schedule") \
                 .select(select_query) \
                 .gte("game_date", today) \
                 .lte("game_date", future_date) \

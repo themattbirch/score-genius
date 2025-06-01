@@ -78,11 +78,12 @@ def run_mlb_feature_pipeline(
         logger.error("Input DataFrame is empty")
         return pd.DataFrame()
 
-    required = ["game_id", "game_date_et", "home_team_id", "away_team_id"]
+    required = ["game_id", "game_date", "home_team_id", "away_team_id"] # Changed 'game_date_et' to 'game_date'
+
     missing = set(required) - set(df.columns)
     if missing:
         logger.error(f"Missing required columns: {missing}. Aborting pipeline.")
-        return df.copy()
+        return pd.DataFrame() # Return empty DataFrame on critical error
 
     processed = df.copy()
     start_time = time.time()
@@ -101,7 +102,6 @@ def run_mlb_feature_pipeline(
         if module == "season":
             kwargs.update({
                 "team_stats_df": mlb_historical_team_stats_df,
-                "season_to_lookup": season_to_lookup,
             })
 
         if module == "rolling":

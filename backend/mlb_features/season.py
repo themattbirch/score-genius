@@ -69,7 +69,7 @@ def transform(
     flag_imputations: bool = True,
     debug: bool = False,
     # Current‐game column names
-    game_date_col: str = "game_date_et",
+    game_date_col: str = "game_date",
     home_team_col: str = "home_team_id",
     away_team_col: str = "away_team_id",
     # Team‐stats table columns
@@ -133,7 +133,7 @@ def transform(
             result = _fill_defaults_season(result, placeholder_map, flag_imputations)
         else:
             # Determine seasons for lookup
-            result["season_year"] = result["game_date_parsed"].apply(lambda d: determine_season(d, "mlb"))
+            result["season_year"] = result["game_date_parsed"].apply(lambda d: determine_season(d))
             result["prev_season_year"] = result["season_year"].apply(_previous_season)
             # Normalize team IDs
             result["home_norm"] = result[home_team_col].apply(normalize_team_name)

@@ -1,957 +1,684 @@
-# backend/nba_score_prediction/prediction.py
+# backend/mlb_score_prediction/prediction.py
 
-import os
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 import time
-import pytz
+import pytz # Retained for timezone consistency if needed
 import pandas as pd
 import numpy as np
 import math
 import json
-import re
+import argparse
 from typing import List, Dict, Optional, Any, Tuple
 
 import logging
 # Send all DEBUG+ messages to console
 logging.basicConfig(format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
                     datefmt="%Y-%m-%d %H:%M:%S",
-                    level=logging.DEBUG)
+                    level=logging.INFO) # Default to INFO, can be overridden by --debug
 logger = logging.getLogger(__name__)
 
-# ensure project root is on PYTHONPATH
-SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent.parent
-# also add backend/ as a top-level package
-BACKEND_DIR = PROJECT_ROOT / "backend"
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# Define Paths Consistently
+SCRIPT_DIR_PRED = Path(__file__).resolve().parent
+# Assuming prediction.py is in backend/mlb_score_prediction/
+PROJECT_ROOT_PRED = SCRIPT_DIR_PRED.parents[2]
+MODELS_DIR = PROJECT_ROOT_PRED / "models" / "saved" # This is your preferred path
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+REPORTS_DIR_PRED = PROJECT_ROOT_PRED / "reports_mlb" # Consistent reports dir for MLB
+REPORTS_DIR_PRED.mkdir(parents=True, exist_ok=True)
+logger.info(f"MLB prediction.py using model directory: {MODELS_DIR}")
 
 # --- Third‐party clients & config ---
-import config
-from supabase import create_client
-from caching.supabase_client import supabase as supabase_client_instance
-from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
-from config import MAIN_MODELS_DIR as MODELS_DIR, REPORTS_DIR
+from backend import config # Use the shared config
+from supabase import create_client, Client as SupabaseClient # Explicitly import Client
+# from backend.caching.supabase_client import supabase as supabase_client_instance # Use direct creation
 
-MODELS_DIR = PROJECT_ROOT / "models" / "saved"
-REPORTS_DIR = PROJECT_ROOT / "reports"
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+PACIFIC_TZ = pytz.timezone("America/Los_Angeles") # Retain if used, though ET/UTC more common
+DEFAULT_LOOKBACK_DAYS_FOR_FEATURES_MLB = 270 # Approx 1.5 MLB seasons, adjust as needed
+DEFAULT_UPCOMING_DAYS_WINDOW_MLB = 7 # Predict for a week
 
-PACIFIC_TZ = pytz.timezone("America/Los_Angeles")
-DEFAULT_LOOKBACK_DAYS_FOR_FEATURES = 180
-DEFAULT_UPCOMING_DAYS_WINDOW = 3
+ENSEMBLE_WEIGHTS_FILENAME_MLB = "mlb_ensemble_weights_optimized.json" # MLB specific
+# Fallback weights if file not found, keys are simple model names
+FALLBACK_ENSEMBLE_WEIGHTS_MLB: Dict[str, float] = {"svr": 0.6, "ridge": 0.4} # Example for MLB
 
-ENSEMBLE_WEIGHTS_FILENAME = "ensemble_weights.json"
-FALLBACK_ENSEMBLE_WEIGHTS: Dict[str, float] = {"svr": 0.75, "ridge": 0.25}
-
-REQUIRED_HISTORICAL_COLS = [
-    "game_id", "game_date", "home_team", "away_team", "home_score", "away_score",
-    "home_q1", "home_q2", "home_q3", "home_q4", "home_ot",
-    "away_q1", "away_q2", "away_q3", "away_q4", "away_ot",
-    "home_fg_made", "home_fg_attempted", "away_fg_made", "away_fg_attempted",
-    "home_3pm", "home_3pa", "away_3pm", "away_3pa",
-    "home_ft_made", "home_ft_attempted", "away_ft_made", "away_ft_attempted",
-    "home_off_reb", "home_def_reb", "home_total_reb",
-    "away_off_reb", "away_def_reb", "away_total_reb",
-    "home_turnovers", "away_turnovers",
-    "home_assists", "home_steals", "home_blocks", "home_fouls",
-    "away_assists", "away_steals", "away_blocks", "away_fouls"
+# Update with columns from your mlb_historical_game_stats
+REQUIRED_HISTORICAL_COLS_MLB = [
+    'game_id', 'game_date_time_utc', 'home_team_id', 'away_team_id',
+    'home_score', 'away_score', 'home_hits', 'away_hits', 'home_errors', 'away_errors',
+    # Add other essential raw stats your feature engine might need as direct input
+    # e.g., inning scores if used for very recent form before rolling stats catch up
+    'h_inn_1', 'h_inn_2', 'h_inn_3', 'h_inn_4', 'h_inn_5', 'h_inn_6', 'h_inn_7', 'h_inn_8', 'h_inn_9', 'h_inn_extra',
+    'a_inn_1', 'a_inn_2', 'a_inn_3', 'a_inn_4', 'a_inn_5', 'a_inn_6', 'a_inn_7', 'a_inn_8', 'a_inn_9', 'a_inn_extra',
 ]
-REQUIRED_TEAM_STATS_COLS = [
-    "team_name", "season", "wins_all_percentage", "points_for_avg_all",
-    "points_against_avg_all", "current_form"
+# Update with columns from your mlb_historical_team_stats
+REQUIRED_TEAM_STATS_COLS_MLB = [
+    'team_id', 'team_name', 'season',
+    'wins_all_percentage', 'runs_for_avg_all', 'runs_against_avg_all',
+    # Add other key aggregated team stats
 ]
-UPCOMING_GAMES_COLS = ["game_id", "scheduled_time", "home_team", "away_team"]
+# Update with columns from your mlb_game_schedule for upcoming games
+UPCOMING_GAMES_COLS_MLB = [
+    "game_id", "scheduled_time_utc", "home_team_id", "home_team_name",
+    "away_team_id", "away_team_name",
+    # Include probable pitcher IDs/names if used directly by feature engine
+    "home_probable_pitcher_name", "away_probable_pitcher_name"
+]
 
-# --- Project module imports (left as-is) ---
+# --- Project module imports (MLB specific) ---
+PROJECT_MODULES_IMPORTED = False
 try:
-    from nba_features.engine import run_feature_pipeline, DEFAULT_EXECUTION_ORDER
-    from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor, XGBoostScorePredictor
-    from nba_score_prediction.simulation import PredictionUncertaintyEstimator
-    import nba_score_prediction.utils as utils
+    # Assuming your MLB feature engine will be at a similar path
+    from backend.mlb_features.engine import run_mlb_feature_pipeline, DEFAULT_MLB_EXECUTION_ORDER # Adjust name/path as needed
+    from backend.mlb_score_prediction.models import (
+        RidgeScorePredictor as MLBRidgePredictor,
+        SVRScorePredictor as MLBSVRPredictor,
+        XGBoostScorePredictor as MLBXGBoostPredictor
+    )
+    # PredictionUncertaintyEstimator removed
+    from backend.mlb_score_prediction import utils as mlb_utils
     PROJECT_MODULES_IMPORTED = True
+    logger.info("Successfully imported MLB project modules.")
 except ImportError as e:
-    logger.error(f"Critical imports failed: {e}", exc_info=True)
-    PROJECT_MODULES_IMPORTED = False
+    logger.error(f"MLB project module imports failed: {e}", exc_info=True)
 
 # --- Supabase helper ---
-def get_supabase_client() -> Optional[Any]:
-    """Prefer the cached service-role client, else fall back on anon."""
-    if supabase_client_instance:
-        return supabase_client_instance
+def get_supabase_client() -> Optional[SupabaseClient]:
+    if not config.SUPABASE_URL or not config.SUPABASE_SERVICE_KEY: # Prioritize service key
+        logger.error("Supabase URL or Service Key not configured.")
+        return None
     try:
-        return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        # Using service key for operations like updates
+        return create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY)
     except Exception as e:
-        logger.error(f"Failed to create Supabase client: {e}")
+        logger.error(f"Failed to create Supabase client: {e}", exc_info=True)
         return None
 
-# --- Data Loading Functions ---
-def load_recent_historical_data(supabase_client: Any, days_lookback: int) -> pd.DataFrame:
-    if not supabase_client:
-        logger.error("Supabase client unavailable.")
-        return pd.DataFrame()
+# --- Data Loading Functions (MLB specific) ---
+def load_recent_historical_data(supabase_client: SupabaseClient, days_lookback: int) -> pd.DataFrame:
+    if not supabase_client: logger.error("Supabase client unavailable."); return pd.DataFrame()
 
-    start_date = (datetime.now() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
-    logger.info(f"Loading historical game data from {start_date} onwards...")
+    # Use the correct date column for MLB historical data
+    date_column_hist = "game_date_time_utc" # As in mlb_historical_game_stats
+    start_date_iso = (datetime.now(pytz.utc) - timedelta(days=days_lookback)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    logger.info(f"Loading MLB historical game data from {start_date_iso} onwards...")
     
-    select_cols_str = ", ".join(REQUIRED_HISTORICAL_COLS)
+    select_cols_str = ", ".join(list(set(REQUIRED_HISTORICAL_COLS_MLB + [date_column_hist]))) # Ensure date col is selected
     all_historical_data = []
-    page_size = 1000
-    start_index = 0
-    has_more = True
+    page_size = 1000; start_index = 0; has_more = True
 
     try:
-        # --- Pagination loop ---
         while has_more:
             resp = (
                 supabase_client
-                .table("nba_historical_game_stats")
+                .table("mlb_historical_game_stats") # MLB table
                 .select(select_cols_str)
-                .gte("game_date", start_date)
-                .order("game_date", desc=False)
+                .gte(date_column_hist, start_date_iso)
+                .order(date_column_hist, desc=False)
                 .range(start_index, start_index + page_size - 1)
                 .execute()
             )
             batch = resp.data or []
             all_historical_data.extend(batch)
-            if len(batch) < page_size:
-                has_more = False
-            else:
-                start_index += page_size
+            if len(batch) < page_size: has_more = False
+            else: start_index += page_size
 
-        # --- No data? return empty DF ---
         if not all_historical_data:
-            logger.warning(f"No historical game data found since {start_date}.")
+            logger.warning(f"No MLB historical game data found since {start_date_iso}.")
             return pd.DataFrame()
 
-        # --- Build & clean DataFrame ---
         df = pd.DataFrame(all_historical_data)
-        df["game_date"] = (
-            pd.to_datetime(df["game_date"], errors="coerce")
-              .dt.tz_localize(None)
-        )
+        # Standardize to 'game_date' for feature engine compatibility if it expects that
+        df["game_date"] = pd.to_datetime(df[date_column_hist], errors="coerce").dt.tz_localize(None)
         df = df.dropna(subset=["game_date"])
 
-        numeric_cols = [
-            c for c in REQUIRED_HISTORICAL_COLS 
-            if c not in ("game_id", "game_date", "home_team", "away_team")
-        ]
+        numeric_cols = [c for c in REQUIRED_HISTORICAL_COLS_MLB if c not in
+                        ("game_id", date_column_hist, "home_team_id", "away_team_id",
+                         "home_team_name", "away_team_name")] # Adjust non-numeric list
         for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-            else:
-                df[col] = 0
-
-        for col in ("game_id", "home_team", "away_team"):
-            df[col] = df[col].astype(str).fillna("")
-
-        # --- Sort & reset index before returning ---
+            df[col] = pd.to_numeric(df.get(col), errors="coerce").fillna(0)
+        for col in ("game_id", "home_team_id", "away_team_id", "home_team_name", "away_team_name"):
+            df[col] = df.get(col).astype(str).fillna("")
         return df.sort_values("game_date").reset_index(drop=True)
-
     except Exception as e:
-        logger.error(f"Error loading historical data: {e}", exc_info=True)
+        logger.error(f"Error loading MLB historical data: {e}", exc_info=True)
         return pd.DataFrame()
 
-def load_team_stats_data(supabase_client: Any) -> pd.DataFrame:
-    if not supabase_client:
-        logger.error("Supabase client unavailable.")
-        return pd.DataFrame()
-    logger.info("Loading team stats data from 'nba_historical_team_stats'...")
-    select_cols_str = ", ".join(REQUIRED_TEAM_STATS_COLS)
-    all_stats = []
-    page_size = 1000
-    start_idx = 0
+def load_team_stats_data(supabase_client: SupabaseClient) -> pd.DataFrame:
+    if not supabase_client: logger.error("Supabase client unavailable."); return pd.DataFrame()
+    logger.info("Loading MLB team stats data from 'mlb_historical_team_stats'...")
+    select_cols_str = ", ".join(REQUIRED_TEAM_STATS_COLS_MLB)
+    # ... (pagination logic similar to load_recent_historical_data, simplified here for brevity) ...
     try:
-        while True:
-            resp = (
-                supabase_client
-                .table("nba_historical_team_stats")
-                .select(select_cols_str)
-                .order("season", desc=False)
-                .range(start_idx, start_idx + page_size - 1)
-                .execute()
-            )
-            batch = resp.data or []
-            if not batch:
-                break
-            all_stats.extend(batch)
-            if len(batch) < page_size:
-                break
-            start_idx += page_size
-
-        if not all_stats:
-            logger.warning("No team stats data found.")
-            return pd.DataFrame()
-
-        df = pd.DataFrame(all_stats)
-        numeric_cols = [c for c in REQUIRED_TEAM_STATS_COLS if c not in ("team_name","season","current_form")]
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df.get(col, 0.0), errors="coerce").fillna(0.0)
-        for col in ("team_name","season","current_form"):
-            df[col] = df[col].astype(str).fillna("")
+        resp = supabase_client.table("mlb_historical_team_stats").select(select_cols_str).execute()
+        if not resp.data: logger.warning("No MLB team stats data found."); return pd.DataFrame()
+        
+        df = pd.DataFrame(resp.data)
+        numeric_cols = [c for c in REQUIRED_TEAM_STATS_COLS_MLB if c not in ("team_id", "team_name", "season")] # Adjust
+        for col in numeric_cols: df[col] = pd.to_numeric(df.get(col), errors="coerce").fillna(0.0)
+        for col in ("team_id", "team_name", "season"): df[col] = df.get(col).astype(str).fillna("")
         return df
     except Exception as e:
-        logger.error(f"Error loading team stats: {e}", exc_info=True)
+        logger.error(f"Error loading MLB team stats: {e}", exc_info=True)
         return pd.DataFrame()
 
-def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.DataFrame:
-    # Expand UTC cutoff to align with ET-midnight → UTC
-    from zoneinfo import ZoneInfo
-
-    ET  = ZoneInfo("America/New_York")
-    UTC = ZoneInfo("UTC")
-
-    # midnight at ET today, then + days_window
+def fetch_upcoming_games_data(supabase_client: SupabaseClient, days_window: int) -> pd.DataFrame:
+    # (Timezone logic from NBA version is fine, uses UTC for query)
+    try:
+        from zoneinfo import ZoneInfo          # Python ≥ 3.9
+        ET = ZoneInfo("America/New_York")
+        UTC = ZoneInfo("UTC")
+    except (ImportError, KeyError):            # Fallback for older runtimes
+        ET = pytz.timezone("America/New_York")
+        UTC = pytz.utc
     today_et = datetime.now(ET).date()
     start_et = datetime(today_et.year, today_et.month, today_et.day, tzinfo=ET)
-    end_et   = start_et + timedelta(days=days_window)
-
-    # convert to UTC for querying
-    start_utc = start_et.astimezone(UTC)
-    end_utc   = end_et.astimezone(UTC)
-
-    start_str = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_str   = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    logger.info(f"Fetching upcoming games between {start_str} and {end_str} (UTC ← ET window)...")
+    end_et = start_et + timedelta(days=days_window)
+    start_utc_str = start_et.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_utc_str = end_et.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # Use correct date column from mlb_game_schedule: scheduled_time_utc
+    date_column_upcoming = "scheduled_time_utc"
+    logger.info(f"Fetching upcoming MLB games between {start_utc_str} and {end_utc_str} (UTC)...")
 
     try:
         resp = (
             supabase_client
-            .table("nba_game_schedule")
-            .select(", ".join(UPCOMING_GAMES_COLS))
-            .gte("scheduled_time", start_str)
-            .lt("scheduled_time", end_str)
-            .order("scheduled_time", desc=False)
+            .table("mlb_game_schedule") # MLB table
+            .select(", ".join(list(set(UPCOMING_GAMES_COLS_MLB + [date_column_upcoming])))) # Ensure date col selected
+            .gte(date_column_upcoming, start_utc_str)
+            .lt(date_column_upcoming, end_utc_str)
+            .order(date_column_upcoming, desc=False)
             .execute()
         )
         rows = resp.data or []
-        if not rows:
-            logger.warning("No upcoming games found.")
-            return pd.DataFrame()
+        if not rows: logger.warning("No upcoming MLB games found."); return pd.DataFrame()
 
         df = pd.DataFrame(rows)
-        df["scheduled_time_utc"] = pd.to_datetime(df["scheduled_time"], errors="coerce", utc=True)
-        df = df.dropna(subset=["scheduled_time_utc"])
-        df["game_time_pt"] = df["scheduled_time_utc"].dt.tz_convert(PACIFIC_TZ)
-        df["game_date"] = pd.to_datetime(df["game_time_pt"].dt.date)
-        for c in ("game_id","home_team","away_team"):
-            df[c] = df[c].astype(str)
-        return df.sort_values("game_time_pt").reset_index(drop=True)
+        df["scheduled_time_utc_dt"] = pd.to_datetime(df[date_column_upcoming], errors="coerce", utc=True)
+        df = df.dropna(subset=["scheduled_time_utc_dt"])
+        # Standardize to 'game_date' (as date object, naive) for feature engine if it expects that
+        df["game_date"] = pd.to_datetime(df["scheduled_time_utc_dt"].dt.tz_convert(ET).dt.date) # Example: Game date in ET
+        
+        # Ensure required columns are present and have correct types
+        for c in ("game_id", "home_team_id", "away_team_id", "home_team_name", "away_team_name"):
+            df[c] = df.get(c).astype(str).fillna("Unknown") # Use get for safety
+        return df.sort_values("scheduled_time_utc_dt").reset_index(drop=True)
     except Exception as e:
-        logger.error(f"Error fetching upcoming games: {e}", exc_info=True)
+        logger.error(f"Error fetching upcoming MLB games: {e}", exc_info=True)
         return pd.DataFrame()
 
-# --- Model Loading -----------------------------------------------------------
+# --- Model Loading (MLB specific) ---
 def load_trained_models(
-    model_dir: Path = MODELS_DIR,
-    load_feature_list: bool = False,   # if True, try to read selected_features.json
+    model_dir: Path = MODELS_DIR, # Uses shared MAIN_MODELS_DIR
+    load_feature_list: bool = True,
 ) -> Tuple[Dict[str, Any], Optional[List[str]]]:
-    """
-    Load saved `*_score_predictor.joblib` models from `model_dir`.
-    Also attempts to load `selected_features.json` from the same directory.
-
-    Returns:
-      - models: dict mapping model keys (e.g. 'svr', 'ridge') to predictor instances
-      - feature_list: list of selected features if JSON is present, else None
-    """
-    # --- Load selected feature list if available
     feature_list: Optional[List[str]] = None
-    features_fp = model_dir / "selected_features.json"
-    if features_fp.is_file():
+    features_fp = model_dir / "mlb_selected_features.json" # MLB specific
+    if load_feature_list and features_fp.is_file():
         try:
-            with open(features_fp, 'r') as f:
-                feature_list = json.load(f)
-            logger.info(f"Loaded selected_features.json with {len(feature_list)} features")
-        except Exception as e:
-            logger.warning(f"Could not read selected_features.json: {e}. Continuing without it.")
-    else:
-        logger.warning("selected_features.json not found — will use all pipeline features.")
+            with open(features_fp, 'r') as f: feature_list = json.load(f)
+            logger.info(f"Loaded mlb_selected_features.json with {len(feature_list)} features")
+        except Exception as e: logger.warning(f"Could not read mlb_selected_features.json: {e}")
+    elif load_feature_list: logger.warning(f"{features_fp.name} not found. Model might use all features or internal list.")
 
-    # --- Load models
     models: Dict[str, Any] = {}
-    for name, Cls in [("svr", SVRScorePredictor), ("ridge", RidgeScorePredictor)]:
+    # Ensure class names match those imported from mlb_score_prediction.models
+    # The keys 'svr', 'ridge', 'xgb' are used for ensemble weights.
+    model_map = {
+        "svr": MLBSVRPredictor,
+        "ridge": MLBRidgePredictor,
+        "xgb": MLBXGBoostPredictor # Add XGBoost if you use it
+    }
+    for name, ClsMLB in model_map.items():
         try:
-            pred = Cls(model_dir=str(model_dir), model_name=f"{name}_score_predictor")
-            pred.load_model()
+            # Model name used for filename loading, e.g., "svr_mlb_runs_predictor"
+            pred = ClsMLB(model_dir=str(model_dir), model_name=f"{name}_mlb_runs_predictor")
+            pred.load_model() # load_model in BaseScorePredictor will find the latest timestamped file
             models[name] = pred
-            logger.info(f"Loaded '{name}' predictor from {model_dir}")
+            logger.info(f"Loaded MLB '{name}' predictor from {model_dir}")
         except Exception as e:
-            logger.error(f"Could not load '{name}' model: {e}", exc_info=True)
-
-    if not models:
-        raise RuntimeError(f"No models could be loaded from {model_dir}")
-
+            logger.error(f"Could not load MLB '{name}' model: {e}", exc_info=True)
+    if not models: raise RuntimeError(f"No MLB models could be loaded from {model_dir}")
     return models, feature_list
 
-# --- Betting Odds Parsing Functions ---
-def parse_odds_line(line_str: Optional[str]) -> Tuple[Optional[float], Optional[int]]:
-    if not line_str:
-        return None, None
-    match = re.search(
-        r"([\+\-]?\d+(?:\.\d+)?)\s*(?:\(?\s*(?:[ou])?\s*([\+\-]\d+)\s*\)?)?",
-        str(line_str).strip()
-    )
-    if match:
-        try:
-            line = float(match.group(1))
-        except (ValueError, TypeError):
-            line = None
-        try:
-            odds = int(match.group(2)) if match.group(2) else -110
-        except (ValueError, TypeError):
-            odds = -110
-        return line, odds
-    return None, None
-
-def parse_moneyline_str(ml_str: Optional[str], home_team: str, away_team: str) -> Tuple[Optional[int], Optional[int]]:
-    home_ml, away_ml = None, None
-    if not ml_str or not isinstance(ml_str, str):
-        return home_ml, away_ml
-    try:
-        mls = re.findall(r"([\+\-]\d{3,})", ml_str)
-        if len(mls) == 2:
-            ml1, ml2 = int(mls[0]), int(mls[1])
-            if ml1 < 0 <= ml2:
-                home_ml, away_ml = ml1, ml2
-            elif ml2 < 0 <= ml1:
-                home_ml, away_ml = ml2, ml1
-            else:
-                home_ml, away_ml = ml1, ml2
-        elif len(mls) == 1:
-            logger.warning(f"Only one moneyline found in '{ml_str}'.")
-        else:
-            logger.warning(f"Could not find two moneylines in '{ml_str}'.")
-    except Exception as e:
-        logger.warning(f"Could not parse moneyline '{ml_str}': {e}")
-    return home_ml, away_ml
-
-def parse_spread_str(spread_str: Optional[str], home_team: str, away_team: str) -> Tuple[Optional[float], Optional[float]]:
-    home_line, away_line = None, None
-    if not spread_str or not isinstance(spread_str, str):
-        return home_line, away_line
-    try:
-        nums = re.findall(r"([\+\-]?\d+(?:\.\d+)?)", spread_str)
-        if len(nums) == 2:
-            v1, v2 = float(nums[0]), float(nums[1])
-            if abs(v1 + v2) < 0.1:
-                home_line = v1 if v1 < 0 else v2
-                away_line = -home_line
-            else:
-                home_line = v1
-                away_line = -v1
-                logger.warning(f"Spread '{spread_str}' doesn’t sum to zero; assuming {v1} is home.")
-        elif len(nums) == 1:
-            home_line = float(nums[0])
-            away_line = -home_line
-        else:
-            logger.debug(f"Could not parse spread from '{spread_str}'.")
-    except Exception as e:
-        logger.warning(f"Could not parse spread '{spread_str}': {e}")
-    return home_line, away_line
-
-def parse_total_str(total_str: Optional[str]) -> Optional[float]:
-    if not total_str or not isinstance(total_str, str):
-        return None
-    try:
-        nums = re.findall(r"(\d{3}(?:\.\d+)?)", total_str)
-        if nums:
-            return float(nums[0])
-        nums = re.findall(r"(\d+(?:\.\d+)?)", total_str)
-        if nums:
-            return float(nums[0])
-    except Exception as e:
-        logger.warning(f"Could not parse total '{total_str}': {e}")
-    return None
-
-def fetch_and_parse_betting_odds(
-    supabase_client: Any,
-    game_ids: List[str]
+# --- Betting Odds Parsing (Adapt if MLB odds structure in Supabase differs) ---
+# (Assuming parsing functions are general enough, but source table and column names are critical)
+def fetch_and_parse_betting_odds( # This function needs careful review for MLB table structure
+    supabase_client: SupabaseClient, game_ids: List[str]
 ) -> Dict[str, Dict[str, Any]]:
-    if not supabase_client or not game_ids:
-        logger.warning("Skipping odds fetch due to missing client or game IDs.")
-        return {}
-
-    def make_moneyline_str(r):
-        ml = r.get("moneyline") or {}
-        h = ml.get(r["home_team"])
-        a = ml.get(r["away_team"])
-        def price(x):
-            if isinstance(x, dict):
-                return x.get("price")
-            elif isinstance(x, (int, float)):
-                return int(x)
-        if h is None or a is None:
-            return None
-        return f"{r['home_team']} {price(h):+d} / {r['away_team']} {price(a):+d}"
-
-    def make_spread_str(r):
-        sp = r.get("spread") or {}
-        h = sp.get(r["home_team"])
-        a = sp.get(r["away_team"])
-        def point(x):
-            if isinstance(x, dict):
-                return x.get("point")
-            elif isinstance(x, (int, float)):
-                return float(x)
-        if h is None or a is None:
-            return None
-        return f"{r['home_team']} {point(h):+.1f} / {r['away_team']} {point(a):+.1f}"
-
-    def make_total_str(r):
-        tot = r.get("total") or {}
-        over = tot.get("Over", {}).get("point")
-        if over is None:
-            return None
-        return f"Over {over:.1f} / Under {over:.1f}"
-
+    if not supabase_client or not game_ids: return {}
+    
     odds_dict: Dict[str, Dict[str, Any]] = {}
     chunk_size = 50
+    # Your mlb_game_schedule table has 'moneyline', 'spread', 'total' (text) and also specific price/line cols
+    # The NBA version constructs clean strings then parses them. For MLB, you might directly use the parsed columns
+    # if they are reliable (e.g., moneyline_home_clean, spread_home_line_clean).
+    # For now, adapting the NBA's "construct string then parse" logic, assuming raw odds are text/JSON.
+    
+    # Helper to get data from potentially nested dicts (like NBA odds structure)
+    def get_odds_value(data_dict, team_key, value_key, default=None):
+        if not isinstance(data_dict, dict): return default
+        team_data = data_dict.get(team_key)
+        if not isinstance(team_data, dict): return default
+        return team_data.get(value_key, default)
+
     for i in range(0, len(game_ids), chunk_size):
         chunk = game_ids[i : i + chunk_size]
         try:
+            # Select raw odds text columns and also pre-parsed fields if available
+            # Adjust these select columns based on your mlb_game_schedule table!
             resp = (
                 supabase_client
-                .table("nba_game_schedule")
-                .select("game_id, home_team, away_team, moneyline, spread, total")
+                .table("mlb_game_schedule") # MLB table
+                .select("game_id, home_team_name, away_team_name, moneyline, spread, total, "
+                        "moneyline_home_clean, moneyline_away_clean, spread_home_line_clean, total_line_clean") # Example parsed cols
                 .in_("game_id", chunk)
                 .execute()
             )
             rows = resp.data or []
-            df = pd.DataFrame(rows)
-            for col in ("moneyline","spread","total"):
-                df[col] = df[col].apply(lambda x: x or {})
+            for r_dict in rows:
+                gid = str(r_dict["game_id"])
+                home_ml_val = r_dict.get("moneyline_home_clean")
+                away_ml_val = r_dict.get("moneyline_away_clean")
+                home_sp_val = r_dict.get("spread_home_line_clean")
+                total_val   = r_dict.get("total_line_clean")
 
-            for _, r in df.iterrows():
-                gid = str(r["game_id"])
-                ml_str  = make_moneyline_str(r)
-                sp_str  = make_spread_str(r)
-                tot_str = make_total_str(r)
+                # if any of those are None, skip or set defaults:
+                if home_ml_val is None or away_ml_val is None:
+                    logger.warning(f"Missing cleaned moneyline for game {gid}. Skipping.")
+                    continue
 
-                # write back cleaned strings
-                supabase_client.table("nba_game_schedule")\
-                    .update({
-                        "moneyline_clean": ml_str,
-                        "spread_clean":   sp_str,
-                        "total_clean":    tot_str
-                    })\
-                    .eq("game_id", gid)\
-                    .execute()
-
-                home_ml, away_ml = parse_moneyline_str(ml_str, r["home_team"], r["away_team"])
-                home_sp, _       = parse_spread_str(sp_str, r["home_team"], r["away_team"])
-                total_line       = parse_total_str(tot_str)
-                default_odds     = -110
-
+                # Build the MLB‐specific entry:
                 entry = {
-                    "moneyline": {"home": home_ml, "away": away_ml},
+                    "moneyline": {"home": float(home_ml_val), "away": float(away_ml_val)},
                     "spread": {
-                        "home_line": home_sp,
-                        "away_line": -home_sp if home_sp is not None else None,
-                        "home_odds": default_odds,
-                        "away_odds": default_odds
+                        "home_line": float(home_sp_val) if home_sp_val is not None else None,
+                        "away_line": (float(-home_sp_val) if home_sp_val is not None else None),
+                        "home_odds": -110,  # placeholder
+                        "away_odds": -110,
                     },
-                    "total": {"line": total_line, "over_odds": default_odds, "under_odds": default_odds},
-                    "bookmaker": "Parsed from Supabase",
-                    "last_update": pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%dT%H:%M:%SZ")                }
-                if any([
-                    entry["moneyline"]["home"] is not None,
-                    entry["moneyline"]["away"] is not None,
-                    entry["spread"]["home_line"] is not None,
-                    entry["total"]["line"] is not None
-                ]):
-                    odds_dict[gid] = entry
+                    "total": {
+                        "line": float(total_val) if total_val is not None else None,
+                        "over_odds": -110,
+                        "under_odds": -110,
+                    },
+                    "bookmaker": "ParsedFromSupabaseMLB",
+                    "last_update": pd.Timestamp.now(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+                odds_dict[gid] = entry
         except Exception as e:
-            logger.error(f"Error fetching odds chunk starting at {i}: {e}", exc_info=True)
-
-    logger.info(f"Finished fetching odds for {len(odds_dict)} games.")
+            logger.error(f"Error fetching/parsing MLB odds chunk: {e}", exc_info=True)
+    logger.info(f"Finished fetching/parsing odds for {len(odds_dict)} MLB games.")
     return odds_dict
 
+# --- Display Summary (MLB specific) ---
+def display_prediction_summary_mlb(preds: List[Dict]) -> None:
+    # (Column widths might need adjustment for MLB team names/run values)
+    header_line = "=" * 125 # Adjusted width
+    header_title = " " * 45 + "MLB PREGAME PREDICTION SUMMARY"
+    header_cols = ( # Removed Lower/Upper Bound, Calib?, Raw Diff/Total to simplify
+        f"{'DATE':<11} {'MATCHUP':<30} {'PRED RUNS':<12} {'PRED RUN DIFF':<15} "
+        f"{'WIN PROB (H)':<15}"
+    ) # Removed Conf Pct
+    header_sep = "-" * 125
 
-# --- Calibration (no more confidence_pct) ---
-#def calibrate_prediction_with_odds(
-    #prediction: Dict,
-   # odds_info: Optional[Dict],
-  #  blend_factor: float = 0.3
-#) -> Dict:
-   # calibrated = prediction.copy()
-   # calibrated['betting_odds'] = odds_info
-   # calibrated['calibration_blend_factor'] = blend_factor
-   # calibrated['is_calibrated'] = False
-
-    #if not odds_info:
-        #logger.debug(f"No odds info for game {prediction.get('game_id')}; skipping calibration.")
-        #return calibrated
-
-   # try:
-        # extract market_spread & total...
-       # spread = odds_info.get('spread', {})
-      #  if spread.get('home_line') is not None:
-         #   market_spread = spread['home_line']
-       # elif spread.get('away_line') is not None:
-          #  market_spread = -spread['away_line']
-       # else:
-          #  logger.debug("Missing market spread.")
-           # return calibrated
-
-       # total = odds_info.get('total', {}).get('line')
-        #if total is None:
-         #   logger.debug("Missing market total.")
-          #  return calibrated
-
-       # raw_diff  = float(prediction['predicted_point_diff'])
-       # raw_total = float(prediction['predicted_total_score'])
-
-       # cal_total = blend_factor * total + (1 - blend_factor) * raw_total
-       # cal_diff  = blend_factor * market_spread + (1 - blend_factor) * raw_diff
-       # cal_home  = (cal_total + cal_diff) / 2.0
-       # cal_away  = (cal_total - cal_diff) / 2.0
-       # cal_winp  = 1 / (1 + math.exp(-0.15 * cal_diff))
-
-        #calibrated.update({
-          #  'predicted_home_score':  round(cal_home, 1),
-          #  'predicted_away_score':  round(cal_away, 1),
-          #  'predicted_point_diff':  round(cal_diff, 1),
-          #  'predicted_total_score': round(cal_total, 1),
-           # 'win_probability':       round(cal_winp, 3),
-          #  'is_calibrated':         True
-       # })
-        #logger.info(
-            #f"Calibrated game {prediction.get('game_id')}: "
-           #f"H {cal_home:.1f}, A {cal_away:.1f}, Diff {cal_diff:+.1f}, Total {cal_total:.1f}"
-       # )
-    #except Exception as e:
-        #logger.error(f"Error during calibration for game {prediction.get('game_id')}: {e}", exc_info=True)
-
-    #return calibrated
-
-# --- Display Summary (dropped CONF % column) ---
-def display_prediction_summary(preds: List[Dict]) -> None:
-    header_line = "=" * 145
-    header_title = " " * 55 + "NBA PREGAME PREDICTION SUMMARY"
-    header_cols = (
-        f"{'DATE':<11} {'MATCHUP':<30} {'FINAL SCORE':<12} {'FINAL DIFF':<10} "
-        f"{'L/U BOUND':<12} {'RAW SCORE':<12} {'RAW DIFF':<10} "
-        f"{'WIN PROB':<10} {'CALIB?':<6}"
-    )
-    header_sep = "-" * 145
-
-    print(f"\n{header_line}\n{header_title}\n{header_line}")
-    print(header_cols)
-    print(header_sep)
-
+    print(f"\n{header_line}\n{header_title}\n{header_line}\n{header_cols}\n{header_sep}")
     try:
         df = pd.DataFrame(preds)
         if 'game_date' in df.columns:
-            df['game_date'] = pd.to_datetime(df['game_date'], errors="coerce")
-            df = df.dropna(subset=['game_date'])
-            df = df.sort_values(['game_date', 'predicted_point_diff'],
-                                key=lambda x: abs(x) if x.name == 'predicted_point_diff' else x)
-    except Exception as e:
-        logger.error(f"Error sorting for display: {e}")
-        df = pd.DataFrame(preds)
+            df['game_date_dt'] = pd.to_datetime(df['game_date'], errors="coerce")
+            df = df.dropna(subset=['game_date_dt'])
+            # Sort by date, then by absolute predicted run differential (closer games first)
+            df = df.sort_values(['game_date_dt', 'predicted_run_diff'],
+                                key=lambda x: np.abs(x) if x.name == 'predicted_run_diff' else x)
+    except Exception as e: logger.error(f"Error sorting for MLB display: {e}"); df = pd.DataFrame(preds)
 
     for _, g in df.iterrows():
         try:
-            date_str = g['game_date'].strftime("%Y-%m-%d") if pd.notna(g.get('game_date')) else "N/A"
-            matchup = f"{g.get('home_team','?')[:14]} vs {g.get('away_team','?')[:14]}"
-            raw_home = g.get('raw_predicted_home_score', np.nan)
-            raw_away = g.get('raw_predicted_away_score', np.nan)
-            raw_diff = g.get('raw_predicted_point_diff', np.nan)
-            final_home = g.get('predicted_home_score', np.nan)
-            final_away = g.get('predicted_away_score', np.nan)
-            final_diff = g.get('predicted_point_diff', np.nan)
-            winp = g.get('win_probability', np.nan)
-            lb = g.get('lower_bound', np.nan)
-            ub = g.get('upper_bound', np.nan)
-            calib_str = "Yes" if g.get('is_calibrated') else "No"
+            date_str = pd.to_datetime(g.get('game_date')).strftime("%Y-%m-%d") if pd.notna(g.get('game_date')) else "N/A"
+            matchup = f"{str(g.get('home_team_name','?'))[:13]} vs {str(g.get('away_team_name','?'))[:13]}" # Use team_name
+            
+            final_home = g.get('predicted_home_runs', np.nan) # MLB key
+            final_away = g.get('predicted_away_runs', np.nan) # MLB key
+            final_diff = g.get('predicted_run_diff', np.nan)  # MLB key
+            winp_home = g.get('win_probability_home', np.nan) # MLB key
 
-            final_score = f"{final_home:.1f}-{final_away:.1f}" if pd.notna(final_home) and pd.notna(final_away) else "N/A"
+            final_runs_str = f"{final_home:.1f}-{final_away:.1f}" if pd.notna(final_home) and pd.notna(final_away) else "N/A"
             final_diff_str = f"{final_diff:+.1f}" if pd.notna(final_diff) else "N/A"
-            bound_str = f"{lb:.1f}/{ub:.1f}" if pd.notna(lb) and pd.notna(ub) else "N/A"
-            raw_score = f"{raw_home:.1f}-{raw_away:.1f}" if pd.notna(raw_home) and pd.notna(raw_away) else "N/A"
-            raw_diff_str = f"{raw_diff:+.1f}" if pd.notna(raw_diff) else "N/A"
-            win_prob_str = f"{winp*100:.1f}%" if pd.notna(winp) else "N/A"
+            win_prob_str = f"{winp_home*100:.1f}%" if pd.notna(winp_home) else "N/A"
 
-            print(
-                f"{date_str:<11} {matchup:<30} {final_score:<12} {final_diff_str:<10} "
-                f"{bound_str:<12} {raw_score:<12} {raw_diff_str:<10} "
-                f"{win_prob_str:<10} {calib_str:<6}"
-            )
-        except Exception as e:
-            logger.error(f"Error displaying game {g.get('game_id')}: {e}")
-
+            print(f"{date_str:<11} {matchup:<30} {final_runs_str:<12} {final_diff_str:<15} {win_prob_str:<15}")
+        except Exception as e: logger.error(f"Error displaying MLB game {g.get('game_id')}: {e}", exc_info=True)
     print(header_line)
 
-# --- Core Pipeline -----------------------------------------------------------
+# --- Core Pipeline (MLB specific) ---
 def generate_predictions(
-    days_window: int = DEFAULT_UPCOMING_DAYS_WINDOW,
+    days_window: int = DEFAULT_UPCOMING_DAYS_WINDOW_MLB,
     model_dir: Path = MODELS_DIR,
-    historical_lookback: int = DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
+    historical_lookback: int = DEFAULT_LOOKBACK_DAYS_FOR_FEATURES_MLB,
     debug_mode: bool = False
 ) -> Tuple[List[Dict], List[Dict]]:
+    
+    logger.info("--- Starting MLB Prediction Pipeline ---")
+    start_ts = time.time()
 
     if not PROJECT_MODULES_IMPORTED:
-        logger.critical("Project modules not imported correctly.")
+        logger.critical("MLB Project modules not imported. Cannot generate predictions.")
         return [], []
 
-    # ————— Setup logging/debug toggle —————
-    root_logger = logging.getLogger()
-    orig_levels = [h.level for h in root_logger.handlers]
-    orig_level = logger.level
-    def _restore():
-        logger.setLevel(orig_level)
-        for lvl, h in zip(orig_levels, root_logger.handlers):
-            h.setLevel(lvl)
-
-    if debug_mode:
-        logger.setLevel(logging.DEBUG)
-        for h in root_logger.handlers:
-            h.setLevel(logging.DEBUG)
-        logger.debug("DEBUG mode enabled")
-
-    start_ts = time.time()
-    logger.info("--- Starting NBA Prediction Pipeline ---")
-
-    # ————— LOAD DATA —————
-    supabase      = get_supabase_client()
+    supabase = get_supabase_client()
     if not supabase:
-        logger.critical("Cannot proceed without Supabase client")
-        _restore()
+        logger.critical("Cannot proceed: Supabase client failed.")
         return [], []
 
-    hist_df       = load_recent_historical_data(supabase, historical_lookback)
-    team_stats_df = load_team_stats_data(supabase)
-    upcoming_df   = fetch_upcoming_games_data(supabase, days_window)
+    hist_df_mlb = load_recent_historical_data(supabase, historical_lookback)
+    team_stats_df_mlb = load_team_stats_data(supabase)
+    upcoming_df_mlb = fetch_upcoming_games_data(supabase, days_window)
 
-    if upcoming_df.empty:
-        logger.warning("No upcoming games; exiting.")
-        _restore()
+    if upcoming_df_mlb.empty:
+        logger.warning("No upcoming MLB games; exiting.")
         return [], []
 
-    # If no history or team stats, pass None downstream
-    if hist_df.empty:
-        hist_df = None
-    if team_stats_df.empty:
-        team_stats_df = None
+    # Replace empty DataFrames with None so feature engine knows to handle missing history
+    hist_df_mlb = None if (hist_df_mlb is not None and hist_df_mlb.empty) else hist_df_mlb
+    team_stats_df_mlb = None if (team_stats_df_mlb is not None and team_stats_df_mlb.empty) else team_stats_df_mlb
 
-    # Uncertainty estimator (optional)
-    cov_file = REPORTS_DIR / "historical_coverage_stats.csv"
-    cov_df   = pd.read_csv(cov_file) if cov_file.is_file() else None
-    uncertainty = PredictionUncertaintyEstimator(
-        historical_coverage_stats=cov_df,
-        debug=debug_mode
-    )
-
-    # ————— LOAD MODELS & FEATURE LIST —————
-    models, feature_list = load_trained_models(model_dir, load_feature_list=True)
-    if not models:
-        logger.error("No models loaded; aborting.")
-        _restore()
+    # Load trained models + selected feature list
+    models_mlb, feature_list_mlb = load_trained_models(model_dir, load_feature_list=True)
+    if not models_mlb:
+        logger.error("No MLB models loaded; aborting.")
         return [], []
 
-    # ————— ENSEMBLE WEIGHTS —————
-    weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
-    wfile   = model_dir / ENSEMBLE_WEIGHTS_FILENAME
-
-    if wfile.is_file():
+    # Load ensemble weights (.json) or fallback
+    weights_mlb = FALLBACK_ENSEMBLE_WEIGHTS_MLB.copy()
+    wfile_mlb = model_dir / ENSEMBLE_WEIGHTS_FILENAME_MLB
+    if wfile_mlb.is_file():
         try:
-            raw = json.loads(wfile.read_text())
-            if not isinstance(raw, dict) or not raw:
-                raise ValueError("must be a non-empty dict")
+            raw_weights = json.loads(wfile_mlb.read_text())
+            if not isinstance(raw_weights, dict) or not raw_weights:
+                raise ValueError("Weights file not a non-empty dict")
 
-            # strip "_score_predictor" suffix to get base keys
             base_weights: Dict[str, float] = {}
-            for fullname, val in raw.items():
-                if fullname.endswith("_score_predictor"):
-                    base = fullname[: -len("_score_predictor")]
-                else:
-                    base = fullname
-                base_weights[base] = float(val)
+            for fullname, val in raw_weights.items():
+                base_key = fullname.replace("_mlb_runs_predictor", "")
+                if base_key in FALLBACK_ENSEMBLE_WEIGHTS_MLB:
+                    base_weights[base_key] = float(val)
 
-            total = sum(base_weights.values())
-            expected = set(weights.keys())   # e.g. {"ridge","svr","xgb"}
-            loaded   = set(base_weights.keys())
+            if not base_weights:
+                raise ValueError("No valid model weights parsed")
 
-            # reject only if sum ≉1 or any extra keys
-            if abs(total - 1.0) > 1e-6 or not loaded.issubset(expected):
-                raise ValueError(f"sum={total:.4f}, keys={loaded}")
+            final_parsed_weights = {
+                k: float(base_weights.get(k, 0.0)) for k in FALLBACK_ENSEMBLE_WEIGHTS_MLB.keys()
+            }
+            s = sum(final_parsed_weights.values())
+            if s > 1e-9 and abs(s - 1.0) > 1e-5:
+                final_parsed_weights = {k: v / s for k, v in final_parsed_weights.items()}
+            elif s <= 1e-9:
+                logger.warning(
+                    f"Loaded weights sum to zero from {wfile_mlb.name}, using fallback."
+                )
+                final_parsed_weights = FALLBACK_ENSEMBLE_WEIGHTS_MLB.copy()
 
-            # zero‐fill any missing
-            for m in expected - loaded:
-                base_weights[m] = 0.0
-
-            # renormalize (just in case)
-            subtotal = sum(base_weights.values())
-            if abs(subtotal - 1.0) > 1e-6 and subtotal > 0:
-                base_weights = {k: v / subtotal for k, v in base_weights.items()}
-
-            weights = base_weights
-            logger.info("Loaded ensemble weights from %s: %s", wfile.name, weights)
-
+            weights_mlb = final_parsed_weights
+            logger.info(f"Loaded MLB ensemble weights: {weights_mlb}")
         except Exception as e:
             logger.warning(
-                "%s invalid (%s); falling back to defaults %s",
-                wfile.name, e, FALLBACK_ENSEMBLE_WEIGHTS
+                f"{wfile_mlb.name} invalid ({e}); falling back to MLB defaults {FALLBACK_ENSEMBLE_WEIGHTS_MLB}"
             )
-            weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
+            weights_mlb = FALLBACK_ENSEMBLE_WEIGHTS_MLB.copy()
     else:
         logger.warning(
-            "%s not found in %s; using defaults %s",
-            wfile.name, model_dir, FALLBACK_ENSEMBLE_WEIGHTS
+            f"{wfile_mlb.name} not found in {model_dir}; using MLB defaults {weights_mlb}"
         )
+    logger.debug(f"Final MLB ensemble weights = {weights_mlb}")
 
-    logger.debug("Final ensemble weights = %s", weights)
+    # --- FEATURE ENGINEERING ---
+    # Combine historical + upcoming, but ensure all required columns are present
+    if hist_df_mlb is not None:
+        # Guarantee required columns exist in both
+        required_merge_cols = ["game_id", "game_date", "home_team_id", "away_team_id"]
+        for df in (hist_df_mlb, upcoming_df_mlb):
+            for c in required_merge_cols:
+                if c not in df.columns:
+                    df[c] = pd.NA
 
-
-    # ————— FEATURE ENGINEERING —————
-
-    # Merge historical + upcoming so advanced→rolling sees box scores
-    if hist_df is not None:
-        combined = pd.concat([hist_df, upcoming_df], ignore_index=True)
+        combined_input_df = pd.concat(
+            [
+                hist_df_mlb[required_merge_cols + [col for col in hist_df_mlb.columns if col not in required_merge_cols]],
+                upcoming_df_mlb[required_merge_cols + [col for col in upcoming_df_mlb.columns if col not in required_merge_cols]],
+            ],
+            ignore_index=True,
+        ).sort_values(by="game_date").reset_index(drop=True)
     else:
-        combined = upcoming_df.copy()
+        combined_input_df = upcoming_df_mlb.copy()
 
+    # Run feature pipeline
     try:
-        features_all = run_feature_pipeline(
-            df=combined,
-            historical_games_df=hist_df,
-            team_stats_df=team_stats_df,
-            rolling_windows=[5,10,20],
-            h2h_window=7,
-            execution_order=DEFAULT_EXECUTION_ORDER,
-            debug=debug_mode
+        features_all_mlb = run_mlb_feature_pipeline(
+            df=combined_input_df,
+            team_stats_df=team_stats_df_mlb,
+            rolling_windows=[10, 30, 81],
+            h2h_lookback_games=10,
+            execution_order=DEFAULT_MLB_EXECUTION_ORDER,
+            debug=debug_mode,
         )
     except Exception as e:
-        logger.error("Feature pipeline error: %s", e, exc_info=debug_mode)
-        _restore()
+        logger.error(f"MLB Feature pipeline error: {e}", exc_info=debug_mode)
         return [], []
 
-    # Slice back out just the upcoming games
-    features_df = features_all.loc[
-        features_all["game_id"].isin(upcoming_df["game_id"])
+    # Keep only rows corresponding to upcoming games
+    features_df_mlb = features_all_mlb.loc[
+        features_all_mlb["game_id"].isin(upcoming_df_mlb["game_id"])
     ].reset_index(drop=True)
-
-    if features_df.empty:
-        logger.error("No features returned; exiting.")
-        _restore()
+    if features_df_mlb.empty:
+        logger.error("No features for upcoming MLB games; exiting.")
         return [], []
 
-    # ————— BUILD FEATURE MATRIX —————
-    if feature_list:
-        logger.info("Applying %d selected features from selected_features.json", len(feature_list))
-        missing = [c for c in feature_list if c not in features_df.columns]
-        if missing:
-            logger.warning("Missing %d features; filling with zeros: %s", len(missing), missing)
-        X = features_df.reindex(columns=feature_list, fill_value=0)
+    # Build X_mlb (only numeric features)
+    if feature_list_mlb:
+        logger.info(f"Applying {len(feature_list_mlb)} selected MLB features.")
+        X_mlb = features_df_mlb.reindex(columns=feature_list_mlb, fill_value=0)
     else:
-        logger.warning(
-            "selected_features.json not found — using all %d pipeline-generated features",
-            features_df.shape[1]
-        )
-        X = features_df.copy()
+        logger.warning("mlb_selected_features.json not found. Using all numeric features.")
+        non_feature_cols = [
+            "game_id",
+            "game_date",
+            "scheduled_time_utc_dt",
+            "home_team_id",
+            "away_team_id",
+            "home_team_name",
+            "away_team_name",
+            "home_score",
+            "away_score",
+        ]
+        X_mlb = features_df_mlb.drop(columns=[c for c in non_feature_cols if c in features_df_mlb.columns], errors="ignore")
+        X_mlb = X_mlb.select_dtypes(include=np.number)
 
-    X = X.fillna(0).replace([np.inf, -np.inf], 0)
-
-    # ————— PER-MODEL PREDICTIONS —————
-    preds_by_model: Dict[str, pd.DataFrame] = {}
-    for name, mdl in models.items():
-        if not hasattr(mdl, "predict"):
-            logger.warning("Model '%s' has no predict(); skipping.", name)
-            continue
-        try:
-            arr = mdl.predict(X)
-            preds_by_model[name] = pd.DataFrame(
-                arr,
-                columns=["predicted_home_score","predicted_away_score"],
-                index=X.index
-            )
-            
-        except Exception as e:
-            logger.error("Error in %s.predict(): %s", name, e, exc_info=debug_mode)
-
-    if not preds_by_model:
-        logger.error("No predictions produced by any model; exiting.")
-        _restore()
+    X_mlb = X_mlb.fillna(0).replace([np.inf, -np.inf], 0)
+    if X_mlb.empty:
+        logger.error("Feature matrix X_mlb is empty after processing; exiting.")
         return [], []
 
-    # Metadata for each row
-    info_df = features_df.set_index(X.index)[
-        ["game_id","game_date","home_team","away_team"]
-    ]
-
-    # ————— ASSEMBLE RAW PREDICTIONS —————
-    raw_preds: List[Dict] = []
-    for idx in X.index:
-        row = info_df.loc[idx]
-        comps = {
-            m: {
-                "home": float(df.at[idx,"predicted_home_score"]),
-                "away": float(df.at[idx,"predicted_away_score"])
-            }
-            for m, df in preds_by_model.items()
-            if idx in df.index
-        }
-        if not comps:
-            continue
-        
-        logger.debug(
-        "Blending models %s at idx %s with weights %s",
-        list(comps.keys()), idx, weights
-        )
-
-        # ensemble blend
-        w_sum = sum(weights.get(m,0) for m in comps)
-        if w_sum < 1e-6:
-            h_ens = np.mean([c["home"] for c in comps.values()])
-            a_ens = np.mean([c["away"] for c in comps.values()])
-        else:
-            h_ens = sum(comps[m]["home"] * weights[m] for m in comps) / w_sum
-            a_ens = sum(comps[m]["away"] * weights[m] for m in comps) / w_sum
-
-        diff = h_ens - a_ens
-        tot  = h_ens + a_ens
-        winp = 1 / (1 + math.exp(-0.1 * diff))
-
-        # optionally add uncertainty intervals
+    # --- PER‐MODEL PREDICTIONS ---
+    preds_by_model_mlb: Dict[str, pd.DataFrame] = {}
+    for name, mdl_instance in models_mlb.items():
         try:
-            tmp = pd.DataFrame({
-                "predicted_home_score":[h_ens],
-                "predicted_away_score":[a_ens]
-            }, index=[idx])
-            ints = uncertainty.add_prediction_intervals(tmp)
-            lb = float(ints.at[idx,"total_score_lower"])
-            ub = float(ints.at[idx,"total_score_upper"])
-        except Exception:
-            lb = ub = float("nan")
+            pred_df = mdl_instance.predict(X_mlb)
+            if pred_df is None or pred_df.empty:
+                logger.warning(f"MLB Model '{name}' predict() returned None or empty.")
+                continue
 
-        raw_preds.append({
-            "game_id":               row["game_id"],
-            "game_date":             row["game_date"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "home_team":             row["home_team"],
-            "away_team":             row["away_team"],
-            "predicted_home_score":  round(h_ens,1),
-            "predicted_away_score":  round(a_ens,1),
-            "predicted_point_diff":  round(diff,1),
-            "predicted_total_score": round(tot,1),
-            "win_probability":       round(winp,3),
-            "lower_bound":           (round(lb,1) if not math.isnan(lb) else None),
-            "upper_bound":           (round(ub,1) if not math.isnan(ub) else None),
-            "raw_predicted_home_score":  round(h_ens,1),
-            "raw_predicted_away_score":  round(a_ens,1),
-            "raw_predicted_point_diff":  round(diff,1),
-            "raw_predicted_total_score": round(tot,1),
-            "raw_win_probability":       round(winp,3),
-            "raw_lower_bound":           (round(lb,1) if not math.isnan(lb) else None),
-            "raw_upper_bound":           (round(ub,1) if not math.isnan(ub) else None),
-            "component_predictions":     comps
+            rename_map = {}
+            if "predicted_home_score" in pred_df.columns:
+                rename_map["predicted_home_score"] = "predicted_home_runs"
+            if "predicted_away_score" in pred_df.columns:
+                rename_map["predicted_away_score"] = "predicted_away_runs"
+            pred_df = pred_df.rename(columns=rename_map)
+
+            if not {"predicted_home_runs", "predicted_away_runs"}.issubset(pred_df.columns):
+                raise KeyError(f"Model '{name}' did not return 'predicted_home_runs' & 'predicted_away_runs'")
+
+            preds_by_model_mlb[name] = pred_df
+        except Exception as e:
+            logger.error(f"Error in MLB {name}.predict(): {e}", exc_info=debug_mode)
+
+    if not preds_by_model_mlb:
+        logger.error("No MLB predictions from any model; exiting.")
+        return [], []
+
+    # --- JOIN METADATA BY game_id ---
+    meta_df = (
+        upcoming_df_mlb[["game_id", "game_date", "home_team_name", "away_team_name"]]
+        .set_index("game_id")
+    )
+
+    raw_preds_mlb: List[Dict[str, Any]] = []
+    for idx, row in features_df_mlb.iterrows():
+        gid = str(row["game_id"])
+        if gid not in meta_df.index:
+            logger.warning(f"Game ID {gid} not found in upcoming metadata. Skipping.")
+            continue
+
+        # gather each model's predictions
+        component_preds: Dict[str, Dict[str, float]] = {}
+        skip_game = False
+        for model_key, pred_df in preds_by_model_mlb.items():
+            try:
+                h_val = float(pred_df.at[idx, "predicted_home_runs"])
+                a_val = float(pred_df.at[idx, "predicted_away_runs"])
+                component_preds[model_key] = {"home": h_val, "away": a_val}
+            except KeyError:
+                logger.warning(f"Index {idx} not in predictions for model {model_key}. Skipping game {gid}.")
+                skip_game = True
+                break
+        if skip_game:
+            continue
+
+        # Blend using ensemble weights
+        w_sum = sum(weights_mlb.get(m, 0.0) for m in component_preds)
+        if w_sum < 1e-6:
+            h_ens = np.mean([v["home"] for v in component_preds.values()])
+            a_ens = np.mean([v["away"] for v in component_preds.values()])
+        else:
+            h_ens = sum(component_preds[m]["home"] * weights_mlb[m]
+                        for m in component_preds if m in weights_mlb) / w_sum
+            a_ens = sum(component_preds[m]["away"] * weights_mlb[m]
+                        for m in component_preds if m in weights_mlb) / w_sum
+
+        run_diff_ens = h_ens - a_ens
+        total_runs_ens = h_ens + a_ens
+        win_prob_home_ens = 1 / (1 + math.exp(-0.3 * run_diff_ens))
+
+        meta = meta_df.loc[gid]
+        raw_preds_mlb.append({
+            "game_id":               gid,
+            "game_date":             pd.to_datetime(meta["game_date"]).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "home_team_name":        str(meta["home_team_name"]),
+            "away_team_name":        str(meta["away_team_name"]),
+            "predicted_home_runs":   round(h_ens, 2),
+            "predicted_away_runs":   round(a_ens, 2),
+            "predicted_run_diff":    round(run_diff_ens, 2),
+            "predicted_total_runs":  round(total_runs_ens, 2),
+            "win_probability_home":  round(win_prob_home_ens, 3),
+            "raw_predicted_home_runs":  round(h_ens, 2),
+            "raw_predicted_away_runs":  round(a_ens, 2),
+            "component_predictions": component_preds,
         })
 
-    final_preds = raw_preds
-    display_prediction_summary(final_preds)
-    logger.info(f"Pipeline completed in {(time.time() - start_ts):.1f}s")
-    _restore()
-    return final_preds, raw_preds
+    final_preds_mlb = raw_preds_mlb  # no calibration step
+    display_prediction_summary_mlb(final_preds_mlb)
+    logger.info(f"MLB Prediction Pipeline completed in {time.time() - start_ts:.1f}s")
+    return final_preds_mlb, raw_preds_mlb
 
-# --- Upsert Function ---
-def upsert_score_predictions(predictions: List[Dict[str, Any]]) -> None:
-    from supabase import create_client, Client
-    from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
-
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    updated = 0
-
+# --- Upsert Function (MLB specific) ---
+def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: SupabaseClient) -> None:
+    if not supabase_client: logger.error("Supabase client not available for upsert."); return
+    
+    updated_count = 0
     for pred in predictions:
         gid = pred.get("game_id")
-        if gid is None:
-            print("Skipping prediction with missing game_id:", pred)
-            continue
+        if gid is None: logger.warning(f"Skipping prediction with missing game_id: {pred}"); continue
 
+        # Ensure payload keys match your mlb_game_schedule table's prediction columns
         update_payload = {
-            "predicted_home_score": pred["predicted_home_score"],
-            "predicted_away_score": pred["predicted_away_score"],
+            "predicted_home_runs": pred.get("predicted_home_runs"), # Or whatever your DB col is
+            "predicted_away_runs": pred.get("predicted_away_runs"), # Or whatever your DB col is
+            "predicted_run_diff": pred.get("predicted_run_diff"),
+            "predicted_total_runs": pred.get("predicted_total_runs"),
+            "win_probability_home": pred.get("win_probability_home"),
+            "prediction_utc": datetime.now(pytz.utc).isoformat() # Add timestamp of prediction
         }
+        # Filter out None values from payload to avoid overwriting existing DB values with NULL
+        update_payload = {k: v for k, v in update_payload.items() if v is not None}
+
+        if not update_payload: logger.warning(f"Empty payload for game_id {gid}. Skipping upsert."); continue
 
         try:
+            # Assuming game_id in mlb_game_schedule is string, if int, cast gid
+            # Check if your game_id is string or int in the table
             resp = (
-                supabase
-                .table("nba_game_schedule")
-                .update(update_payload, returning="representation")
-                .eq("game_id", int(gid))
+                supabase_client
+                .table("mlb_game_schedule") # MLB table
+                .update(update_payload) # returning="representation" is optional
+                .eq("game_id", str(gid)) # Ensure type match with DB
                 .execute()
             )
-            if resp.data:
-                print(f"Updated predicted scores for game_id {gid}.")
-                updated += 1
-            else:
-                print(f"No row found to update for game_id {gid}.")
+            # Supabase V2 update doesn't return data by default unless returning="representation"
+            # We can check if error is None or count is > 0 if available
+            if resp.data : # Or check resp.error or resp.count based on client version
+                logger.info(f"Upserted MLB predictions for game_id {gid}.")
+                updated_count += 1
+            elif resp.error:
+                 logger.error(f"Error upserting MLB game_id {gid}: {resp.error}")
+            else: # No error, but no data returned (might mean no row matched)
+                logger.warning(f"No row found or no data returned from upsert for MLB game_id {gid}.")
         except Exception as e:
-            print(f"Error updating game_id {gid}: {e}")
-
-    print(f"Finished updating predicted scores for {updated} games.")
+            logger.error(f"Exception during upsert for MLB game_id {gid}: {e}", exc_info=True)
+    logger.info(f"Finished upserting MLB predictions for {updated_count} games.")
 
 # --- Main Execution ---
 def main():
-    import argparse
-    import sys
-    from pathlib import Path
-    import json
-
-    parser = argparse.ArgumentParser(description="Generate NBA Score Predictions")
-    parser.add_argument(
-        "--days", type=int, default=DEFAULT_UPCOMING_DAYS_WINDOW,
-        help=f"Upcoming days to predict (default: {DEFAULT_UPCOMING_DAYS_WINDOW})"
-    )
-    parser.add_argument(
-        "--lookback", type=int, default=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
-        help=f"Historical lookback days (default: {DEFAULT_LOOKBACK_DAYS_FOR_FEATURES})"
-    )
-    parser.add_argument(
-        "--model_dir", type=Path, default=MODELS_DIR,
-        help=f"Directory of saved models (default: {MODELS_DIR})"
-    )
-    parser.add_argument(
-        "--no_calibrate", action="store_true",
-        help="Skip odds calibration step"
-    )
-    #parser.add_argument(
-        #"--blend", type=float, default=0.3,
-       # help="Blend factor for calibration (0=model, 1=odds)"
-   # )
-    parser.add_argument(
-        "--debug", action="store_true",
-        help="Enable debug logging"
-    )
+    parser = argparse.ArgumentParser(description="Generate MLB Run Predictions")
+    parser.add_argument("--days", type=int, default=DEFAULT_UPCOMING_DAYS_WINDOW_MLB, help=f"Default: {DEFAULT_UPCOMING_DAYS_WINDOW_MLB}")
+    parser.add_argument("--lookback", type=int, default=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES_MLB, help=f"Default: {DEFAULT_LOOKBACK_DAYS_FOR_FEATURES_MLB}")
+    parser.add_argument("--model_dir", type=Path, default=MODELS_DIR, help=f"Default: {MODELS_DIR}")
+    # parser.add_argument("--no_calibrate", action="store_true", help="Skip odds calibration") # Calibration removed
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
-    if not PROJECT_MODULES_IMPORTED:
-        sys.exit("Exiting: Required project modules failed to import.")
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        for handler in logging.getLogger().handlers: handler.setLevel(logging.DEBUG)
+        logger.debug("DEBUG logging enabled by CLI argument.")
 
-    final_preds, raw_preds = generate_predictions(
+    if not PROJECT_MODULES_IMPORTED:
+        sys.exit("Exiting: Required MLB project modules failed to import.")
+
+    supabase_c = get_supabase_client()
+    if not supabase_c:
+        sys.exit("Exiting: Supabase client could not be initialized.")
+
+    final_mlb_preds, _ = generate_predictions( # Ignoring raw_preds for now
         days_window=args.days,
         model_dir=args.model_dir,
         historical_lookback=args.lookback,
         debug_mode=args.debug
     )
 
-    if final_preds:
-        logger.info(f"Upserting {len(final_preds)} final predictions...")
+    if final_mlb_preds:
+        logger.info(f"Upserting {len(final_mlb_preds)} final MLB predictions...")
         try:
-            upsert_score_predictions(final_preds)
-            logger.info("Upsert successful.")
-        except NameError:
-            logger.error("upsert_score_predictions not defined.")
+            upsert_run_predictions(final_mlb_preds, supabase_c) # Pass client
+            logger.info("MLB Upsert process completed.")
         except Exception as e:
-            logger.error(f"Error during upsert: {e}", exc_info=args.debug)
-        logger.info("Sample Final Prediction:")
-        print(json.dumps(final_preds[0], indent=2))
+            logger.error(f"Error during MLB upsert: {e}", exc_info=args.debug)
+        if final_mlb_preds: # Check again in case it became empty due to errors
+             logger.info("Sample Final MLB Prediction:")
+             print(json.dumps(final_mlb_preds[0], indent=2, default=str)) # Add default=str for datetime
     else:
-        logger.info("No final predictions to upsert.")
+        logger.info("No final MLB predictions generated to upsert.")
 
 if __name__ == "__main__":
     main()

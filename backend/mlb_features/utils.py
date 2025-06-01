@@ -168,72 +168,180 @@ def normalize_team_name(team_name: Optional[Any]) -> str: # Accept Any initially
     if not team_lower:
         # logger.debug("normalize_team_name received empty string input. Returning 'Unknown'.") # Optional debug log
         return "Unknown"
-
+    
     # --- Mapping Dictionary (ensure this is complete) ---
+    # In backend/mlb_features/utils.py, inside normalize_team_name function
+
+    # MLB Team Name Mapping
+    # Standardized name is typically the mascot or common short name.
+    # !!! IMPORTANT: Replace placeholder IDs like "101", "102" with your actual stringified numerical team IDs !!!
     mapping = {
-        "atlanta hawks": "hawks", "atlanta": "hawks", "atl": "hawks", "hawks": "hawks", "atlanta h": "hawks",
-        "boston celtics": "celtics", "boston": "celtics", "bos": "celtics", "celtics": "celtics",
-        "brooklyn nets": "nets", "brooklyn": "nets", "bkn": "nets", "nets": "nets", "new jersey nets": "nets",
-        "charlotte hornets": "hornets", "charlotte": "hornets", "cha": "hornets", "hornets": "hornets", "charlotte bobcats": "hornets",
-        "chicago bulls": "bulls", "chicago": "bulls", "chi": "bulls", "bulls": "bulls", "chicago b": "bulls",
-        "cleveland cavaliers": "cavaliers", "cleveland": "cavaliers", "cle": "cavaliers", "cavaliers": "cavaliers", "cavs": "cavaliers",
-        "dallas mavericks": "mavericks", "dallas": "mavericks", "dal": "mavericks", "mavericks": "mavericks", "mavs": "mavericks",
-        "denver nuggets": "nuggets", "denver": "nuggets", "den": "nuggets", "nuggets": "nuggets", "denver n": "nuggets",
-        "detroit pistons": "pistons", "detroit": "pistons", "det": "pistons", "pistons": "pistons", "detroit p": "pistons",
-        "golden state warriors": "warriors", "golden state": "warriors", "gsw": "warriors", "warriors": "warriors", "gs warriors": "warriors",
-        "houston rockets": "rockets", "houston": "rockets", "hou": "rockets", "rockets": "rockets",
-        "indiana pacers": "pacers", "indiana": "pacers", "ind": "pacers", "pacers": "pacers",
-        "los angeles clippers": "clippers", "la clippers": "clippers", "lac": "clippers", "clippers": "clippers",
-        "los angeles lakers": "lakers", "la lakers": "lakers", "lal": "lakers", "lakers": "lakers",
-        "la": "lakers", # Potential ambiguity, maps 'la' to lakers
-        "memphis grizzlies": "grizzlies", "memphis": "grizzlies", "mem": "grizzlies", "grizzlies": "grizzlies", "memphis gri": "grizzlies", "mem grizzlies": "grizzlies", "grizz": "grizzlies",
-        "miami heat": "heat", "miami": "heat", "mia": "heat", "heat": "heat",
-        "milwaukee bucks": "bucks", "milwaukee": "bucks", "mil": "bucks", "bucks": "bucks", "milwaukee b": "bucks",
-        "minnesota timberwolves": "timberwolves", "minnesota": "timberwolves", "min": "timberwolves", "timberwolves": "timberwolves", "twolves": "timberwolves", "minnesota t": "timberwolves",
-        "new orleans pelicans": "pelicans", "new orleans": "pelicans", "nop": "pelicans", "pelicans": "pelicans", "nola": "pelicans", "new orleans/oklahoma city hornets": "pelicans", # Added NOLA
-        "new york knicks": "knicks", "new york": "knicks", "nyk": "knicks", "knicks": "knicks", "new york knick": "knicks",
-        "oklahoma city thunder": "thunder", "oklahoma city": "thunder", "okc": "thunder", "thunder": "thunder", "seattle supersonics": "thunder", "oklahoma city t": "thunder",
-        "orlando magic": "magic", "orlando": "magic", "orl": "magic", "magic": "magic", "orlando mag": "magic",
-        "philadelphia 76ers": "76ers", "philadelphia": "76ers", "phi": "76ers", "76ers": "76ers", "sixers": "76ers", "phila": "76ers", # Added Phila
-        "phoenix suns": "suns", "phoenix": "suns", "phx": "suns", "suns": "suns", "phoenix s": "suns",
-        "portland trail blazers": "blazers", "portland": "blazers", "por": "blazers", "blazers": "blazers", "trail blazers": "blazers", "portland trail": "blazers",
-        "sacramento kings": "kings", "sacramento": "kings", "sac": "kings", "kings": "kings",
-        "san antonio spurs": "spurs", "san antonio": "spurs", "sas": "spurs", "spurs": "spurs", "san antonio s": "spurs",
-        "toronto raptors": "raptors", "toronto": "raptors", "tor": "raptors", "raptors": "raptors", "toronto rap": "raptors",
-        "utah jazz": "jazz", "utah": "jazz", "uta": "jazz", "jazz": "jazz",
-        "washington wizards": "wizards", "washington": "wizards", "was": "wizards", "wizards": "wizards", "wiz": "wizards", "wash wizards": "wizards",
-        # Special Cases / All-Star Teams
-        "east": "east", "west": "west",
-        "team lebron": "allstar", "team durant": "allstar", "team giannis": "allstar", "team stephen": "allstar",
-        "chuck’s global stars": "other_team", "shaq’s ogs": "other_team",
-        "kenny’s young stars": "other_team", "candace’s rising stars": "other_team",
+        # --- Arizona Diamondbacks ---
+        "arizona diamondbacks": "dbacks", "arizona": "dbacks", "ari": "dbacks", "diamondbacks": "dbacks", "d-backs": "dbacks",
+        "2": "dbacks", # Actual ID for Arizona Diamondbacks
+
+        # --- Atlanta Braves ---
+        "atlanta braves": "braves", "atlanta": "braves", "atl": "braves",
+        "3": "braves", # Actual ID for Atlanta Braves
+
+        # --- Baltimore Orioles ---
+        "baltimore orioles": "orioles", "baltimore": "orioles", "bal": "orioles",
+        "4": "orioles", # Actual ID for Baltimore Orioles
+
+        # --- Boston Red Sox ---
+        "boston red sox": "redsox", "boston": "redsox", "bos": "redsox", "red sox": "redsox",
+        "5": "redsox", # Actual ID for Boston Red Sox
+
+        # --- Chicago Cubs ---
+        "chicago cubs": "cubs", "chi cubs": "cubs", "chc": "cubs",
+        "6": "cubs", # Actual ID for Chicago Cubs
+
+        # --- Chicago White Sox ---
+        "chicago white sox": "whitesox", "chi white sox": "whitesox", "cws": "whitesox", "chisox": "whitesox",
+        "7": "whitesox", # Actual ID for Chicago White Sox
+
+        # --- Cincinnati Reds ---
+        "cincinnati reds": "reds", "cincinnati": "reds", "cin": "reds",
+        "8": "reds", # Actual ID for Cincinnati Reds
+
+        # --- Cleveland Guardians ---
+        "cleveland guardians": "guardians", "cleveland": "guardians", "cle": "guardians", "cleveland indians": "guardians", "indians": "guardians",
+        "9": "guardians", # Actual ID for Cleveland Guardians
+        "625": "guardians", # Actual ID for Cleveland Guardians
+
+        # --- Colorado Rockies ---
+        "colorado rockies": "rockies", "colorado": "rockies", "col": "rockies", "rox": "rockies",
+        "10": "rockies", # Actual ID for Colorado Rockies
+
+        # --- Detroit Tigers ---
+        "detroit tigers": "tigers", "detroit": "tigers", "det": "tigers",
+        "12": "tigers", # Actual ID for Detroit Tigers (Note: ID 11 was skipped in your list)
+
+        # --- Houston Astros ---
+        "houston astros": "astros", "houston": "astros", "hou": "astros",
+        "15": "astros", # Actual ID for Houston Astros (Note: IDs 13, 14 skipped)
+
+        # --- Kansas City Royals ---
+        "kansas city royals": "royals", "kansas city": "royals", "kc": "royals", "kcr": "royals",
+        "16": "royals", # Actual ID for Kansas City Royals
+
+        # --- Los Angeles Angels ---
+        "los angeles angels": "angels", "la angels": "angels", "laa": "angels", "anaheim angels": "angels", "california angels": "angels", "los angeles angels of anaheim": "angels",
+        "17": "angels", # Actual ID for Los Angeles Angels
+
+        # --- Los Angeles Dodgers ---
+        "los angeles dodgers": "dodgers", "la dodgers": "dodgers", "lad": "dodgers", "brooklyn dodgers": "dodgers",
+        "18": "dodgers", # Actual ID for Los Angeles Dodgers
+
+        # --- Miami Marlins ---
+        "miami marlins": "marlins", "miami": "marlins", "mia": "marlins", "florida marlins": "marlins",
+        "19": "marlins", # Actual ID for Miami Marlins
+
+        # --- Milwaukee Brewers ---
+        "milwaukee brewers": "brewers", "milwaukee": "brewers", "mil": "brewers", "brew crew": "brewers",
+        "20": "brewers", # Actual ID for Milwaukee Brewers (Note: ID 21 skipped)
+
+        # --- Minnesota Twins ---
+        "minnesota twins": "twins", "minnesota": "twins", "min": "twins",
+        "22": "twins", # Actual ID for Minnesota Twins (Note: ID 23 skipped)
+
+        # --- New York Mets ---
+        "new york mets": "mets", "ny mets": "mets", "nym": "mets",
+        "24": "mets", # Actual ID for New York Mets
+
+        # --- New York Yankees ---
+        "new york yankees": "yankees", "ny yankees": "yankees", "nyy": "yankees",
+        "25": "yankees", # Actual ID for New York Yankees
+
+        # --- Oakland Athletics ---
+        "oakland athletics": "athletics", "oakland as": "athletics", "oak": "athletics", "as": "athletics", "oakland a's": "athletics", "a's": "athletics", "athletics": "athletics", # Added "athletics" itself
+        "26": "athletics", # Actual ID for Oakland Athletics
+        "963": "athletics",# Actual ID for Athletics (from your list, likely Oakland)
+
+        # --- Philadelphia Phillies ---
+        "philadelphia phillies": "phillies", "philadelphia": "phillies", "phi": "phillies", "phils": "phillies",
+        "27": "phillies", # Actual ID for Philadelphia Phillies
+
+        # --- Pittsburgh Pirates ---
+        "pittsburgh pirates": "pirates", "pittsburgh": "pirates", "pit": "pirates", "bucn": "pirates", "bucs": "pirates",
+        "28": "pirates", # Actual ID for Pittsburgh Pirates (Note: ID 29 skipped)
+
+        # --- San Diego Padres ---
+        "san diego padres": "padres", "san diego": "padres", "sd": "padres", "sdp": "padres", "friars": "padres",
+        "30": "padres", # Actual ID for San Diego Padres
+
+        # --- San Francisco Giants ---
+        "san francisco giants": "giants", "san francisco": "giants", "sf": "giants", "sfg": "giants", "new york giants": "giants",
+        "31": "giants", # Actual ID for San Francisco Giants
+
+        # --- Seattle Mariners ---
+        "seattle mariners": "mariners", "seattle": "mariners", "sea": "mariners",
+        "32": "mariners", # Actual ID for Seattle Mariners
+
+        # --- St. Louis Cardinals ---
+        "st. louis cardinals": "cardinals", "st louis cardinals": "cardinals", "stl": "cardinals", "st. louis": "cardinals", "cards": "cardinals",
+        "33": "cardinals", # Actual ID for St. Louis Cardinals
+
+        # --- Tampa Bay Rays ---
+        "tampa bay rays": "rays", "tampa bay": "rays", "tam": "rays", "tb": "rays", "devil rays": "rays",
+        "34": "rays", # Actual ID for Tampa Bay Rays
+
+        # --- Texas Rangers ---
+        "texas rangers": "rangers", "texas": "rangers", "tex": "rangers", "tx": "rangers",
+        "35": "rangers", # Actual ID for Texas Rangers
+
+        # --- Toronto Blue Jays ---
+        "toronto blue jays": "bluejays", "toronto": "bluejays", "tor": "bluejays", "blue jays": "bluejays",
+        "36": "bluejays", # Actual ID for Toronto Blue Jays
+
+        # --- Washington Nationals ---
+        "washington nationals": "nationals", "washington": "nationals", "was": "nationals", "wsn": "nationals", "nats": "nationals", "montreal expos": "nationals", "expos": "nationals",
+        "37": "nationals", # Actual ID for Washington Nationals
+
+        # Add the standardized short names themselves as keys mapping to themselves for robustness
+        "orioles": "orioles", "redsox": "redsox", "yankees": "yankees", "rays": "rays", "bluejays": "bluejays",
+        "whitesox": "whitesox", "guardians": "guardians", "tigers": "tigers", "royals": "royals", "twins": "twins",
+        "astros": "astros", "angels": "angels", "athletics": "athletics", "mariners": "mariners", "rangers": "rangers",
+        "braves": "braves", "marlins": "marlins", "mets": "mets", "phillies": "phillies", "nationals": "nationals",
+        "cubs": "cubs", "reds": "reds", "brewers": "brewers", "pirates": "pirates", "cardinals": "cardinals",
+        "dbacks": "dbacks", "rockies": "rockies", "dodgers": "dodgers", "padres": "padres", "giants": "giants"
     }
+
 
     # Check for exact match in mapping
     if team_lower in mapping:
         return mapping[team_lower]
+    
+        # Fallback for anything not in the map
+    logger.warning(
+        f"Team identifier '{team_name}' (type: {type(team_name)}, normalized to '{team_lower}') "
+        f"not found in mapping. Returning 'unknown_team' as standardized name."
+    )
+    return "unknown_team" # Return a generic unknown identifier
 
-    # Check for substring containment (be careful with short inputs)
-    for name, norm in mapping.items():
-        # Added check for len > 3 to avoid spurious matches like 'la' in 'atlanta'
-        if len(team_lower) > 3 and team_lower in name:
-            # logger.debug(f"Normalized '{team_name}' to '{norm}' via substring containment (team_lower in name)") # Optional
-            return norm
 
-    # If no match found after explicit and substring checks
-    logger.warning(f"Team name '{team_name}' (normalized to '{team_lower}') did not match any mapping. Returning raw normalized input: '{team_lower}'")
-    return team_lower # Return the cleaned input if no match
+def get_supabase_client():
+    """
+    Lazily import and return the shared Supabase client.
+    Doing it here (inside a function) prevents config.py from validating
+    too early when this module is merely imported.
+    """
+    from caching.supabase_client import supabase as supabase_client
+    return supabase_client
 
-def determine_season(game_date: pd.Timestamp) -> str:
-    """Determines the NBA season string (e.g., '2023-2024') for a given game date."""
+
+def determine_season(game_date: pd.Timestamp) -> int: # Changed return type annotation to int
+    """Determines the MLB season as an integer year (e.g., 2023) for a given game date."""
     if pd.isna(game_date):
-        logger.warning("Missing game_date for season determination.")
-        return "Unknown_Season"
-    year = game_date.year
-    month = game_date.month
-    start_year = year if month >= 9 else year - 1
-    return f"{start_year}-{start_year + 1}"
-
+        logger.warning("Missing game_date for season determination. Returning current year as a fallback.")
+        # Fallback strategy: using the current year. You might prefer to return 0 or raise an error
+        # depending on how strictly you want to handle missing/invalid dates.
+        return datetime.now().year
+        
+    # For MLB, the season is typically just the calendar year of the game.
+    # Regular season games fall within a single calendar year.
+    # Post-season games (e.g., October) also belong to that same calendar year's season.
+    return game_date.year
 
 def generate_rolling_column_name(
     prefix: str,

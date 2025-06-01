@@ -29,6 +29,24 @@ except ImportError:
     def normalize_team_name(team_id: Any) -> str:  # Fallback normalize_team_name
         return str(team_id).strip().lower() if pd.notna(team_id) else "unknown"
 
+# ────── NORMALIZATION WRAPPER ──────
+def _safe_norm(team_val: Any) -> str:
+    """
+    Guarantees a deterministic key for every team name.
+
+    • First calls `normalize_team_name`.
+    • If that returns one of the generic placeholders
+      (“unknown”, “unknown_team”, or blank), fall back to the
+      raw string, lower-cased and stripped.
+    • All spaces are then removed to avoid accidental duplicates.
+    """
+    norm = normalize_team_name(team_val)
+    if not isinstance(norm, str):
+        norm = str(norm)
+    if norm.lower() in {"unknown", "unknown_team"} or not norm.strip():
+        norm = str(team_val).strip().lower()
+    return norm.replace(" ", "")
+
 # --- Module-level constants for default column names ---
 game_id_col = "game_id"
 home_team_col = "home_team_id"
@@ -80,11 +98,8 @@ def _attach_split(
         return df_to_modify
 
     # Normalize team names (remove spaces after normalization)
-    normalized_team_id_series = (
-        df_to_modify[team_col_name_in_df]
-        .apply(normalize_team_name)
-        .str.replace(" ", "", regex=False)
-    )
+    normalized_team_id_series = df_to_modify[team_col_name_in_df].apply(_safe_norm)
+
 
     for new_col_name, (hist_col_name, defaults_key, fallback_value) in col_mappings.items():
         default_to_use = MLB_DEFAULTS.get(defaults_key, fallback_value)
@@ -93,8 +108,8 @@ def _attach_split(
 
         if hist_col_name in hist_lookup_df.columns and not hist_lookup_df.empty:
             # Map normalized team names to the historical column
-            mapped_values = normalized_team_id_series.map(hist_lookup_df[hist_col_name])
-
+            hist_series = hist_lookup_df.get(hist_col_name, pd.Series(dtype=float))
+            mapped_values = normalized_team_id_series.map(hist_series.to_dict())
             # Any row where mapped_values is NaN → imputed
             imputed_flags_for_col = mapped_values.isna()
 
@@ -158,11 +173,8 @@ def _attach_vs_hand(
         return df_to_modify
 
     # Normalize team names (remove spaces)
-    normalized_team_ids = (
-        df_to_modify[team_col_name_in_df]
-        .apply(normalize_team_name)
-        .str.replace(" ", "", regex=False)
-    )
+    normalized_team_ids = df_to_modify[team_col_name_in_df].apply(_safe_norm)
+
     # Uppercase pitcher hand; any missing/invalid will default to "UNKNOWN_HAND"
     opponent_hands = (
         df_to_modify[opp_hand_col_name_in_df]
@@ -214,7 +226,7 @@ def _attach_vs_hand(
 def transform(
     df: pd.DataFrame,
     historical_team_stats_df: pd.DataFrame,
-    season_to_lookup: int,
+    season_to_lookup: Optional[int] = None,
     flag_imputations: bool = True,
     debug: bool = False,
     game_id_col_param: str = game_id_col,
@@ -274,10 +286,7 @@ def transform(
         hist_copy = historical_team_stats_df.copy()
         if (hist_season_col_param in hist_copy.columns) and (hist_team_col_param in hist_copy.columns):
             # Normalize and remove spaces
-            hist_copy["team_norm"] = (
-                hist_copy[hist_team_col_param].apply(normalize_team_name)
-                .str.replace(" ", "", regex=False)
-            )
+            hist_copy["team_norm"] = hist_copy[hist_team_col_param].apply(_safe_norm)
             hist_for_season = hist_copy[hist_copy[hist_season_col_param] == season_to_lookup]
 
             # If duplicates, drop them (keep first)

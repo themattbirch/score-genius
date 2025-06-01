@@ -18,12 +18,7 @@ def run_feature_pipeline(*args, **kwargs) -> pd.DataFrame:
     # Return an empty DataFrame as a placeholder
     return pd.DataFrame()
 
-# --- REMOVED Dummy FeatureEngine Class ---
-# class FeatureEngine:
-#     def __init__(self, *args, **kwargs): pass
-#     def generate_all_features(self, **kwargs): return pd.DataFrame()
-
-# --- Other Dummy Classes/Functions (Keep as they were) ---
+# --- Other Dummy Classes/Functions  ---
 class SVRScorePredictor:
     def __init__(self, *args, **kwargs):
         logger.warning("--- Using DUMMY SVRScorePredictor ---")
@@ -82,8 +77,3 @@ def fetch_and_parse_betting_odds(*args, **kwargs): logger.warning("--- Using DUM
 def calibrate_prediction_with_odds(pred, odds, factor): logger.warning("--- Using DUMMY calibrate_prediction_with_odds ---"); return pred # Passthrough
 def display_prediction_summary(preds): logger.warning("--- Using DUMMY display_prediction_summary ---"); pass
 def upsert_score_predictions(preds): logger.warning("--- Using DUMMY upsert_score_predictions ---"); pass
-
-# Dummy simulation class if needed
-class PredictionUncertaintyEstimator:
-        def __init__(self, *args, **kwargs): logger.warning("--- Using DUMMY PredictionUncertaintyEstimator ---"); pass
-        def add_prediction_intervals(self, df): logger.warning("--- DUMMY PredictionUncertaintyEstimator: add_prediction_intervals called ---"); return df # Passthrough

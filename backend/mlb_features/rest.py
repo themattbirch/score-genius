@@ -104,7 +104,7 @@ def transform(df: pd.DataFrame, *, debug: bool = False) -> pd.DataFrame:
     # Original input names to internal processing names
     col_map_to_internal = {
         "game_id": "game_id", # No change, but good to list
-        "game_date_et": "game_date",
+        "game_date": "game_date",
         "home_team_id": "home_team",
         "away_team_id": "away_team",
     }

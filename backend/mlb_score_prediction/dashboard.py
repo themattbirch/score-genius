@@ -1,8 +1,8 @@
-# backend/score_prediction/dashboard.py
+# backend/mlb_score_prediction/dashboard.py
 
 """
 Module for generating dashboards and summary visualizations related to
-NBA score predictions. Includes a console dashboard and functions for
+MLB score predictions. Includes a console dashboard and functions for
 plotting key metrics, feature importance, and model agreement.
 """
 
@@ -120,7 +120,7 @@ def generate_pregame_dashboard(upcoming_predictions=None, models_metadata=None, 
     # NOTE: Relies on imported `generate_betting_recommendations` function.
 
     print("\n" + "="*80)
-    print(" "*30 + "NBA PREGAME PREDICTION DASHBOARD")
+    print(" "*30 + "MLB PREGAME PREDICTION DASHBOARD")
     print("="*80 + "\n")
 
     # --- Model Performance Summary ---

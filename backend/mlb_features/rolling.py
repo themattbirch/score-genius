@@ -95,9 +95,9 @@ def transform(
     df: pd.DataFrame,
     *,
     window_sizes: List[int] = (5, 10, 20),
-    flag_imputation: bool = True,
+    flag_imputations: bool = True,
     debug: bool = False,
-    game_date_col: str = "game_date_et",
+    game_date_col: str = "game_date",
     home_team_col: str = "home_team_id",
     away_team_col: str = "away_team_id",
     home_score_col: str = _DEFAULT_HOME_SCORE_COL,
@@ -193,7 +193,7 @@ def transform(
         )['value'].transform(
             lambda s: _lagged_rolling_stat(s, w, min_p, 'std')
         )
-        if flag_imputation:
+        if flag_imputations:
             # Store as boolean (will be numpy.bool_ initially)
             long_df[f'mean_{w}_imputed'] = long_df[f'mean_{w}'].isnull() 
             long_df[f'std_{w}_imputed'] = long_df[f'std_{w}'].isnull()   
@@ -229,7 +229,7 @@ def transform(
                 std_pivot.columns = [f'rolling_{stat}_std_{w}' for stat in std_pivot.columns]
                 pivot_dfs_for_window.append(std_pivot)
 
-            if flag_imputation:
+            if flag_imputations:
                 if f'mean_{w}_imputed' in long_df.columns:
                     imp_mean = long_df.pivot_table(
                         index=['game_id', 'team_norm'],

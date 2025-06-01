@@ -1,4 +1,4 @@
-# backend/nba_score_prediction/simulation.py
+# backend/mlb_score_prediction/simulation.py
 
 import pandas as pd
 import numpy as np
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 class PredictionUncertaintyEstimator:
     """
-    Estimates prediction intervals and confidence for NBA score predictions based
+    Estimates prediction intervals and confidence for MLB score predictions based
     on game state and historical performance.
     """
 

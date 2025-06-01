@@ -1,4 +1,4 @@
-# backend/nba_score_prediction/api.py
+# backend/mlb_score_prediction/api.py
 
 import pandas as pd
 import numpy as np

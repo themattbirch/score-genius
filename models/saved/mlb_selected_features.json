@@ -1,0 +1,20 @@
+[
+    "home_rolling_errors_by_opponent_mean_15",
+    "home_rolling_runs_allowed_mean_30",
+    "home_rolling_hits_for_std_30",
+    "home_rolling_hits_allowed_mean_60",
+    "home_rolling_runs_allowed_std_60",
+    "home_rolling_hits_allowed_mean_100",
+    "home_rolling_runs_allowed_mean_100",
+    "home_rolling_runs_scored_mean_100",
+    "away_rolling_runs_allowed_mean_15",
+    "away_rolling_hits_allowed_mean_30",
+    "away_rolling_errors_committed_mean_60",
+    "away_rolling_runs_allowed_mean_60",
+    "away_rolling_runs_scored_mean_60",
+    "away_rolling_runs_allowed_std_60",
+    "away_rolling_errors_by_opponent_mean_100",
+    "away_rolling_hits_allowed_mean_100",
+    "away_rolling_runs_allowed_mean_100",
+    "away_rolling_runs_scored_mean_100"
+]
