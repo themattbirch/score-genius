@@ -41,7 +41,6 @@ const pctKeys = new Set<string>([
   "efg_pct", // NBA Advanced
   "tov_pct", // NBA Advanced
   "oreb_pct", // NBA Advanced
-  "win_pct", // MLB Advanced
   "pythagorean_win_pct", // MLB Advanced
   "home_away_win_pct_split", // MLB Advanced
 ]);
@@ -764,7 +763,6 @@ const StatsScreen: React.FC = () => {
       key: string;
     }[] = [
       { label: "Team", key: "team_name" },
-      { label: "Win%", key: "win_pct" },
       { label: "Pyth W%", key: "pythagorean_win_pct" }, // Shortened label
       { label: "Run Diff", key: "run_differential" },
       { label: "Run Diff Avg", key: "run_differential_avg" },
