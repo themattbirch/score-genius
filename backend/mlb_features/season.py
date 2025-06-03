@@ -69,7 +69,7 @@ def transform(
     flag_imputations: bool = True,
     debug: bool = False,
     # Current‐game column names
-    game_date_col: str = "game_date",
+    game_date_col: str = "game_date_et",             # <-- changed default
     home_team_col: str = "home_team_id",
     away_team_col: str = "away_team_id",
     # Team‐stats table columns
@@ -106,12 +106,15 @@ def transform(
 
     # Build the placeholder defaults mapping
     placeholder_map = {
-        "prev_season_win_pct":        float(MLB_DEFAULTS.get("mlb_prev_season_win_pct",
-                                                           MLB_DEFAULTS.get("mlb_win_pct", 0.5))),
-        "prev_season_avg_runs_for":   float(MLB_DEFAULTS.get("mlb_prev_season_avg_runs_for",
-                                                           MLB_DEFAULTS.get("mlb_avg_runs_for", 4.0))),
-        "prev_season_avg_runs_against": float(MLB_DEFAULTS.get("mlb_prev_season_avg_runs_against",
-                                                            MLB_DEFAULTS.get("mlb_avg_runs_against", 4.0))),
+        "prev_season_win_pct":        float(
+            MLB_DEFAULTS.get("mlb_prev_season_win_pct", MLB_DEFAULTS.get("mlb_win_pct", 0.5))
+        ),
+        "prev_season_avg_runs_for":   float(
+            MLB_DEFAULTS.get("mlb_prev_season_avg_runs_for", MLB_DEFAULTS.get("mlb_avg_runs_for", 4.0))
+        ),
+        "prev_season_avg_runs_against": float(
+            MLB_DEFAULTS.get("mlb_prev_season_avg_runs_against", MLB_DEFAULTS.get("mlb_avg_runs_against", 4.0))
+        ),
     }
     all_new_cols = []
     for side in ("home", "away"):
@@ -144,19 +147,19 @@ def transform(
             ts[ts_season_col] = ts[ts_season_col].astype(int)
             ts["lookup"] = ts["team_norm"] + "_" + ts[ts_season_col].astype(str)
             ts_sel = ts.set_index("lookup")[[ts_win_pct_col, ts_runs_for_col, ts_runs_against_col]]
-            ts_sel = ts_sel.rename(columns={
-                ts_win_pct_col: "prev_season_win_pct",
-                ts_runs_for_col: "prev_season_avg_runs_for",
-                ts_runs_against_col: "prev_season_avg_runs_against",
-            })
+            ts_sel = ts_sel.rename(
+                columns={
+                    ts_win_pct_col: "prev_season_win_pct",
+                    ts_runs_for_col: "prev_season_avg_runs_for",
+                    ts_runs_against_col: "prev_season_avg_runs_against",
+                }
+            )
 
             # Merge per side
             for side in ("home", "away"):
                 key_col = f"{side}_lookup"
                 result[key_col] = result[f"{side}_norm"] + "_" + result["prev_season_year"].astype(str)
-                side_ts = ts_sel.rename(columns={
-                    feat: f"{side}_{feat}" for feat in placeholder_map
-                })
+                side_ts = ts_sel.rename(columns={feat: f"{side}_{feat}" for feat in placeholder_map})
                 result = result.merge(
                     side_ts,
                     how="left",
@@ -176,26 +179,48 @@ def transform(
                         result[col] = pd.to_numeric(result[col], errors="coerce").fillna(default)
 
             # Drop helper cols
-            result.drop(columns=["season_year", "prev_season_year", "home_norm", "away_norm"] +
-                              [f"{s}_lookup" for s in ("home", "away")], inplace=True)
+            result.drop(
+                columns=[
+                    "season_year",
+                    "prev_season_year",
+                    "home_norm",
+                    "away_norm",
+                    "home_lookup",
+                    "away_lookup",
+                ],
+                inplace=True,
+                errors="ignore"
+            )
 
     # Compute diffs and net ratings
     for col in all_new_cols:
-        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(placeholder_map[col.split("_",1)[1]])
+        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(placeholder_map[col.split("_", 1)[1]])
 
-    result["prev_season_win_pct_diff"]       = result["home_prev_season_win_pct"] - result["away_prev_season_win_pct"]
-    result["prev_season_runs_for_diff"]      = result["home_prev_season_avg_runs_for"] - result["away_prev_season_avg_runs_for"]
-    result["prev_season_runs_against_diff"]  = result["home_prev_season_avg_runs_against"] - result["away_prev_season_avg_runs_against"]
-    result["home_prev_season_net_rating"]    = result["home_prev_season_avg_runs_for"] - result["home_prev_season_avg_runs_against"]
-    result["away_prev_season_net_rating"]    = result["away_prev_season_avg_runs_for"] - result["away_prev_season_avg_runs_against"]
-    result["prev_season_net_rating_diff"]    = result["home_prev_season_net_rating"] - result["away_prev_season_net_rating"]
+    result["prev_season_win_pct_diff"]       = (
+        result["home_prev_season_win_pct"] - result["away_prev_season_win_pct"]
+    )
+    result["prev_season_runs_for_diff"]      = (
+        result["home_prev_season_avg_runs_for"] - result["away_prev_season_avg_runs_for"]
+    )
+    result["prev_season_runs_against_diff"]  = (
+        result["home_prev_season_avg_runs_against"] - result["away_prev_season_avg_runs_against"]
+    )
+    result["home_prev_season_net_rating"]    = (
+        result["home_prev_season_avg_runs_for"] - result["home_prev_season_avg_runs_against"]
+    )
+    result["away_prev_season_net_rating"]    = (
+        result["away_prev_season_avg_runs_for"] - result["away_prev_season_avg_runs_against"]
+    )
+    result["prev_season_net_rating_diff"]    = (
+        result["home_prev_season_net_rating"] - result["away_prev_season_net_rating"]
+    )
 
     # Drop the parsed date column
     result.drop(columns=["game_date_parsed"], inplace=True, errors="ignore")
 
     # Optional: reorder columns (orig → stats → flags → diffs)
     orig_cols = list(df.columns)
-    stat_cols = [c for c in result.columns if any(c.startswith(s+"_prev_season") for s in ("home","away"))]
+    stat_cols = [c for c in result.columns if any(c.startswith(s + "_prev_season") for s in ("home", "away"))]
     flag_cols = [c for c in result.columns if c.endswith("_imputed")]
     diff_cols = [c for c in result.columns if c.endswith("_diff") or c.endswith("net_rating")]
     ordered = orig_cols + stat_cols + flag_cols + diff_cols

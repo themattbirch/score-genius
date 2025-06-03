@@ -39,8 +39,8 @@ except ImportError:
 _COLUMN_SYNONYMS = {
     "game_id":   ["game_id", "uid", "gid"],
     "game_date": ["game_date", "game_date_et", "game_date_time_utc"],
-    "home_team": ["home_team", "home_team_id"],
-    "away_team": ["away_team", "away_team_id"],
+    "home_team_id": ["home_team", "home_team_id"],
+    "away_team_id": ["away_team", "away_team_id"],
 }
 
 def _standardize_cols(df: pd.DataFrame) -> pd.DataFrame:
@@ -222,8 +222,8 @@ def transform(
 
     # 3) Use canonical names for the MLB tests
     game_date_col = "game_date"
-    home_col      = "home_team"
-    away_col      = "away_team"
+    home_col      = "home_team_id"
+    away_col      = "away_team_id"
 
     # 4) Initialize all placeholders with their default values
     for c in H2H_PLACEHOLDER_COLS:
@@ -261,8 +261,8 @@ def transform(
     # 9) Canonicalize the historical columns as well
     hist = _standardize_cols(historical_df.copy())
     hist_date_col = "game_date"
-    hist_home_col = "home_team"
-    hist_away_col = "away_team"
+    hist_home_col = "home_team_id"
+    hist_away_col = "away_team_id"
 
     # 10) Convert date & drop anything missing required historical fields
     hist["game_date"] = pd.to_datetime(hist[hist_date_col], errors="coerce").dt.tz_localize(None)

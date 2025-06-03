@@ -68,21 +68,12 @@ UPCOMING_GAMES_COLS_MLB = [
 
 # --- Project module imports (MLB specific) ---
 PROJECT_MODULES_IMPORTED = False
-try:
-    # Assuming your MLB feature engine will be at a similar path
-    from backend.mlb_features.engine import run_mlb_feature_pipeline, DEFAULT_MLB_EXECUTION_ORDER # Adjust name/path as needed
-    from backend.mlb_score_prediction.models import (
+from backend.mlb_features.engine import run_mlb_feature_pipeline, DEFAULT_MLB_EXECUTION_ORDER # Adjust name/path as needed
+from backend.mlb_score_prediction.models import (
         RidgeScorePredictor as MLBRidgePredictor,
         SVRScorePredictor as MLBSVRPredictor,
         XGBoostScorePredictor as MLBXGBoostPredictor
     )
-    # PredictionUncertaintyEstimator removed
-    from backend.mlb_score_prediction import utils as mlb_utils
-    PROJECT_MODULES_IMPORTED = True
-    logger.info("Successfully imported MLB project modules.")
-except ImportError as e:
-    logger.error(f"MLB project module imports failed: {e}", exc_info=True)
-
 # --- Supabase helper ---
 def get_supabase_client() -> Optional[SupabaseClient]:
     if not config.SUPABASE_URL or not config.SUPABASE_SERVICE_KEY: # Prioritize service key

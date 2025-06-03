@@ -188,7 +188,6 @@ def make_mlb_snapshot(
         df_game.copy(), 
         mlb_historical_games_df=df_full_history,
         mlb_historical_team_stats_df=df_team_stats,
-        season_to_lookup=season_year,
         form_home_col="home_current_form",
         form_away_col="away_current_form",
         # Pass through column name parameters to the engine if its modules need them

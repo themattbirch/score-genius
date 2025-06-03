@@ -65,9 +65,6 @@ from scipy.optimize import minimize
 from scipy.stats import loguniform, randint, uniform
 
 # ─── Project Imports (MLB Specific) ───────────────────────────────────
-from backend.mlb_score_prediction import utils as mlb_utils # MLB utils
-from backend.mlb_score_prediction.utils import get_mlb_team_form_string
-
 # Import your MLB feature-pipeline orchestrator (NEEDS TO BE CREATED/ADAPTED FOR MLB)
 try:
     from backend.mlb_features.engine import run_mlb_feature_pipeline
@@ -133,33 +130,50 @@ HISTORICAL_REQUIRED_COLS_MLB = [
     'home_score', 'away_score', 'home_hits', 'away_hits', 'home_errors', 'away_errors',
     'h_inn_1', 'h_inn_2', 'h_inn_3', 'h_inn_4', 'h_inn_5', 'h_inn_6', 'h_inn_7', 'h_inn_8', 'h_inn_9', 'h_inn_extra',
     'a_inn_1', 'a_inn_2', 'a_inn_3', 'a_inn_4', 'a_inn_5', 'a_inn_6', 'a_inn_7', 'a_inn_8', 'a_inn_9', 'a_inn_extra',
-    'updated_at' # Keep updated_at if useful for filtering or recency
+    'updated_at', 'home_starter_pitcher_handedness',
+    'away_starter_pitcher_handedness'
 ]
 # Columns required from mlb_historical_team_stats
 TEAM_STATS_REQUIRED_COLS_MLB = [
-    'team_id', 'team_name', 'season', 'league_id', 'games_played_home', 'games_played_away',
-    'wins_all_percentage', 'runs_for_avg_all', 'runs_against_avg_all',
-    # Add other relevant aggregated stats you plan to use directly or for feature engineering
-    'updated_at'
+    'team_id', 'team_name', 'season', 'league_id', 'league_name', 'games_played_home', 'games_played_away', 'games_played_all', 'wins_home_total', 'wins_home_percentage', 'wins_away_total', 'wins_away_percentage', 'wins_all_total', 'wins_all_percentage', 'losses_home_total', 'losses_home_percentage', 'losses_away_total', 'losses_away_percentage', 'losses_all_total', 'losses_all_percentage', 'runs_for_total_home', 'runs_for_total_away', 'runs_for_total_all', 'runs_for_avg_home', 'runs_for_avg_away', 'runs_for_avg_all', 'runs_against_total_home', 'runs_against_total_away', 'runs_against_total_all', 'runs_against_avg_home', 'runs_against_avg_away', 'runs_against_avg_all', 'updated_at', 'raw_api_response', 'season_runs_scored_vs_lhp', 'season_games_vs_lhp', 'season_avg_runs_vs_lhp', 'season_runs_scored_vs_rhp', 'season_games_vs_rhp', 'season_avg_runs_vs_rhp'
 ]
 
 # Placeholders for MLB safe feature prefixes/names for Lasso/ElasticNet
 # These need to be defined based on the output of your MLB feature engineering pipeline
 MLB_SAFE_FEATURE_PREFIXES = (
-    'home_rolling_', 'away_rolling_', 'rolling_',             # Rolling window stats
-    'home_season_', 'away_season_', 'season_',             # Season-to-date stats
-    'matchup_',                                             # Head-to-head or relative stats
-    'park_factor_', 'weather_condition_',                  # Contextual factors
-    'home_pitcher_', 'away_pitcher_',                      # Starting pitcher stats
-    'home_bullpen_', 'away_bullpen_',                      # Bullpen stats
-    'home_batting_last10_', 'away_batting_last10_',         # Recent batting form
-    'home_pitching_last5_', 'away_pitching_last5_',         # Recent pitching form
-    'rest_days_', 'travel_dist_'
+    'home_rolling_', 'away_rolling_', 'rolling_',
+    'home_season_', 'away_season_', 'season_',
+    'matchup_',
+    'park_factor_', 'weather_condition_',
+    'home_pitcher_', 'away_pitcher_',
+    'home_bullpen_', 'away_bullpen_',
+    'home_batting_last10_', 'away_batting_last10_',
+    'home_pitching_last5_', 'away_pitching_last5_',
+    'rest_days_', 'travel_dist_',
+    # --- ADD THESE PREFIXES for advanced.py features ---
+    'h_team_hist_HA_',  # Covers h_team_hist_HA_win_pct, h_team_hist_HA_runs_for_avg, etc.
+    'a_team_hist_HA_',  # Covers a_team_hist_HA_win_pct, a_team_hist_HA_runs_for_avg, etc.
+    # For the vs_opp_hand features, since they are exact or very specific:
+    # Option 1: Add them to MLB_SAFE_EXACT_FEATURE_NAMES
+    # Option 2: Add specific prefixes if there might be more variations later
+    # Let's try adding them to exact names for now if these are the only two.
+    # If you plan more features starting with "h_team_off_avg_runs_vs_", then a prefix is better.
+    # For simplicity now, let's assume these are unique enough to be exact or use short prefixes.
+    'h_team_off_avg_runs_vs_opp_hand', # Add to MLB_SAFE_EXACT_FEATURE_NAMES if it's just this one
+    'a_team_off_avg_runs_vs_opp_hand', # Add to MLB_SAFE_EXACT_FEATURE_NAMES if it's just this one
+    # OR, if you prefer prefixes for these too (more flexible if you add more like them):
+    # 'h_team_off_avg_runs_vs_',
+    # 'a_team_off_avg_runs_vs_',
 )
 MLB_SAFE_EXACT_FEATURE_NAMES = {
     'day_of_week', 'month_of_year', 'is_day_game',
     'home_streak', 'away_streak', 'series_game_num',
-    'home_travel_advantage', 'away_travel_advantage'
+    'home_travel_advantage', 'away_travel_advantage',
+    # --- ADD THE EXACT NAMES for vs_opp_hand features if not using prefixes above ---
+    'h_team_off_avg_runs_vs_opp_hand',
+    'a_team_off_avg_runs_vs_opp_hand',
+    # Add their _imputed versions too if you convert them to numeric (0/1) and want them selected
+    # 'h_team_hist_HA_win_pct_imputed', ... etc. (requires conversion to int first)
 }
 
 
@@ -906,6 +920,9 @@ def run_training_pipeline(args: argparse.Namespace):
     df_for_features['game_date'] = pd.to_datetime(
         df_for_features['game_date'], errors='coerce'
     )
+    # ───── Make a “game_date_et” alias so the FE modules still find it ─────
+    df_for_features['game_date_et'] = df_for_features['game_date']
+
 
     # 2) Build a long DataFrame of one row per team per game
     full = historical_df.copy()
@@ -1007,28 +1024,8 @@ def run_training_pipeline(args: argparse.Namespace):
             else None
         ),
         rolling_window_sizes=rolling_windows_list,
-        h2h_max_games=args.h2h_window,
         debug=args.debug
     )
-    try:
-        features_df = run_mlb_feature_pipeline(
-        df=historical_df.copy(), # This is the main DataFrame, likely upcoming games + recent history for context
-        # Corrected keyword argument for team stats:
-        mlb_historical_team_stats_df=team_stats_df.copy() if team_stats_df is not None and not team_stats_df.empty else None,
-        # Pass other arguments as defined by run_mlb_feature_pipeline:
-        mlb_historical_games_df=historical_df.copy() if historical_df is not None and not historical_df.empty else None, # For H2H module
-        rolling_window_sizes=rolling_windows_list,
-        h2h_max_games=args.h2h_window, # Assuming args.h2h_window maps to h2h_max_games
-        # execution_order=DEFAULT_MLB_EXECUTION_ORDER, # If you have this constant defined for MLB
-        debug=args.debug
-        # Add other parameters like season_to_lookup, form_home_col, etc., if you want to override their defaults
-        # or pass them from CLI args.
-    )
-
-    except Exception as fe_e: logger.error(f"MLB Feature generation failed: {fe_e}", exc_info=True); sys.exit(1)
-    if features_df is None or features_df.empty: logger.error("MLB Feature gen returned empty. Exiting."); sys.exit(1)
-    logger.info(f"MLB Feature generation completed. Shape: {features_df.shape}")
-
     # Feature Cleaning, Pre-selection (using MLB_SAFE_FEATURE_PREFIXES)
     # ... (Identical logic, but uses MLB_SAFE_FEATURE_PREFIXES/NAMES) ...
     # (This section is long, assume it's ported correctly with MLB constants)
