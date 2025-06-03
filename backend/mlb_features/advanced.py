@@ -36,20 +36,21 @@ def _safe_norm(team_val: Any) -> str:
     • First calls `normalize_team_name`.
     • If that returns one of the generic placeholders
       (“unknown”, “unknown_team”, or blank), fall back to the
-      raw string, lower-cased and stripped.
+      raw string, lower‐cased and stripped.
     • All spaces are then removed to avoid accidental duplicates.
     """
     norm = normalize_team_name(team_val)
     if not isinstance(norm, str):
         norm = str(norm)
-    if norm.lower() in {"unknown", "unknown_team"} or not norm.strip():
+    norm = norm.strip().lower()
+    if norm in {"unknown", "unknown_team"} or not norm:
         norm = str(team_val).strip().lower()
     return norm.replace(" ", "")
 
 # --- Module‐level constants for default column names ---
 game_id_col       = "game_id"
-home_team_col     = "home_team_col"
-away_team_col     = "away_team_col"
+home_team_col     = "home_team_id"
+away_team_col     = "away_team_id"
 home_hand_col     = "home_probable_pitcher_handedness"
 away_hand_col     = "away_probable_pitcher_handedness"
 
@@ -76,12 +77,12 @@ def _attach_split(
     """
     For each new_col_name in col_mappings, look up historical value by normalized team name.
     If missing or NaN, fallback to MLB_DEFAULTS[defaults_key] or fallback_value.
+
     col_mappings: {
         new_column_name: (hist_col_name, defaults_dict_key, fallback_value),
         ...
     }
     """
-    # If the input DataFrame lacks the required team column, fill with defaults immediately.
     if team_col_name_in_df not in df_to_modify.columns:
         logger.error(
             f"Team column '{team_col_name_in_df}' not found for _attach_split. Populating with defaults."
@@ -91,31 +92,24 @@ def _attach_split(
             df_to_modify[new_col_name] = default_to_use
             if flag_imputations:
                 df_to_modify[f"{new_col_name}_imputed"] = True
-
-            # Coerce to numeric (float) and fill
             df_to_modify[new_col_name] = (
                 pd.to_numeric(df_to_modify[new_col_name], errors="coerce")
-                .fillna(default_to_use)
-                .astype(float)
+                  .fillna(default_to_use)
+                  .astype(float)
             )
         return df_to_modify
 
-    # Normalize team names (remove spaces after normalization)
     normalized_team_id_series = df_to_modify[team_col_name_in_df].apply(_safe_norm)
 
     for new_col_name, (hist_col_name, defaults_key, fallback_value) in col_mappings.items():
         default_to_use = MLB_DEFAULTS.get(defaults_key, fallback_value)
-        # Start with all imputed (True) by default
         imputed_flags_for_col = pd.Series([True] * len(df_to_modify), index=df_to_modify.index)
 
         if hist_col_name in hist_lookup_df.columns and not hist_lookup_df.empty:
             # Map normalized team names to the historical column
             hist_series = hist_lookup_df[hist_col_name]
             mapped_values = normalized_team_id_series.map(hist_series.to_dict())
-            # Any row where mapped_values is NaN → imputed
             imputed_flags_for_col = mapped_values.isna()
-
-            # Fill NaNs with default
             df_to_modify[new_col_name] = mapped_values.fillna(default_to_use)
         else:
             if hist_lookup_df.empty:
@@ -125,17 +119,14 @@ def _attach_split(
                     f"Column '{hist_col_name}' for '{new_col_name}' not in hist_lookup_df. Using default."
                 )
             df_to_modify[new_col_name] = default_to_use
-            # imputed_flags remain all True
 
-        # If user wants imputation flags, attach them
         if flag_imputations:
             df_to_modify[f"{new_col_name}_imputed"] = imputed_flags_for_col.astype(bool)
 
-        # Ensure numeric, fill any extra NaNs, cast to float
         df_to_modify[new_col_name] = (
             pd.to_numeric(df_to_modify[new_col_name], errors="coerce")
-            .fillna(default_to_use)
-            .astype(float)
+              .fillna(default_to_use)
+              .astype(float)
         )
 
     return df_to_modify
@@ -157,7 +148,6 @@ def _attach_vs_hand(
     Attaches offense‐vs‐pitcher‐hand feature. For each row, look at that team's historical
     stat vs LHP or vs RHP based on the opponent's hand. If missing → default.
     """
-    # If required columns missing, fill entire new_col_name_base with default
     if team_col_name_in_df not in df_to_modify.columns:
         logger.error(
             f"Missing team column '{team_col_name_in_df}' for _attach_vs_hand '{new_col_name_base}'."
@@ -168,12 +158,11 @@ def _attach_vs_hand(
             df_to_modify[f"{new_col_name_base}_imputed"] = True
         df_to_modify[new_col_name_base] = (
             pd.to_numeric(df_to_modify[new_col_name_base], errors="coerce")
-            .fillna(default_to_use)
-            .astype(float)
+              .fillna(default_to_use)
+              .astype(float)
         )
         return df_to_modify
 
-    # If opponent‐hand column missing, default to "UNKNOWN_HAND" for every row
     if opp_hand_col_name_in_df not in df_to_modify.columns:
         logger.warning(
             f"Opposing‐hand column '{opp_hand_col_name_in_df}' missing for _attach_vs_hand '{new_col_name_base}'. "
@@ -181,15 +170,12 @@ def _attach_vs_hand(
         )
         df_to_modify[opp_hand_col_name_in_df] = "UNKNOWN_HAND"
 
-    # Normalize team names (remove spaces)
     normalized_team_ids = df_to_modify[team_col_name_in_df].apply(_safe_norm)
-
-    # Uppercase pitcher hand; any missing/invalid will default to "UNKNOWN_HAND"
     opponent_hands = (
         df_to_modify[opp_hand_col_name_in_df]
-        .astype(str)
-        .str.upper()
-        .fillna("UNKNOWN_HAND")
+          .astype(str)
+          .str.upper()
+          .fillna("UNKNOWN_HAND")
     )
 
     default_to_use = MLB_DEFAULTS.get(defaults_key, fallback_value)
@@ -200,7 +186,6 @@ def _attach_vs_hand(
         val_for_row = np.nan
         imputed_this_row = True
 
-        # Only attempt a lookup if hist_lookup_df is non-empty and team_norm is in index
         if not hist_lookup_df.empty and team_norm in hist_lookup_df.index:
             stat_col_to_use: Optional[str] = None
             if opp_hand_val == "L" and hist_stat_vs_lhp in hist_lookup_df.columns:
@@ -214,15 +199,14 @@ def _attach_vs_hand(
                     val_for_row = looked_up_val
                     imputed_this_row = False
 
-        # Append either the looked‐up number or the default
         calculated_values.append(val_for_row if pd.notna(val_for_row) else default_to_use)
         if flag_imputations:
             imputation_flags_list.append(imputed_this_row)
 
     df_to_modify[new_col_name_base] = (
         pd.Series(pd.to_numeric(calculated_values, errors="coerce"), index=df_to_modify.index)
-        .fillna(default_to_use)
-        .astype(float)
+          .fillna(default_to_use)
+          .astype(float)
     )
     if flag_imputations:
         df_to_modify[f"{new_col_name_base}_imputed"] = pd.Series(
@@ -235,13 +219,17 @@ def _attach_vs_hand(
 def transform(
     df: pd.DataFrame,
     historical_team_stats_df: pd.DataFrame,
+    *,
+    season_to_lookup: Optional[int] = None,      # ← NEW
     flag_imputations: bool = True,
     debug: bool = False,
+    # Input-DF column names (override defaults if needed)
     game_id_col_param: str = game_id_col,
     home_team_col_param: str = home_team_col,
     away_team_col_param: str = away_team_col,
     home_hand_col_param: str = home_hand_col,
     away_hand_col_param: str = away_hand_col,
+    # Historical-stats column names …
     hist_team_col_param: str = hist_team_col_default,
     hist_season_col_param: str = hist_season_col_default,
     hist_w_home_pct_param: str = hist_w_home_pct_default,
@@ -252,31 +240,34 @@ def transform(
     hist_ra_away_param: str = hist_ra_away_default,
     hist_vs_lhp_param: str = hist_vs_lhp_default,
     hist_vs_rhp_param: str = hist_vs_rhp_default,
+    drop_input_team_cols: bool = True            # ← default now True
 ) -> pd.DataFrame:
+
     """
     Main entry point for attaching all advanced MLB features:
       1) Home/Away splits (_attach_split)
-      2) Offense vs Opponent Pitcher's Hand (_attach_vs_hand)
+      2) Offense vs Opponent Pitcher’s Hand (_attach_vs_hand)
+
+    If drop_input_team_cols=True, we will drop the original home_team_col_param
+    and away_team_col_param at the end; otherwise we leave them.
     """
     orig_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
         logger.debug(f"advanced.transform start: df_shape={df.shape}")
 
-    # 1) If input is None or empty, return a (possibly empty) copy immediately
     if df is None or df.empty:
         logger.warning("Empty input df; returning copy.")
         return df.copy() if df is not None else pd.DataFrame()
 
     result = df.copy()
 
-    # 2) Verify that at least home_team_id/away_team_id exist
     essential_team_cols = [home_team_col_param, away_team_col_param]
-    missing_essential = [col for col in essential_team_cols if col not in result.columns]
+    missing_essential = [c for c in essential_team_cols if c not in result.columns]
     if missing_essential:
         logger.error(
-            f"Input DataFrame 'df' is missing essential team columns for advanced stats: "
-            f"{missing_essential}. Returning copy of original df."
+            f"Input DataFrame 'df' is missing essential team columns for advanced stats: {missing_essential}. "
+            "Returning copy of original df."
         )
         if debug:
             logger.setLevel(orig_level)
@@ -284,50 +275,49 @@ def transform(
 
     # 3) Build a filtered, indexed historical DataFrame (by normalized team name)
     hist_filtered_indexed_map: TypingDict[int, pd.DataFrame] = {}
-
     if historical_team_stats_df is not None and not historical_team_stats_df.empty:
-        hist_copy = historical_team_stats_df.copy() # Work on a copy
+        hist_copy = historical_team_stats_df.copy()
 
-        # Ensure the necessary columns for processing historical_team_stats_df are present
+        # ⬇ NEW: filter to specific season if supplied
+        if season_to_lookup is not None and hist_season_col_param in hist_copy.columns:
+            hist_copy = hist_copy[hist_copy[hist_season_col_param] == season_to_lookup]
+
         required_hist_stats_cols = [hist_season_col_param, hist_team_col_param]
+
         if not all(col in hist_copy.columns for col in required_hist_stats_cols):
             logger.error(
                 f"The 'historical_team_stats_df' is missing one or more essential columns: "
                 f"{required_hist_stats_cols}. Cannot build historical stats lookup map. "
-                f"Advanced features will use defaults."
+                "Advanced features will use defaults."
             )
-            # hist_filtered_indexed_map will remain empty, and downstream logic should handle this
         else:
-            # Normalize team names/IDs in the historical stats
             hist_copy["team_norm"] = hist_copy[hist_team_col_param].apply(_safe_norm)
-            
-            # Ensure 'season' column is numeric (integer) for grouping and dictionary keys
-            hist_copy[hist_season_col_param] = pd.to_numeric(hist_copy[hist_season_col_param], errors='coerce')
-            hist_copy.dropna(subset=[hist_season_col_param], inplace=True) # Remove rows if season couldn't be parsed
+            hist_copy[hist_season_col_param] = pd.to_numeric(
+                hist_copy[hist_season_col_param], errors='coerce'
+            )
+            hist_copy.dropna(subset=[hist_season_col_param], inplace=True)
             hist_copy[hist_season_col_param] = hist_copy[hist_season_col_param].astype(int)
 
-            # Group by season, then process each season's data to create the map
             for season_val, season_group_df in hist_copy.groupby(hist_season_col_param):
-                # For each season, get unique team stats (in case of duplicates for a team in a season)
-                # and then index by 'team_norm'
-                unique_team_stats_for_season = season_group_df.drop_duplicates(subset=["team_norm"], keep="first")
+                unique_team_stats_for_season = season_group_df.drop_duplicates(
+                    subset=["team_norm"], keep="first"
+                )
                 if not unique_team_stats_for_season.empty:
                     hist_filtered_indexed_map[season_val] = unique_team_stats_for_season.set_index("team_norm")
                 else:
-                    # This case should be rare if drop_duplicates is on 'team_norm' unless a season_group_df was empty
                     logger.warning(f"No unique team stats data found for season {season_val} to add to lookup map.")
-            
+
             if not hist_filtered_indexed_map:
                 logger.warning(
                     "The historical team stats lookup map ('hist_filtered_indexed_map') is empty after processing. "
-                    "This could be due to missing data in 'historical_team_stats_df' or issues with "
-                    f"'{hist_season_col_param}' or '{hist_team_col_param}' columns. "
                     "Advanced historical features will use defaults."
                 )
             else:
-                logger.info(f"Built historical stats lookup map for {len(hist_filtered_indexed_map)} seasons: {sorted(list(hist_filtered_indexed_map.keys()))}")
+                logger.info(
+                    f"Built historical stats lookup map for {len(hist_filtered_indexed_map)} seasons: "
+                    f"{sorted(list(hist_filtered_indexed_map.keys()))}"
+                )
     else:
-        # This case handles if historical_team_stats_df was None or empty from the start
         logger.warning(
             "The 'historical_team_stats_df' provided to advanced.transform is empty or None. "
             "All advanced historical features will use defaults."
@@ -367,7 +357,6 @@ def transform(
     )
 
     # 5) Offense vs Pitcher Hand:
-    # If missing, defaults will be applied inside _attach_vs_hand.
     result = _attach_vs_hand(
         result,
         home_team_col_param,
@@ -397,21 +386,22 @@ def transform(
     if not flag_imputations:
         result = result.drop(columns=[c for c in result.columns if c.endswith("_imputed")], errors="ignore")
 
-    # 7) Drop original home/away team columns if desired (optional)
-    cols_to_drop = []
-    if home_team_col_param in result.columns:
-        cols_to_drop.append(home_team_col_param)
-    if away_team_col_param in result.columns:
-        cols_to_drop.append(away_team_col_param)
-    if cols_to_drop:
-        result = result.drop(columns=cols_to_drop, errors="ignore")
+    # 7) Conditionally drop original home/away team columns if requested
+    if drop_input_team_cols:
+        to_drop = []
+        if home_team_col_param in result.columns:
+            to_drop.append(home_team_col_param)
+        if away_team_col_param in result.columns:
+            to_drop.append(away_team_col_param)
+        if to_drop:
+            result = result.drop(columns=to_drop, errors="ignore")
 
     # 8) Convert all *_imputed columns to standard Python bools (object dtype)
     if flag_imputations:
         for col_name in result.columns:
             if col_name.endswith("_imputed"):
                 python_bool_list = [bool(x) for x in result[col_name].tolist()]
-                result[col_name] = pd.Series(python_bool_list, index=result.index, name=col_name).astype(int)
+                result[col_name] = pd.Series(python_bool_list, index=result.index).astype(int)
 
     if debug:
         logger.setLevel(orig_level)

@@ -20,13 +20,11 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s
 logger = logging.getLogger(__name__)
 
 # Define Paths Consistently
-SCRIPT_DIR_PRED = Path(__file__).resolve().parent
-# Assuming prediction.py is in backend/mlb_score_prediction/
-PROJECT_ROOT_PRED = SCRIPT_DIR_PRED.parents[2]
-MODELS_DIR = PROJECT_ROOT_PRED / "models" / "saved" # This is your preferred path
+from backend import config
+MODELS_DIR = Path(config.MAIN_MODELS_DIR)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-REPORTS_DIR_PRED = PROJECT_ROOT_PRED / "reports_mlb" # Consistent reports dir for MLB
+REPORTS_DIR_PRED = Path(config.MAIN_MODELS_DIR).parent / "reports_mlb"
 REPORTS_DIR_PRED.mkdir(parents=True, exist_ok=True)
 logger.info(f"MLB prediction.py using model directory: {MODELS_DIR}")
 
@@ -68,12 +66,13 @@ UPCOMING_GAMES_COLS_MLB = [
 
 # --- Project module imports (MLB specific) ---
 PROJECT_MODULES_IMPORTED = False
-from backend.mlb_features.engine import run_mlb_feature_pipeline, DEFAULT_MLB_EXECUTION_ORDER # Adjust name/path as needed
+from backend.mlb_features.engine import run_mlb_feature_pipeline, DEFAULT_ORDER
 from backend.mlb_score_prediction.models import (
         RidgeScorePredictor as MLBRidgePredictor,
         SVRScorePredictor as MLBSVRPredictor,
         XGBoostScorePredictor as MLBXGBoostPredictor
     )
+PROJECT_MODULES_IMPORTED = True
 # --- Supabase helper ---
 def get_supabase_client() -> Optional[SupabaseClient]:
     if not config.SUPABASE_URL or not config.SUPABASE_SERVICE_KEY: # Prioritize service key
@@ -123,7 +122,7 @@ def load_recent_historical_data(supabase_client: SupabaseClient, days_lookback: 
         # Standardize to 'game_date' for feature engine compatibility if it expects that
         df["game_date"] = pd.to_datetime(df[date_column_hist], errors="coerce").dt.tz_localize(None)
         df = df.dropna(subset=["game_date"])
-
+        df["season"] = df["game_date"].dt.year.astype(int)
         numeric_cols = [c for c in REQUIRED_HISTORICAL_COLS_MLB if c not in
                         ("game_id", date_column_hist, "home_team_id", "away_team_id",
                          "home_team_name", "away_team_name")] # Adjust non-numeric list
@@ -445,14 +444,15 @@ def generate_predictions(
     else:
         combined_input_df = upcoming_df_mlb.copy()
 
-    # Run feature pipeline
+    # Run feature pipeline (use the engine’s exact parameter names)
     try:
         features_all_mlb = run_mlb_feature_pipeline(
             df=combined_input_df,
-            team_stats_df=team_stats_df_mlb,
-            rolling_windows=[10, 30, 81],
-            h2h_lookback_games=10,
-            execution_order=DEFAULT_MLB_EXECUTION_ORDER,
+            mlb_historical_games_df=hist_df_mlb,
+            mlb_historical_team_stats_df=team_stats_df_mlb,
+            rolling_window_sizes=[10, 30, 81],
+            h2h_max_games=10,
+            execution_order=DEFAULT_ORDER,        # DEFAULT_ORDER imported below
             debug=debug_mode,
         )
     except Exception as e:
@@ -651,12 +651,13 @@ def main():
     if not supabase_c:
         sys.exit("Exiting: Supabase client could not be initialized.")
 
-    final_mlb_preds, _ = generate_predictions( # Ignoring raw_preds for now
+    final_mlb_preds, _ = generate_predictions(
         days_window=args.days,
         model_dir=args.model_dir,
         historical_lookback=args.lookback,
-        debug_mode=args.debug
+        debug_mode=args.debug,
     )
+
 
     if final_mlb_preds:
         logger.info(f"Upserting {len(final_mlb_preds)} final MLB predictions...")

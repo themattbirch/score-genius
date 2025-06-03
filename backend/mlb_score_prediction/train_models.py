@@ -135,11 +135,17 @@ HISTORICAL_REQUIRED_COLS_MLB = [
 ]
 # Columns required from mlb_historical_team_stats
 TEAM_STATS_REQUIRED_COLS_MLB = [
-    'team_id', 'team_name', 'season', 'league_id', 'league_name', 'games_played_home', 'games_played_away', 'games_played_all', 'wins_home_total', 'wins_home_percentage', 'wins_away_total', 'wins_away_percentage', 'wins_all_total', 'wins_all_percentage', 'losses_home_total', 'losses_home_percentage', 'losses_away_total', 'losses_away_percentage', 'losses_all_total', 'losses_all_percentage', 'runs_for_total_home', 'runs_for_total_away', 'runs_for_total_all', 'runs_for_avg_home', 'runs_for_avg_away', 'runs_for_avg_all', 'runs_against_total_home', 'runs_against_total_away', 'runs_against_total_all', 'runs_against_avg_home', 'runs_against_avg_away', 'runs_against_avg_all', 'updated_at', 'raw_api_response', 'season_runs_scored_vs_lhp', 'season_games_vs_lhp', 'season_avg_runs_vs_lhp', 'season_runs_scored_vs_rhp', 'season_games_vs_rhp', 'season_avg_runs_vs_rhp'
+    'team_id', 'team_name', 'season', 'league_id', 'league_name', 'games_played_home', 'games_played_away',
+    'games_played_all', 'wins_home_total', 'wins_home_percentage', 'wins_away_total', 'wins_away_percentage',
+    'wins_all_total', 'wins_all_percentage', 'losses_home_total', 'losses_home_percentage', 'losses_away_total',
+    'losses_away_percentage', 'losses_all_total', 'losses_all_percentage', 'runs_for_total_home',
+    'runs_for_total_away', 'runs_for_total_all', 'runs_for_avg_home', 'runs_for_avg_away', 'runs_for_avg_all',
+    'runs_against_total_home', 'runs_against_total_away', 'runs_against_total_all', 'runs_against_avg_home',
+    'runs_against_avg_away', 'runs_against_avg_all', 'updated_at', 'raw_api_response', 'season_runs_scored_vs_lhp',
+    'season_games_vs_lhp', 'season_avg_runs_vs_lhp', 'season_runs_scored_vs_rhp', 'season_games_vs_rhp',
+    'season_avg_runs_vs_rhp'
 ]
-
 # Placeholders for MLB safe feature prefixes/names for Lasso/ElasticNet
-# These need to be defined based on the output of your MLB feature engineering pipeline
 MLB_SAFE_FEATURE_PREFIXES = (
     'home_rolling_', 'away_rolling_', 'rolling_',
     'home_season_', 'away_season_', 'season_',
@@ -150,30 +156,21 @@ MLB_SAFE_FEATURE_PREFIXES = (
     'home_batting_last10_', 'away_batting_last10_',
     'home_pitching_last5_', 'away_pitching_last5_',
     'rest_days_', 'travel_dist_',
-    # --- ADD THESE PREFIXES for advanced.py features ---
-    'h_team_hist_HA_',  # Covers h_team_hist_HA_win_pct, h_team_hist_HA_runs_for_avg, etc.
-    'a_team_hist_HA_',  # Covers a_team_hist_HA_win_pct, a_team_hist_HA_runs_for_avg, etc.
-    # For the vs_opp_hand features, since they are exact or very specific:
-    # Option 1: Add them to MLB_SAFE_EXACT_FEATURE_NAMES
-    # Option 2: Add specific prefixes if there might be more variations later
-    # Let's try adding them to exact names for now if these are the only two.
-    # If you plan more features starting with "h_team_off_avg_runs_vs_", then a prefix is better.
-    # For simplicity now, let's assume these are unique enough to be exact or use short prefixes.
-    'h_team_off_avg_runs_vs_opp_hand', # Add to MLB_SAFE_EXACT_FEATURE_NAMES if it's just this one
-    'a_team_off_avg_runs_vs_opp_hand', # Add to MLB_SAFE_EXACT_FEATURE_NAMES if it's just this one
-    # OR, if you prefer prefixes for these too (more flexible if you add more like them):
-    # 'h_team_off_avg_runs_vs_',
-    # 'a_team_off_avg_runs_vs_',
+    # Advanced‐splits prefixes:
+    'h_team_hist_HA_',      # h_team_hist_HA_win_pct, etc.
+    'a_team_hist_HA_',      # a_team_hist_HA_win_pct, etc.
+    'h_team_off_avg_runs_vs_',  # covers h_team_off_avg_runs_vs_opp_hand
+    'a_team_off_avg_runs_vs_',
 )
 MLB_SAFE_EXACT_FEATURE_NAMES = {
     'day_of_week', 'month_of_year', 'is_day_game',
     'home_streak', 'away_streak', 'series_game_num',
     'home_travel_advantage', 'away_travel_advantage',
-    # --- ADD THE EXACT NAMES for vs_opp_hand features if not using prefixes above ---
+    # The exact “vs_opp_hand” columns
     'h_team_off_avg_runs_vs_opp_hand',
     'a_team_off_avg_runs_vs_opp_hand',
-    # Add their _imputed versions too if you convert them to numeric (0/1) and want them selected
-    # 'h_team_hist_HA_win_pct_imputed', ... etc. (requires conversion to int first)
+    # Also, if you’ve chosen to keep the raw team_id columns, you can add them here
+    # e.g. 'home_team_id', 'away_team_id'  # <– uncomment if you want Lasso to consider them
 }
 
 
@@ -1010,7 +1007,7 @@ def run_training_pipeline(args: argparse.Namespace):
 
     df_for_features = df_with_forms
 
-    # Now call the MLB feature pipeline with df_for_features (which includes form strings)
+    # Now call the MLB feature pipeline with df_for_features…
     features_df = run_mlb_feature_pipeline(
         df=df_for_features,
         mlb_historical_team_stats_df=(
@@ -1026,67 +1023,123 @@ def run_training_pipeline(args: argparse.Namespace):
         rolling_window_sizes=rolling_windows_list,
         debug=args.debug
     )
-    # Feature Cleaning, Pre-selection (using MLB_SAFE_FEATURE_PREFIXES)
-    # ... (Identical logic, but uses MLB_SAFE_FEATURE_PREFIXES/NAMES) ...
-    # (This section is long, assume it's ported correctly with MLB constants)
+    # …[Feature Cleaning, Pre‐selection]…
     if features_df.columns.duplicated().any():
-        features_df = features_df.loc[:,~features_df.columns.duplicated(keep='first')]
-    features_df = features_df.dropna(subset=TARGET_COLUMNS)
-    if features_df.empty: logger.error("No rows after dropping targets. Exiting."); sys.exit(1)
+        features_df = features_df.loc[:, ~features_df.columns.duplicated(keep='first')]
 
-    # Feature Value Analysis (generic, can be kept)
-    # ... (Run if args.run_analysis) ...
-    
+    # Drop rows where our targets are missing
+    features_df = features_df.dropna(subset=TARGET_COLUMNS)
+    if features_df.empty:
+        logger.error("No rows after dropping targets. Exiting.")
+        sys.exit(1)
+    #  …[Feature Value Analysis if args.run_analysis]…
+
     potential_feature_cols = features_df.select_dtypes(include=np.number).columns
-    cols_to_exclude = set(TARGET_COLUMNS + ['game_id', 'game_date']) # game_date is now standard
+    cols_to_exclude = set(TARGET_COLUMNS + ['game_id', 'game_date'])
     feature_candidates = []
     for col in potential_feature_cols:
-        if col in cols_to_exclude: continue
-        if features_df[col].isnull().all() or features_df[col].var() < 1e-8: continue
-        # Use MLB specific safe prefixes and names
+        if col in cols_to_exclude:
+            continue
+        if features_df[col].isnull().all() or features_df[col].var() < 1e-8:
+            continue
+
+        # (Issue 9) Log if an “expected advanced feature” is missing from the DataFrame. For example:
+        if col.startswith(("h_team_hist_", "a_team_hist_", "h_team_off_")):
+            if col not in features_df.columns:
+                logger.warning(f"Expected advanced‐feature '{col}' missing from features_df.")
+
+        # Only keep if it matches our safe prefixes or exact names
         if col.startswith(MLB_SAFE_FEATURE_PREFIXES) or col in MLB_SAFE_EXACT_FEATURE_NAMES:
             feature_candidates.append(col)
-    if not feature_candidates: logger.error("No feature candidates found after prefix/name filtering for MLB. Exiting."); sys.exit(1)
-    
-    X_select = features_df[feature_candidates].copy() # Changed from X_lasso to X_select
+
+    if not feature_candidates:
+        logger.error("No feature candidates found after prefix/name filtering for MLB. Exiting.")
+        sys.exit(1)
+
+    X_select = features_df[feature_candidates].copy()
     y_home_select = features_df[TARGET_COLUMNS[0]].copy()
     y_away_select = features_df[TARGET_COLUMNS[1]].copy()
-    if X_select.isnull().any().any(): # Impute before scaling/selection
-        imputer = SimpleImputer(strategy='median'); X_select = pd.DataFrame(imputer.fit_transform(X_select), columns=X_select.columns, index=X_select.index)
-    scaler = StandardScaler(); X_select_scaled = scaler.fit_transform(X_select)
-    alphas_select = np.logspace(-5, 1, 60) # Adjusted alpha for MLB potentially
+
+    # Impute any remaining NaNs before Lasso/ElasticNet
+    if X_select.isnull().any().any():
+        from sklearn.impute import SimpleImputer
+        imputer = SimpleImputer(strategy='median')
+        X_select = pd.DataFrame(
+            imputer.fit_transform(X_select),
+            columns=X_select.columns,
+            index=X_select.index
+        )
+
+    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler()
+    X_select_scaled = scaler.fit_transform(X_select)
+
+    alphas_select = np.logspace(-5, 1, 60)
 
     final_feature_list_for_models = []
+
     if args.feature_selection == "lasso":
-        # ... (LassoCV/Lasso logic as in NBA, using X_select_scaled, y_home_select, y_away_select, alphas_select)
-        # (This section is long, assume it's ported correctly)
-        # For simplicity, let's assume fixed alpha for now or that LassoCV part is adapted.
-        # This part needs careful check for which y to use for Lasso (home, away, or combined).
-        # NBA version ran Lasso for home and away separately and took union.
-        lasso_home = LassoCV(alphas=alphas_select, cv=DEFAULT_CV_FOLDS, max_iter=3000, tol=1e-3, random_state=SEED).fit(X_select_scaled, y_home_select)
-        lasso_away = LassoCV(alphas=alphas_select, cv=DEFAULT_CV_FOLDS, max_iter=3000, tol=1e-3, random_state=SEED).fit(X_select_scaled, y_away_select)
-        selected_mask = (np.abs(lasso_home.coef_) > 1e-5) | (np.abs(lasso_away.coef_) > 1e-5) # Union of features
+        from sklearn.linear_model import LassoCV
+        lasso_home = LassoCV(
+            alphas=alphas_select,
+            cv=DEFAULT_CV_FOLDS,
+            max_iter=3000,
+            tol=1e-3,
+            random_state=SEED
+        ).fit(X_select_scaled, y_home_select)
+
+        lasso_away = LassoCV(
+            alphas=alphas_select,
+            cv=DEFAULT_CV_FOLDS,
+            max_iter=3000,
+            tol=1e-3,
+            random_state=SEED
+        ).fit(X_select_scaled, y_away_select)
+
+        selected_mask = (np.abs(lasso_home.coef_) > 1e-5) | (np.abs(lasso_away.coef_) > 1e-5)
         final_feature_list_for_models = list(X_select.columns[selected_mask])
         logger.info(f"LassoCV selected {len(final_feature_list_for_models)} features for MLB.")
 
     elif args.feature_selection == "elasticnet":
-        # ... (ElasticNetCV logic as in NBA, adapted for MLB if needed) ...
-        enet_home = ElasticNetCV(l1_ratio=[.1, .5, .7, .9, .95, .99, 1], alphas=alphas_select, cv=DEFAULT_CV_FOLDS, max_iter=3000, tol=1e-3, random_state=SEED).fit(X_select_scaled, y_home_select)
-        enet_away = ElasticNetCV(l1_ratio=[.1, .5, .7, .9, .95, .99, 1], alphas=alphas_select, cv=DEFAULT_CV_FOLDS, max_iter=3000, tol=1e-3, random_state=SEED).fit(X_select_scaled, y_away_select)
+        from sklearn.linear_model import ElasticNetCV
+        enet_home = ElasticNetCV(
+            l1_ratio=[.1, .5, .7, .9, .95, .99, 1],
+            alphas=alphas_select,
+            cv=DEFAULT_CV_FOLDS,
+            max_iter=3000,
+            tol=1e-3,
+            random_state=SEED
+        ).fit(X_select_scaled, y_home_select)
+
+        enet_away = ElasticNetCV(
+            l1_ratio=[.1, .5, .7, .9, .95, .99, 1],
+            alphas=alphas_select,
+            cv=DEFAULT_CV_FOLDS,
+            max_iter=3000,
+            tol=1e-3,
+            random_state=SEED
+        ).fit(X_select_scaled, y_away_select)
+
         selected_mask_enet = (np.abs(enet_home.coef_) > 1e-5) | (np.abs(enet_away.coef_) > 1e-5)
         final_feature_list_for_models = list(X_select.columns[selected_mask_enet])
         logger.info(f"ElasticNetCV selected {len(final_feature_list_for_models)} features for MLB.")
-    else: logger.error(f"Unknown feature selection: {args.feature_selection}"); sys.exit(1)
+    else:
+        logger.error(f"Unknown feature selection: {args.feature_selection}")
+        sys.exit(1)
 
-    if not final_feature_list_for_models: logger.error("No features selected. Exiting."); sys.exit(1)
-    if args.write_selected_features: # Write and exit
-        sf_path = MAIN_MODELS_DIR / "mlb_selected_features.json"; # MLB specific
-        with open(sf_path, "w") as f: json.dump(final_feature_list_for_models, f, indent=4)
-        logger.info(f"MLB selected features ({len(final_feature_list_for_models)}) saved to {sf_path}. Exiting."); sys.exit(0)
-    
+    if not final_feature_list_for_models:
+        logger.error("No features selected. Exiting.")
+        sys.exit(1)
+
+    if args.write_selected_features:
+        sf_path = MAIN_MODELS_DIR / "mlb_selected_features.json"
+        import json
+        with open(sf_path, "w") as f:
+            json.dump(final_feature_list_for_models, f, indent=4)
+        logger.info(f"MLB selected features ({len(final_feature_list_for_models)}) saved to {sf_path}. Exiting.")
+        sys.exit(0)
+
     # Data Splitting (chronological, generic logic)
-    # ... (Identical splitting logic, ensure 'game_date' is used for sorting) ...
-    # (This section is long, assume it's ported correctly)
     essential_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
     cols_for_df_sel = list(set(essential_cols + final_feature_list_for_models)) # Unique columns
     features_df_selected = features_df[[c for c in cols_for_df_sel if c in features_df.columns]].sort_values('game_date').reset_index(drop=True)
