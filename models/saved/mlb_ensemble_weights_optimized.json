@@ -1,5 +1,5 @@
 {
-    "ridge_mlb_runs_predictor": 0.1830099649161391,
-    "svr_mlb_runs_predictor": 0.39790296145971404,
-    "xgb_mlb_runs_predictor": 0.4190870736241469
+    "ridge_mlb_runs_predictor": 0.2724073093382328,
+    "svr_mlb_runs_predictor": 0.45489329055243405,
+    "xgb_mlb_runs_predictor": 0.27269940010933325
 }

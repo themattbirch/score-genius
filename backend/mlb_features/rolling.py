@@ -75,23 +75,13 @@ def _lagged_rolling_stat(s: pd.Series, window: int, min_periods: int, stat: str)
 
 def transform(
     df: pd.DataFrame,
-    window_sizes: List[int] | tuple[int, ...] = (5,),
+    window_sizes: List[int] | tuple[int, ...] = (5,), # Using (5,) as a more typical default
     *,
     flag_imputations: bool = True,
     flag_imputation: Optional[bool] = None,  # legacy alias
     debug: bool = False,
 ) -> pd.DataFrame:
-    """Attach rolling features.
-
-    Parameters
-    ----------
-    df: input games dataframe (must include id/date/team/box‑score columns).
-    window_sizes: iterable of int — rolling windows.
-    flag_imputations / flag_imputation: if true, fill NaNs with DEFAULTS
-        and create *_imputed columns.  Either kwarg is accepted.
-    debug: verbose logging.
-    """
-    # Alias resolution
+    """Attach rolling features."""
     if flag_imputation is not None:
         flag_imputations = flag_imputation
 
@@ -101,26 +91,36 @@ def transform(
 
     if df is None or df.empty:
         logger.warning("Empty input to rolling.transform; returning copy.")
+        logger.setLevel(orig_level) # Ensure logger level is reset
         return df.copy() if df is not None else pd.DataFrame()
 
     out = df.copy()
 
-    # Validate mandatory columns
+    required_outcome_cols = [_HS, _AS, _HH, _AH, _HE, _AE]
+    for col in required_outcome_cols:
+        if col not in out.columns:
+            logger.info(f"Rolling.transform: Input df missing '{col}'. Adding as NaN placeholder.")
+            out[col] = np.nan
+    # --- MODIFICATION END ---
+
+    # Validate mandatory columns (now outcome cols should exist, possibly as NaN)
     req = {"game_id", "game_date_et", "home_team_id", "away_team_id", _HS, _AS, _HH, _AH, _HE, _AE}
     missing = req.difference(out.columns)
     if missing:
-        logger.error(f"Missing required columns: {sorted(missing)}")
+        # This error should ideally not be hit now for the outcome columns.
+        # If it is, it means other fundamental columns like 'game_id' are missing from input.
+        logger.error(f"Rolling.transform: Missing required columns: {sorted(missing)}")
         logger.setLevel(orig_level)
-        return df
+        return df # Return original df on error
 
     # Clean/parse dates
     out["_gdate"] = pd.to_datetime(out["game_date_et"], errors="coerce").dt.tz_localize(None)
     out.dropna(subset=["_gdate"], inplace=True)
     if out.empty:
-        logger.warning("All rows dropped due to bad dates.")
-        out.drop(columns=["_gdate"], inplace=True, errors="ignore")
+        logger.warning("Rolling.transform: All rows dropped due to bad dates in 'game_date_et'.")
+        # out.drop(columns=["_gdate"], inplace=True, errors="ignore") # _gdate already dropped implicitly if out is empty
         logger.setLevel(orig_level)
-        return out
+        return pd.DataFrame(columns=df.columns) # Return empty df with original columns
 
     # Normalise team ids
     out["home_norm"] = out["home_team_id"].apply(normalize_team_name)
@@ -128,30 +128,40 @@ def transform(
 
     # Build long table (team, stat, value)
     recs: list[dict[str, Any]] = []
-    for _, r in out.iterrows():
-        for side, team in (("home", "home_norm"), ("away", "away_norm")):
-            tnorm = r[team]
+    for _, r in out.iterrows(): # 'out' now has _HS, _AS etc. (as NaN for upcoming games)
+        for side, team_norm_col in (("home", "home_norm"), ("away", "away_norm")):
+            tnorm = r[team_norm_col]
             for gstat, (hcol, acol) in stat_map.items():
-                value = r[hcol] if side == "home" else r[acol]
+                raw_value = r[hcol] if side == "home" else r[acol]
+                # pd.to_numeric(np.nan, errors="coerce") is np.nan
+                value = pd.to_numeric(raw_value, errors="coerce") 
                 recs.append({
                     "game_id": r["game_id"],
                     "team_norm": tnorm,
-                    "game_date": r["_gdate"],
+                    "game_date": r["_gdate"], # Using the cleaned _gdate
                     "stat": gstat,
-                    "value": pd.to_numeric(value, errors="coerce"),
+                    "value": value,
                 })
-    long_df = pd.DataFrame.from_records(recs).dropna(subset=["value"])
+    
+    long_df = pd.DataFrame.from_records(recs)
+    # This .dropna will remove all rows corresponding to upcoming_df games
+    # if their 'value' (from scores, hits, errors) became NaN.
+    long_df.dropna(subset=["value"], inplace=True) 
+    
     if long_df.empty:
-        logger.warning("No stat rows after cleaning; returning input.")
+        logger.warning("Rolling.transform: No valid stat rows after attempting to build long_df (likely due to input df having no historical outcomes or all NaNs for outcome columns). Returning input df without rolling features.")
         out.drop(columns=["_gdate", "home_norm", "away_norm"], inplace=True, errors="ignore")
         logger.setLevel(orig_level)
-        return out
+        return out # Return 'out' which is df + potentially NaN outcome cols + no new rolling features
 
+    # Sort for correct rolling calculation (critical for shift logic)
     long_df.sort_values(["team_norm", "stat", "game_date", "game_id"], inplace=True, kind="mergesort", ignore_index=True)
 
     # Compute rolling stats
     for w in window_sizes:
         min_p = max(1, w // 2)
+        # Groupby and transform using _lagged_rolling_stat
+        # Ensure 'observed=True' if pandas version supports/requires for new behavior with categoricals
         long_df[f"mean_{w}"] = long_df.groupby(["team_norm", "stat"], observed=True)["value"].transform(
             lambda s: _lagged_rolling_stat(s, w, min_p, "mean"))
         long_df[f"std_{w}"] = long_df.groupby(["team_norm", "stat"], observed=True)["value"].transform(
@@ -162,10 +172,14 @@ def transform(
                 col = f"{typ}_{w}"
                 imp_col = f"{col}_imputed"
                 long_df[imp_col] = long_df[col].isna()
-                def _fill(r):
-                    key = r["stat"] if typ == "mean" else f"{r['stat']}_std"
-                    return r[col] if pd.notna(r[col]) else DEFAULTS.get(key, 0.0)
+                def _fill(r_long_df_row): # Renamed variable for clarity
+                    # Ensure 'stat' column is used for lookup as in original
+                    key = r_long_df_row["stat"] if typ == "mean" else f"{r_long_df_row['stat']}_std"
+                    default_val = DEFAULTS.get(key, 0.0) # Use a sensible default, 0.0 is common
+                    # Make sure r_long_df_row[col] is the value from the current row being applied
+                    return r_long_df_row[col] if pd.notna(r_long_df_row[col]) else default_val
                 long_df[col] = long_df.apply(_fill, axis=1)
+
 
     # Pivot wide per game/team
     pivots: list[pd.DataFrame] = []
