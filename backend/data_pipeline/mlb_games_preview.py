@@ -199,9 +199,16 @@ def propagate_handedness_to_historical(target_date: date) -> None:
     """
     Copy home/away starter handedness from mlb_game_schedule into
     mlb_historical_game_stats for all games on target_date.
+    If any handedness is missing, force a patch‐scrape (update_pitchers_for_date)
+    and then re‐attempt. Warn if it’s still missing.
     """
     supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    iso = target_date.isoformat()
+    iso = target_date.isoformat()  # "YYYY-MM-DD"
+
+    # 0) First, patch schedule for target_date so that handedness is set (if needed)
+    #    This ensures mlb_game_schedule rows have L/R before we copy to history.
+    update_pitchers_for_date(target_date)
+
     # 1) fetch schedule rows for that date
     resp = (
         supa.table("mlb_game_schedule")
@@ -209,15 +216,32 @@ def propagate_handedness_to_historical(target_date: date) -> None:
             .eq("game_date_et", iso)
             .execute()
     )
-    for g in resp.data or []:
+
+    if not resp.data:
+        print(f"[WARN] No schedule rows found for {iso}; skipping propagate_handedness_to_historical.")
+        return
+
+    for g in resp.data:
+        game_id = g.get("game_id")
+        home_hand: Optional[str] = g.get("home_probable_pitcher_handedness")
+        away_hand: Optional[str] = g.get("away_probable_pitcher_handedness")
+
+        # 2) If either handedness is None/empty/invalid, log and continue
+        #    (we already did a scrape above, so this is a true failure)
+        if home_hand not in ("L", "R"):
+            print(f"[WARN] Game {game_id}: home handedness is '{home_hand}'. Expected 'L' or 'R'.")
+        if away_hand not in ("L", "R"):
+            print(f"[WARN] Game {game_id}: away handedness is '{away_hand}'. Expected 'L' or 'R'.")
+
         payload = {
-            "home_starter_pitcher_handedness": g["home_probable_pitcher_handedness"],
-            "away_starter_pitcher_handedness": g["away_probable_pitcher_handedness"],
+            "home_starter_pitcher_handedness": home_hand if home_hand in ("L", "R") else None,
+            "away_starter_pitcher_handedness": away_hand if away_hand in ("L", "R") else None,
             "updated_at": dt_datetime.now(UTC).isoformat()
         }
+
         supa.table("mlb_historical_game_stats") \
             .update(payload) \
-            .eq("game_id", g["game_id"]) \
+            .eq("game_id", game_id) \
             .execute()
 
 def run_handedness_aggregation_rpc(season: int) -> None:
@@ -587,6 +611,8 @@ def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Option
     """Always use Selenium scraper now."""
     return scrape_fangraphs_probables(base_date)
 
+from dateutil import parser as dateutil_parser
+
 def update_pitchers_for_date(target_date: date) -> int:
     """
     For each game on target_date, assign Fangraphs pitchers in order:
@@ -596,10 +622,13 @@ def update_pitchers_for_date(target_date: date) -> int:
     supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     iso = target_date.isoformat()
 
+    # 1) grab every schedule‐row for that ET date
     resp = (
         supa.table(SUPABASE_TABLE_NAME)
-            .select("game_id, home_team_name, away_team_name, scheduled_time_utc, "
-                    "home_probable_pitcher_name, away_probable_pitcher_name")
+            .select(
+                "game_id, scheduled_time_utc, home_team_name, away_team_name, "
+                "home_probable_pitcher_name, away_probable_pitcher_name"
+            )
             .eq("game_date_et", iso)
             .execute()
     )
@@ -611,46 +640,57 @@ def update_pitchers_for_date(target_date: date) -> int:
     fg_lookup = get_probables_lookup(target_date)
     updated = 0
 
-    # Group games by team and sort by scheduled_time_utc
-    games_by_home = defaultdict(list)
-    games_by_away = defaultdict(list)
+    from dateutil import parser as dateutil_parser
+
     for g in games:
-        games_by_home[g["home_team_name"]].append(g)
-        games_by_away[g["away_team_name"]].append(g)
-    for grp in games_by_home.values():
-        grp.sort(key=lambda x: x.get("scheduled_time_utc") or "")
-    for grp in games_by_away.values():
-        grp.sort(key=lambda x: x.get("scheduled_time_utc") or "")
+        game_id = g["game_id"]
+        scheduled_time_utc = g.get("scheduled_time_utc")
+        if not scheduled_time_utc:
+            # Nothing to do if there’s no scheduled_time_utc
+            continue
 
-    # Patch home pitchers
-    for team, grp in games_by_home.items():
-        norm = normalize_team_name(team)
-        pitchers = fg_lookup.get((iso, norm), [])
-        for idx, g in enumerate(grp):
-            if idx < len(pitchers):
-                p = pitchers[idx]
-                payload = {
-                    "home_probable_pitcher_name": p["name"],
-                    "home_probable_pitcher_handedness": p["handedness"],
-                    "updated_at": dt.now(UTC).isoformat()
-                }
-                supa.table(SUPABASE_TABLE_NAME).update(payload).eq("game_id", g["game_id"]).execute()
-                updated += 1
+        # ───── Check “has this game already started (in ET)?”
+        try:
+            game_dt_utc = dateutil_parser.isoparse(scheduled_time_utc)
+            game_dt_et = game_dt_utc.astimezone(ET_ZONE)
+            now_et = dt_datetime.now(ET_ZONE)
 
-    # Patch away pitchers
-    for team, grp in games_by_away.items():
-        norm = normalize_team_name(team)
-        pitchers = fg_lookup.get((iso, norm), [])
-        for idx, g in enumerate(grp):
-            if idx < len(pitchers):
-                p = pitchers[idx]
-                payload = {
-                    "away_probable_pitcher_name": p["name"],
-                    "away_probable_pitcher_handedness": p["handedness"],
-                    "updated_at": dt.now(UTC).isoformat()
-                }
-                supa.table(SUPABASE_TABLE_NAME).update(payload).eq("game_id", g["game_id"]).execute()
-                updated += 1
+            # If current ET time is at or past game_dt_et, skip this row entirely
+            if now_et >= game_dt_et:
+                # e.g. print(f"[INFO] Skipping game {game_id}; already started at {game_dt_et}")
+                continue
+        except Exception as e:
+            # If for some reason we can’t parse the timestamp, skip it
+            print(f"[WARN] Couldn't parse scheduled_time_utc '{scheduled_time_utc}' → {e}")
+            continue
+
+        # ───── At this point, we know the game is still in the future.
+        # We can safely scrape Fangraphs and patch home/away pitchers:
+
+        norm_home = normalize_team_name(g["home_team_name"])
+        pitchers_home = fg_lookup.get((iso, norm_home), [])
+        if pitchers_home:
+            p = pitchers_home[0]
+            payload = {
+                "home_probable_pitcher_name": p["name"],
+                "home_probable_pitcher_handedness": p["handedness"],
+                "updated_at": dt_datetime.now(UTC).isoformat()
+            }
+            supa.table(SUPABASE_TABLE_NAME).update(payload).eq("game_id", game_id).execute()
+            updated += 1
+
+        norm_away = normalize_team_name(g["away_team_name"])
+        pitchers_away = fg_lookup.get((iso, norm_away), [])
+        if pitchers_away:
+            p2 = pitchers_away[0]
+            payload2 = {
+                "away_probable_pitcher_name": p2["name"],
+                "away_probable_pitcher_handedness": p2["handedness"],
+                "updated_at": dt_datetime.now(UTC).isoformat()
+            }
+            supa.table(SUPABASE_TABLE_NAME).update(payload2).eq("game_id", game_id).execute()
+            updated += 1
+
 
     print(f"--- Done: {updated} updated. ---")
     return updated
@@ -775,6 +815,9 @@ if __name__ == "__main__":
     today     = dt_datetime.now(ET_ZONE).date()
     yesterday = today - timedelta(days=1)
 
+    # Step 0: Scrape yesterday’s pitchers and patch schedule
+    update_pitchers_for_date(yesterday)
+
     # Step 1: Copy yesterday’s handedness into historical stats
     propagate_handedness_to_historical(yesterday)
 
@@ -787,9 +830,12 @@ if __name__ == "__main__":
     # Step 4: Scrape & patch today’s probable pitchers
     update_pitchers_for_date(today)
 
+    # ← NEW: Immediately copy today’s (just-patched) handedness into history
+    propagate_handedness_to_historical(today)
+
     # Step 5: Aggregate LHP/RHP splits into team stats
     season = today.year
-    print(f"Running handedness‐split aggregation for season {season}")
+    print(f"Running handedness-split aggregation for season {season}")
     run_handedness_aggregation_rpc(season)
 
     print("MLB Games Preview Script finished.")

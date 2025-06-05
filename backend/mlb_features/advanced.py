@@ -115,111 +115,161 @@ def _attach_vs_hand(
     df_to_modify: pd.DataFrame,
     team_col_name_in_df: str,
     opp_hand_col_name_in_df: str,
-    hist_lookup_df: pd.DataFrame,
-    new_col_name_base: str, # <<<< THIS IS THE PARAMETER
+    hist_lookup_df: pd.DataFrame,  # Indexed by unique 'team_norm'
+    new_col_name_base: str,
     hist_stat_vs_lhp: str,
     hist_stat_vs_rhp: str,
     defaults_key: str,
     fallback_value: float,
-    flag_imputations: bool
+    flag_imputations: bool,
+    season_to_lookup: Optional[int] = None
 ) -> pd.DataFrame:
-    logger.debug(f"_attach_vs_hand: Creating '{new_col_name_base}' for team col '{team_col_name_in_df}' vs opp_hand_col '{opp_hand_col_name_in_df}'.")
+    """
+    Attaches offense‐vs‐pitcher‐hand feature. For each row, look at that team's historical
+    stat vs LHP or vs RHP based on the opponent's hand. If missing → default.
+    """
+    # --- START: New Debug Log ---
+    logger.debug(
+        #f"_attach_vs_hand ENTRY: new_col_name_base='{new_col_name_base}', "
+        f"team_col_name_in_df='{team_col_name_in_df}', opp_hand_col_name_in_df='{opp_hand_col_name_in_df}'. "
+        f"Columns in df_to_modify: {df_to_modify.columns.tolist()}"
+    )
+    if opp_hand_col_name_in_df in df_to_modify.columns:
+        logger.debug(f"Sample of input opp_hand_col ('{opp_hand_col_name_in_df}') before processing:\n{df_to_modify[[opp_hand_col_name_in_df]].head().to_string()}")
+    else:
+        logger.debug(f"Input opp_hand_col ('{opp_hand_col_name_in_df}') is NOT in df_to_modify.columns upon entry.")
+    # --- END: New Debug Log ---
 
-    # Guard: If the primary team column itself is missing, we can't do lookups.
-    # new_col_name_base IS defined here as it's a function parameter.
     if team_col_name_in_df not in df_to_modify.columns:
         logger.error(
-            f"_attach_vs_hand: Essential team column '{team_col_name_in_df}' not found in df_to_modify for creating '{new_col_name_base}'. " # Using param here is fine
-            "This feature will be populated with defaults."
+            f"Missing team column '{team_col_name_in_df}' for _attach_vs_hand '{new_col_name_base}'."
         )
         default_to_use = MLB_DEFAULTS.get(defaults_key, fallback_value)
-        
-        # Assign default to the column named by new_col_name_base
-        df_to_modify[new_col_name_base] = default_to_use # Use new_col_name_base
-        df_to_modify[new_col_name_base] = pd.to_numeric(df_to_modify[new_col_name_base], errors='coerce').fillna(default_to_use).astype(float)
-
+        logger.debug(f"_attach_vs_hand: Using default_to_use = {default_to_use} for key '{defaults_key}' (fallback {fallback_value})")
+        df_to_modify[new_col_name_base] = default_to_use
         if flag_imputations:
-            # Assign True to the imputation flag column named based on new_col_name_base
-            df_to_modify[f"{new_col_name_base}_imputed"] = True 
-            df_to_modify[f"{new_col_name_base}_imputed"] = df_to_modify[f"{new_col_name_base}_imputed"].astype(bool).astype(int)
-        return df_to_modify # Correctly return after setting defaults
-    # Ensure opposing hand column exists; if not, create it and fill with a placeholder that becomes "UNKNOWN_HAND"
+            df_to_modify[f"{new_col_name_base}_imputed"] = True
+        df_to_modify[new_col_name_base] = (
+            pd.to_numeric(df_to_modify[new_col_name_base], errors="coerce")
+              .fillna(default_to_use)
+              .astype(float)
+        )
+        return df_to_modify
+
     if opp_hand_col_name_in_df not in df_to_modify.columns:
         logger.warning(
-            f"_attach_vs_hand: Opposing-hand column '{opp_hand_col_name_in_df}' was missing for '{new_col_name_base}'. "
-            "Creating it and defaulting its values to UNKNOWN_HAND for processing."
+            f"Opposing‐hand column '{opp_hand_col_name_in_df}' missing for _attach_vs_hand '{new_col_name_base}'. "
+            "Defaulting to UNKNOWN_HAND for all rows by creating the column." # Clarified log
         )
-        df_to_modify[opp_hand_col_name_in_df] = "" # This will become "UNKNOWN_HAND" below
+        df_to_modify[opp_hand_col_name_in_df] = "UNKNOWN_HAND" # Ensure column exists before astype
 
     normalized_team_ids = df_to_modify[team_col_name_in_df].apply(_safe_norm)
     
-    # Process opponent_hands: convert to string, upper, replace "" with "UNKNOWN_HAND", then fill actual NaNs
+    # --- START: Modified opponent_hands processing ---
     opponent_hands = (
-        df_to_modify[opp_hand_col_name_in_df] # Column is now guaranteed to exist
-          .astype(str)
-          .str.upper()
-          .replace("", "UNKNOWN_HAND") # Ensure empty strings become UNKNOWN_HAND
-          .fillna("UNKNOWN_HAND")      # Ensure NaNs become UNKNOWN_HAND
+        df_to_modify[opp_hand_col_name_in_df]
+        .astype(str)
+        .str.upper() # Converts 'l', 'r' to 'L', 'R'; 'none' to 'NONE'
+        .replace("", "UNKNOWN_HAND")
+        .replace("NONE", "UNKNOWN_HAND") # ADD THIS
+        .replace("NULL", "UNKNOWN_HAND") # ADD THIS (if 'NULL' string might appear)
+        .fillna("UNKNOWN_HAND") 
     )
-    unknown_hand_count = (opponent_hands == "UNKNOWN_HAND").sum()
-    if unknown_hand_count > 0 and unknown_hand_count < len(df_to_modify) : # Log only if some, but not all, are unknown
-        logger.debug(f"_attach_vs_hand for '{new_col_name_base}': {unknown_hand_count}/{len(df_to_modify)} games will use UNKNOWN opponent hand logic.")
-    elif unknown_hand_count == len(df_to_modify):
-        logger.warning(f"_attach_vs_hand for '{new_col_name_base}': ALL {len(df_to_modify)} games have UNKNOWN opponent hand. Feature will rely heavily on defaults.")
-
+    logger.debug(f"Sample of processed 'opponent_hands' Series (first 5 values): {opponent_hands.head().tolist()}")
+    # --- END: Modified opponent_hands processing ---
 
     default_to_use = MLB_DEFAULTS.get(defaults_key, fallback_value)
     # Initialize as NumPy arrays for direct indexed assignment
-    calculated_values_arr = np.full(len(df_to_modify), default_to_use, dtype=float) 
-    imputation_flags_arr = np.full(len(df_to_modify), True, dtype=bool)     
+    calculated_values_arr = np.full(len(df_to_modify), default_to_use, dtype=float)
+    imputation_flags_arr = np.full(len(df_to_modify), True, dtype=bool)
 
-    if not hist_lookup_df.empty and hist_lookup_df.index.name == "team_norm":
-        for i, (team_norm, opp_hand_val) in enumerate(zip(normalized_team_ids, opponent_hands)):
-            val_for_row_iteration = np.nan # Default for this iteration if no match
+    # --- START: Modified loop for indexed assignment ---
+    for i, (team_norm, opp_hand_val) in enumerate(zip(normalized_team_ids, opponent_hands)):
+        logger.debug(f"Loop Iteration {i}: team_norm='{team_norm}', opp_hand_val='{opp_hand_val}' (type: {type(opp_hand_val)})")
+        val_for_row = np.nan  # Reset for each row
+        imputed_this_row = True # Assume imputed until a value is found
 
-            if team_norm in hist_lookup_df.index:
-                stat_col_to_use: Optional[str] = None
-                if opp_hand_val == "L" and hist_stat_vs_lhp in hist_lookup_df.columns:
-                    stat_col_to_use = hist_stat_vs_lhp
-                elif opp_hand_val == "R" and hist_stat_vs_rhp in hist_lookup_df.columns:
-                    stat_col_to_use = hist_stat_vs_rhp
-                # If opp_hand_val is "UNKNOWN_HAND", stat_col_to_use remains None, 
-                # leading to default_to_use for val_for_row_iteration.
+        if not hist_lookup_df.empty and team_norm in hist_lookup_df.index:
+            stat_col_to_use: Optional[str] = None
+            if opp_hand_val == "L" and hist_stat_vs_lhp in hist_lookup_df.columns:
+                stat_col_to_use = hist_stat_vs_lhp
+            elif opp_hand_val == "R" and hist_stat_vs_rhp in hist_lookup_df.columns:
+                stat_col_to_use = hist_stat_vs_rhp
+            elif opp_hand_val == "UNKNOWN_HAND": # Optional: Handle UNKNOWN_HAND explicitly if you have a general stat
+                # Example: if you had a 'season_avg_runs_overall' column to use as a fallback here
+                # This part is conceptual; current logic correctly falls to default_to_use if L/R specific not found
+                logger.debug(f"Opponent hand is UNKNOWN_HAND for team_norm {team_norm}. Specific L/R lookup won't occur.")
+                pass # Will use default_to_use unless a specific UNKNOWN_HAND stat column exists
 
-                if stat_col_to_use:
+            if stat_col_to_use:
+                try:
                     looked_up_val = hist_lookup_df.at[team_norm, stat_col_to_use]
                     
-                    # Your ValueError FIX (handles if .at returns a Series due to non-unique index)
                     if isinstance(looked_up_val, pd.Series):
-                        logger.debug(f"_attach_vs_hand: Duplicate index '{team_norm}' found in hist_lookup_df for col '{stat_col_to_use}'. Taking first non-NaN value.")
-                        valid_series_values = looked_up_val.dropna()
-                        looked_up_val = valid_series_values.iloc[0] if not valid_series_values.empty else np.nan
+                        # ... (handle series)
+                        non_na_values = looked_up_val.dropna()
+                        if not non_na_values.empty:
+                            looked_up_val = non_na_values.iloc[0]
+                        else:
+                            looked_up_val = np.nan
                     
+                    # NOW, 'season_to_lookup' (the function parameter) IS IN SCOPE HERE
                     if pd.notna(looked_up_val):
-                        val_for_row_iteration = float(looked_up_val) # Ensure float
-                        imputation_flags_arr[i] = False # Successfully looked up
-            
-            calculated_values_arr[i] = val_for_row_iteration if pd.notna(val_for_row_iteration) else default_to_use
-    else:
-        logger.warning(
-            f"_attach_vs_hand for '{new_col_name_base}': hist_lookup_df is empty or not indexed by 'team_norm'. "
-            "All values for this feature will be the default."
-        )
-        # calculated_values_arr and imputation_flags_arr remain initialized with defaults/True
+                        is_historical_team_vs_hand_stat = (stat_col_to_use == hist_stat_vs_lhp or stat_col_to_use == hist_stat_vs_rhp)
+                        
+                        # Use the season_to_lookup parameter from the function signature
+                        if is_historical_team_vs_hand_stat and \
+                           looked_up_val == 0.0 and \
+                           season_to_lookup is not None and \
+                           season_to_lookup < 2025: # Make sure 2025 is your actual cutoff year
+                            
+                            logger.debug(f"For {team_norm}, stat {stat_col_to_use} in season {season_to_lookup}, found 0.0. "
+                                         "Treating as 'data not tracked' for pre-2025. Will use default.")
+                            val_for_row = np.nan 
+                            imputed_this_row = True
+                        else:
+                            val_for_row = looked_up_val
+                            imputed_this_row = False
+                    else:
+                        logger.debug(f"Looked up value for {team_norm}, {stat_col_to_use if stat_col_to_use else 'N/A'} is NaN. Will use default: {default_to_use}")
 
-    # Assign the calculated values (now as a Series) to the DataFrame
-    # This correctly handles the conversion from NumPy array to Pandas Series with index.
-    calculated_series = pd.Series(calculated_values_arr, index=df_to_modify.index, name=new_col_name_base)
-    df_to_modify[new_col_name_base] = pd.to_numeric(calculated_series, errors='coerce').fillna(default_to_use).astype(float)
+
+                        # val_for_row remains np.nan (its initial state in the loop for this iteration)
+                        # imputed_this_row remains True (its in
+                except KeyError:
+                    logger.warning(
+                        f"KeyError accessing hist_lookup_df.at['{team_norm}', '{stat_col_to_use}']."
+                        "This might indicate team_norm not in index or column not present after checks. Using default."
+                    )
+                    # val_for_row remains np.nan, will use default_to_use
+                except Exception as e:
+                    logger.error(f"Unexpected error during hist_lookup_df.at access for {team_norm}, {stat_col_to_use}: {e}. Using default.")
+                    # val_for_row remains np.nan, will use default_to_use
+            else:
+                 # This path is taken if opp_hand_val is not 'L' or 'R' with corresponding valid columns,
+                 # or if hist_stat_vs_lhp/rhp columns themselves are missing from hist_lookup_df.
+                 logger.debug(f"No specific stat column to use for team_norm {team_norm} and opp_hand_val {opp_hand_val} (L/R cols: {hist_stat_vs_lhp in hist_lookup_df.columns}/{hist_stat_vs_rhp in hist_lookup_df.columns}). Will use default.")
+
+
+        # Assign to the pre-allocated arrays
+        calculated_values_arr[i] = val_for_row if pd.notna(val_for_row) else default_to_use
+        if flag_imputations:
+            imputation_flags_arr[i] = imputed_this_row
+    # --- END: Modified loop for indexed assignment ---
+
+    # Assign the NumPy arrays (converted to Series) to the DataFrame
+    # Ensure pd.to_numeric is still applied to handle any non-float types that might sneak in, though dtype=float in np.full helps
+    df_to_modify[new_col_name_base] = pd.to_numeric(
+        pd.Series(calculated_values_arr, index=df_to_modify.index, name=new_col_name_base),
+        errors='coerce'
+    ).fillna(default_to_use).astype(float)
 
     if flag_imputations:
         df_to_modify[f"{new_col_name_base}_imputed"] = pd.Series(
-            imputation_flags_arr, index=df_to_modify.index, dtype=bool
-        ).astype(int) # Convert final boolean flag to int
+            imputation_flags_arr, index=df_to_modify.index, name=f"{new_col_name_base}_imputed", dtype=bool
+        ) # Ensure boolean type for imputation flags
 
     return df_to_modify
-
-
 
 def transform(
     df: pd.DataFrame,
@@ -245,6 +295,8 @@ def transform(
     hist_vs_rhp_param: str = hist_vs_rhp_default,
     drop_input_team_cols: bool = True 
 ) -> pd.DataFrame:
+    # --- START: New Debug Log for received season_to_lookup ---
+    logger.debug(f"advanced.transform ENTRY: Received season_to_lookup = {season_to_lookup!r}, flag_imputations = {flag_imputations}, debug = {debug}")
 
     orig_level = logger.level
     if debug:
@@ -288,13 +340,27 @@ def transform(
         hist_copy = historical_team_stats_df.copy()
         required_hist_cols_for_lookup = [hist_season_col_param, hist_team_col_param] # Base requirements
 
+        logger.debug(f"ADVANCED.TRANSFORM: hist_copy columns before season_to_lookup filter: {hist_copy.columns.tolist()}")
+        logger.debug(f"ADVANCED.TRANSFORM: hist_season_col_param = '{hist_season_col_param}'")
+
+        logger.debug(f"ADVANCED.TRANSFORM: PRE-FILTER CHECK: season_to_lookup = {season_to_lookup!r} (type: {type(season_to_lookup)})")
+        logger.debug(f"ADVANCED.TRANSFORM: PRE-FILTER CHECK: hist_season_col_param = '{hist_season_col_param}' (type: {type(hist_season_col_param)})")
+        if 'hist_copy' in locals() and hist_copy is not None and not hist_copy.empty: # Check if hist_copy is defined and not empty
+            logger.debug(f"ADVANCED.TRANSFORM: PRE-FILTER CHECK: hist_copy columns: {hist_copy.columns.tolist()}")
+            logger.debug(f"ADVANCED.TRANSFORM: PRE-FILTER CHECK: Does '{hist_season_col_param}' exist in hist_copy.columns? {(hist_season_col_param in hist_copy.columns)}")
+            if hist_season_col_param in hist_copy.columns:
+                logger.debug(f"ADVANCED.TRANSFORM: PRE-FILTER CHECK: Sample of hist_copy['{hist_season_col_param}'] before to_numeric:\n{hist_copy[hist_season_col_param].head().to_string()}")
+        elif 'hist_copy' in locals() and (hist_copy is None or hist_copy.empty):
+             logger.debug(f"ADVANCED.TRANSFORM: PRE-FILTER CHECK: hist_copy is defined but is None or empty.")
+        else:
+            logger.debug(f"ADVANCED.TRANSFORM: PRE-FILTER CHECK: hist_copy is not yet defined or encountered an issue.")
+
+
         # Filter to specific season if 'season_to_lookup' is provided and valid
-        if season_to_lookup is not None and isinstance(season_to_lookup, int) and \
-           hist_season_col_param in hist_copy.columns:
-            logger.debug(f"ADVANCED.TRANSFORM: Filtering historical_team_stats_df to season_to_lookup = {season_to_lookup}")
-            # Ensure season column is numeric before comparison
-            hist_copy[hist_season_col_param] = pd.to_numeric(hist_copy[hist_season_col_param], errors='coerce')
-            hist_copy = hist_copy[hist_copy[hist_season_col_param] == season_to_lookup]
+        if season_to_lookup is not None and isinstance(season_to_lookup, (int, np.integer)) and \
+        hist_season_col_param in hist_copy.columns:
+            hist_copy[hist_season_col_param] = pd.to_numeric(hist_copy[hist_season_col_param], errors="coerce")
+            hist_copy = hist_copy[hist_copy[hist_season_col_param] == season_to_lookup].copy()
         elif season_to_lookup is not None:
             logger.warning(f"ADVANCED.TRANSFORM: season_to_lookup ({season_to_lookup}) provided, but "
                            f"'{hist_season_col_param}' not in historical_team_stats_df or season_to_lookup not int. "
@@ -355,15 +421,19 @@ def transform(
 
     # Offense vs Pitcher Hand (using parameters for hand col names and hist_ stat names)
     result = _attach_vs_hand(
-        result, home_team_col_param, away_hand_col_param, hist_filtered_indexed,
-        "h_team_off_avg_runs_vs_opp_hand", hist_vs_lhp_param, hist_vs_rhp_param,
-        "mlb_avg_runs_vs_hand_offense", 4.5, flag_imputations, # More specific default key
-    )
-    result = _attach_vs_hand(
-        result, away_team_col_param, home_hand_col_param, hist_filtered_indexed,
-        "a_team_off_avg_runs_vs_opp_hand", hist_vs_lhp_param, hist_vs_rhp_param,
-        "mlb_avg_runs_vs_hand_offense", 4.5, flag_imputations, # More specific default key
-    )
+    result,
+    home_team_col_param,
+    away_hand_col_param,
+    hist_filtered_indexed, # This is now correctly 2024 data
+    "h_team_off_avg_runs_vs_opp_hand",
+    hist_vs_lhp_param,
+    hist_vs_rhp_param,
+    "mlb_avg_runs_vs_hand",
+    4.5,
+    flag_imputations,
+    season_to_lookup=season_to_lookup # Pass it down
+)
+
 
     # ... (Cleanup: drop_input_team_cols, convert _imputed flags to int, as before) ...
     if not flag_imputations:

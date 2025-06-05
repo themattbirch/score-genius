@@ -1,3 +1,5 @@
+# backend/mlb_features/engine.py
+
 import logging
 import time
 from inspect import signature
@@ -287,8 +289,28 @@ def run_mlb_feature_pipeline(
                     )
                     continue
                 kwargs_for_module["historical_team_stats_df"] = team_stats_df_context
-                if season_hint is not None and _supports_kwarg(fn, "season_to_lookup"):
-                    kwargs_for_module["season_to_lookup"] = season_hint
+                                
+                # --- START: EXPLICITLY SET season_to_lookup for advanced.transform ---
+                if _supports_kwarg(fn, "season_to_lookup"):
+                    # For upcoming games in 'game_season', use historical stats from 'game_season - 1'.
+                    # This assumes 'game_season' is the current season of the games being processed.
+                    lookup_season_for_advanced = game_season - 1 
+                    kwargs_for_module["season_to_lookup"] = lookup_season_for_advanced
+                    logger.info(f"ENGINE_ADV_CONFIG: Setting 'season_to_lookup' for advanced.transform to: {lookup_season_for_advanced}")
+                else:
+                    # This case should ideally not happen if advanced.transform has the param.
+                    logger.warning(f"'season_to_lookup' not supported by {module_name}.transform, though expected. Advanced features might use default season logic.")
+                    # If not supported, ensure 'season_to_lookup' is not in kwargs if fn can't handle it.
+                    if "season_to_lookup" in kwargs_for_module:
+                        del kwargs_for_module["season_to_lookup"]
+                # --- END: EXPLICITLY SET season_to_lookup for advanced.transform ---
+
+                # The original extra_kwargs.get("season_to_lookup") logic for 'advanced' module's 
+                # 'season_to_lookup' is now replaced by the block above to prioritize game_season - 1.
+                # If you need an override mechanism via extra_kwargs, it would need to be structured differently,
+                # e.g., check extra_kwargs first and only use game_season - 1 if not provided there.
+                # For now, this ensures game_season - 1 is the primary driver.
+
                 kwargs_for_module.update(
                     {
                         "home_team_col_param": "home_team_id",
@@ -296,12 +318,13 @@ def run_mlb_feature_pipeline(
                         "home_hand_col_param": "home_starter_pitcher_handedness",
                         "away_hand_col_param": "away_starter_pitcher_handedness",
                         "flag_imputations": flag_imputations,
+                        # 'debug' is already in base_kwargs
                     }
                 )
-                # Log presence/absence of handedness columns
-                logger.debug(
-                    f"ENGINE_ADV_PRE_CALL: Columns in input_to_transform_fn for 'advanced': {input_to_transform_fn.columns.tolist()}"
-                )
+                # Log presence/absence of handedness columns (existing good logic)
+                #logger.debug(
+                   # f"ENGINE_ADV_PRE_CALL: Columns in input_to_transform_fn for 'advanced': {input_to_transform_fn.columns.tolist()}"
+               # )
                 for hand_col_check in [
                     "home_starter_pitcher_handedness",
                     "away_starter_pitcher_handedness",
@@ -314,21 +337,29 @@ def run_mlb_feature_pipeline(
                         logger.debug(
                             f"ENGINE_ADV_PRE_CALL: '{hand_col_check}' IS PRESENT. Sample: \n{input_to_transform_fn[[hand_col_check]].head().to_string()}"
                         )
+                
+                # Log the final kwargs being passed
+                logger.debug(f"ENGINE_ADV_PRE_CALL: Final Kwargs being passed to advanced.transform: {kwargs_for_module}")
 
-            elif module_name == "season":
+            elif module_name == "season": # For the 'season' module
                 kwargs_for_module["team_stats_df"] = team_stats_df_context
-                if season_hint is not None and _supports_kwarg(fn, "season_to_lookup"):
-                    kwargs_for_module["season_to_lookup"] = season_hint
+                # Apply a similar explicit logic for 'season' module if it also benefits from game_season - 1
+                # or keep its original extra_kwargs.get("season_to_lookup") logic if that's preferred for it.
+                # For consistency, let's try game_season - 1 for it too, if it supports season_to_lookup.
+                if _supports_kwarg(fn, "season_to_lookup"):
+                    lookup_season_for_season_mod = game_season - 1 # Or just game_season, depending on what 'season' module needs
+                    kwargs_for_module["season_to_lookup"] = lookup_season_for_season_mod
+                    logger.info(f"ENGINE_SEASON_CONFIG: Setting 'season_to_lookup' for {module_name}.transform to: {lookup_season_for_season_mod}")
+                else:
+                    # Fallback to original extra_kwargs logic if you want to maintain that flexibility for the 'season' module
+                    season_hint_season_mod = extra_kwargs.get("season_to_lookup")
+                    if season_hint_season_mod is not None:
+                        if _supports_kwarg(fn, "season_to_lookup"): # Redundant check if outer if handles this
+                           kwargs_for_module["season_to_lookup"] = season_hint_season_mod
+                        # else: already logged if not supported by outer if block for advanced
+                
                 kwargs_for_module["flag_imputations"] = flag_imputations
 
-            elif module_name == "form":
-                kwargs_for_module.update(
-                    {
-                        "home_form_col": form_home_col,
-                        "away_form_col": form_away_col,
-                        "flag_imputations": flag_imputations,
-                    }
-                )
 
             elif module_name == "h2h":
                 kwargs_for_module["historical_df"] = historical_games_df_context
@@ -388,11 +419,6 @@ def run_mlb_feature_pipeline(
                 else:
                     # “Standard” modules simply replace the chunk
                     loop_chunk_for_season = processed_data_from_module
-
-                logger.debug(
-                    f"ENGINE: After module '{module_name}', "
-                    f"loop_chunk_for_season shape for season {game_season} is {loop_chunk_for_season.shape}"
-                )
 
             except Exception as exc:
                 logger.error(

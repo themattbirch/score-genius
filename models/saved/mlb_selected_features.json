@@ -1,5 +1,6 @@
 [
-    "rest_days_home",
+    "home_rolling_errors_by_opponent_mean_15",
+    "home_rolling_hits_for_mean_15",
     "home_rolling_runs_allowed_mean_15",
     "home_rolling_runs_scored_mean_15",
     "home_rolling_errors_by_opponent_mean_15_imputed",
@@ -8,6 +9,7 @@
     "home_rolling_errors_by_opponent_std_15_imputed",
     "home_rolling_errors_by_opponent_mean_30",
     "home_rolling_hits_allowed_mean_30",
+    "home_rolling_hits_for_mean_30",
     "home_rolling_runs_allowed_mean_30",
     "home_rolling_runs_scored_mean_30",
     "home_rolling_errors_by_opponent_mean_30_imputed",
@@ -51,9 +53,10 @@
     "matchup_avg_away_team_runs",
     "matchup_home_team_streak",
     "h_team_hist_HA_win_pct",
+    "h_team_hist_HA_win_pct_imputed",
     "h_team_hist_HA_runs_for_avg",
     "h_team_hist_HA_runs_against_avg",
     "a_team_hist_HA_win_pct",
-    "a_team_hist_HA_runs_for_avg",
+    "a_team_hist_HA_win_pct_imputed",
     "a_team_hist_HA_runs_against_avg"
 ]

@@ -17,9 +17,9 @@ import logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    level=logging.INFO,  # Default to INFO, can be overridden by --debug
+    level=logging.INFO, # Keep this as your default for the root logger
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # Logger for the current script (__main__)
 
 # Define Paths Consistently
 from backend import config
@@ -181,8 +181,6 @@ def load_recent_historical_data(supabase_client: SupabaseClient, days_lookback: 
     final_required_hist_cols = sorted(list(set(temp_cols_list))) # Sort for consistent query string, easier debugging
     select_cols_str = ", ".join(final_required_hist_cols)
     
-    logger.debug(f"Supabase historical game stats SELECT string: {select_cols_str}")
-
     all_historical_data = []
     page_size = 1000
     start_index = 0
@@ -809,12 +807,6 @@ def generate_predictions(
             if 'game_date_et' not in hist_df_mlb.columns: hist_df_mlb['game_date_et'] = pd.to_datetime(hist_df_mlb['game_date'])
             if 'season' not in hist_df_mlb.columns and 'game_date_et' in hist_df_mlb.columns:
                  hist_df_mlb['season'] = hist_df_mlb['game_date_et'].dt.year
-        logger.debug(f"hist_df_mlb columns after final checks: {hist_df_mlb.columns.tolist()}")
-
-    # team_stats_df: Usually just passed as is. No specific column additions needed here typically,
-    # as its structure is defined by load_team_stats_data.
-    if team_stats_df is not None and not team_stats_df.empty:
-        logger.debug(f"team_stats_df is present (shape: {team_stats_df.shape}). Columns: {team_stats_df.columns.tolist()}")
 
 
     # 3. Set DataFrames to None if they are empty (engine.py might expect this)
@@ -854,7 +846,6 @@ def generate_predictions(
         debug=debug_mode, # Passed from prediction.py args
     )
 
-
     if features_df.empty:
         logger.error("PREDICTION_PIPELINE: features_df is empty after run_mlb_feature_pipeline. Aborting.")
         return [], []
@@ -883,6 +874,16 @@ def generate_predictions(
         logger.error("PREDICTION_PIPELINE: No models loaded – aborting.")
         return [], []
 
+    if not features_df.empty and feature_list:
+        ha_split_feats_in_list = [f for f in feature_list if "hist_HA_" in f]
+        if ha_split_feats_in_list:
+            logger.info(f"PREDICTION_DEBUG: Describing HA Split features in features_df (from 2024 data):\n"
+                        f"{features_df[ha_split_feats_in_list].describe().to_string()}")
+        else:
+            logger.info("PREDICTION_DEBUG: No 'hist_HA_' features found in selected feature_list.")
+
+
+
     # Ensure team_stats_df is available in this scope if smart fill-in needs it
     # It should be passed or loaded earlier in generate_predictions
     # For this example, assuming team_stats_df is already loaded and available in the function scope.
@@ -895,8 +896,6 @@ def generate_predictions(
         logger.info(f"PREDICTION_PIPELINE: Using feature_list with {len(feature_list)} features from mlb_selected_features.json.")
         # New PREDICTION_DEBUG logging block:
         logger.info(f"PREDICTION_DEBUG: Number of columns from feature_pipeline (features_df): {len(features_df.columns)}")
-        logger.debug(f"PREDICTION_DEBUG: Full list of columns from features_df (sorted): {sorted(features_df.columns.tolist())}")
-        logger.debug(f"PREDICTION_DEBUG: Full list of features from feature_list (sorted): {sorted(feature_list)}")
         
         missing_feats_set = set(feature_list) - set(features_df.columns)
         
@@ -1242,6 +1241,45 @@ def main():
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
+
+    if args.debug: # Or your equivalent check for debug_mode
+        # 1. Set your application's specific loggers to DEBUG
+        logger.setLevel(logging.DEBUG) # For prediction.py itself (e.g., __main__)
+        logging.getLogger('backend.mlb_features.advanced').setLevel(logging.DEBUG)
+        logging.getLogger('backend.mlb_features.engine').setLevel(logging.DEBUG)
+        # Add any other of your own modules here if you want their DEBUG logs
+        # e.g., logging.getLogger('backend.mlb_features.season').setLevel(logging.DEBUG)
+
+        # 2. Set the ROOT logger's level to DEBUG.
+        # This allows DEBUG messages from your specifically enabled loggers 
+        # (and potentially others if not silenced) to reach the handlers.
+        logging.getLogger().setLevel(logging.DEBUG)
+
+        # 3. Ensure the HANDLERS on the root logger are also processing DEBUG messages.
+        # (basicConfig might have set them to INFO initially if root was INFO)
+        for handler in logging.getLogger().handlers:
+            handler.setLevel(logging.DEBUG)
+
+        # 4. CRITICAL STEP: Silence noisy third-party libraries by setting their loggers
+        #    to a higher level like INFO or WARNING.
+        noisy_library_loggers = [
+            "hpack", 
+            "httpcore", 
+            "httpx", 
+            # "supabase" # Uncomment if supabase client itself is too verbose at DEBUG
+            # Add any other library names that are spamming DEBUG logs
+        ]
+        for lib_name in noisy_library_loggers:
+            logging.getLogger(lib_name).setLevel(logging.INFO) # Or logging.WARNING
+
+        logger.info("DEBUG logging enabled for application modules. Third-party library DEBUG logs are suppressed (set to INFO/WARNING).")
+    
+    else: # If not in debug mode
+        # Ensure your application loggers are at INFO (or their desired non-debug level)
+        logger.setLevel(logging.INFO)
+        logging.getLogger('backend.mlb_features.advanced').setLevel(logging.INFO)
+        logging.getLogger('backend.mlb_features.engine').setLevel(logging.INFO)
+        # No need to adjust library loggers here; they'll follow root (INFO) or their own defaults.
 
     if args.debug:
         logger.setLevel(logging.DEBUG)

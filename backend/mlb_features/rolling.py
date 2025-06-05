@@ -1,3 +1,5 @@
+# backend/mlb_features/rolling.py
+
 """
 Calculates leakage‑free rolling mean and standard deviation features
 for MLB games based on team‑level game statistics.

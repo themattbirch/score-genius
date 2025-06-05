@@ -230,7 +230,6 @@ def transform(
     final_order += [c for c in result.columns if c not in seen]
     result = result[final_order]
 
-    logger.info(f"Completed season.transform; output shape={result.shape}")
     if debug:
         logger.setLevel(orig_level)
     return result
