@@ -19,7 +19,25 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO, # Keep this as your default for the root logger
 )
-logger = logging.getLogger(__name__) # Logger for the current script (__main__)
+logger = logging.getLogger() # Logger for the current script (__main__)
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler("prediction_run.log", mode="w")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s"
+    )
+)
+logger.addHandler(file_handler)
+
+# (Optionally still add a StreamHandler for console, if you want both)
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setLevel(logging.DEBUG)
+stream_handler.setFormatter(file_handler.formatter)
+logger.addHandler(stream_handler)
+
 
 # Define Paths Consistently
 from backend import config
@@ -406,6 +424,35 @@ def load_trained_models(
         raise RuntimeError(f"No MLB models could be loaded from {model_dir}")
     return models, feature_list
 
+# backend/mlb_score_prediction/prediction.py
+
+# ... (other imports and global constants) ...
+
+def categorize_selected_features(feature_list: List[str]) -> Dict[str, List[str]]:
+    """Categorizes features from the selected list."""
+    categorized = {
+        "ha_split": [],
+        "rolling": [],
+        "h2h": [],
+        "imputed_flags": [],
+        "other": [],
+    }
+    if not feature_list:
+        return categorized
+
+    for feature in feature_list:
+        if "hist_HA_" in feature and not feature.endswith("_imputed"):
+            categorized["ha_split"].append(feature)
+        elif "rolling_" in feature and not feature.endswith("_imputed"):
+            categorized["rolling"].append(feature)
+        elif "matchup_" in feature: # Assuming these are your H2H features
+            categorized["h2h"].append(feature)
+        elif feature.endswith("_imputed"):
+            categorized["imputed_flags"].append(feature)
+        else:
+            categorized["other"].append(feature)
+    return categorized
+
 
 # --- Display Summary (MLB specific) ---
 def display_prediction_summary_mlb(preds: List[Dict]) -> None:
@@ -542,6 +589,12 @@ def generate_predictions(
     else:
         logger.warning("'status_short' column not found in hist_df_mlb. Cannot filter by status.")
 
+    assert "home_score" in hist_df_mlb.columns, "Historical DataFrame is missing 'home_score' column!"
+    assert "away_score" in hist_df_mlb.columns, "Historical DataFrame is missing 'away_score' column!"
+    if hist_df_mlb["home_score"].isna().any():
+        raise RuntimeError("Some rows in hist_df_mlb have NaN in 'home_score' after FT‐filter. Rolling will break.")
+    if hist_df_mlb["away_score"].isna().any():
+        raise RuntimeError("Some rows in hist_df_mlb have NaN in 'away_score' after FT‐filter. Rolling will break.")
 
     if hist_df_mlb.empty:
         logger.warning("No completed historical games after filtering. Form calculation might be impaired.")
@@ -1047,9 +1100,111 @@ def generate_predictions(
             "X matrix will be built using all available numeric columns from features_df."
         )
 
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+    # START: NEW DIAGNOSTIC LOGGING CODE TO INSERT
+    # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+
+    if feature_list and not features_df.empty:
+        logger.info("--- Starting Diagnostic Logging for Selected Features (Pre-Imputation to 0.0) ---")
+        
+        # Ensure all selected features are actually in features_df for .describe() to avoid KeyErrors
+        # This check is important because smart fill-in might add columns later if they were completely missing.
+        # Here, we are interested in features *produced by the pipeline or present before smart fill-in*.
+        
+        # Get the intersection of feature_list and features_df.columns to only act on present columns
+        # However, if smart-fill-in has already run and added them, then feature_list should be okay.
+        # The critical part is that this happens *before* X = features_df.reindex(columns=feature_list, fill_value=0.0)
+        
+        # For safety, let's operate on features that are in both feature_list AND features_df.columns
+        # (though after your smart fill-in, all of feature_list SHOULD be in features_df.columns)
+        
+        # Log NaN percentages for ALL selected features that are present in features_df
+        logger.info("NaN Percentages for Selected Features in current features_df batch:")
+        present_selected_features = [f for f in feature_list if f in features_df.columns]
+        if present_selected_features:
+            nan_percentages = features_df[present_selected_features].isnull().mean().sort_values(ascending=False) * 100
+            if nan_percentages.empty:
+                logger.info("No NaNs found in any selected features present in features_df.")
+            else:
+                logger.info(f"\n{nan_percentages[nan_percentages >= 0].to_string()}") # Show all, even 0%
+        else:
+            logger.warning("No selected features were found in features_df columns for NaN percentage logging.")
+
+        # Categorize for targeted .describe()
+        # Ensure you have defined `categorize_selected_features` function earlier in the file
+        categorized_feats = categorize_selected_features(feature_list)
+
+        # HA-Split Features (Selected Ones)
+        selected_ha_split = [f for f in categorized_feats["ha_split"] if f in features_df.columns]
+        if selected_ha_split:
+            logger.info(f"Describing {len(selected_ha_split)} Selected HA-Split Features in features_df batch:")
+            try:
+                logger.info(f"\n{features_df[selected_ha_split].describe().to_string()}")
+            except KeyError as e:
+                logger.error(f"KeyError describing HA-Split features: {e}. Features requested: {selected_ha_split}")
+        else:
+            logger.info("No selected HA-Split features found in features_df to describe.")
+
+        # Rolling Features (Selected Ones - Sample or All)
+        # You might want to sample if there are too many, or describe all if manageable.
+        # Here, we'll describe all selected rolling features found in features_df.
+        selected_rolling = [f for f in categorized_feats["rolling"] if f in features_df.columns]
+        if selected_rolling:
+            logger.info(f"Describing {len(selected_rolling)} Selected Rolling Features in features_df batch:")
+            try:
+                logger.info(f"\n{features_df[selected_rolling].describe().to_string()}")
+            except KeyError as e:
+                 logger.error(f"KeyError describing Rolling features: {e}. Features requested: {selected_rolling}")
+        else:
+            logger.info("No selected Rolling features found in features_df to describe.")
+            
+        # H2H Features (Selected Ones)
+        selected_h2h = [f for f in categorized_feats["h2h"] if f in features_df.columns]
+        if selected_h2h:
+            logger.info(f"Describing {len(selected_h2h)} Selected H2H Features in features_df batch:")
+            try:
+                logger.info(f"\n{features_df[selected_h2h].describe().to_string()}")
+            except KeyError as e:
+                logger.error(f"KeyError describing H2H features: {e}. Features requested: {selected_h2h}")
+        else:
+            logger.info("No selected H2H features found in features_df to describe.")
+            
+        # Imputed Flags (Selected Ones) - usually binary, but describe can still be informative
+        selected_imputed_flags = [f for f in categorized_feats["imputed_flags"] if f in features_df.columns]
+        if selected_imputed_flags:
+            logger.info(f"Describing {len(selected_imputed_flags)} Selected Imputed Flag Features in features_df batch:")
+            try:
+                logger.info(f"\n{features_df[selected_imputed_flags].describe().to_string()}")
+            except KeyError as e:
+                logger.error(f"KeyError describing Imputed Flag features: {e}. Features requested: {selected_imputed_flags}")
+        else:
+            logger.info("No selected Imputed Flag features found in features_df to describe.")
+            
+        # Other Selected Features
+        selected_other = [f for f in categorized_feats["other"] if f in features_df.columns]
+        if selected_other:
+            logger.info(f"Describing {len(selected_other)} Other Selected Features in features_df batch:")
+            try:
+                logger.info(f"\n{features_df[selected_other].describe().to_string()}")
+            except KeyError as e:
+                logger.error(f"KeyError describing Other features: {e}. Features requested: {selected_other}")
+        else:
+            logger.info("No Other selected features found in features_df to describe.")
+            
+        logger.info("--- Finished Diagnostic Logging for Selected Features ---")
+    elif not feature_list:
+        logger.warning("Diagnostic Logging: feature_list is not available. Skipping .describe() and NaN logs.")
+    elif features_df.empty:
+        logger.warning("Diagnostic Logging: features_df is empty. Skipping .describe() and NaN logs.")
+        
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    # END: NEW DIAGNOSTIC LOGGING CODE
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+
+
     # --- Load Ensemble Weights (as in your original script) ---
-    # (Your existing weights loading logic here)
-    # ...
+
     weights = FALLBACK_ENSEMBLE_WEIGHTS_MLB.copy() # Ensure FALLBACK_ENSEMBLE_WEIGHTS_MLB is defined
     wfile = model_dir / ENSEMBLE_WEIGHTS_FILENAME_MLB # Ensure ENSEMBLE_WEIGHTS_FILENAME_MLB is defined
     if wfile.is_file():

@@ -464,8 +464,9 @@ class RidgeScorePredictor(BaseScorePredictor):
             return None
         pred_home, pred_away = predictions
         # MLB runs are non-negative integers
-        pred_home_processed = np.maximum(0, np.round(pred_home)).astype(int)
-        pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
+        pred_home_processed = np.maximum(0.0, pred_home)
+        pred_away_processed = np.maximum(0.0, pred_away)
+
         return pd.DataFrame({'predicted_home_runs': pred_home_processed, 'predicted_away_runs': pred_away_processed}, index=X.index)
 
     def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "RidgeScorePredictor":
@@ -525,8 +526,10 @@ class SVRScorePredictor(BaseScorePredictor):
          if predictions is None: return None
          pred_home, pred_away = predictions
          # MLB runs are non-negative integers
-         pred_home_processed = np.maximum(0, np.round(pred_home)).astype(int)
-         pred_away_processed = np.maximum(0, np.round(pred_away)).astype(int)
+         pred_home_processed = np.maximum(0.0, pred_home)
+         pred_away_processed = np.maximum(0.0, pred_away)
+
+
          return pd.DataFrame({'predicted_home_runs': pred_home_processed, 'predicted_away_runs': pred_away_processed}, index=X.index)
 
     def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "SVRScorePredictor":
@@ -590,8 +593,8 @@ class XGBoostScorePredictor(BaseScorePredictor):
         ph, pa = preds
         # MLB runs are non-negative integers
         return pd.DataFrame({
-            'predicted_home_runs': np.maximum(0, np.round(ph)).astype(int),
-            'predicted_away_runs': np.maximum(0, np.round(pa)).astype(int)
+            'predicted_home_runs': np.maximum(0.0, ph),
+            'predicted_away_runs': np.maximum(0.0, pa)
         }, index=X.index)
 
     def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "XGBoostScorePredictor":
