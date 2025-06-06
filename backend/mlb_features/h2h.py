@@ -8,12 +8,12 @@ Focus
 1.  Accurate H2H statistics based on a defined lookback window of past games.
 2.  Metrics calculated from the perspective of the current game's home team.
 3.  No look-ahead bias (only uses games prior to the current game date).
-4.  Handles missing historical data gracefully using defaults.
+4.  Handles missing historical data gracefully using defaults and imputation flags.
 """
 
 from __future__ import annotations
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -66,22 +66,28 @@ def _safe_norm(val: Any) -> str:
     return norm.replace(" ", "")
 
 
-H2H_PLACEHOLDER_COLS: List[str] = [
+## STRATEGY 1 UPDATE: Define base and imputed column lists separately
+H2H_FEATURE_COLS: List[str] = [
     "matchup_num_games",
     "matchup_avg_run_diff",
     "matchup_home_win_pct",
     "matchup_avg_total_runs",
     "matchup_avg_home_team_runs",
     "matchup_avg_away_team_runs",
-    "matchup_last_game_date",
     "matchup_home_team_streak",
 ]
+H2H_METADATA_COLS: List[str] = ["matchup_last_game_date"]
+H2H_IMPUTED_COLS: List[str] = [f"{c}_imputed" for c in H2H_FEATURE_COLS]
+H2H_ALL_OUTPUT_COLS: List[str] = H2H_FEATURE_COLS + H2H_METADATA_COLS + H2H_IMPUTED_COLS
 
 
 def _default_val(col: str) -> Any:
     """Get default for each placeholder column."""
-    if col == "matchup_last_game_date":
+    if col in H2H_METADATA_COLS:
         return pd.NaT
+    if col in H2H_IMPUTED_COLS:
+        return 1 # Default to True (was imputed)
+    # For feature columns
     return float(MLB_DEFAULTS.get(f"mlb_{col}", MLB_DEFAULTS.get(col.replace("matchup_", ""), 0.0)))
 
 
@@ -92,47 +98,45 @@ def _get_matchup_history_single(
     hist_subset: pd.DataFrame,
     max_games: int = 7,
     debug: bool = False,
-    idx: Optional[Any] = None,  # Changed from Optional[int] to Optional[Any]
-) -> Dict[str, Any]:
+    idx: Optional[Any] = None,
+) -> Tuple[Dict[str, Any], bool]: ## STRATEGY 1 UPDATE: Return a tuple with (stats, was_defaulted_flag)
     """
     Compute H2H stats for one upcoming game, from home team's viewpoint.
     """
-    defaults = {c: _default_val(c) for c in H2H_PLACEHOLDER_COLS}
+    # Note: H2H_ALL_OUTPUT_COLS contains imputed flags, but _default_val handles them.
+    # We only need to generate the base features here.
+    defaults = {c: _default_val(c) for c in (H2H_FEATURE_COLS + H2H_METADATA_COLS)}
+
     if hist_subset is None or hist_subset.empty or max_games < 1:
         if debug:
             logger.debug(f"H2H[{idx}]: No history (hist_subset empty or max_games < 1) → defaults")
-        return defaults
+        return defaults, True ## STRATEGY 1 UPDATE
 
-    # Ensure required columns exist before we dropna
     required_hist_cols = ["game_date", "home_score", "away_score", "home_team_norm", "away_team_norm"]
     if not all(col in hist_subset.columns for col in required_hist_cols):
         if debug:
             logger.debug(f"H2H[{idx}]: hist_subset missing one or more required columns {required_hist_cols} → defaults")
-        return defaults
+        return defaults, True ## STRATEGY 1 UPDATE
 
-    # ─── Drop any NaNs first, then take the top max_games ───
     clean = hist_subset.dropna(subset=required_hist_cols)
     recent = clean.sort_values("game_date", ascending=False).head(max_games)
 
     if recent.empty:
         if debug:
             logger.debug(f"H2H[{idx}]: After cleaning (dropna, head) → empty")
-        return defaults
+        return defaults, True ## STRATEGY 1 UPDATE
 
-    # Collect stats
+    # ... (rest of the calculation logic is the same)
     diffs, totals, homes, aways = [], [], [], []
     home_wins = 0
     streak, last_win = 0, None
 
-    # Process in chronological order for streak logic
     for _, g in recent.sort_values("game_date").iterrows():
-        # Map actual scores into home/away perspective
         if g.home_team_norm == home_norm and g.away_team_norm == away_norm:
             h_runs, a_runs = g.home_score, g.away_score
         elif g.away_team_norm == home_norm and g.home_team_norm == away_norm:
             h_runs, a_runs = g.away_score, g.home_score
         else:
-            # Should not happen if hist_subset was pre‐filtered by matchup_key
             if debug:
                 game_id_info = g.get("game_id", "N/A")
                 logger.warning(
@@ -141,9 +145,6 @@ def _get_matchup_history_single(
                     f"Expected: {home_norm} vs {away_norm}"
                 )
             continue
-
-        # Now that we've dropped NaNs, both h_runs and a_runs should be numbers.
-        # But just in case, skip if anything is still NaN:
         if pd.isna(h_runs) or pd.isna(a_runs):
             if debug:
                 game_id_info = g.get("game_id", "N/A")
@@ -158,7 +159,6 @@ def _get_matchup_history_single(
         win = diff > 0
         home_wins += int(win)
 
-        # Streak calc
         if last_win is None or win != last_win:
             streak = 1 if win else -1
         else:
@@ -168,7 +168,7 @@ def _get_matchup_history_single(
     if not diffs:
         if debug:
             logger.debug(f"H2H[{idx}]: No valid games after processing loop → defaults")
-        return defaults
+        return defaults, True ## STRATEGY 1 UPDATE
 
     last_date = recent["game_date"].max()
     stats = {
@@ -181,10 +181,10 @@ def _get_matchup_history_single(
         "matchup_last_game_date": pd.to_datetime(last_date),
         "matchup_home_team_streak": int(streak),
     }
-    # Fill any missing keys with defaults
-    for c in H2H_PLACEHOLDER_COLS:
+    for c in (H2H_FEATURE_COLS + H2H_METADATA_COLS):
         stats.setdefault(c, defaults[c])
-    return stats
+
+    return stats, False ## STRATEGY 1 UPDATE
 
 
 def transform(
@@ -193,11 +193,10 @@ def transform(
     historical_df: Optional[pd.DataFrame] = None,
     max_games: int = 7,
     debug: bool = False,
-    # Current-game columns (not used directly, since we canonicalize below)
+    # Parameters for column names are kept for flexibility but standardized internally
     game_date_col: str = "game_date",
     home_col: str = "home_team_id",
     away_col: str = "away_team_id",
-    # Historical‐game columns (not used directly, since we canonicalize below)
     hist_date_col: str = "game_date_time_utc",
     hist_home_col: str = "home_team_id",
     hist_away_col: str = "away_team_id",
@@ -212,89 +211,64 @@ def transform(
         logger.setLevel(logging.DEBUG)
         logger.debug("Starting mlb_features.h2h.transform")
 
-    # 1) Copy & remember which columns existed in the input
     out = df.copy()
     original_cols = set(out.columns)
 
-    # 2) Drop any pre‐existing H2H columns, standardize names, then rename
-    out = out.drop(columns=[c for c in H2H_PLACEHOLDER_COLS if c in out], errors="ignore")
+    ## STRATEGY 1 UPDATE: Drop all potential H2H output columns
+    out = out.drop(columns=[c for c in H2H_ALL_OUTPUT_COLS if c in out], errors="ignore")
     out = _standardize_cols(out)
 
-    # 3) Use canonical names for the MLB tests
-    game_date_col = "game_date"
-    home_col      = "home_team_id"
-    away_col      = "away_team_id"
+    game_date_col, home_col, away_col = "game_date", "home_team_id", "away_team_id"
 
-    # 4) Initialize all placeholders with their default values
-    for c in H2H_PLACEHOLDER_COLS:
+    ## STRATEGY 1 UPDATE: Initialize all placeholders with their default values
+    for c in H2H_ALL_OUTPUT_COLS:
         out[c] = _default_val(c)
 
-    # 5) Restore "uid" (if present in the original) so idempotency test can still find it
     if ("uid" in original_cols) and ("uid" not in out.columns) and ("game_id" in out.columns):
         out["uid"] = out["game_id"]
 
-    # 6) If the upcoming‐games DF is empty, just return placeholders
     if out.empty:
         logger.warning("h2h.transform: no upcoming games (input df is empty) → placeholders only")
-        if debug:
-            logger.setLevel(lvl)
+        if debug: logger.setLevel(lvl)
         return out
 
-    # 7) Ensure essential upcoming columns exist
     req_upcoming_cols = [game_date_col, home_col, away_col]
-    missing_upcoming_cols = [c for c in req_upcoming_cols if c not in out.columns]
-    if missing_upcoming_cols:
-        logger.error(
-            f"h2h.transform: upcoming DataFrame 'df' is missing essential columns: {missing_upcoming_cols}"
-        )
-        if debug:
-            logger.setLevel(lvl)
-        return out  # return with placeholders
+    if any(c not in out.columns for c in req_upcoming_cols):
+        logger.error(f"h2h.transform: missing essential columns: {[c for c in req_upcoming_cols if c not in out.columns]}")
+        if debug: logger.setLevel(lvl)
+        return out
 
-    # 8) If no historical data, return placeholder‐enriched upcoming DF
     if historical_df is None or historical_df.empty:
         logger.warning("h2h.transform: no historical data provided or it's empty → placeholders only")
-        if debug:
-            logger.setLevel(lvl)
+        if debug: logger.setLevel(lvl)
         return out
 
-    # 9) Canonicalize the historical columns as well
     hist = _standardize_cols(historical_df.copy())
-    hist_date_col = "game_date"
-    hist_home_col = "home_team_id"
-    hist_away_col = "away_team_id"
+    hist_date_col, hist_home_col, hist_away_col = "game_date", "home_team_id", "away_team_id"
 
-    # 10) Convert date & drop anything missing required historical fields
     hist["game_date"] = pd.to_datetime(hist[hist_date_col], errors="coerce").dt.tz_localize(None)
     hist = hist.dropna(subset=[hist_date_col, hist_home_col, hist_away_col, hist_home_score, hist_away_score])
     if hist.empty:
         logger.warning("h2h.transform: historical_df empty after cleaning → placeholders only")
-        if debug:
-            logger.setLevel(lvl)
+        if debug: logger.setLevel(lvl)
         return out
 
-    # 11) Normalize team IDs in historical data
     hist["home_team_norm"] = hist[hist_home_col].apply(_safe_norm)
     hist["away_team_norm"] = hist[hist_away_col].apply(_safe_norm)
     hist["matchup_key"] = hist.apply(
         lambda r: "_vs_".join(sorted([r.home_team_norm, r.away_team_norm])), axis=1
     )
-
-    # 12) Build a lookup of DataFrames by matchup_key
     lookup: Dict[str, pd.DataFrame] = {
         k: g.sort_values("game_date", ascending=False)
         for k, g in hist.groupby("matchup_key", observed=True)
     }
 
-    # 13) Prepare the upcoming‐games DataFrame:
     out["game_date_parsed_"] = pd.to_datetime(out[game_date_col], errors="coerce").dt.tz_localize(None)
     out.dropna(subset=["game_date_parsed_", home_col, away_col], inplace=True)
     if out.empty:
         logger.warning("h2h.transform: upcoming games DF is empty after dropna → placeholders")
-        # Rebuild an empty DataFrame with the same columns:
-        result_df_columns = list(dict.fromkeys(df.columns.tolist() + H2H_PLACEHOLDER_COLS))
-        if debug:
-            logger.setLevel(lvl)
+        result_df_columns = list(dict.fromkeys(df.columns.tolist() + H2H_ALL_OUTPUT_COLS))
+        if debug: logger.setLevel(lvl)
         return pd.DataFrame(columns=result_df_columns)
 
     out["home_team_norm_"] = out[home_col].apply(_safe_norm)
@@ -303,26 +277,22 @@ def transform(
         lambda r: "_vs_".join(sorted([r.home_team_norm_, r.away_team_norm_])), axis=1
     )
 
-    # 14) Compute H2H for each row
+    ## STRATEGY 1 UPDATE: Compute H2H, track defaults, and build imputed flags
     stats_list: List[Dict[str, Any]] = []
+    imputed_flags: List[bool] = []
+    defaulted_count = 0
+
     for idx, row in out.iterrows():
         key = row.matchup_key_
         hist_games_for_matchup = lookup.get(key, pd.DataFrame())
         current_game_date = row.game_date_parsed_
 
-        if hist_games_for_matchup.empty:
+        if hist_games_for_matchup.empty or "game_date" not in hist_games_for_matchup.columns:
             subset = pd.DataFrame()
         else:
-            if "game_date" not in hist_games_for_matchup.columns:
-                if debug:
-                    logger.warning(
-                        f"H2H[{idx}]: 'game_date' missing in hist_games_for_matchup for key {key} → no history"
-                    )
-                subset = pd.DataFrame()
-            else:
-                subset = hist_games_for_matchup[hist_games_for_matchup["game_date"] < current_game_date]
+            subset = hist_games_for_matchup[hist_games_for_matchup["game_date"] < current_game_date]
 
-        stats = _get_matchup_history_single(
+        stats, was_defaulted = _get_matchup_history_single(
             home_norm=row.home_team_norm_,
             away_norm=row.away_team_norm_,
             hist_subset=subset,
@@ -331,30 +301,49 @@ def transform(
             idx=idx,
         )
         stats_list.append(stats)
+        imputed_flags.append(was_defaulted)
+        if was_defaulted:
+            defaulted_count += 1
+
+    ## STRATEGY 1 UPDATE: Log the default rate
+    total_games = len(out)
+    if total_games > 0:
+        default_percentage = (defaulted_count / total_games) * 100
+        logger.info(f"H2H Default Rate: {defaulted_count}/{total_games} ({default_percentage:.2f}%) games used default H2H values.")
+    else:
+        logger.info("H2H Default Rate: 0/0 games processed.")
 
     if not out.empty and stats_list:
         h2h_df = pd.DataFrame(stats_list, index=out.index)
-        for c in H2H_PLACEHOLDER_COLS:
-            if c in h2h_df:  # normally true
+        # Assign feature and metadata columns
+        for c in (H2H_FEATURE_COLS + H2H_METADATA_COLS):
+            if c in h2h_df:
                 out[c] = h2h_df[c].fillna(_default_val(c))
             else:
                 out[c] = _default_val(c)
+        # Assign imputed flag columns
+        imputed_series = pd.Series(imputed_flags, index=out.index, dtype=bool)
+        for c in H2H_IMPUTED_COLS:
+            out[c] = imputed_series
 
-    # 15) Final type coercion & null‐fill
-    for c in H2H_PLACEHOLDER_COLS:
+
+    # Final type coercion & null‐fill
+    for c in H2H_ALL_OUTPUT_COLS:
         if c not in out.columns:
             out[c] = _default_val(c)
-        if out[c].isnull().all() and c != "matchup_last_game_date":
-            out[c] = _default_val(c)
+        if out[c].isnull().all() and c not in H2H_METADATA_COLS:
+             out[c] = _default_val(c)
 
-        if c == "matchup_last_game_date":
+        if c in H2H_METADATA_COLS:
             out[c] = pd.to_datetime(out[c], errors="coerce")
+        ## STRATEGY 1 UPDATE: Cast imputed flags to int
+        elif c in H2H_IMPUTED_COLS:
+             out[c] = pd.to_numeric(out[c], errors="coerce").fillna(1).astype(int)
         elif c in ("matchup_num_games", "matchup_home_team_streak"):
             out[c] = pd.to_numeric(out[c], errors="coerce").fillna(_default_val(c)).astype(int)
-        else:
+        else: # All other numeric feature columns
             out[c] = pd.to_numeric(out[c], errors="coerce").fillna(_default_val(c)).astype(float)
 
-    # 16) Drop temporary helper columns
     drop_cols = ["game_date_parsed_", "home_team_norm_", "away_team_norm_", "matchup_key_"]
     out.drop(columns=[c for c in drop_cols if c in out.columns], inplace=True, errors="ignore")
 

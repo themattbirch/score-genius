@@ -317,12 +317,15 @@ def load_team_stats_data(supabase_client: SupabaseClient) -> pd.DataFrame:
             return pd.DataFrame()
 
         df = pd.DataFrame(resp.data)
-        numeric_cols = [c for c in REQUIRED_TEAM_STATS_COLS_MLB if c not in ("team_id", "team_name", "season")]
+        numeric_cols = [c for c in REQUIRED_TEAM_STATS_COLS_MLB if c not in ("team_id", "team_name", "season", "league_name", "raw_api_response", "updated_at")]
 
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+                ## FIX: Do NOT fill NaNs with 0 here. Let them remain as NaN.
+                ## The feature engineering modules are now designed to handle proper NaNs.
+                df[col] = pd.to_numeric(df[col], errors="coerce")
 
+        # This part for non-numeric columns is fine.
         for col in ("game_id", "home_team_id", "away_team_id", "home_team_name", "away_team_name", "status_short"):
             if col not in df.columns:
                 df[col] = ""
