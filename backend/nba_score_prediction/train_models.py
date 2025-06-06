@@ -1727,7 +1727,29 @@ def run_training_pipeline(args: argparse.Namespace):
             )
             logger.info(f"Created features_df_selected (α={alpha:.2f}) with shape: {features_df_selected.shape}")
 
-            # … the rest of your train/val/test splitting + ridge/SVR training code …
+            # … after creating features_df_selected in the Lasso loop …
+
+            n_total = len(features_df_selected)
+            test_split_idx = int(n_total * (1 - args.test_size))
+            val_split_idx  = int(test_split_idx * (1 - args.val_size / (1 - args.test_size)))
+
+            train_df = features_df_selected.iloc[:val_split_idx].copy()
+            val_df   = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
+            test_df  = features_df_selected.iloc[test_split_idx:].copy()
+
+            feature_cols_with_date = final_feature_list_for_models + (['game_date'] if args.use_weights else [])
+            X_train = train_df[[c for c in feature_cols_with_date if c in train_df.columns]].copy()
+            X_val   = val_df[[c for c in feature_cols_with_date if c in val_df.columns]].copy()
+            X_test  = test_df[final_feature_list_for_models].copy()
+
+            y_train_home, y_train_away = train_df[TARGET_COLUMNS[0]], train_df[TARGET_COLUMNS[1]]
+            y_val_home,   y_val_away   = val_df[TARGET_COLUMNS[0]],   val_df[TARGET_COLUMNS[1]]
+            y_test_home,  y_test_away  = test_df[TARGET_COLUMNS[0]],  test_df[TARGET_COLUMNS[1]]
+
+            logger.info(f"Data Split Sizes (α={alpha:.2f}): Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
+            if X_train.empty or X_val.empty or X_test.empty:
+                logger.error("One or more data splits are empty. Exiting.")
+                sys.exit(1)
 
     elif args.feature_selection == "elasticnet":
 
@@ -1877,33 +1899,25 @@ def run_training_pipeline(args: argparse.Namespace):
 
         n_total = len(features_df_selected)
         test_split_idx = int(n_total * (1 - args.test_size))
-        val_split_frac_adjusted = min(args.val_size, 1.0 - args.test_size - 0.01)
-        val_split_idx = int(n_total * (1 - args.test_size - val_split_frac_adjusted))
-
-        if val_split_idx <= 0 or test_split_idx <= val_split_idx:
-            logger.error(f"Invalid split indices: Train end={val_split_idx}, Val end={test_split_idx}.")
-            sys.exit(1)
+        val_split_idx  = int(test_split_idx * (1 - args.val_size / (1 - args.test_size)))
 
         train_df = features_df_selected.iloc[:val_split_idx].copy()
         val_df   = features_df_selected.iloc[val_split_idx:test_split_idx].copy()
         test_df  = features_df_selected.iloc[test_split_idx:].copy()
 
-        feature_cols_with_date = final_feature_list_for_models + (
-            ['game_date'] if args.use_weights else []
-        )
-        X_train = train_df[[col for col in feature_cols_with_date if col in train_df.columns]].copy()
-        X_val   = val_df[[col for col in feature_cols_with_date if col in val_df.columns]].copy()
+        feature_cols_with_date = final_feature_list_for_models + (['game_date'] if args.use_weights else [])
+        X_train = train_df[[c for c in feature_cols_with_date if c in train_df.columns]].copy()
+        X_val   = val_df[[c for c in feature_cols_with_date if c in val_df.columns]].copy()
         X_test  = test_df[final_feature_list_for_models].copy()
 
         y_train_home, y_train_away = train_df[TARGET_COLUMNS[0]], train_df[TARGET_COLUMNS[1]]
-        y_val_home, y_val_away     = val_df[TARGET_COLUMNS[0]], val_df[TARGET_COLUMNS[1]]
-        y_test_home, y_test_away   = test_df[TARGET_COLUMNS[0]], test_df[TARGET_COLUMNS[1]]
+        y_val_home,   y_val_away   = val_df[TARGET_COLUMNS[0]],   val_df[TARGET_COLUMNS[1]]
+        y_test_home,  y_test_away  = test_df[TARGET_COLUMNS[0]],  test_df[TARGET_COLUMNS[1]]
 
         logger.info(f"Data Split Sizes: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
         if X_train.empty or X_val.empty or X_test.empty:
             logger.error("One or more data splits are empty. Exiting.")
             sys.exit(1)
-
     else:
         logger.error(f"Unknown feature_selection method: {args.feature_selection}")
         sys.exit(1)
