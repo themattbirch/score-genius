@@ -1,37 +1,118 @@
 # backend/nba_features/season.py
 
+"""nba_features.season
+---------------------------------
+Attach **previous‑season summary stats** (win‑%, average points for/against, etc.)
+for both home and away teams to every game row.
+
+Key upgrades
+~~~~~~~~~~~~
+1.  **Season‑key normalisation** – `_norm_season_key()` converts any season
+    representation ("2022‑23", "2022/23", 2022.0 …) to the canonical `int`
+    ``2022`` so merges never fail due to format drift.
+2.  **Single‑pass merge** – prepares a keyed lookup table and joins once per
+    side; no per‑row `.loc` access.
+3.  **Granular imputation flags** – every filled‑default cell gets a
+    ``*_imputed`` boolean for quick quality scans.
+4.  **Slimmer memory footprint** – only the columns required for joining and
+    modelling are materialised.
+"""
+
+from __future__ import annotations
+
 import logging
-from typing import Optional
+import re
+from typing import Any, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
-from .utils import DEFAULTS, normalize_team_name, determine_season
+from .utils import DEFAULTS, determine_season, normalize_team_name
 
-# Get logger for this module
 logger = logging.getLogger(__name__)
+__all__: Sequence[str] = ["transform"]
 
-__all__ = ["transform"]
+# ────────────────────────────────────────────────────────────────────────────────
+# Configuration
+# ────────────────────────────────────────────────────────────────────────────────
+SEASON_STATS_SRC_COLS = (
+    "wins_all_percentage",
+    "points_for_avg_all",
+    "points_against_avg_all",
+    "current_form",
+)
 
-# Helper to compute previous season string
-def _previous_season(season_str: Optional[str]) -> Optional[str]: # Added Optional
-    if not season_str or pd.isna(season_str):
-        logger.warning("Received None or NaN season_str in _previous_season.")
-        return None
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Helper functions
+# ────────────────────────────────────────────────────────────────────────────────
+
+def _norm_season_key(val: Any) -> Optional[int]:
+    """Convert season strings / floats to the season *start* year ``int``.
+
+    Examples
+    --------
+    * ``"2022-23"`` ➜ ``2022``
+    * ``2022.0``     ➜ ``2022``
+    * ``np.nan``     ➜ ``np.nan``
+    """
+    if pd.isna(val):
+        return np.nan
+    if isinstance(val, (int, np.integer)):
+        return int(val)
+    if isinstance(val, str):
+        m = re.search(r"\d{4}", val)
+        if m:
+            return int(m.group(0))
     try:
-        start, end = season_str.split('-')
-        prev_start = int(start) - 1
-        prev_end = (int(end) -1 + 100) % 100 # Handles '00' from '1999-00' -> '1998-99' correctly
-                                          # and 'YY' from 'YYYY-YY'
-        # Ensure prev_end corresponds to prev_start+1 logic for standard NBA seasons
-        # e.g. 2023-24 -> prev_start=2022, end_of_prev_start_year=22. prev_end should be (22+1)%100 = 23
-        expected_prev_end = (prev_start + 1) % 100
+        return int(float(val))
+    except Exception:
+        return np.nan
 
-        return f"{prev_start}-{expected_prev_end:02d}"
-    except Exception as e:
-        logger.warning(f"Could not parse season_str '{season_str}' in _previous_season: {e}. Returning None.")
-        return None
+def _fill_and_flag(df: pd.DataFrame, flag_imputations: bool) -> None:
+    """Coerce numeric, fill NaNs with defaults, and set imputation flags."""
+    # Define columns and their defaults
+    stat_map = {
+        "season_win_pct": DEFAULTS.get("win_pct", 0.5),
+        "season_avg_pts_for": DEFAULTS.get("avg_pts_for", 110.0),
+        "season_avg_pts_against": DEFAULTS.get("avg_pts_against", 110.0),
+        "current_form": DEFAULTS.get("current_form", "N/A"),
+    }
 
+    for side in ("home", "away"):
+        for base_col, default_val in stat_map.items():
+            col = f"{side}_{base_col}"
+            imp_col = f"{col}_imputed"
+
+            if col not in df.columns:
+                df[col] = default_val
+                if flag_imputations:
+                    df[imp_col] = True
+            else:
+                # Use the pre-calculated imputation flag if it exists
+                if flag_imputations and imp_col not in df.columns:
+                     df[imp_col] = df[col].isna()
+
+                if isinstance(default_val, str):
+                    df[col] = df[col].fillna(default_val)
+                else:
+                    df[col] = pd.to_numeric(df[col], errors="coerce").fillna(default_val)
+
+            # Final type enforcement
+            df[col] = df[col].astype(str if isinstance(default_val, str) else float)
+            if flag_imputations:
+                df[imp_col] = df[imp_col].astype(bool)
+
+def _previous_season_int(season_int: Optional[int]) -> Optional[int]:
+    """Return the previous season's *start* year (int)."""
+    if season_int is None or pd.isna(season_int):
+        return np.nan
+    return int(season_int) - 1
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Main transform
+# ────────────────────────────────────────────────────────────────────────────────
 
 def transform(
     df: pd.DataFrame,
@@ -40,190 +121,178 @@ def transform(
     flag_imputations: bool = True,
     debug: bool = False,
 ) -> pd.DataFrame:
-    """
-    Attach previous-season statistical context for home and away teams.
-    - Falls back to defaults if stats are unavailable or missing.
-    - Creates boolean flags '<feature>_imputed' when values come from DEFAULTS.
+    """Attach previous‑season context features to each game row."""
 
-    Args:
-        df: Game-level DataFrame with columns ['game_id','game_date','home_team','away_team']
-        team_stats_df: Optional DataFrame with ['team_name','season','wins_all_percentage',
-                       'points_for_avg_all','points_against_avg_all','current_form']
-        flag_imputations: If True, create boolean flags marking default-filled features.
-        debug: If True, enable debug logging for this function.
-
-    Returns:
-        DataFrame with added season context features, optional flags, and diffs/net ratings.
-    """
     orig_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
 
-    logger.info("Adding season context features...")
-    result = df.copy()
+    out = df.copy()
 
-    for col in ['game_id', 'game_date', 'home_team', 'away_team']:
-        if col not in result.columns:
-            logger.error(f"Missing essential column: {col}, skipping season features.")
-            if debug: logger.setLevel(orig_level)
-            return df # Return original df if requirements not met
+    # Sanity‑check essential columns
+    required_cols = {"game_date", "home_team", "away_team"}
+    missing = required_cols - set(out.columns)
+    if missing:
+        logger.error("SEASON.PY: Missing required columns %s – returning original df.", missing)
+        if debug:
+            logger.setLevel(orig_level)
+        return df
 
-    result['game_date'] = pd.to_datetime(result['game_date'], errors='coerce')
-    result = result.dropna(subset=['game_date'])
-    if result.empty:
-        logger.warning("DataFrame empty after game_date processing.")
-        if debug: logger.setLevel(orig_level)
-        return result # Return empty if all dates were invalid
+    out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce")
+    out.dropna(subset=["game_date"], inplace=True)
+    if out.empty:
+        logger.warning("SEASON.PY: All rows dropped after invalid dates.")
+        if debug:
+            logger.setLevel(orig_level)
+        return out
 
-    placeholder_defaults = {
-        'home_season_win_pct': DEFAULTS.get('win_pct', 0.5), # Ensure DEFAULTS values are appropriate type
-        'away_season_win_pct': DEFAULTS.get('win_pct', 0.5),
-        'home_season_avg_pts_for': DEFAULTS.get('avg_pts_for', 100.0),
-        'away_season_avg_pts_for': DEFAULTS.get('avg_pts_for', 100.0),
-        'home_season_avg_pts_against': DEFAULTS.get('avg_pts_against', 100.0),
-        'away_season_avg_pts_against': DEFAULTS.get('avg_pts_against', 100.0),
-        'home_current_form': DEFAULTS.get('current_form', 'N/A'), # Ensure DEFAULTS['current_form'] is str
-        'away_current_form': DEFAULTS.get('current_form', 'N/A')
-    }
+    # ─── Create season keys ─────────────────────────────────────────────────
+    out["season_int"] = out["game_date"].apply(determine_season).apply(_norm_season_key)
+    out["lookup_season_int"] = out["season_int"].apply(_previous_season_int)
 
+    out["home_norm"] = out["home_team"].map(normalize_team_name)
+    out["away_norm"] = out["away_team"].map(normalize_team_name)
+
+    # ─── Prepare team‑stats lookup table ────────────────────────────────────
     if team_stats_df is None or team_stats_df.empty:
-        logger.warning("No team_stats_df provided - using defaults for all season features.")
-        for feat, default_val in placeholder_defaults.items():
-            result[feat] = default_val
-            if flag_imputations:
-                result[f"{feat}_imputed"] = True
-        
-        numeric_zeros = ['season_win_pct_diff','season_pts_for_diff','season_pts_against_diff',
-                         'home_season_net_rating','away_season_net_rating','season_net_rating_diff']
-        for z_col in numeric_zeros:
-            result[z_col] = 0.0
-        if debug: logger.setLevel(orig_level)
-        return result
-
-    result['season'] = result['game_date'].apply(determine_season)
-    result['season_stats_lookup'] = result['season'].apply(_previous_season)
-    result['home_norm'] = result['home_team'].astype(str).map(normalize_team_name)
-    result['away_norm'] = result['away_team'].astype(str).map(normalize_team_name)
+        logger.warning("SEASON.PY: team_stats_df empty – everything will be imputed.")
+        _impute_all(out, flag_imputations)
+        _log_imputation(out)
+        if debug:
+            logger.setLevel(orig_level)
+        return out
 
     ts = team_stats_df.copy()
-    ts['team_norm'] = ts['team_name'].astype(str).map(normalize_team_name)
-    ts['season'] = ts['season'].astype(str) # Ensure season is string for key creation
-    ts['lookup_key'] = ts['team_norm'] + '_' + ts['season']
-    ts = ts.drop_duplicates(subset=['lookup_key'], keep='last').set_index('lookup_key')
-    
-    # Select only the necessary columns from team_stats_df
-    stats_cols_to_merge = ['wins_all_percentage','points_for_avg_all','points_against_avg_all','current_form']
-    # Check if all expected stats cols exist in ts
-    missing_stats_cols = [sc for sc in stats_cols_to_merge if sc not in ts.columns]
-    if missing_stats_cols:
-        logger.warning(f"Missing columns in team_stats_df: {missing_stats_cols}. These stats can't be merged.")
-        # Remove missing columns from the list to avoid KeyError
-        stats_cols_to_merge = [sc for sc in stats_cols_to_merge if sc in ts.columns]
-    
-    sub_ts = ts[stats_cols_to_merge] if stats_cols_to_merge else pd.DataFrame(index=ts.index) # Empty df if no cols
+    ts["team_norm"] = ts["team_name"].map(normalize_team_name)
+    ts["season_norm"] = ts["season"].apply(_norm_season_key)
+    ts.dropna(subset=["team_norm", "season_norm"], inplace=True)
 
-    for side in ['home', 'away']:
+    # keep only last record per (team, season) pair
+    ts.sort_values("season_norm", inplace=True)
+    ts = ts.drop_duplicates(subset=["team_norm", "season_norm"], keep="last")
+
+    ts = ts.set_index(["team_norm", "season_norm"])
+    ts = ts[list(SEASON_STATS_SRC_COLS)]  # slim to required cols
+
+    # ─── Merge helper (closure) ─────────────────────────────────────────────
+    def _merge(side: str) -> None:
+        nonlocal out  # Tell the inner function to modify the 'out' from the outer scope
         prefix = f"{side}_"
-        renamed_cols_map = {
-            'wins_all_percentage': f"{prefix}season_win_pct",
-            'points_for_avg_all': f"{prefix}season_avg_pts_for",
-            'points_against_avg_all': f"{prefix}season_avg_pts_against",
-            'current_form': f"{prefix}current_form"
-        }
-        # Filter map for only columns present in sub_ts
-        actual_renamed_cols_map = {k: v for k, v in renamed_cols_map.items() if k in sub_ts.columns}
-        renamed_sub_ts = sub_ts.rename(columns=actual_renamed_cols_map)
-        
-        # Create merge key, handling potential None from _previous_season
-        # If season_stats_lookup is None, key_col will contain NaN for that part if not str
-        result['merge_key_temp'] = result[f"{side}_norm"].astype(str) + '_' + result['season_stats_lookup'].astype(str)
-        
-        result = result.merge(
-            renamed_sub_ts,
-            how='left',
-            left_on='merge_key_temp',
-            right_index=True
+        lookup_key_cols = [f"{side}_norm", "lookup_season_int"]
+        sub = ts.copy().rename(
+            columns={
+                "wins_all_percentage": f"{prefix}season_win_pct",
+                "points_for_avg_all": f"{prefix}season_avg_pts_for",
+                "points_against_avg_all": f"{prefix}season_avg_pts_against",
+                "current_form": f"{prefix}current_form",
+            }
         )
-        result = result.drop(columns=['merge_key_temp'])
-
+        # Re-assign the result of the merge back to the 'out' DataFrame
+        out = out.merge(
+            sub,
+            how="left",
+            left_on=lookup_key_cols,
+            right_index=True,
+        )
         if flag_imputations:
-            for original_name, suffixed_name in actual_renamed_cols_map.items():
-                if suffixed_name in result.columns: # Check if column was actually added
-                    result[f"{suffixed_name}_imputed"] = result[suffixed_name].isnull() # isna() is fine, astype(bool) later if needed
+            for col in [
+                f"{prefix}season_win_pct",
+                f"{prefix}season_avg_pts_for",
+                f"{prefix}season_avg_pts_against",
+                f"{prefix}current_form",
+            ]:
+                if col in out.columns:
+                    out[f"{col}_imputed"] = out[col].isna()
 
-    # Fill defaults and ensure types
-    for feat_col, default_val in placeholder_defaults.items():
-        is_string_col = isinstance(default_val, str) # e.g. current_form
-        
-        if feat_col not in result.columns: # Column wasn't created by merge (e.g. a stat was missing in team_stats_df)
-            result[feat_col] = default_val
-            if flag_imputations:
-                result[f"{feat_col}_imputed"] = True # This is a full imputation
-        else:
-            # Column exists, fill NaNs from failed lookups or NaNs in source data
-            if flag_imputations and f"{feat_col}_imputed" not in result.columns: # Create imputation flag if not already made
-                 result[f"{feat_col}_imputed"] = result[feat_col].isnull() # Mark rows where original value was NaN
+    _merge("home")
+    _merge("away")
 
-            if is_string_col:
-                result[feat_col] = result[feat_col].fillna(default_val)
-            else:
-                # For numeric columns, ensure they are numeric before fillna, then fill, then type
-                result[feat_col] = pd.to_numeric(result[feat_col], errors='coerce').fillna(default_val)
-        
-        # Ensure final type
-        if is_string_col:
-            result[feat_col] = result[feat_col].astype(str)
-        else:
-            result[feat_col] = result[feat_col].astype(float) # All numeric stats become float
-        
-        if flag_imputations and f"{feat_col}_imputed" in result.columns:
-            result[f"{feat_col}_imputed"] = result[f"{feat_col}_imputed"].astype(bool)
+    # ─── Fill defaults & enforce dtypes ─────────────────────────────────────
+    _fill_and_flag(out, flag_imputations)
 
+    # ─── Derived metrics ────────────────────────────────────────────────────
+    out["season_win_pct_diff"] = out["home_season_win_pct"] - out["away_season_win_pct"]
+    out["season_pts_for_diff"] = out["home_season_avg_pts_for"] - out["away_season_avg_pts_for"]
+    out["season_pts_against_diff"] = (
+        out["home_season_avg_pts_against"] - out["away_season_avg_pts_against"]
+    )
 
-    result['season_win_pct_diff'] = result['home_season_win_pct'] - result['away_season_win_pct']
-    result['season_pts_for_diff'] = result['home_season_avg_pts_for'] - result['away_season_avg_pts_for']
-    result['season_pts_against_diff'] = result['home_season_avg_pts_against'] - result['away_season_avg_pts_against']
-    result['home_season_net_rating'] = result['home_season_avg_pts_for'] - result['home_season_avg_pts_against']
-    result['away_season_net_rating'] = result['away_season_avg_pts_for'] - result['away_season_avg_pts_against']
-    result['season_net_rating_diff'] = result['home_season_net_rating'] - result['away_season_net_rating']
-    
-    # Ensure diff/rating columns are float
-    diff_rating_cols = ['season_win_pct_diff','season_pts_for_diff','season_pts_against_diff',
-                        'home_season_net_rating','away_season_net_rating','season_net_rating_diff']
-    for dr_col in diff_rating_cols:
-        if dr_col in result.columns: # Should always be true if base stats were created
-            result[dr_col] = result[dr_col].astype(float)
+    out["home_season_net_rating"] = (
+        out["home_season_avg_pts_for"] - out["home_season_avg_pts_against"]
+    )
+    out["away_season_net_rating"] = (
+        out["away_season_avg_pts_for"] - out["away_season_avg_pts_against"]
+    )
+    out["season_net_rating_diff"] = out["home_season_net_rating"] - out["away_season_net_rating"]
 
+    # Ensure numeric dtype
+    num_cols = [
+        "season_win_pct_diff",
+        "season_pts_for_diff",
+        "season_pts_against_diff",
+        "home_season_net_rating",
+        "away_season_net_rating",
+        "season_net_rating_diff",
+    ]
+    out[num_cols] = out[num_cols].apply(pd.to_numeric, errors="coerce")
 
-    result.drop(columns=['season', 'season_stats_lookup', 'home_norm', 'away_norm'], inplace=True, errors='ignore')
+    # ─── Diagnostics ────────────────────────────────────────────────────────
+    _log_imputation(out)
 
-    original_cols = list(df.columns) # Columns from the original input df
-    seasonal_stat_cols = list(placeholder_defaults.keys())
-    imputation_flag_cols = [c for c in result.columns if c.endswith('_imputed')]
-    # diffs_and_ratings_cols already defined as diff_rating_cols
+    # ─── Cleanup helper columns ─────────────────────────────────────────────
+    out.drop(
+        columns=[c for c in ("season_int", "lookup_season_int", "home_norm", "away_norm") if c in out.columns],
+        inplace=True,
+        errors="ignore",
+    )
 
-    # Build the final column order
-    final_ordered_cols = []
-    # Add original columns first, in their original order
-    for col in original_cols:
-        if col in result.columns and col not in final_ordered_cols:
-            final_ordered_cols.append(col)
-    
-    # Add new feature groups, ensuring no duplicates and only existing columns
-    for group in [seasonal_stat_cols, imputation_flag_cols, diff_rating_cols]:
-        for col in group:
-            if col in result.columns and col not in final_ordered_cols:
-                final_ordered_cols.append(col)
-    
-    # Add any other new columns that might have been created and not in above groups
-    # (e.g. if a new ungrouped feature was added)
-    # for col in result.columns:
-    #     if col not in final_ordered_cols:
-    #         final_ordered_cols.append(col)
-
-    result = result[final_ordered_cols]
-
-    logger.info("Finished adding season context features.")
     if debug:
         logger.setLevel(orig_level)
-    return result
+    return out
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Utility sub‑routines
+# ────────────────────────────────────────────────────────────────────────────────
+
+def _impute_all(df: pd.DataFrame, flag: bool) -> None:
+    """Fill every expected column with defaults (no stats available)."""
+    defaults_map = {
+        "home_season_win_pct": DEFAULTS.get("win_pct", 0.5),
+        "away_season_win_pct": DEFAULTS.get("win_pct", 0.5),
+        "home_season_avg_pts_for": DEFAULTS.get("avg_pts_for", 110.0),
+        "away_season_avg_pts_for": DEFAULTS.get("avg_pts_for", 110.0),
+        "home_season_avg_pts_against": DEFAULTS.get("avg_pts_against", 110.0),
+        "away_season_avg_pts_against": DEFAULTS.get("avg_pts_against", 110.0),
+        "home_current_form": DEFAULTS.get("current_form", "N/A"),
+        "away_current_form": DEFAULTS.get("current_form", "N/A"),
+    }
+    for col, val in defaults_map.items():
+        df[col] = val
+        if flag:
+            df[f"{col}_imputed"] = True
+
+    # zeros for derived metrics
+    zeros = [
+        "season_win_pct_diff",
+        "season_pts_for_diff",
+        "season_pts_against_diff",
+        "home_season_net_rating",
+        "away_season_net_rating",
+        "season_net_rating_diff",
+    ]
+    for z in zeros:
+        df[z] = 0.0
+
+
+def _log_imputation(df: pd.DataFrame) -> None:
+    if "home_season_win_pct_imputed" not in df.columns:
+        return
+    total = len(df)
+    imputed = df["home_season_win_pct_imputed"].sum()
+    pct = 100.0 * imputed / total if total else 0
+    logger.info(
+        "SEASON.PY: %s/%s games (%.1f%%) used default season stats.", imputed, total, pct
+    )
+    if pct > 20.0:
+        logger.warning("SEASON.PY: High imputation rate – verify season keys or data coverage.")

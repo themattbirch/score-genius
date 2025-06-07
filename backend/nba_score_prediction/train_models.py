@@ -92,11 +92,17 @@ from backend.nba_score_prediction.models import (
 # Logging Configuration (Setup Once)
 # ==============================================================================
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO, # Your default level
     format='%(asctime)s - %(levelname)s - [%(name)s.%(funcName)s:%(lineno)d] - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-logger = logging.getLogger(__name__) # Get logger for this module (__main__ when run directly)
+logger = logging.getLogger(__name__)
+
+# --- ADD THIS BLOCK TO SILENCE NOISY LOGGERS ---
+noisy_loggers = ["httpx", "httpcore", "hpack"]
+for a_logger in noisy_loggers:
+    logging.getLogger(a_logger).setLevel(logging.WARNING)
+# ---------------------------------------------
 
 # Silence overly verbose loggers from libraries
 warnings.filterwarnings("ignore", category=ConvergenceWarning)

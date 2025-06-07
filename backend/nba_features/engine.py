@@ -267,11 +267,18 @@ def run_feature_pipeline(
     # If 'adv_stats_lookup_season' is not needed downstream of advanced.py, it could also be dropped here
     # or by advanced.py itself. For now, let advanced.py manage it if it uses it.
 
+    final_cols = processed_df.columns
+    cols_to_drop = [c for c in final_cols if c.endswith('_dup')]
+    if cols_to_drop:
+        logger.warning(f"Removing leftover duplicate columns from merge: {cols_to_drop}")
+        processed_df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+    # --- END CLEANUP BLOCK ---
+
     if debug:
         logger.setLevel(original_logger_level)
     return processed_df
 
-# CLI Smoke Test (Example - needs adjustment if run directly due to new adv_splits logic complexity)
+# CLI Smoke Test
 if __name__ == '__main__':
     logging.basicConfig(
         level=logging.INFO,
