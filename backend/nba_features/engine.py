@@ -278,4 +278,3 @@ if __name__ == '__main__':
         format='%(asctime)s | %(levelname)s | [%(name)s:%(funcName)s:%(lineno)d] – %(message)s',
     )
     logger.info("Running smoke test for feature pipeline...")
-    # ... (rest of smoke test needs review, especially for mocking multi-season adv_splits data) ...

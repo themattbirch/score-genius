@@ -120,7 +120,7 @@ REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 # --- Constants for MLB ---
 TARGET_COLUMNS = ['home_score', 'away_score'] # Representing home_runs and away_runs
 SEED = 42
-DEFAULT_CV_FOLDS = 5 # For TimeSeriesSplit
+DEFAULT_CV_FOLDS = 3 # For TimeSeriesSplit
 
 # Required columns from mlb_historical_game_stats
 # Based on user-provided schema for mlb_historical_game_stats
@@ -1132,8 +1132,8 @@ def run_training_pipeline(args: argparse.Namespace):
         sys.exit(1)
 
     if args.write_selected_features:
-        sf_path = MAIN_MODELS_DIR / "mlb_selected_features.json"
-        import json
+        sf_path = MODELS_DIR_MLB / "mlb_selected_features.json"
+        sf_path.parent.mkdir(parents=True, exist_ok=True)      # ensure the dir exists
         with open(sf_path, "w") as f:
             json.dump(final_feature_list_for_models, f, indent=4)
         logger.info(f"MLB selected features ({len(final_feature_list_for_models)}) saved to {sf_path}. Exiting.")
@@ -1254,7 +1254,7 @@ if __name__ == '__main__':
     parser.add_argument("--data-source", type=str, default="supabase", choices=["csv", "supabase"])
     parser.add_argument("--historical-csv-path", type=str, default=str(PROJECT_ROOT_TRAIN / 'data' / 'mlb_historical_games.csv'))
     parser.add_argument("--team-stats-csv-path", type=str, default=str(PROJECT_ROOT_TRAIN / 'data' / 'mlb_team_stats.csv'))
-    parser.add_argument("--lookback-days", type=int, default=1095*2, help="Days of historical data (e.g., ~6 seasons for MLB)") # Longer for MLB
+    parser.add_argument("--lookback-days", type=int, default=2190, help="Days of historical data (e.g., ~6 seasons for MLB)") # Longer for MLB
     
     # Feature Engineering Args - adjust defaults for MLB
     parser.add_argument("--rolling-windows", type=str, default="15,30,60,100", help="Rolling windows for MLB stats") # MLB specific
@@ -1276,7 +1276,7 @@ if __name__ == '__main__':
 
     # Hyperparameter Tuning (generic)
     parser.add_argument("--skip-tuning", action="store_true")
-    parser.add_argument("--tune-iterations", type=int, default=100) # Fewer for quicker test, more for production
+    parser.add_argument("--tune-iterations", type=int, default=25) # Fewer for quicker test, more for production
     parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS)
     parser.add_argument("--scoring-metric", type=str, default="neg_mean_absolute_error")
 
@@ -1288,7 +1288,7 @@ if __name__ == '__main__':
     parser.add_argument("--debug", action="store_true", help="Enable DEBUG logging")
     
     # Feature Selection Method (generic)
-    parser.add_argument("--write-selected-features", action="store_true", help="Write selected_features.json and exit")
+    parser.add_argument("--write-selected-features", action="store_true", help="Write mlb_selected_features.json and exit")
     parser.add_argument("--feature-selection", choices=["lasso", "elasticnet"], default="lasso")
     parser.add_argument("--plot-elasticnet-path", action="store_true", help="Save ElasticNet coefficient path plots")
     

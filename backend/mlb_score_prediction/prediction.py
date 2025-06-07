@@ -1240,8 +1240,7 @@ def generate_predictions(
 
 
     # ─────────────────── 6) BUILD FEATURE MATRIX X ───────────────────
-    # (Your existing X matrix preparation logic here)
-    # ...
+
     logger.info("PREDICTION_PIPELINE: Building feature matrix X...")
     
     if features_df.columns.duplicated().any(): 
@@ -1329,31 +1328,35 @@ def generate_predictions(
     return final_preds, raw_preds
 
 
-# --- Upsert Function (MLB specific) ------------------------------------------
 def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: SupabaseClient) -> None:
+    """
+    Upserts ONLY the predicted home and away runs into the mlb_game_schedule table.
+    """
     if not supabase_client:
         logger.error("Supabase client not available for upsert.")
         return
+    if not predictions:
+        logger.warning("Prediction list is empty. Nothing to upsert.")
+        return
 
     updated_count = 0
+    logger.info(f"Starting upsert for {len(predictions)} predictions (home/away runs only)...")
+
     for pred in predictions:
         gid = pred.get("game_id")
         if gid is None:
             logger.warning(f"Skipping prediction with missing game_id: {pred}")
             continue
 
+        # This payload now ONLY includes the two columns you want to update.
         update_payload = {
             "predicted_home_runs": pred.get("predicted_home_runs"),
             "predicted_away_runs": pred.get("predicted_away_runs"),
-            "predicted_run_diff": pred.get("predicted_run_diff"),
-            "predicted_total_runs": pred.get("predicted_total_runs"),
-            "win_probability_home": pred.get("win_probability_home"),
-            "prediction_utc": datetime.now(pytz.utc).isoformat(),
         }
-        update_payload = {k: v for k, v in update_payload.items() if v is not None}
 
-        if not update_payload:
-            logger.warning(f"Empty payload for game_id {gid}. Skipping upsert.")
+        # This check ensures we don't proceed if the essential prediction values are missing.
+        if update_payload["predicted_home_runs"] is None or update_payload["predicted_away_runs"] is None:
+            logger.warning(f"Skipping game_id {gid} due to missing run prediction values.")
             continue
 
         try:
@@ -1363,6 +1366,7 @@ def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: S
                 .eq("game_id", str(gid))
                 .execute()
             )
+            # This logic correctly checks for success or errors.
             if resp.data:
                 logger.info(f"Upserted MLB predictions for game_id {gid}.")
                 updated_count += 1
@@ -1374,7 +1378,6 @@ def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: S
             logger.error(f"Exception during upsert for MLB game_id {gid}: {e}", exc_info=True)
 
     logger.info(f"Finished upserting MLB predictions for {updated_count} games.")
-
 
 # --- Main Execution ----------------------------------------------------------
 def main():

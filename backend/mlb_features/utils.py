@@ -164,7 +164,9 @@ def normalize_team_name(team_name: Optional[Any]) -> str: # Accept Any initially
 
     # Proceed with existing logic now that we are sure team_name is a string
     team_lower = team_name.lower().strip()
-
+    if team_lower.endswith(".0"):
+       team_lower = team_lower[:-2]
+        
     if not team_lower:
         # logger.debug("normalize_team_name received empty string input. Returning 'Unknown'.") # Optional debug log
         return "Unknown"

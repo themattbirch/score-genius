@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from typing import Dict, Optional, Tuple, List, Any
 from dateutil import parser as dateutil_parser
 import subprocess, sys, shutil
-
+from backend.mlb_score_prediction import prediction
 
 import undetected_chromedriver as uc
 from selenium.webdriver.chrome.options import Options
@@ -837,5 +837,16 @@ if __name__ == "__main__":
     season = today.year
     print(f"Running handedness-split aggregation for season {season}")
     run_handedness_aggregation_rpc(season)
+        # =======================================================
+    # Step 6: Run the prediction pipeline
+    # =======================================================
+    print("\n--- Running MLB Score Prediction Pipeline ---")
+    try:
+        prediction.main()
+        print("--- Prediction Pipeline Finished ---\n")
+    except Exception as e:
+        # Add error handling in case the prediction script fails
+        print(f"!!! An error occurred during the prediction pipeline: {e}")
+
 
     print("MLB Games Preview Script finished.")
