@@ -27,7 +27,7 @@ except ImportError:
 # bring in your Supabase client and FeatureEngine class
 from backend.caching.supabase_client import supabase as supabase_client
 
-# --- Logger Configuration  ---
+# -- Logger Configuration  --
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s'
