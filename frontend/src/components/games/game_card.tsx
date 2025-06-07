@@ -1,13 +1,11 @@
 // frontend/src/components/games/game_card.tsx
 import React, { useState } from "react";
-import { UnifiedGame, Sport } from "@/types"; // Use UnifiedGame
+import { UnifiedGame, Sport } from "@/types";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
-//import SnapshotCard from "../ui/snapshot_card";
-//import { NBAGameFeaturesPanel } from "../ui/nba_game_features_panel";
 
 interface GameCardProps {
-  game: UnifiedGame; // Expect the unified type
+  game: UnifiedGame;
 }
 
 const GameCard: React.FC<GameCardProps> = ({ game }) => {
@@ -15,7 +13,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const { date } = useDate();
   const isoDate = date ? date.toISOString().slice(0, 10) : "";
 
-  // Use unified fields directly
   const gameId = game.id;
   const homeTeamName = game.homeTeamName;
   const awayTeamName = game.awayTeamName;
@@ -26,9 +23,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
 
   return (
     <div className="app-card flex flex-col gap-4" data-tour="game-card">
-      {/* Top Row: Teams & Time */}
       <div className="flex items-start justify-between gap-4">
-        {/* Teams & Time */}
         <div className="min-w-0 flex-1 max-w-md">
           <p className="font-semibold text-sm sm:text-base leading-tight">
             {awayTeamName}
@@ -51,7 +46,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           </p>
         </div>
 
-        {/* Score / Prediction / Pitchers */}
         <div className="w-36 md:w-auto text-right text-sm">
           {game.dataType === "historical" ? (
             <p className="font-semibold text-lg w-full">
@@ -62,48 +56,53 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             </p>
           ) : game.dataType === "schedule" ? (
             sport === "NBA" ? (
-              <p className="font-medium w-full">
-                {game.predictionAway ?? "-"} – {game.predictionHome ?? "-"}
+              <p className="font-medium text-sky-500 dark:text-sky-400">
+                {game.predictionAway?.toFixed(1) ?? "-"} –{" "}
+                {game.predictionHome?.toFixed(1) ?? "-"}
                 <span className="block text-xs font-normal text-text-secondary">
-                  (Predicted)
+                  (Pred.)
                 </span>
               </p>
             ) : (
-              <>
-                <p className="text-xs font-normal text-text-secondary">
-                  {game.awayPitcher ?? "TBD"}{" "}
-                  {game.awayPitcherHand && `(${game.awayPitcherHand}HP)`}
-                </p>
-                <p className="text-xs font-normal text-text-secondary">
-                  {game.homePitcher ?? "TBD"}{" "}
-                  {game.homePitcherHand && `(${game.homePitcherHand}HP)`}
-                </p>
-              </>
+              // ==========================================================
+              // START: Corrected logic for MLB
+              // ==========================================================
+              <div>
+                {/* Always show a "score" line. Show prediction if available, otherwise a placeholder. */}
+                {game.predicted_home_runs != null &&
+                game.predicted_away_runs != null ? (
+                  <p className="font-medium text-sky-500 dark:text-sky-400">
+                    {game.predicted_away_runs.toFixed(1)} –{" "}
+                    {game.predicted_home_runs.toFixed(1)}
+                    <span className="block text-xs font-normal text-text-secondary">
+                      (Pred.)
+                    </span>
+                  </p>
+                ) : (
+                  <p className="font-medium text-text-secondary">-</p>
+                )}
+
+                {/* And always show the pitchers underneath for upcoming MLB games */}
+                <div className="mt-1">
+                  <p className="text-xs font-normal text-text-secondary">
+                    {game.awayPitcher ?? "TBD"}{" "}
+                    {game.awayPitcherHand && `(${game.awayPitcherHand})`}
+                  </p>
+                  <p className="text-xs font-normal text-text-secondary">
+                    {game.homePitcher ?? "TBD"}{" "}
+                    {game.homePitcherHand && `(${game.homePitcherHand})`}
+                  </p>
+                </div>
+              </div>
+              // ==========================================================
+              // END: Corrected MLB logic
+              // ==========================================================
             )
           ) : (
             <p className="font-medium w-full">—</p>
           )}
         </div>
       </div>
-
-      {/* Snapshot + Drill-In 
-       <div className="border-t pt-4">
-       <SnapshotCard gameId={gameId} />
-
-        <button
-          className="mt-2 text-sm underline hover:text-green-600"
-          onClick={() => setShowFeatures((v) => !v)}
-        >
-          {showFeatures ? "Hide full stats" : "View full stats"}
-        </button>
-
-        {showFeatures && (
-          <div className="mt-4">
-            <NBAGameFeaturesPanel gameId={gameId} />
-          </div>
-                  )}
-      </div>
-              */}
     </div>
   );
 };

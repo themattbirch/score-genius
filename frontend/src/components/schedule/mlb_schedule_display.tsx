@@ -1,18 +1,18 @@
 // frontend/src/components/schedule/mlb_schedule_display.tsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, lazy, Suspense } from "react"; // Added lazy and Suspense
 import { startOfDay, isBefore } from "date-fns";
 
 import { useDate } from "@/contexts/date_context";
 import { useMLBSchedule } from "@/api/use_mlb_schedule";
 import { useNetworkStatus } from "@/hooks/use_network_status";
 
-import GameCard from "@/components/games/game_card";
+// GameCard is now lazy-loaded, so we don't need the direct import here.
+// import GameCard from "@/components/games/game_card";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import type { UnifiedGame } from "@/types";
 
-interface ScheduleDisplayProps {
-  showHeader?: boolean;
-}
+// NEW: Define the GameCard as a lazy-loaded component
+const LazyGameCard = lazy(() => import("@/components/games/game_card"));
 
 const formatLocalDate = (d: Date | null | undefined): string =>
   !d
@@ -21,10 +21,11 @@ const formatLocalDate = (d: Date | null | undefined): string =>
         d.getDate()
       ).padStart(2, "0")}`;
 
-const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
+// Removed unused props for cleanup
+const MLBScheduleDisplay: React.FC = () => {
   /* ── Hooks ───────────────────────────────────────────── */
   const { date } = useDate();
-  const online = useNetworkStatus(); // ← NEW
+  const online = useNetworkStatus();
 
   const isoDate = formatLocalDate(date);
   const displayDate = date?.toLocaleDateString("en-US", {
@@ -42,6 +43,7 @@ const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
     return () => clearInterval(id);
   }, []);
 
+  // This API hook is where the prediction data will come from
   const { data: games = [], isLoading, isError } = useMLBSchedule(isoDate);
 
   /* ── Hide finished games on same day ────────────────── */
@@ -73,9 +75,14 @@ const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
             Loading MLB games for {displayDate}…
           </h2>
           <div className="space-y-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <SkeletonBox key={i} className="h-24 w-full" />
-            ))}
+            {Array.from({ length: 4 }).map(
+              (
+                _,
+                i // Using a fixed number for initial load
+              ) => (
+                <SkeletonBox key={i} className="h-24 w-full" />
+              )
+            )}
           </div>
         </div>
       ) : isError ? (
@@ -87,7 +94,24 @@ const MLBScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
         /* ---- success ---- */
         <div className="space-y-4">
           {filteredGames.length ? (
-            filteredGames.map((g) => <GameCard key={g.id} game={g} />)
+            // MODIFIED: Wrapped the list in Suspense for better UX
+            <Suspense
+              fallback={
+                // This fallback shows a skeleton for each card while it loads
+                <div className="space-y-4">
+                  {Array.from({ length: filteredGames.length }).map((_, i) => (
+                    <SkeletonBox key={i} className="h-24 w-full" />
+                  ))}
+                </div>
+              }
+            >
+              <div className="space-y-4">
+                {filteredGames.map((g) => (
+                  // MODIFIED: Using the lazy-loaded component
+                  <LazyGameCard key={g.id} game={g} />
+                ))}
+              </div>
+            </Suspense>
           ) : noGamesInitiallyScheduled ? (
             <p className="mt-4 text-left text-text-secondary">
               No MLB games scheduled for {displayDate}.
