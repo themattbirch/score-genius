@@ -61,9 +61,9 @@ const GamesScreen: React.FC = () => {
 
       {/* ─── The schedule itself ─── */}
       {sport === "NBA" ? (
-        <NBAScheduleDisplay key="nba-display" showHeader={false} />
+        <NBAScheduleDisplay key="nba-display" />
       ) : (
-        <MLBScheduleDisplay key="mlb-display" showHeader={false} />
+        <MLBScheduleDisplay key="mlb-display" />
       )}
     </main>
   );

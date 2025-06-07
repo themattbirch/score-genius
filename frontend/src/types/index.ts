@@ -20,8 +20,15 @@ export interface UnifiedGame {
   moneylineAway?: string | number | null;
   spreadLine?: number | null; // Check type from backend mapping
   totalLine?: number | null; // Check type from backend mapping
-  predictionHome?: number | null; // NBA specific schedule
-  predictionAway?: number | null; // NBA specific schedule
+
+  // NBA Predictions
+  predictionHome?: number | null;
+  predictionAway?: number | null;
+
+  // Added for MLB Predictions
+  predicted_home_runs?: number | null;
+  predicted_away_runs?: number | null;
+
   spread?: number | null; // NBA specific schedule (duplicate?) -> Consolidate in backend mapping
   total?: number | null; // NBA specific schedule (duplicate?) -> Consolidate in backend mapping
   tipoff?: string | null; // NBA specific schedule (duplicate?) -> Use gameTimeUTC

@@ -25,7 +25,7 @@ except ImportError:
     PLOTTING_AVAILABLE = False
 
 # bring in your Supabase client and FeatureEngine class
-from caching.supabase_client import supabase as supabase_client
+from backend.caching.supabase_client import supabase as supabase_client
 
 # --- Logger Configuration  ---
 logging.basicConfig(
@@ -166,7 +166,7 @@ def normalize_team_name(team_name: Optional[Any]) -> str: # Accept Any initially
     team_lower = team_name.lower().strip()
     if team_lower.endswith(".0"):
        team_lower = team_lower[:-2]
-        
+
     if not team_lower:
         # logger.debug("normalize_team_name received empty string input. Returning 'Unknown'.") # Optional debug log
         return "Unknown"
@@ -328,7 +328,7 @@ def get_supabase_client():
     Doing it here (inside a function) prevents config.py from validating
     too early when this module is merely imported.
     """
-    from caching.supabase_client import supabase as supabase_client
+    from backend.caching.supabase_client import supabase as supabase_client
     return supabase_client
 
 

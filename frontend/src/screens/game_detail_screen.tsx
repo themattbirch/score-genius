@@ -51,8 +51,11 @@ const GameDetailScreen: React.FC = () => {
   /* ── Render ─────────────────────────────────────────────────── */
   return (
     <div className="p-4 space-y-6">
-      if (true) return <p className="p-4 bg-yellow-100 text-black">[DEBUG] detail screen for gameId: {gameId}</p>;
-      {/* ── Game summary ── */}
+      if (true) return{" "}
+      <p className="p-4 bg-yellow-100 text-black">
+        [DEBUG] detail screen for gameId: {gameId}
+      </p>
+      ;{/* ── Game summary ── */}
       <div className="app-card p-4">
         <h3 className="mb-2 font-semibold">Game Snapshot</h3>
         <SnapshotCard gameId={gameId} />
@@ -105,7 +108,6 @@ const GameDetailScreen: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* ── Injury report ── */}
       <div className="app-card p-4">
         <h3 className="mb-2 font-semibold">Injury Report</h3>

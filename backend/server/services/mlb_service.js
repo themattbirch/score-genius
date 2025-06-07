@@ -259,7 +259,7 @@ export const getMlbScheduleByDate = async (date) => {
         home_probable_pitcher_handedness, away_probable_pitcher_name,
         away_probable_pitcher_handedness, moneyline_home_clean, moneyline_away_clean,
         spread_home_line_clean, spread_home_price_clean, spread_away_price_clean,
-        total_line_clean, total_over_price_clean, total_under_price_clean
+        total_line_clean, total_over_price_clean, total_under_price_clean, predicted_home_runs, predicted_away_runs 
     `;
     // *** ADD LOGGING FOR COLUMNS ***
     console.log(
@@ -351,6 +351,8 @@ export const getMlbScheduleByDate = async (date) => {
           home_final_score: null,
           away_final_score: null,
           dataType: "schedule",
+          predicted_home_runs: row.predicted_home_runs,
+          predicted_away_runs: row.predicted_away_runs,
         };
         return gameData;
       }
