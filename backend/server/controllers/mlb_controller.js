@@ -7,7 +7,7 @@ import { fetchMlbSnapshotData } from "../services/mlb_service.js";
  * -------------------------------------------------------------*/
 export const getMlbSchedule = async (req, res /* , next */) => {
   try {
-    /* 1 ▸ Validate date ------------------------------------ */
+    /* 1▸ Validate date ------------------------------------ */
     const { date } = req.query;
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res
