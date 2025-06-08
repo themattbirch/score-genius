@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
     # filter out the two modules that need box‐scores
     preseason_order = [m for m in DEFAULT_EXECUTION_ORDER 
-                      if m not in ("momentum","advanced")]
+                      if m not in ("advanced")]
 
     # ————————— run your pipeline —————————
     feature_df = run_feature_pipeline(

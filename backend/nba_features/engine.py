@@ -63,6 +63,11 @@ TRANSFORMS: Dict[str, Any] = {
     'rolling': rolling_transform,
 }
 
+# --- Back-compat aliases for test suite ------------------------------------
+DEFAULT_EXECUTION_ORDER = DEFAULT_ORDER      # pytest expects this name
+TRANSFORM_MAP           = TRANSFORMS         # pytest expects this name
+# ---------------------------------------------------------------------------
+
 def _fetch_table_from_supabase(
     db: Client,
     table_name: str,
