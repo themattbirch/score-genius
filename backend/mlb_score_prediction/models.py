@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from xgboost import XGBRegressor
+from sklearn.ensemble import RandomForestRegressor
 
 import numpy as np
 import pandas as pd
@@ -23,6 +24,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.svm import SVR
+from sklearn.preprocessing import RobustScaler
 
 # Get logger for this module
 logger = logging.getLogger(__name__) # Define logger once, early
@@ -114,16 +116,20 @@ def _generate_rolling_column_name(prefix: str, base: str, stat_type: str, window
     """Generate standardized rolling feature column name."""
     return f"{prefix}_rolling_{base}_{stat_type}_{window}"
 
-def _preprocessing_pipeline() -> Pipeline:
-    """
-    Returns a common preprocessing pipeline used by all predictors:
-    Imputation followed by Standard Scaling.
-    """
-    return Pipeline([
-        ('imputer', SimpleImputer(strategy='median')),
-        ('scaler', StandardScaler())
-    ])
-
+def _preprocessing_pipeline(numeric_features: list[str]) -> Pipeline:
+    return Pipeline(
+        steps=[
+            # === THE FINAL FIX: Use the median to fill missing values ===
+            # This is a standard, robust method that avoids creating outliers.
+            ("imputer", SimpleImputer(strategy="median")),
+            
+            ("scaler",  RobustScaler(quantile_range=(25.0, 75.0))),
+            
+            # This second imputer is still a good safety measure to catch
+            # any NaNs created by the scaler for zero-variance columns.
+            ("post_scale_imputer", SimpleImputer(strategy="constant", fill_value=0.0))
+        ]
+    )
 # --- Base Predictor Class ---
 class BaseScorePredictor:
     """
@@ -280,24 +286,27 @@ class BaseScorePredictor:
                             eval_set_data: Optional[Tuple] = None) -> None:
         start_time = time.time()
         logger.debug(f"X_train shape at start: {X_train.shape}")
+        
+        # === FIX START: Set feature names BEFORE building the pipeline ===
         try:
-            X_train_numeric = X_train.select_dtypes(include=np.number)
-            if X_train_numeric.shape[1] != X_train.shape[1]:
-                dropped_cols = set(X_train.columns) - set(X_train_numeric.columns)
+            # Drop non-numeric columns and store the final feature list
+            X_train_for_fit = X_train.select_dtypes(include=np.number)
+            if X_train_for_fit.shape[1] != X_train.shape[1]:
+                dropped_cols = set(X_train.columns) - set(X_train_for_fit.columns)
                 logger.warning(f"Non-numeric columns dropped: {dropped_cols}. Using numeric subset.")
-                X_train_for_fit = X_train_numeric
-            else:
-                X_train_for_fit = X_train
+            
             self.feature_names_in_ = list(X_train_for_fit.columns)
-            logger.info(f"Using {len(self.feature_names_in_)} features: {self.feature_names_in_[:10]}...")  # Log first 10
+            logger.info(f"Using {len(self.feature_names_in_)} features: {self.feature_names_in_[:10]}...")
+
+            if not self.feature_names_in_:
+                logger.error("CRITICAL: No features for training. Aborting.")
+                return
+
         except Exception as e:
             logger.error(f"Error processing X_train columns: {e}", exc_info=True)
-            self.feature_names_in_ = list(X_train.columns)  # Fallback
+            self.feature_names_in_ = list(X_train.columns) # Fallback
             X_train_for_fit = X_train
-
-        if not self.feature_names_in_:
-            logger.error("CRITICAL: No features for training. Aborting.")
-            return
+        # === FIX END ===
 
         logger.info(f"Starting training for {self.model_name}...")
         params_home = default_params.copy()
@@ -309,11 +318,11 @@ class BaseScorePredictor:
             params_away.update(hyperparams_away)
             logger.info("Custom hyperparameters applied for away model.")
 
-        # Some models (like RidgeCV) might have 'normalize' which is deprecated/handled by scaler
         params_home.pop('normalize', None)
         params_away.pop('normalize', None)
 
         try:
+            # Now, self.feature_names_in_ is available to _build_pipeline
             self.pipeline_home = self._build_pipeline(params_home)
             self.pipeline_away = self._build_pipeline(params_away)
         except Exception as build_e:
@@ -376,7 +385,7 @@ class BaseScorePredictor:
         logger.info(f"Training completed in {self.training_duration:.2f} seconds.")
 
     def _common_predict_logic(self, X: pd.DataFrame) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-        logger.debug(f"Prediction input shape: {X.shape}")
+        logger.debug(f"[{self.model_name}] Prediction input shape: {X.shape}")
         if not self.pipeline_home or not self.pipeline_away:
             logger.error(f"Prediction failed for {self.model_name}: pipelines not available.")
             return None
@@ -386,44 +395,56 @@ class BaseScorePredictor:
             logger.error(f"Prediction failed for {self.model_name}: missing feature list (feature_names_in_).")
             return None
 
+        # --- Start of new diagnostic section ---
         X_predict = X.copy()
-
+        
         missing_cols = set(required_features) - set(X_predict.columns)
         if missing_cols:
-            logger.error(f"Input missing required features: {missing_cols}. Cannot predict.")
+            logger.error(f"[{self.model_name}] Input missing required features: {missing_cols}. Cannot predict.")
             return None
 
-        extra_cols = set(X_predict.columns) - set(required_features)
-        if extra_cols:
-            logger.warning(f"Extra columns detected: {extra_cols}. Selecting only required features.")
-            try:
-                X_predict = X_predict[required_features]
-            except Exception as slice_e:
-                logger.error(f"Error slicing features: {slice_e}", exc_info=True)
-                return None
-
-        # Ensure column order matches training order if all required features are present but possibly disordered
+        # Ensure column order matches training order
         if list(X_predict.columns) != required_features:
-            logger.warning("Reordering input features to match training order.")
-            try:
-                X_predict = X_predict[required_features]
-            except Exception as reorder_e:
-                logger.error(f"Error reordering features: {reorder_e}", exc_info=True)
-                return None
+            logger.warning(f"[{self.model_name}] Reordering input features to match training order.")
+            X_predict = X_predict[required_features]
 
-        logger.debug(f"Aligned X_predict shape: {X_predict.shape} with {len(required_features)} required features.")
-        if X_predict.shape[1] != len(required_features):
-            logger.error(f"Mismatch in feature count after alignment: {X_predict.shape[1]} vs {len(required_features)}.")
-            return None
+        # 1. Log stats of the raw input data
+        logger.info(f"--- [{self.model_name}] DIAGNOSTICS: RAW INPUT DATA (Top 5 Rows) ---")
+        logger.info("\n" + X_predict.head().to_string())
+        
+        # 2. Log stats AFTER the full preprocessing pipeline
+        try:
+            preprocessor = self.pipeline_home.named_steps['preprocessing']
+            X_transformed = preprocessor.transform(X_predict)
+            if not isinstance(X_transformed, pd.DataFrame):
+                 X_transformed = pd.DataFrame(X_transformed, index=X_predict.index, columns=X_predict.columns)
+
+            logger.info(f"--- [{self.model_name}] DIAGNOSTICS: POST-PREPROCESSING DATA (Top 5 Rows) ---")
+            logger.info("\n" + X_transformed.head().to_string())
+            
+            nan_counts = X_transformed.isnull().sum()
+            if nan_counts.sum() > 0:
+                logger.warning(f"[{self.model_name}] WARNING: NaNs detected AFTER preprocessing step. Columns with NaNs:\n{nan_counts[nan_counts > 0]}")
+
+        except Exception as e:
+            logger.error(f"[{self.model_name}] Error during diagnostic transform step: {e}")
+        # --- End of new diagnostic section ---
+
 
         logger.info(f"Predicting scores for {len(X_predict)} samples using {self.model_name}...")
         try:
             pred_home = self.pipeline_home.predict(X_predict)
             pred_away = self.pipeline_away.predict(X_predict)
+            
+            # 3. Log the raw prediction values BEFORE the np.maximum(0, ...) step
+            logger.info(f"--- [{self.model_name}] DIAGNOSTICS: RAW PREDICTION OUTPUT ---")
+            logger.info(f"Raw Home Preds: {pred_home[:5]}")
+            logger.info(f"Raw Away Preds: {pred_away[:5]}")
+            
             logger.info(f"Prediction finished for {self.model_name}.")
             return pred_home, pred_away
         except Exception as e:
-            logger.error(f"Error during prediction: {e}", exc_info=True)
+            logger.error(f"Error during prediction for {self.model_name}: {e}", exc_info=True)
             return None
 
 # --- Ridge Model Definition ---
@@ -437,15 +458,21 @@ class RidgeScorePredictor(BaseScorePredictor):
         }
 
     def _build_pipeline(self, ridge_params: Dict[str, Any]) -> Pipeline:
+        """
+        Build a scikit-learn Pipeline for a Ridge regression model.
+        """
         final_params = self._default_ridge_params.copy()
         final_params.update(ridge_params)
-        preprocessing = _preprocessing_pipeline()
+
+        # === FIX: Use self.feature_names_in_ which is now set before this is called ===
+        preprocessing = _preprocessing_pipeline(numeric_features=self.feature_names_in_)
+
         pipeline = Pipeline([
             ('preprocessing', preprocessing),
             ('ridge', Ridge(**final_params))
         ])
         try:
-            pipeline.set_output(transform="pandas") # Requires sklearn 1.2+
+            pipeline.set_output(transform="pandas")  # sklearn >=1.2
             logger.debug("Ridge pipeline set to output pandas DataFrame.")
         except AttributeError:
             logger.debug("Could not set pipeline output for Ridge (older scikit-learn).")
@@ -498,7 +525,8 @@ class SVRScorePredictor(BaseScorePredictor):
     def _build_pipeline(self, svr_params: Dict[str, Any]) -> Pipeline:
          final_params = self._default_svr_params.copy() 
          final_params.update(svr_params)
-         preprocessing = _preprocessing_pipeline() 
+         # === FIX: Pass the required 'numeric_features' argument ===
+         preprocessing = _preprocessing_pipeline(numeric_features=self.feature_names_in_) 
          pipeline = Pipeline([
              ('preprocessing', preprocessing),
              ('svr', SVR(**final_params)) 
@@ -567,7 +595,8 @@ class XGBoostScorePredictor(BaseScorePredictor):
     def _build_pipeline(self, xgb_params: Dict[str, Any]) -> Pipeline:
         params = self._default_xgb_params.copy()
         params.update(xgb_params)
-        preprocessing = _preprocessing_pipeline()
+        # === FIX: Pass the required 'numeric_features' argument ===
+        preprocessing = _preprocessing_pipeline(numeric_features=self.feature_names_in_)
         pipeline = Pipeline([
             ('preprocessing', preprocessing),
             ('xgb', XGBRegressor(**params))
@@ -613,6 +642,76 @@ class XGBoostScorePredictor(BaseScorePredictor):
         except Exception as e:
             logger.error(f"Validation error for XGBoost model: {e}", exc_info=True)
             raise
+        
+class RFScorePredictor(BaseScorePredictor):
+    """RandomForest-based predictor for MLB runs, with imputation+scaling pipeline."""
+    def __init__(self, model_dir: Union[str, Path] = SHARED_MODELS_BASE_DIR, model_name="rf_mlb_runs_predictor"):
+        super().__init__(model_name=model_name, model_dir=model_dir)
+        # Default hyperparameters for RandomForest
+        self._default_rf_params = {
+            'n_estimators': 100, 
+            'max_depth': None, 
+            'min_samples_split': 2,
+            'min_samples_leaf': 1,
+            'random_state': SEED,
+            'n_jobs': -1  # Use all available cores
+        }
+
+    def _build_pipeline(self, rf_params: Dict[str, Any]) -> Pipeline:
+        params = self._default_rf_params.copy()
+        params.update(rf_params)
+        
+        preprocessing = _preprocessing_pipeline(numeric_features=self.feature_names_in_)
+        
+        pipeline = Pipeline([
+            ('preprocessing', preprocessing),
+            # Use the 'rf' prefix to match your hyperparameter grid
+            ('rf', RandomForestRegressor(**params))
+        ])
+        return pipeline
+
+    def train(self, X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
+              hyperparams_home: Optional[Dict[str, Any]] = None, hyperparams_away: Optional[Dict[str, Any]] = None,
+              sample_weights: Optional[np.ndarray] = None, 
+              fit_params: Optional[Dict[str, Any]] = None, 
+              eval_set_data: Optional[Tuple] = None) -> None:
+        # This method calls the generic training logic from the base class
+        self._common_train_logic(
+            X_train, y_train_home, y_train_away,
+            hyperparams_home, hyperparams_away,
+            sample_weights, self._default_rf_params, # Pass the correct default params
+            fit_params=fit_params, eval_set_data=eval_set_data
+        )
+
+    def predict(self, X: pd.DataFrame) -> Optional[pd.DataFrame]:
+        # This method calls the generic prediction logic from the base class
+        preds = self._common_predict_logic(X)
+        if preds is None: return None
+        ph, pa = preds
+        
+        # Ensure predictions are non-negative
+        return pd.DataFrame({
+            'predicted_home_runs': np.maximum(0.0, ph),
+            'predicted_away_runs': np.maximum(0.0, pa)
+        }, index=X.index)
+
+    def load_model(self, filepath: Optional[str] = None, model_name: Optional[str] = None) -> "RFScorePredictor":
+        inst = super().load_model(filepath, model_name)
+        self._validate_loaded_model_type()
+        return inst # type: ignore
+
+    def _validate_loaded_model_type(self) -> None:
+        # This ensures the loaded model is of the correct type
+        try:
+            if self.pipeline_home and not isinstance(self.pipeline_home.steps[-1][1], RandomForestRegressor):
+                raise TypeError("Loaded home pipeline is not a RandomForestRegressor.")
+            if self.pipeline_away and not isinstance(self.pipeline_away.steps[-1][1], RandomForestRegressor):
+                raise TypeError("Loaded away pipeline is not a RandomForestRegressor.")
+            logger.debug("Validated RandomForest pipelines successfully.")
+        except Exception as e:
+            logger.error(f"Validation error for RandomForest model: {e}", exc_info=True)
+            raise
+
 
 # --- Inning-Specific Model System ---
 class InningSpecificModelSystem:

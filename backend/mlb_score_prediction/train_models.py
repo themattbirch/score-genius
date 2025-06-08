@@ -8,7 +8,7 @@ Key steps include:
 2. Generating a comprehensive set of features using a modular system for MLB.
 3. Performing feature selection using Lasso or ElasticNetCV on pre-game features.
 4. Splitting the data chronologically into training, validation, and test sets.
-5. Optionally tuning hyperparameters for base models (Ridge, SVR, XGBoost).
+5. Optionally tuning hyperparameters for base models (RF, XGBoost).
 6. Training final base models on combined Train+Val data.
 7. Evaluating base models on the test set.
 8. Generating non-leaked validation predictions for ensemble weighting.
@@ -38,6 +38,8 @@ import warnings
 import traceback
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
+import inspect
+from inspect import signature
 
 # --- Third-Party Imports ---
 import joblib
@@ -46,19 +48,23 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from supabase import Client, create_client
+from backend.mlb_score_prediction.models import _preprocessing_pipeline
 
 # Scikit-learn Imports
 from sklearn.base import clone
+from sklearn.dummy import DummyRegressor
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.feature_selection import SelectFromModel
-from sklearn.linear_model import LassoCV, Lasso, RidgeCV, ElasticNetCV, enet_path
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import (ElasticNetCV, Lasso, LassoCV,
+                                  enet_path)
 from sklearn.metrics import (make_scorer, mean_absolute_error,
                              mean_squared_error, r2_score)
-from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+from sklearn.model_selection import (GridSearchCV, RandomizedSearchCV,
+                                     TimeSeriesSplit)
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.dummy import DummyRegressor
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
 # SciPy Imports
 from scipy.optimize import minimize
@@ -80,9 +86,8 @@ except ImportError as fe_imp_err:
 
 # Import MLB model classes
 from backend.mlb_score_prediction.models import (
-    RidgeScorePredictor as MLBRidgePredictor, # Using alias to avoid name clash if old vars exist
-    SVRScorePredictor as MLBSVRPredictor,
-    XGBoostScorePredictor as MLBXGBoostPredictor,
+    RFScorePredictor as MLBRandomForestPredictor,
+    XGBoostScorePredictor as MLBXGBoostPredictor, # Using alias to avoid name clash if old vars exist
     compute_recency_weights, # This is from mlb_models.py, assuming it's generic enough
 )
 
@@ -328,6 +333,31 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
     logger.info(f"MLB Data loading complete. Historical: {len(hist_df)} rows, Team Stats: {len(team_stats_df)} rows.")
     return hist_df, team_stats_df
 
+def make_sample_weights(dates, method, half_life):
+    """
+    dates: pd.Series of pd.Timestamp
+    method: only 'exponential' supported for now
+    half_life: in days
+    """
+    if method != "exponential":
+        raise ValueError(f"Unknown weight method {method!r}")
+    # compute days since each game, relative to the most recent date
+    days_since = (dates.max() - dates).dt.total_seconds() / (3600 * 24)
+    # exponential decay
+    return 2 ** (-days_since / half_life)
+
+def _build_pipeline(self, hyperparams: Dict[str, Any]):
+    """
+    Build a scikit-learn Pipeline for a single-side (home/away) regression model.
+    """
+    # ── NEW: make sure we pass `numeric_features` if the helper expects it ──
+    numeric_feats = getattr(self, "feature_list", [])  # populated during .train()
+    if "numeric_features" in signature(_preprocessing_pipeline).parameters:
+        preprocessing = _preprocessing_pipeline(numeric_features=numeric_feats)
+    else:
+        preprocessing = _preprocessing_pipeline()
+
+
 # ==============================================================================
 # Utilities (e.g. visualize_recency_weights - can be kept as is from NBA if generic)
 # ==============================================================================
@@ -491,8 +521,8 @@ def compute_inverse_error_weights(validation_metrics: Dict[str, float]) -> Dict[
     return weights
 
 def optimize_ensemble_weights(
-    validation_predictions: Dict[str, Dict[str, pd.Series]], # Keyed by simple model_key e.g. "ridge"
-    model_keys: List[str], # List of simple model keys e.g. ["ridge", "svr"]
+    validation_predictions: Dict[str, Dict[str, pd.Series]], # Keyed by simple model_key e.g. "rf"
+    model_keys: List[str], # List of simple model keys e.g. ["rf," "xgb"]
     metric_to_minimize: str = 'avg_mae',
     l2_lambda: float = 0.1
 ) -> Optional[Dict[str, float]]:
@@ -563,7 +593,7 @@ def optimize_ensemble_weights(
             if final_sum > 1e-9: opt_weights /= final_sum
             else: opt_weights = np.array([1.0 / num_models] * num_models) # Fallback if all zero
 
-            # Map to full predictor names for saving (e.g., "ridge_mlb_runs_predictor")
+            # Map to full predictor names for saving (e.g., "rf_mlb_runs_predictor")
             final_weights_map = {
                 f"{model_key}_mlb_runs_predictor": weight
                 for model_key, weight in zip(model_keys, opt_weights)
@@ -611,7 +641,7 @@ def tune_and_evaluate_predictor(
     X_train: pd.DataFrame, y_train_home: pd.Series, y_train_away: pd.Series,
     X_val: pd.DataFrame, y_val_home: pd.Series, y_val_away: pd.Series,
     X_test: pd.DataFrame, y_test_home: pd.Series, y_test_away: pd.Series,
-    model_name_prefix: str, # e.g., "ridge", "svr", "xgb"
+    model_name_prefix: str, # e.g., "rf", "xgb"
     feature_list: List[str],
     param_dist: Optional[Dict[str, Any]],
     n_iter: int = 50, n_splits: int = DEFAULT_CV_FOLDS,
@@ -651,66 +681,182 @@ def tune_and_evaluate_predictor(
     cols_for_test = feature_list_unique # No game_date needed for X_test prediction features
 
     try:
-        X_tune = X_train[[c for c in cols_for_tune if c in X_train.columns]].reindex(columns=feature_list_unique).fillna(0)
+        # Keep game_date in the tuning dataframe if weights are used
+        cols_to_keep_for_tune = feature_list_unique[:]
+        if use_recency_weights and 'game_date' in X_train.columns:
+            cols_to_keep_for_tune.append('game_date')
+        
+        # This dataframe might contain 'game_date'
+        X_tune = X_train[cols_to_keep_for_tune].copy()
+        # This dataframe contains ONLY the features, for model fitting
+        X_tune_features = X_tune.reindex(columns=feature_list_unique, fill_value=0)
         y_tune_home = y_train_home.loc[X_tune.index].copy()
         y_tune_away = y_train_away.loc[X_tune.index].copy()
 
+        # Do the same for the final Train+Val set
         X_train_val = pd.concat([X_train, X_val])
-        X_train_val_features = X_train_val[[c for c in cols_for_final_train if c in X_train_val.columns]].reindex(columns=feature_list_unique).fillna(0)
+        cols_to_keep_for_final = feature_list_unique[:]
+        if use_recency_weights and 'game_date' in X_train_val.columns:
+            cols_to_keep_for_final.append('game_date')
+            
+        # This dataframe might contain 'game_date' for weight calculation
+        X_train_val_features_with_date = X_train_val[cols_to_keep_for_final].copy()
+        # This dataframe contains ONLY the features for the final model training
+        X_train_val_features = X_train_val_features_with_date.reindex(columns=feature_list_unique, fill_value=0)
+        
         y_train_val_home = pd.concat([y_train_home, y_val_home]).loc[X_train_val_features.index]
         y_train_val_away = pd.concat([y_train_away, y_val_away]).loc[X_train_val_features.index]
         
-        X_test_final = X_test[[c for c in cols_for_test if c in X_test.columns]].reindex(columns=feature_list_unique).fillna(0)
-        # y_test_home/away will be aligned later
+        X_test_final = X_test[[c for c in cols_for_test if c in X_test.columns]].reindex(columns=feature_list_unique, fill_value=0)
 
     except Exception as prep_err:
         logger.error(f"Error preparing data splits for {model_full_name}: {prep_err}", exc_info=True)
         return None, None
 
-    # Sample Weights (generic logic, uses compute_recency_weights)
-    # ... (Identical sample weight logic, ensure 'game_date' is present if use_recency_weights) ...
-    # (This section is long, assume it's ported correctly with checks and logging)
+    # --------------------------------------------------------------------------
+    # Recency‐based sample weights (tuning & final train)
+    # --------------------------------------------------------------------------
     temp_fit_sample_weights = None
     final_fit_sample_weights = None
+
     if use_recency_weights:
-        if 'game_date' in X_train.columns: # For tuning
-            dates_tune = X_train.loc[X_tune.index, 'game_date']
-            temp_fit_sample_weights = compute_recency_weights(dates_tune, method=weight_method, half_life=weight_half_life)
+        # 1️⃣ Tuning weights on X_tune (This part was already correct)
+        if 'game_date' in X_tune.columns:
+            dates_tune = X_tune['game_date']
+            temp_fit_sample_weights = compute_recency_weights(
+                dates_tune,
+                method=weight_method,
+                half_life=weight_half_life
+            )
             if temp_fit_sample_weights is None or len(temp_fit_sample_weights) != len(X_tune):
-                logger.warning(f"Tuning sample weights failed for {model_full_name}. No weights applied for tuning."); temp_fit_sample_weights = None
-        else: logger.warning(f"'game_date' missing in X_train for {model_full_name}. No tuning weights.");
-        
-        if 'game_date' in X_train_val.columns: # For final model
-            dates_final = X_train_val.loc[X_train_val_features.index, 'game_date']
-            final_fit_sample_weights = compute_recency_weights(dates_final, method=weight_method, half_life=weight_half_life)
-            if final_fit_sample_weights is None or len(final_fit_sample_weights) != len(X_train_val_features):
-                logger.warning(f"Final sample weights failed for {model_full_name}. No weights for final train."); final_fit_sample_weights = None
+                logger.warning(
+                    f"Tuning sample weights failed for {model_full_name}. "
+                    "No weights will be applied for tuning."
+                )
+                temp_fit_sample_weights = None
+        else:
+            logger.warning(
+                f"'game_date' column missing in X_tune for {model_full_name}. "
+                "Skipping tuning weights."
+            )
+
+        # === FIX START: Use the dataframe that still has the 'game_date' column ===
+        # 2️⃣ Final training weights on X_train_val_features_with_date
+        if 'game_date' in X_train_val_features_with_date.columns:
+            dates_final = X_train_val_features_with_date['game_date']
+            # === FIX END ===
+            final_fit_sample_weights = compute_recency_weights(
+                dates_final,
+                method=weight_method,
+                half_life=weight_half_life
+            )
+            if final_fit_sample_weights is None or len(final_fit_sample_weights) != len(X_train_val_features_with_date):
+                logger.warning(
+                    f"Final sample weights failed for {model_full_name}. "
+                    "No weights will be applied for final training."
+                )
+                final_fit_sample_weights = None
             elif visualize or save_plots:
-                plot_sp = REPORTS_DIR / f"{model_full_name}_final_weights.png" if save_plots else None
-                visualize_recency_weights(dates_final, final_fit_sample_weights, title=f"Final Training Weights - {model_full_name}", save_path=plot_sp)
-        else: logger.warning(f"'game_date' missing in X_train_val for {model_full_name}. No final training weights.");
+                plot_path = (
+                    REPORTS_DIR / f"{model_full_name}_final_weights.png"
+                    if save_plots else None
+                )
+                visualize_recency_weights(
+                    dates_final,
+                    final_fit_sample_weights,
+                    title=f"Final Training Weights — {model_full_name}",
+                    save_path=plot_path
+                )
+        else:
+            logger.warning(
+                f"'game_date' column missing in X_train_val_features_with_date for {model_full_name}. "
+                "Skipping final training weights."
+            )
 
+    # --------------------------------------------------------------------------
+    # 1️⃣  Hyper-parameter tuning (RF gets its own block)
+    # --------------------------------------------------------------------------
+      
 
-    # Hyperparameter Tuning (generic logic, specific to RidgeCV or RandomizedSearch)
-    # ... (Identical tuning logic, ensure param_dist is appropriate for MLB predictors if provided) ...
-    # (This section is long, assume it's ported correctly with checks and logging)
-    metrics['tuning_duration'] = 0.0; metrics['best_params'] = 'default'; metrics['best_cv_score'] = None
+    # MLB Parameter Distributions (can be refined)
+    MLB_RF_PARAM_DIST = {
+        # number of trees
+        'rf__n_estimators': randint(200, 1200),
+
+        # tree depth
+        'rf__max_depth': [None, 10, 20, 30, 40, 50],
+
+        # how many samples required to split an internal node
+        'rf__min_samples_split': randint(2, 30),
+
+        # how many samples required to be at a leaf node
+        'rf__min_samples_leaf': randint(1, 10),
+
+        # number of features to consider at each split
+        # - “sqrt”, “log2”, or a fraction of total features
+        'rf__max_features': ['sqrt', 'log2', 0.1, 0.3, 0.5],
+
+        # bootstrap sampling on or off
+        'rf__bootstrap': [True, False],
+    }
+
+    MLB_XGB_PARAM_DIST = {
+        "xgb__max_depth":         randint(3, 8),
+        "xgb__n_estimators":      randint(100, 600),
+        "xgb__learning_rate":     loguniform(1e-3, 3e-1),
+        "xgb__subsample":         uniform(0.5, 0.5),
+        "xgb__colsample_bytree":  uniform(0.5, 0.5),
+        "xgb__reg_alpha":         loguniform(1e-3, 1.0),
+        "xgb__reg_lambda":        loguniform(1e-3, 1.0),
+    }
+    predictor_map_mlb = {
+        "xgb": MLBXGBoostPredictor, "rf": MLBRandomForestPredictor,
+    }
+    param_dist_map_mlb = {
+        "rf": MLB_RF_PARAM_DIST, "xgb": MLB_XGB_PARAM_DIST
+    }
+    
+    metrics.update({'tuning_duration': 0.0,
+                    'best_params': 'default',
+                    'best_cv_score': None})
     tuning_start_time = time.time()
-    if model_name_prefix == "ridge": # RidgeCV specific path
+
+    if model_name_prefix == "rf":
+        logger.info("Starting RandomizedSearchCV for RandomForest model...")
         try:
-            alphas_to_test = np.logspace(-4, 3, 50) # Adjusted alpha range for MLB runs
-            tscv = TimeSeriesSplit(n_splits=n_splits)
-            temp_pred_prep = predictor_class(); prep_pipeline = temp_pred_prep._build_pipeline({})
-            preprocessing_steps = prep_pipeline.steps[0][1] # Assume first step is preprocessor
-            ridge_cv_tuner = RidgeCV(alphas=alphas_to_test, cv=tscv, scoring=scoring)
-            ridge_cv_pipeline = Pipeline([('preprocessing', preprocessing_steps), ('ridge_cv', ridge_cv_tuner)])
-            fit_p = {'sample_weight': temp_fit_sample_weights} if use_recency_weights and temp_fit_sample_weights is not None else {}
-            ridge_cv_pipeline.fit(X_tune, y_tune_home, **fit_p) # Tune on home runs e.g.
-            best_params_final = {'alpha': ridge_cv_pipeline.named_steps['ridge_cv'].alpha_}
-            metrics['best_cv_score'] = getattr(ridge_cv_pipeline.named_steps['ridge_cv'], 'best_score_', 'N/A')
-            metrics['best_params'] = best_params_final
-            logger.info(f"RidgeCV complete for {model_full_name}. Best alpha: {best_params_final['alpha']:.5f}")
-        except Exception as rcv_e: logger.error(f"RidgeCV failed for {model_full_name}: {rcv_e}", exc_info=True); best_params_final = {}; metrics['best_params'] = 'default (RidgeCV failed)'
+            # This is the parameter grid you defined for RandomForest
+            param_dist = MLB_RF_PARAM_DIST
+
+            # Define the base estimator with the correct preprocessing and model
+            base_estimator = Pipeline([
+                ("pre", _preprocessing_pipeline(numeric_features=feature_list_unique)),
+                # Use n_jobs=-1 inside the model for faster training on all cores
+                ("rf", RandomForestRegressor(random_state=42, n_jobs=-1))
+            ])
+
+            # Use the existing RandomizedSearch helper function
+            best_p, best_s, cv_df = tune_model_with_randomizedsearch(
+                base_estimator,
+                param_dist=param_dist,
+                X=X_tune_features,
+                y=y_tune_home,  # Standard practice to tune on one target (e.g., home score)
+                scoring=scoring,
+                n_splits=n_splits,
+                n_iter=100,  # Or your desired number of iterations
+                sample_weights=temp_fit_sample_weights
+            )
+
+            # Store the results correctly
+            best_params_final = best_p
+            metrics["best_params"] = best_params_final
+            metrics["best_cv_score"] = best_s
+            metrics["cv_results_df"] = cv_df
+
+        except Exception as e:
+            logger.error(f"RandomizedSearchCV for RandomForest failed: {e}", exc_info=True)
+            best_params_final = {}
+            metrics["best_params"] = "default (RandomizedSearchCV failed)"
+
     elif param_dist: # RandomizedSearch
         try:
             tscv = TimeSeriesSplit(n_splits=n_splits)
@@ -721,34 +867,50 @@ def tune_and_evaluate_predictor(
             
             # Tune on home runs for simplicity, or average of home/away MAE if scorer supports it
             best_p, best_s, cv_df = tune_model_with_randomizedsearch(
-                tuning_pipeline, param_dist, X_tune, y_tune_home, tscv, n_iter, scoring, SEED, fit_p_rand)
+                    tuning_pipeline, param_dist, X_tune_features, y_tune_home, tscv, n_iter, scoring, SEED, fit_p_rand)
             if best_p and not np.isnan(best_s):
                 best_params_final = best_p; metrics['best_cv_score'] = best_s; metrics['best_params'] = best_p
                 logger.info(f"Tuning complete for {model_full_name}. Best CV ({scoring}): {best_s:.4f}. Params: {best_p}")
             else: logger.error(f"Tuning invalid for {model_full_name}. Defaults used."); best_params_final = {}; metrics['best_params'] = 'default (tuning invalid)'
         except Exception as search_e: logger.error(f"RandSearch failed for {model_full_name}: {search_e}", exc_info=True); best_params_final = {}; metrics['best_params'] = 'default (tuning failed)'
-    else: logger.info(f"Skipping tuning for {model_full_name}. Defaults used."); best_params_final = {}
+
+    else:
+        logger.info(f"Skipping tuning for {model_full_name}. Defaults used.")
+        best_params_final = {}
+
     metrics['tuning_duration'] = time.time() - tuning_start_time
     logger.info(f"Tuning for {model_full_name} finished in {metrics['tuning_duration']:.2f}s.")
 
-
-    # Train Final Model
-    logger.info(f"Training final {model_full_name} on Train+Val data...")
+    # --------------------------------------------------------------------------
+    # 3️⃣  Train final predictor object (common to all model types)
+    # --------------------------------------------------------------------------
+    logger.info(f"Training final {model_full_name} on Train+Val data…")
     try:
-        final_predictor = predictor_class(model_dir=str(MAIN_MODELS_DIR), model_name=model_full_name)
+        final_predictor = predictor_class(model_dir=str(MAIN_MODELS_DIR),
+                                        model_name=model_full_name)
+
         train_start_time = time.time()
         final_predictor.train(
-            X_train=X_train_val_features, y_train_home=y_train_val_home, y_train_away=y_train_val_away,
-            hyperparams_home=best_params_final, hyperparams_away=best_params_final, # Use same params for home/away or tune separately
-            sample_weights=final_fit_sample_weights
+            X_train=X_train_val_features,            # the same features you passed to .fit()
+            y_train_home=y_train_val_home,
+            y_train_away=y_train_val_away,
+            hyperparams_home=best_params_final.get('home', best_params_final),
+            hyperparams_away=best_params_final.get('away', best_params_final),
+            sample_weights=final_fit_sample_weights  # <— use the vector you made above
         )
-        metrics['training_duration_final'] = getattr(final_predictor, 'training_duration', time.time() - train_start_time)
-        save_path = final_predictor.save_model() # Uses model_name for filename
+        metrics['training_duration_final'] = (
+            getattr(final_predictor, 'training_duration',
+                    time.time() - train_start_time)
+        )
+        save_path = final_predictor.save_model()
         metrics['save_path'] = str(save_path) if save_path else "Save failed"
-        logger.info(f"Final {model_full_name} trained in {metrics['training_duration_final']:.2f}s, saved to {save_path}")
+        logger.info("Final %s trained in %.2fs, saved to %s",
+                    model_full_name, metrics['training_duration_final'], save_path)
+
     except Exception as final_train_e:
-        logger.error(f"Training/saving final {model_full_name} failed: {final_train_e}", exc_info=True)
-        return metrics, None # Return collected metrics so far, but no val_preds
+        logger.error("Training/saving final %s failed: %s",
+                    model_full_name, final_train_e, exc_info=True)
+        return metrics, None  # return early if totally busted
 
     # Evaluate Final Model on Test Set
     logger.info(f"Evaluating final {model_full_name} on test set ({len(X_test_final)} samples)...")
@@ -857,7 +1019,9 @@ def tune_and_evaluate_predictor(
         temp_val_predictor = predictor_class(model_dir=None, model_name=f"{model_full_name}_val_temp")
         temp_val_predictor.train(
             X_train=X_tune, y_train_home=y_tune_home, y_train_away=y_tune_away,
-            hyperparams_home=best_params_final, hyperparams_away=best_params_final,
+            # === FIX: Extract the specific hyperparameter dicts for home and away ===
+            hyperparams_home=best_params_final.get('home', best_params_final),
+            hyperparams_away=best_params_final.get('away', best_params_final),
             sample_weights=temp_fit_sample_weights
         )
         preds_df_val = temp_val_predictor.predict(X_val_for_pred)
@@ -1229,25 +1393,44 @@ def run_training_pipeline(args: argparse.Namespace):
     y_test_home, y_test_away   = test_df[TARGET_COLUMNS[0]], test_df[TARGET_COLUMNS[1]]
     logger.info(f"MLB Data Split Sizes: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
     if X_train.empty or X_val.empty or X_test.empty: logger.error("Empty data split(s). Exiting."); sys.exit(1)
-
-    
+  
 
     # MLB Parameter Distributions (can be refined)
-    MLB_SVR_PARAM_DIST = {
-        'svr__kernel': ['rbf', 'linear'], 'svr__C': loguniform(0.1, 100), # Runs are smaller scale
-        'svr__epsilon': uniform(0.05, 0.5), 'svr__gamma': ['scale', 'auto'] + list(loguniform(1e-5, 1e-1).rvs(size=10,random_state=SEED))
+    MLB_RF_PARAM_DIST = {
+        # number of trees
+        'rf__n_estimators': randint(200, 1200),
+
+        # tree depth
+        'rf__max_depth': [None, 10, 20, 30, 40, 50],
+
+        # how many samples required to split an internal node
+        'rf__min_samples_split': randint(2, 30),
+
+        # how many samples required to be at a leaf node
+        'rf__min_samples_leaf': randint(1, 10),
+
+        # number of features to consider at each split
+        # - “sqrt”, “log2”, or a fraction of total features
+        'rf__max_features': ['sqrt', 'log2', 0.1, 0.3, 0.5],
+
+        # bootstrap sampling on or off
+        'rf__bootstrap': [True, False],
     }
-    MLB_XGB_PARAM_DIST = { # Similar to NBA, but learning rate and depth might be different
-        'xgb__n_estimators': randint(50, 400), 'xgb__learning_rate': uniform(0.005, 0.15),
-        'xgb__max_depth': randint(2, 7), 'xgb__subsample': uniform(0.5, 0.5),
-        'xgb__colsample_bytree': uniform(0.5, 0.5), # ... other xgb params
-        'xgb__reg_alpha': uniform(0.0, 2.0), 'xgb__reg_lambda': uniform(0.0, 2.0),
+
+    MLB_XGB_PARAM_DIST = {
+        "xgb__max_depth":         randint(3, 8),
+        "xgb__n_estimators":      randint(100, 600),
+        "xgb__learning_rate":     loguniform(1e-3, 3e-1),
+        "xgb__subsample":         uniform(0.5, 0.5),
+        "xgb__colsample_bytree":  uniform(0.5, 0.5),
+        "xgb__reg_alpha":         loguniform(1e-3, 1.0),
+        "xgb__reg_lambda":        loguniform(1e-3, 1.0),
     }
     predictor_map_mlb = {
-        "xgb": MLBXGBoostPredictor, "ridge": MLBRidgePredictor, "svr": MLBSVRPredictor,
+        "xgb": MLBXGBoostPredictor, "rf": MLBRandomForestPredictor,
     }
     param_dist_map_mlb = {
-        "svr": MLB_SVR_PARAM_DIST, "xgb": MLB_XGB_PARAM_DIST
+        "rf": MLB_RF_PARAM_DIST, "xgb": MLB_XGB_PARAM_DIST
     }
 
     # Base Model Training Loop
@@ -1328,7 +1511,7 @@ if __name__ == '__main__':
     parser.add_argument("--h2h-window", type=int, default=10, help="H2H games for MLB (e.g., recent series or season)") # MLB specific
 
     # Model Selection (generic)
-    parser.add_argument("--models", type=str, default="ridge,svr,xgb", help="Models to train (ridge,svr,xgb)")
+    parser.add_argument("--models", type=str, default="rf,xgb", help="Models to train (rf,xgb)")
     
     # Data Splitting (generic)
     parser.add_argument("--test-size", type=float, default=0.15)

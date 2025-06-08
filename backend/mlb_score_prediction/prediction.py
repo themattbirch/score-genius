@@ -58,8 +58,7 @@ DEFAULT_UPCOMING_DAYS_WINDOW_MLB = 7  # Predict for a week
 
 ENSEMBLE_WEIGHTS_FILENAME_MLB = "mlb_ensemble_weights_optimized.json"  # MLB specific
 # Fallback weights if file not found, keys are simple model names
-FALLBACK_ENSEMBLE_WEIGHTS_MLB: Dict[str, float] = {"svr": 0.6, "ridge": 0.4}
-
+FALLBACK_ENSEMBLE_WEIGHTS_MLB: Dict[str, float] = {"rf": 0.5, "xgb": 0.5}
 # Update with columns from your mlb_historical_game_stats
 REQUIRED_HISTORICAL_COLS_MLB = [
     "game_id",
@@ -127,8 +126,7 @@ BOX_SCORE_COLS = [
 PROJECT_MODULES_IMPORTED = False
 from backend.mlb_features.engine import run_mlb_feature_pipeline
 from backend.mlb_score_prediction.models import (
-    RidgeScorePredictor as MLBRidgePredictor,
-    SVRScorePredictor as MLBSVRScorePredictor,
+    RFScorePredictor as MLBRFPredictor,
     XGBoostScorePredictor as MLBXGBoostPredictor,
 )
 
@@ -410,8 +408,7 @@ def load_trained_models(
 
     models: Dict[str, Any] = {}
     model_map = {
-        "svr": MLBSVRScorePredictor,
-        "ridge": MLBRidgePredictor,
+        "rf": MLBRFPredictor,
         "xgb": MLBXGBoostPredictor,
     }
     for name, ClsMLB in model_map.items():
@@ -1278,36 +1275,47 @@ def generate_predictions(
 
     # --- Load Ensemble Weights (as in your original script) ---
 
-    weights = FALLBACK_ENSEMBLE_WEIGHTS_MLB.copy() # Ensure FALLBACK_ENSEMBLE_WEIGHTS_MLB is defined
-    wfile = model_dir / ENSEMBLE_WEIGHTS_FILENAME_MLB # Ensure ENSEMBLE_WEIGHTS_FILENAME_MLB is defined
+    # start from your fallback weights
+    weights = FALLBACK_ENSEMBLE_WEIGHTS_MLB.copy()
+    wfile = model_dir / ENSEMBLE_WEIGHTS_FILENAME_MLB
+
     if wfile.is_file():
         try:
-            raw = json.loads(wfile.read_text()) # Ensure json is imported
-            parsed = {k.replace("_mlb_runs_predictor", ""): float(v) for k, v in raw.items()}
-            s = sum(parsed.values())
-            if abs(s) > 1e-9: 
-                weights_loaded = {model_key: parsed.get(model_key, 0.0) / s for model_key in FALLBACK_ENSEMBLE_WEIGHTS_MLB} 
-                # Only update if all keys in FALLBACK_ENSEMBLE_WEIGHTS_MLB are present in parsed, or handle partial update
-                # For simplicity, if all expected model keys are in parsed:
-                if all(key in parsed for key in FALLBACK_ENSEMBLE_WEIGHTS_MLB.keys()):
-                    weights = weights_loaded
+            raw = json.loads(wfile.read_text())
+            # strip the suffix and coerce to float
+            parsed = {
+                k.replace("_mlb_runs_predictor", ""): float(v)
+                for k, v in raw.items()
+            }
+
+            # prune any weight <= 1e-6
+            pruned = {model: w for model, w in parsed.items() if w > 1e-6}
+
+            if pruned:
+                total = sum(pruned.values())
+                if total > 1e-9:
+                    # normalize the remaining weights so they sum to 1
+                    weights = {model: w / total for model, w in pruned.items()}
                 else:
-                    logger.warning(f"Parsed weights from {wfile.name} missing some expected model keys. Using fallback for consistency or check logic.")
-                    # Decide: use fallback, or use partial normalized, or error. For now, let's be cautious and log.
-                    # Using fallback if not all keys present:
-                    # weights = FALLBACK_ENSEMBLE_WEIGHTS_MLB.copy()
-                    # Or, use what was parsed but log it:
-                    weights = {k: v for k,v in weights_loaded.items() if k in FALLBACK_ENSEMBLE_WEIGHTS_MLB}
+                    logger.warning(
+                        f"Sum of parsed weights from {wfile.name} is near zero. Using fallback weights."
+                    )
+            else:
+                logger.warning(
+                    f"No parsed ensemble-weights above threshold from {wfile.name}; using fallback weights."
+                )
 
-
-            else: # sum is zero
-                logger.warning(f"Sum of parsed weights from {wfile.name} is near zero. Using fallback weights.")
-            logger.info(f"Loaded/finalized ensemble weights: {weights}")
         except Exception as e:
-            logger.warning(f"Error loading or parsing ensemble weights file {wfile.name} – using fallback. Error: {e}")
-    else:
-        logger.info(f"Ensemble weights file {wfile.name} not found. Using fallback weights: {weights}")
+            logger.warning(
+                f"Failed to load or parse ensemble weights from {wfile.name}; using fallback. Error: {e}"
+            )
+        else:
+            logger.info(f"Loaded/finalized ensemble weights: {weights}")
 
+    else:
+        logger.info(
+            f"Ensemble weights file {wfile.name} not found. Using fallback weights: {weights}"
+        )
 
     # ─────────────────── 6) BUILD FEATURE MATRIX X ───────────────────
 
@@ -1318,7 +1326,7 @@ def generate_predictions(
         features_df = features_df.loc[:, ~features_df.columns.duplicated()]
 
     if feature_list:
-        X = features_df.reindex(columns=feature_list, fill_value=0.0) 
+        X = features_df[feature_list]
         logger.debug(f"X matrix created using reindex from feature_list. Shape: {X.shape}. Columns (up to 5): {X.columns.tolist()[:5]}")
     else: # feature_list was None or empty
         logger.warning("PREDICTION_PIPELINE: No feature_list available. Creating X from all numeric columns in features_df.")
@@ -1363,12 +1371,16 @@ def generate_predictions(
             continue
 
         comp = {
-            k: {"home": v.at[idx, "predicted_home_runs"], "away": v.at[idx, "predicted_away_runs"]}
-            for k, v in preds_by_model.items()
+            model_key: {
+                "home": float(df.at[idx, "predicted_home_runs"]),
+                "away": float(df.at[idx, "predicted_away_runs"])
+            }
+            for model_key, df in preds_by_model.items()
         }
 
         w_sum = sum(weights.get(k, 0) for k in comp)
         if w_sum < 1e-6:
+            # Fallback to simple average if weights are invalid
             h_ens = np.mean([v["home"] for v in comp.values()])
             a_ens = np.mean([v["away"] for v in comp.values()])
         else:
@@ -1378,8 +1390,10 @@ def generate_predictions(
 
         run_diff = h_ens - a_ens
         meta = meta_df.loc[gid]
+        
+        # Assemble the final dictionary, ensuring all values are the correct type
         out = {
-            "game_id": gid,
+            "game_id": str(gid),
             "game_date": pd.to_datetime(meta["game_date"]).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "home_team_name": str(meta["home_team_name"]),
             "away_team_name": str(meta["away_team_name"]),
@@ -1388,7 +1402,7 @@ def generate_predictions(
             "predicted_run_diff": round(run_diff, 2),
             "predicted_total_runs": round(h_ens + a_ens, 2),
             "win_probability_home": round(1 / (1 + math.exp(-0.3 * run_diff)), 3),
-            "component_predictions": comp,
+            "component_predictions": comp, # 'comp' now contains guaranteed floats
         }
         raw_preds.append(out)
         final_preds.append(out)
