@@ -295,23 +295,35 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
             logger.error(f"'{date_column_historical}' column missing from MLB historical data. Cannot proceed.")
             return pd.DataFrame(), team_stats_df
         
-        logger.info("Converting MLB historical numeric columns and filling NaNs with 0...")
+        logger.info("Converting MLB historical numeric columns, preserving NaNs...")
+        hist_numeric_cols = [
+            col for col in HISTORICAL_REQUIRED_COLS_MLB if col not in
+            ['game_id', 'game_date_time_utc', 'status_long', 'status_short', 'home_team_id', 'home_team_name',
+             'away_team_id', 'away_team_name', 'updated_at', 'league_id', 'season']
+        ]
         for col in hist_numeric_cols:
             if col in hist_df.columns:
-                hist_df[col] = pd.to_numeric(hist_df[col], errors='coerce').fillna(0)
+                # The .fillna(0) is removed to allow NaNs to flow to the feature modules.
+                hist_df[col] = pd.to_numeric(hist_df[col], errors='coerce')
             else:
-                logger.warning(f"MLB Historical column '{col}' missing. Adding and filling with 0.")
-                hist_df[col] = 0
+                logger.warning(f"MLB Historical column '{col}' missing. Adding as all-NaN column.")
+                hist_df[col] = np.nan # Add as NaN, not 0
         hist_df = hist_df.sort_values('game_date').reset_index(drop=True)
 
     if not team_stats_df.empty:
-        logger.info("Converting MLB team stats numeric columns and filling NaNs with 0...")
+        # MODIFICATION: This loop is also corrected to PRESERVE NaNs.
+        logger.info("Converting MLB team stats numeric columns, preserving NaNs...")
+        team_numeric_cols = [
+            col for col in TEAM_STATS_REQUIRED_COLS_MLB if col not in
+            ['team_id', 'team_name', 'season', 'league_id', 'updated_at']
+        ]
         for col in team_numeric_cols:
             if col in team_stats_df.columns:
-                team_stats_df[col] = pd.to_numeric(team_stats_df[col], errors='coerce').fillna(0)
+                # The .fillna(0) is removed here as well.
+                team_stats_df[col] = pd.to_numeric(team_stats_df[col], errors='coerce')
             else:
-                logger.warning(f"MLB Team stats column '{col}' missing. Adding and filling with 0.")
-                team_stats_df[col] = 0
+                logger.warning(f"MLB Team stats column '{col}' missing. Adding as all-NaN column.")
+                team_stats_df[col] = np.nan # Add as NaN, not 0
     
     logger.info(f"MLB Data loading complete. Historical: {len(hist_df)} rows, Team Stats: {len(team_stats_df)} rows.")
     return hist_df, team_stats_df
@@ -1131,6 +1143,61 @@ def run_training_pipeline(args: argparse.Namespace):
         logger.error("No features selected. Exiting.")
         sys.exit(1)
 
+    # =================== NEW CODE BLOCK FOR PILLAR 2 START ===================
+    logger.info("--- Starting Pillar 2: Enriching feature set with imputation flags ---")
+
+    # The initial list selected by the regularized model
+    initial_selected_features = final_feature_list_for_models.copy()
+    logger.info(f"Initial feature count from Lasso: {len(initial_selected_features)}")
+
+    flags_to_add = []
+    for feature in initial_selected_features:
+        # We are not interested in adding a flag for a flag that was already selected
+        if feature.endswith("_imputed"):
+            continue
+
+        # Construct the potential name of the corresponding imputation flag
+        potential_flag_name = f"{feature}_imputed"
+
+        # Check if this flag actually exists in the full dataframe we generated
+        if potential_flag_name in features_df.columns:
+            flags_to_add.append(potential_flag_name)
+            logger.debug(f"Found corresponding flag '{potential_flag_name}' for feature '{feature}'.")
+
+    # Combine the original list with the new flags, removing duplicates
+    if flags_to_add:
+        logger.info(f"Found {len(flags_to_add)} corresponding imputation flags to add to the feature set.")
+        
+        # Use a dictionary to preserve order and remove duplicates from the combined list
+        combined_features_ordered = list(dict.fromkeys(initial_selected_features + flags_to_add))
+        
+        # This is the final, enriched list of features to be used by the models
+        final_feature_list_for_models = combined_features_ordered
+        
+        newly_added_flags = set(final_feature_list_for_models) - set(initial_selected_features)
+        logger.info(f"Total features after adding flags: {len(final_feature_list_for_models)}. "
+                    f"Added {len(newly_added_flags)} new flags.")
+        logger.debug(f"Flags added: {sorted(list(newly_added_flags))}")
+    else:
+        logger.info("No new corresponding imputation flags found to add.")
+
+    logger.info("--- Finished Pillar 2 enrichment ---")
+    # =================== NEW CODE BLOCK FOR PILLAR 2 END =====================
+        
+    if args.write_selected_features:
+        sf_path = MODELS_DIR_MLB / "mlb_selected_features.json"
+        sf_path.parent.mkdir(parents=True, exist_ok=True)      # ensure the dir exists
+        with open(sf_path, "w") as f:
+            json.dump(final_feature_list_for_models, f, indent=4)
+        logger.info(f"MLB selected features ({len(final_feature_list_for_models)}) saved to {sf_path}. Exiting.")
+        sys.exit(0)
+
+    # Data Splitting (chronological, generic logic)
+    essential_cols = ['game_id', 'game_date'] + TARGET_COLUMNS
+    cols_for_df_sel = list(set(essential_cols + final_feature_list_for_models)) # Unique columns
+    features_df_selected = features_df[[c for c in cols_for_df_sel if c in features_df.columns]].sort_values('game_date').reset_index(drop=True)
+    
+
     if args.write_selected_features:
         sf_path = MODELS_DIR_MLB / "mlb_selected_features.json"
         sf_path.parent.mkdir(parents=True, exist_ok=True)      # ensure the dir exists
@@ -1276,7 +1343,7 @@ if __name__ == '__main__':
 
     # Hyperparameter Tuning (generic)
     parser.add_argument("--skip-tuning", action="store_true")
-    parser.add_argument("--tune-iterations", type=int, default=25) # Fewer for quicker test, more for production
+    parser.add_argument("--tune-iterations", type=int, default=100) # Fewer for quicker test, more for production
     parser.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS)
     parser.add_argument("--scoring-metric", type=str, default="neg_mean_absolute_error")
 

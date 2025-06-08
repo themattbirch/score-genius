@@ -87,9 +87,10 @@ def _default_val(col: str) -> Any:
         return pd.NaT
     if col in H2H_IMPUTED_COLS:
         return 1 # Default to True (was imputed)
+    
+    # MODIFICATION: Changed the final fallback from 0.0 to -1.0
     # For feature columns
-    return float(MLB_DEFAULTS.get(f"mlb_{col}", MLB_DEFAULTS.get(col.replace("matchup_", ""), 0.0)))
-
+    return float(MLB_DEFAULTS.get(f"mlb_{col}", MLB_DEFAULTS.get(col.replace("matchup_", ""), -1.0)))
 
 def _get_matchup_history_single(
     *,

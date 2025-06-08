@@ -174,14 +174,12 @@ def transform(
                 col = f"{typ}_{w}"
                 imp_col = f"{col}_imputed"
                 long_df[imp_col] = long_df[col].isna()
-                def _fill(r_long_df_row): # Renamed variable for clarity
-                    # Ensure 'stat' column is used for lookup as in original
+                def _fill(r_long_df_row):
                     key = r_long_df_row["stat"] if typ == "mean" else f"{r_long_df_row['stat']}_std"
-                    default_val = DEFAULTS.get(key, 0.0) # Use a sensible default, 0.0 is common
-                    # Make sure r_long_df_row[col] is the value from the current row being applied
+                    # MODIFICATION: Changed the fallback default from 0.0 to -1.0
+                    default_val = DEFAULTS.get(key, -1.0) 
                     return r_long_df_row[col] if pd.notna(r_long_df_row[col]) else default_val
                 long_df[col] = long_df.apply(_fill, axis=1)
-
 
     # Pivot wide per game/team
     pivots: list[pd.DataFrame] = []
@@ -220,10 +218,10 @@ def transform(
     # Cleanup temp cols
     out.drop(columns=[c for c in ["home_norm", "away_norm", "home_mkey", "away_mkey", "_gdate"] if c in out.columns], inplace=True, errors="ignore")
 
-    # Cast imputed cols to bool
+    # Cast imputed cols to INT instead of bool/object
     for col in [c for c in out.columns if c.endswith("_imputed")]:
-        # cast to genuine Python bool (not numpy.bool_) so identity checks in tests pass
-        out[col] = pd.Series([bool(v) for v in out[col].to_numpy()], index=out.index, dtype="object")
+        # MODIFICATION: Cast to integer, filling any potential NaNs with 1 (imputed).
+        out[col] = pd.to_numeric(out[col], errors='coerce').fillna(1).astype(int)
 
     if debug:
         logger.setLevel(orig_level)

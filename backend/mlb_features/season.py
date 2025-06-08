@@ -110,10 +110,10 @@ def transform(
             MLB_DEFAULTS.get("mlb_prev_season_win_pct", MLB_DEFAULTS.get("mlb_win_pct", 0.5))
         ),
         "prev_season_avg_runs_for":   float(
-            MLB_DEFAULTS.get("mlb_prev_season_avg_runs_for", MLB_DEFAULTS.get("mlb_avg_runs_for", 4.0))
+            MLB_DEFAULTS.get("mlb_prev_season_avg_runs_for", MLB_DEFAULTS.get("mlb_avg_runs_for", -1.0))
         ),
         "prev_season_avg_runs_against": float(
-            MLB_DEFAULTS.get("mlb_prev_season_avg_runs_against", MLB_DEFAULTS.get("mlb_avg_runs_against", 4.0))
+            MLB_DEFAULTS.get("mlb_prev_season_avg_runs_against", MLB_DEFAULTS.get("mlb_avg_runs_against", -1.0))
         ),
     }
     all_new_cols = []
@@ -175,7 +175,8 @@ def transform(
                             result[f"{col}_imputed"] = True
                     else:
                         if flag_imputations:
-                            result[f"{col}_imputed"] = result[col].isna()
+                        # Ensure the boolean is cast to an integer (0 or 1)
+                            result[f"{col}_imputed"] = result[col].isna().astype(int)
                         result[col] = pd.to_numeric(result[col], errors="coerce").fillna(default)
 
             # Drop helper cols

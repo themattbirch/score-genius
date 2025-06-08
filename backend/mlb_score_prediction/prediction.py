@@ -924,6 +924,76 @@ def generate_predictions(
         logger.info("PREDICTION_PIPELINE: Dropping duplicated columns from features_df.")
         features_df = features_df.loc[:, ~features_df.columns.duplicated()]
 
+    # ─── INTELLIGENT FILL-IN FOR NaN ROLLING FEATURES ──────────────────────────
+    if not features_df.empty:
+        # 1) Build a lean per-team season-average lookup
+        team_core = pd.DataFrame()
+        if team_stats_df is not None and not team_stats_df.empty:
+            tc = team_stats_df.copy()
+            tc["team_id"] = pd.to_numeric(tc["team_id"], errors="coerce")
+            tc.dropna(subset=["team_id"], inplace=True)
+            tc["team_id"] = tc["team_id"].astype(int)
+            tc = (
+                tc.sort_values("season")
+                .groupby("team_id", as_index=False)
+                .last()                       # latest season per team
+                .set_index("team_id")
+                .rename(columns={
+                    "runs_for_avg_all":      "avg_for",
+                    "runs_against_avg_all":  "avg_against",
+                })
+            )
+            team_core = tc[["avg_for", "avg_against"]]
+
+        LEAGUE_AVG_FOR, LEAGUE_AVG_AGAINST = 4.60, 4.60  # sane league-wide defaults
+        NEUTRAL_DEFAULT = 0.0
+
+        def _proxy(tid: Any, key: str) -> float:
+            """Return per-team proxy if we have it, else league average."""
+            try:
+                tid_int = int(tid)
+                if tid_int in team_core.index:
+                    val = team_core.at[tid_int, key]
+                    return float(val) if pd.notna(val) else (LEAGUE_AVG_FOR if key == "avg_for" else LEAGUE_AVG_AGAINST)
+            except Exception:
+                pass
+            return LEAGUE_AVG_FOR if key == "avg_for" else LEAGUE_AVG_AGAINST
+
+        # 2) Fill NaNs in rolling-feature columns
+    rolling_cols = [c for c in features_df.columns if "rolling_" in c]
+    for col in rolling_cols:
+        if not features_df[col].isna().any():
+            continue  # nothing to fill for this feature
+
+        # helper chooses the right stand-in for a single team id
+        def _fill_value(tid, _col=col):
+            if "runs_scored" in _col or "hits_for" in _col:
+                return _proxy(tid, "avg_for")
+            if (
+                "runs_allowed"      in _col
+                or "hits_allowed"   in _col
+                or "errors_by_opponent" in _col
+            ):
+                return _proxy(tid, "avg_against")
+            # anything else (e.g. errors_committed, misc rolling stats)
+            return NEUTRAL_DEFAULT
+
+        if col.startswith("home_"):
+            need_fill = features_df[col].isna()
+            features_df.loc[need_fill, col] = (
+                features_df.loc[need_fill, "home_team_id"].apply(_fill_value)
+            )
+        elif col.startswith("away_"):
+            need_fill = features_df[col].isna()
+            features_df.loc[need_fill, col] = (
+                features_df.loc[need_fill, "away_team_id"].apply(_fill_value)
+            )
+        else:
+            # non-side-specific rolling column – just neutral value
+            features_df[col].fillna(NEUTRAL_DEFAULT, inplace=True)
+    # ─── END INTELLIGENT FILL-IN ───────────────────────────────────────────────
+
+
     # ─────────────────── 5) LOAD MODELS / WEIGHTS AND FEATURE LIST ──────────────────
     models, feature_list = load_trained_models(model_dir, load_feature_list=True)
     if not models:

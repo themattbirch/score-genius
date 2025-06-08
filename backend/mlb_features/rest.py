@@ -39,7 +39,7 @@ except ImportError:
     MLB_DEFAULTS: TypingDict[str, float] = {}
 
 # If DEFAULTS does not have "mlb_rest_days", fall back to 3.0
-DEF_REST_MLB = float(MLB_DEFAULTS.get("mlb_rest_days", 3.0))
+DEF_REST_MLB = float(MLB_DEFAULTS.get("mlb_rest_days", -1.0))
 
 PLACEHOLDER_COLS: List[str] = [
     "rest_days_home",

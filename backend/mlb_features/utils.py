@@ -39,80 +39,68 @@ EPSILON = 1e-6
 # -- Module-Level Helper Functions --
 
 
-# -------- Defaults --------
+# -------- MLB DEFAULTS DICTIONARY --------
+# This dictionary provides fallback values for feature engineering modules.
+# STRATEGY:
+# - Use -1.0 for metrics where 0 is a possible real value (e.g., runs, streak).
+#   This makes "unknown" data distinct from "low value" data.
+# - Use 0.0 for differential metrics (e.g., 'net_rating') where 0 is a neutral default.
+# - Use 0.5 for percentage-based metrics like win percentage.
+
 DEFAULTS: dict[str, Any] = {
-    # Basic/Season Stats
+    # --- Basic & Season Stats ---
     'win_pct': 0.5,
-    'avg_pts_for': 115.0,
-    'avg_pts_against': 115.0,
-    'home_advantage': 3.0, # Often used conceptually, good to have?
-    'score_for': 115.0,     # Alias often used in rolling stats
-    'score_against': 115.0, # Alias often used in rolling stats
-    'offensive_rating': 115.0,
-    'defensive_rating': 115.0,
-    'off_rating': 115.0,    # Explicit alias for rolling stats
-    'def_rating': 115.0,    # Explicit alias for rolling stats
-    'net_rating': 0.0,
-    'pace': 100.0,
-    'estimated_possessions': 95.0,
+    'avg_runs_for': -1.0,       # Use -1.0 to signal unknown
+    'avg_runs_against': -1.0,   # Use -1.0 to signal unknown
+    'runs_for_avg': -1.0,       # Alias used in some modules
+    'runs_against_avg': -1.0,   # Alias used in some modules
+    'net_runs_avg': 0.0,        # A diff/net metric, so 0 is a neutral default
 
-    # Advanced Box Score Stats
-    'efg_pct': 0.54,
-    'ft_rate': 0.20,
-    'tov_rate': 13.0,
-    'oreb_pct': 0.23,
-    'dreb_pct': 0.77,
-    'trb_pct': 0.50,
+    # --- Common Rate Stats (Defaults signal 'unknown') ---
+    'batting_avg': -1.0,
+    'on_base_pct': -1.0,
+    'slugging_pct': -1.0,
+    'on_base_plus_slugging': -1.0,
+    'era': -1.0,                # Earned Run Average
+    'whip': -1.0,               # Walks and Hits per Inning Pitched
+    'k_per_9': -1.0,            # Strikeouts per 9 innings
+    'bb_per_9': -1.0,           # Walks per 9 innings
 
-    # Standard Deviations (if needed by models/features directly)
-    'score_for_std': 10.0,
-    'score_against_std': 10.0,
-    'off_rating_std': 10.0,
-    'def_rating_std': 10.0,
-    'net_rating_std': 10.0,
-    'pace_std': 5.0,
-    'efg_pct_std': 0.05,
-    'tov_rate_std': 3.0,
-    'oreb_pct_std': 0.05,
-    'dreb_pct_std': 0.05,
-    'trb_pct_std': 0.05,
-    'ft_rate_std': 0.05,
+    # --- Standard Deviations (for modeling variance if needed) ---
+    'runs_scored_std': 3.0,     # Typical std dev of runs in a game
+    'hits_for_std': 3.5,
 
-    # Momentum/Form Stats
-    'momentum_ewma': 0.0, # Might be calculated, but good default
-    'momentum_ewma_std': 5.0,
-    'form_win_pct': 0.5,
-    'current_streak': 0,
-    'momentum_direction': 0.0,
+    # --- Form/Streak Stats ---
+    'form_win_pct': 0.5,        # 0.5 is a neutral default
+    'current_streak': 0.0,      # 0 is a neutral default
+    'momentum_direction': 0.0,  # 0 is a neutral default
 
-    # Head-to-Head Matchup Stats
-    'matchup_num_games': 0,
-    'matchup_avg_point_diff': 0.0,
+    # --- Head-to-Head Matchup Stats ---
+    'matchup_num_games': 0.0,
+    'matchup_avg_run_diff': 0.0,
     'matchup_home_win_pct': 0.5,
-    'matchup_avg_total_score': 230.0,
-    'matchup_avg_home_score': 115.0,
-    'matchup_avg_away_score': 115.0,
-    'matchup_streak': 0,
+    'matchup_avg_total_runs': -1.0,  # Use -1.0 to signal unknown
+    'matchup_avg_home_team_runs': -1.0,
+    'matchup_avg_away_team_runs': -1.0,
+    'matchup_home_team_streak': 0.0,
 
-    # Rest/Schedule Stats
-    'rest_days': 3.0,
-    'games_last_7_days_home': 2,
-    'games_last_14_days_home': 4,
-    'games_last_7_days_away': 2,
-    'games_last_14_days_away': 4,
+    # --- Rest/Schedule Stats ---
+    'rest_days': -1.0,          # Use -1.0 to signal unknown
+    'games_last_7_days': 0.0,   # Use 0 as these are counts
+    'games_last_14_days': 0.0,
 }
 
-
-
-TEAMS_TO_WATCH = {"pistons", "grizzlies", "lakers", "clippers", "nets", "knicks"}
-
+# --- MLB LEAGUE AVERAGES ---
+# This dictionary stores actual league averages, used for specific fallbacks
+# or analysis where a true average (not an 'unknown' signal) is needed.
 LEAGUE_AVERAGES: dict[str, Any] = {
-    'score': DEFAULTS['avg_pts_for'],
-    'quarter_scores': {1: 28.5, 2: 28.5, 3: 28.0, 4: 29.0}
+    'runs_per_game_per_team': 4.6,
+    # Approximate run scoring distribution per inning
+    'inning_runs': {
+        1: 0.55, 2: 0.52, 3: 0.51, 4: 0.50, 5: 0.51,
+        6: 0.50, 7: 0.48, 8: 0.47, 9: 0.46
+    }
 }
-
-
-
 # -------- Helpers --------
 def safe_divide(numerator: pd.Series, denominator: pd.Series, default_val: float = 0.0) -> pd.Series:
     """Safely divide two series, handling zeros and NaNs."""

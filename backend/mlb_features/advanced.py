@@ -135,7 +135,6 @@ def transform(
     """
     result = df.copy()
     
-    # Use passed params or fall back to defaults
     flag_imputations = kwargs.get("flag_imputations", True)
     home_team_col_param = kwargs.get("home_team_col_param", "home_team_id")
     away_team_col_param = kwargs.get("away_team_id", "away_team_id")
@@ -153,13 +152,14 @@ def transform(
 
     hist_lookup = hist_lookup.drop_duplicates('team_norm').set_index('team_norm')
 
+    # MODIFICATION: Changed default values for runs from 4.5 to -1.0
     split_map_defs = {
         "h_team_hist_HA_win_pct": ("wins_home_percentage", "mlb_win_pct", 0.5),
-        "h_team_hist_HA_runs_for_avg": ("runs_for_avg_home", "mlb_avg_runs", 4.5),
-        "h_team_hist_HA_runs_against_avg": ("runs_against_avg_home", "mlb_avg_runs", 4.5),
+        "h_team_hist_HA_runs_for_avg": ("runs_for_avg_home", "mlb_avg_runs", -1.0),
+        "h_team_hist_HA_runs_against_avg": ("runs_against_avg_home", "mlb_avg_runs", -1.0),
         "a_team_hist_HA_win_pct": ("wins_away_percentage", "mlb_win_pct", 0.5),
-        "a_team_hist_HA_runs_for_avg": ("runs_for_avg_away", "mlb_avg_runs", 4.5),
-        "a_team_hist_HA_runs_against_avg": ("runs_against_avg_away", "mlb_avg_runs", 4.5),
+        "a_team_hist_HA_runs_for_avg": ("runs_for_avg_away", "mlb_avg_runs", -1.0),
+        "a_team_hist_HA_runs_against_avg": ("runs_against_avg_away", "mlb_avg_runs", -1.0),
     }
     
     home_defs = {k: v for k, v in split_map_defs.items() if k.startswith("h_")}
