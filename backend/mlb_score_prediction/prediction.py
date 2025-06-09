@@ -58,7 +58,7 @@ DEFAULT_UPCOMING_DAYS_WINDOW_MLB = 7  # Predict for a week
 
 ENSEMBLE_WEIGHTS_FILENAME_MLB = "mlb_ensemble_weights_optimized.json"  # MLB specific
 # Fallback weights if file not found, keys are simple model names
-FALLBACK_ENSEMBLE_WEIGHTS_MLB: Dict[str, float] = {"rf": 0.5, "xgb": 0.5}
+FALLBACK_ENSEMBLE_WEIGHTS_MLB: Dict[str, float] = {"rf": 0.3, "xgb": 0.4, "lgbm": 0.3}
 # Update with columns from your mlb_historical_game_stats
 REQUIRED_HISTORICAL_COLS_MLB = [
     "game_id",
@@ -128,6 +128,8 @@ from backend.mlb_features.engine import run_mlb_feature_pipeline
 from backend.mlb_score_prediction.models import (
     RFScorePredictor as MLBRFPredictor,
     XGBoostScorePredictor as MLBXGBoostPredictor,
+    LGBMScorePredictor as MLBLightGBMPredictor,
+    RidgeScorePredictor
 )
 
 PROJECT_MODULES_IMPORTED = True
@@ -400,7 +402,15 @@ def load_trained_models(
                     deduped.append(f)
                     seen.add(f)
             feature_list = deduped
-            logger.info(f"Loaded mlb_selected_features.json with {len(feature_list)} features")
+            logger.info(f"Loaded {len(feature_list)} raw features from mlb_selected_features.json")
+            # Filter out all imputed flags to align with `flag_imputations=False`
+            original_count = len(feature_list)
+            feature_list = [f for f in feature_list if not f.endswith("_imputed")]
+            filtered_count = len(feature_list)
+            if original_count > filtered_count:
+                logger.info(f"Filtered out {original_count - filtered_count} imputed flag features. "
+                            f"Proceeding with {filtered_count} features.")
+
         except Exception as e:
             logger.warning(f"Could not read mlb_selected_features.json: {e}")
     elif load_feature_list:
@@ -410,6 +420,7 @@ def load_trained_models(
     model_map = {
         "rf": MLBRFPredictor,
         "xgb": MLBXGBoostPredictor,
+        "lgbm": MLBLightGBMPredictor,
     }
     for name, ClsMLB in model_map.items():
         try:
@@ -456,49 +467,72 @@ def categorize_selected_features(feature_list: List[str]) -> Dict[str, List[str]
 
 # --- Display Summary (MLB specific) ---
 def display_prediction_summary_mlb(preds: List[Dict]) -> None:
+    """
+    Displays a summary table of predictions, now including columns for each
+    individual model's prediction (RF, XGB, etc.) in addition to the final ensemble.
+    """
+    if not preds:
+        logger.warning("No predictions to display.")
+        return
+
     header_line = "=" * 125
     header_title = " " * 45 + "MLB PREGAME PREDICTION SUMMARY"
-    header_cols = (
-        f"{'DATE':<11} {'MATCHUP':<30} {'PRED RUNS':<12} {'PRED RUN DIFF':<15} {'WIN PROB (H)':<15}"
-    )
+
+    # --- NEW: Dynamically build the header ---
+    model_keys = sorted(preds[0].get("component_predictions", {}).keys())
+    
+    header_cols = f"{'DATE':<11} {'MATCHUP':<30} {'ENSEMBLE':<12}"
+    for key in model_keys:
+        header_cols += f" {key.upper():<9}"  # Add columns like 'RF', 'XGB'
+    header_cols += f" {'WIN PROB (H)':<15}"
+    # --- END NEW ---
+
     header_sep = "-" * 125
 
     print(f"\n{header_line}\n{header_title}\n{header_line}\n{header_cols}\n{header_sep}")
+    
     try:
         df = pd.DataFrame(preds)
         if "game_date" in df.columns:
             df["game_date_dt"] = pd.to_datetime(df["game_date"], errors="coerce")
-            df = df.dropna(subset=["game_date_dt"])
-            df = df.sort_values(
-                ["game_date_dt", "predicted_run_diff"],
-                key=lambda x: np.abs(x) if x.name == "predicted_run_diff" else x,
-            )
+            df = df.sort_values(["game_date_dt", "home_team_name"])
     except Exception as e:
-        logger.error(f"Error sorting for MLB display: {e}")
+        logger.error(f"Error preparing display DataFrame: {e}")
         df = pd.DataFrame(preds)
 
     for _, g in df.iterrows():
         try:
-            date_str = (
-                pd.to_datetime(g.get("game_date")).strftime("%Y-%m-%d")
-                if pd.notna(g.get("game_date"))
-                else "N/A"
-            )
-            matchup = f"{str(g.get('home_team_name', '?'))[:13]} vs {str(g.get('away_team_name', '?'))[:13]}"
+            date_str = pd.to_datetime(g.get("game_date")).strftime("%Y-%m-%d") if pd.notna(g.get("game_date")) else "N/A"
+            matchup = f"{str(g.get('home_team_name', '?'))[:13]:<13} vs {str(g.get('away_team_name', '?'))[:13]}"
+            
+            # Format the final ENSEMBLE prediction
             final_home = g.get("predicted_home_runs", np.nan)
             final_away = g.get("predicted_away_runs", np.nan)
-            final_diff = g.get("predicted_run_diff", np.nan)
+            ensemble_str = f"{final_home:.1f}-{final_away:.1f}" if pd.notna(final_home) and pd.notna(final_away) else "N/A"
+            
+            # Start building the output string for the row
+            row_str = f"{date_str:<11} {matchup:<30} {ensemble_str:<12}"
+
+            # --- NEW: Add each component model's prediction to the output string ---
+            components = g.get('component_predictions', {})
+            for key in model_keys:  # Iterate in sorted order to match the header
+                comp_scores = components.get(key, {})
+                c_home = comp_scores.get('home', np.nan)
+                c_away = comp_scores.get('away', np.nan)
+                comp_str = f"{c_home:.1f}-{c_away:.1f}" if pd.notna(c_home) and pd.notna(c_away) else "N/A"
+                row_str += f" {comp_str:<9}"
+            # --- END NEW ---
+            
             winp_home = g.get("win_probability_home", np.nan)
-
-            final_runs_str = f"{final_home:.1f}-{final_away:.1f}" if pd.notna(final_home) and pd.notna(final_away) else "N/A"
-            final_diff_str = f"{final_diff:+.1f}" if pd.notna(final_diff) else "N/A"
             win_prob_str = f"{winp_home*100:.1f}%" if pd.notna(winp_home) else "N/A"
+            row_str += f" {win_prob_str:<15}"
 
-            print(f"{date_str:<11} {matchup:<30} {final_runs_str:<12} {final_diff_str:<15} {win_prob_str:<15}")
+            print(row_str)
+
         except Exception as e:
-            logger.error(f"Error displaying MLB game {g.get('game_id')}: {e}", exc_info=True)
-    print(header_line)
+            logger.error(f"Error displaying game {g.get('game_id')}: {e}", exc_info=True)
 
+    print(header_line)
 
 def compute_form_for_team(df_group: pd.DataFrame, window_size: int = 5) -> pd.DataFrame:
     # Renamed from train_models.py to accept window_size parameter
@@ -895,7 +929,7 @@ def generate_predictions(
         rolling_window_sizes=[15, 30, 60, 100], 
         h2h_max_games=10, 
         execution_order=execution_order,
-        flag_imputations=True, 
+        flag_imputations=False, 
         debug=debug_mode, # Passed from prediction.py args
     )
 
@@ -1412,9 +1446,11 @@ def generate_predictions(
     return final_preds, raw_preds
 
 
+# In prediction.py
+
 def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: SupabaseClient) -> None:
     """
-    Upserts ONLY the predicted home and away runs into the mlb_game_schedule table.
+    Upserts ONLY the final predicted home and away runs into the mlb_game_schedule table.
     """
     if not supabase_client:
         logger.error("Supabase client not available for upsert.")
@@ -1424,7 +1460,7 @@ def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: S
         return
 
     updated_count = 0
-    logger.info(f"Starting upsert for {len(predictions)} predictions (home/away runs only)...")
+    logger.info(f"Starting upsert for {len(predictions)} final ensemble predictions...")
 
     for pred in predictions:
         gid = pred.get("game_id")
@@ -1432,13 +1468,12 @@ def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: S
             logger.warning(f"Skipping prediction with missing game_id: {pred}")
             continue
 
-        # This payload now ONLY includes the two columns you want to update.
+        # This payload ONLY includes the two columns your database expects.
         update_payload = {
             "predicted_home_runs": pred.get("predicted_home_runs"),
             "predicted_away_runs": pred.get("predicted_away_runs"),
         }
 
-        # This check ensures we don't proceed if the essential prediction values are missing.
         if update_payload["predicted_home_runs"] is None or update_payload["predicted_away_runs"] is None:
             logger.warning(f"Skipping game_id {gid} due to missing run prediction values.")
             continue
@@ -1450,20 +1485,14 @@ def upsert_run_predictions(predictions: List[Dict[str, Any]], supabase_client: S
                 .eq("game_id", str(gid))
                 .execute()
             )
-            # This logic correctly checks for success or errors.
             if resp.data:
                 logger.info(f"Upserted MLB predictions for game_id {gid}.")
                 updated_count += 1
-            elif resp.error:
-                logger.error(f"Error upserting MLB game_id {gid}: {resp.error}")
-            else:
-                logger.warning(f"No row found or no data returned for MLB game_id {gid}.")
         except Exception as e:
             logger.error(f"Exception during upsert for MLB game_id {gid}: {e}", exc_info=True)
 
-    logger.info(f"Finished upserting MLB predictions for {updated_count} games.")
+    logger.info(f"Finished upserting MLB predictions for {updated_count} games.")# --- Main Execution ----------------------------------------------------------
 
-# --- Main Execution ----------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Generate MLB Run Predictions")
     parser.add_argument(

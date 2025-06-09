@@ -307,13 +307,39 @@ export const getNbaAdvancedStats = async (req, res, next) => {
   }
 };
 export async function getNbaSnapshot(req, res, next) {
+  const { gameId } = req.params;
+
   try {
-    const { gameId } = req.params;
+    const start = Date.now();
     const snapshot = await fetchNbaSnapshotData(gameId);
-    if (!snapshot)
-      return res.status(404).json({ message: "Snapshot not found" });
-    return res.json(snapshot);
+    console.log(`getNbaSnapshot(${gameId}) → ${Date.now() - start}ms`);
+    return res.json(snapshot); // 🚩 send it back immediately
   } catch (err) {
-    next(err);
+    // only regenerate on a 404 “not found”
+    if (err.status === 404) {
+      try {
+        const { spawnSync } = require("child_process");
+        const result = spawnSync(
+          "python3",
+          ["backend/nba_features/make_nba_snapshots.py", gameId],
+          { encoding: "utf-8" }
+        );
+
+        if (result.error) {
+          console.error("Snapshot generation failed:", result.error);
+          return res
+            .status(500)
+            .json({ message: "Failed to generate NBA snapshot" });
+        }
+
+        // re-fetch after generating
+        const newSnap = await fetchNbaSnapshotData(gameId);
+        return res.json(newSnap);
+      } catch (genErr) {
+        next(genErr);
+      }
+    } else {
+      next(err); // non-404 errors bubble up
+    }
   }
 }

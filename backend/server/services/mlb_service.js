@@ -458,16 +458,50 @@ export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
   }
 };
 export async function fetchMlbSnapshotData(gameId) {
+  if (cache.has(gameId)) {
+    return cache.get(gameId);
+  }
+  // 1) fetch + alias columns so the JS property names match your Python payload
   const { data, error, status } = await supabase
     .from(MLB_SNAPSHOT_TABLE)
-    .select("headline_stats, bar_data, radar_data, pie_data")
+    .select(
+      `
+      headline_stats,
+      bar_chart_data:bar_data,       -- maps bar_data → bar_chart_data
+      radar_chart_data:radar_data,   -- maps radar_data → radar_chart_data
+      pie_chart_data:pie_data        -- maps pie_data   → pie_chart_data
+    `
+    )
     .eq("game_id", gameId)
     .maybeSingle();
 
+  // 2) supabase error → 5xx
   if (error) {
     const err = new Error(error.message || "Failed fetching MLB snapshot data");
     err.status = status || 503;
     throw err;
   }
-  return data ?? null;
+
+  // 3) no row → 404
+  if (!data) {
+    const err = new Error(`Snapshot for game ${gameId} not found`);
+    err.status = 404;
+    throw err;
+  }
+
+  // 4) runtime shape‐check
+  function assertArray(col, name) {
+    if (!Array.isArray(col)) {
+      const err = new Error(`${name} expected as Array, got ${typeof col}`);
+      err.status = 500;
+      throw err;
+    }
+  }
+  assertArray(data.headline_stats, "headline_stats");
+  assertArray(data.bar_chart_data, "bar_chart_data");
+  assertArray(data.radar_chart_data, "radar_chart_data");
+  assertArray(data.pie_chart_data, "pie_chart_data");
+
+  cache.set(gameId, data);
+  return data;
 }
