@@ -1054,25 +1054,34 @@ def run_training_pipeline(args: argparse.Namespace):
     }
 
     MLB_LGBM_PARAM_DIST = {
-        'model__n_estimators': randint(200, 1500),
-        'model__num_leaves': randint(20, 150),
-        'model__learning_rate': loguniform(1e-3, 3e-1),
-        'model__min_child_samples': randint(5, 50),
-        'model__subsample': uniform(0.6, 0.4),
-        'model__colsample_bytree': uniform(0.6, 0.4),
+        'lgbm__estimator__n_estimators':       randint(300, 1200),
+        'lgbm__estimator__num_leaves':         randint(20,  40),
+        'lgbm__estimator__max_depth':          randint(3,   12),
+        'lgbm__estimator__learning_rate':      loguniform(1e-2, 1e-1),
+        'lgbm__estimator__min_child_samples':  randint(20,  60),
+        'lgbm__estimator__min_split_gain':     uniform(0.0, 0.1),
+        'lgbm__estimator__subsample':          uniform(0.7, 0.2),
+        'lgbm__estimator__subsample_freq':     randint(0,    5),
+        'lgbm__estimator__colsample_bytree':   uniform(0.7, 0.2),
+        'lgbm__estimator__lambda_l1':          loguniform(1e-2, 1.0),
+        'lgbm__estimator__lambda_l2':          loguniform(1e-2, 1.0),
     }
-
 
     # --- 5. MODEL TRAINING LOOP (UNIFIED) ---
     predictor_map_mlb = {
-        "rf": MLBRandomForestPredictor,
-        "xgb": MLBXGBoostPredictor,
+        "rf":   MLBRandomForestPredictor,
+        "xgb":  MLBXGBoostPredictor,
         "lgbm": MLBLightGBMPredictor,
-        "ridge": RidgeScorePredictor, 
-        "svr": SVRScorePredictor,
+        "ridge": RidgeScorePredictor,
+        "svr":   SVRScorePredictor,
     }
+
     param_dist_map_mlb = {
-        "rf": MLB_RF_PARAM_DIST, "xgb": MLB_XGB_PARAM_DIST, "lgbm": MLB_LGBM_PARAM_DIST,
+        "rf":   MLB_RF_PARAM_DIST,
+        "xgb":  MLB_XGB_PARAM_DIST,
+        "lgbm": MLB_LGBM_PARAM_DIST,
+        "ridge": None,   # no tuning → uses defaults
+        "svr":   None,   # no tuning → uses defaults
     }
 
     models_to_run = [m.strip().lower() for m in args.models.split(',') if m.strip().lower() in predictor_map_mlb]

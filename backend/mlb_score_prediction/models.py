@@ -190,9 +190,27 @@ class BaseScorePredictor:
             X_val_trans = self.pipeline_home.named_steps["preprocessing"].fit_transform(
                 X_val_raw[self.feature_names_in_]
             )
-            fit_kw_h.update({"model__eval_set": [(X_val_trans, y_val_h)], "model__early_stopping_rounds": 30})
-            fit_kw_a.update({"model__eval_set": [(X_val_trans, y_val_a)], "model__early_stopping_rounds": 30})
-
+            fit_kw_h.update({
+                "model__eval_set": [(X_val_trans, y_val_h)],
+                "model__early_stopping_rounds": 30
+            })
+            fit_kw_a.update({
+                "model__eval_set": [(X_val_trans, y_val_a)],
+                "model__early_stopping_rounds": 30
+            })
+        elif eval_set_data and isinstance(self.pipeline_home.named_steps["model"], LGBMRegressor):
+            X_val_raw, y_val_h, y_val_a = eval_set_data
+            X_val_trans = self.pipeline_home.named_steps["preprocessing"].fit_transform(
+                X_val_raw[self.feature_names_in_]
+            )
+            fit_kw_h.update({
+                "model__eval_set": [(X_val_trans, y_val_h)],
+                "model__early_stopping_rounds": 50
+            })
+            fit_kw_a.update({
+                "model__eval_set": [(X_val_trans, y_val_a)],
+                "model__early_stopping_rounds": 50
+            })
         # fit
         self.pipeline_home.fit(X_num, y_train_home, **fit_kw_h)
         self.pipeline_away.fit(X_num, y_train_away, **fit_kw_a)
