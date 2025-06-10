@@ -559,8 +559,108 @@ export const fetchNbaAdvancedStatsBySeason = async (seasonYear) => {
   cache.set(cacheKey, results, ttl); // Cache the results
   return results;
 };
-export async function fetchNbaSnapshotData(gameId) {
+
+/**
+ * Fetches multiple NBA snapshots by game_id from the Supabase table.
+ * Includes caching for already generated snapshots.
+ *
+ * @param {string[]} gameIds - An array of NBA game_ids.
+ * @returns {Promise<object[]>} - A promise resolving to an array of snapshot data objects.
+ */
+export async function fetchNbaSnapshotsByIds(gameIds) {
+  if (!gameIds || gameIds.length === 0) {
+    return [];
+  }
+
+  const fetchedSnapshots = [];
+  const unfetchedGameIds = [];
+
+  // Check cache for each gameId first
+  for (const gameId of gameIds) {
     if (cache.has(gameId)) {
+      fetchedSnapshots.push(cache.get(gameId));
+    } else {
+      unfetchedGameIds.push(gameId);
+    }
+  }
+
+  if (unfetchedGameIds.length > 0) {
+    console.log(
+      `Service: Fetching ${
+        unfetchedGameIds.length
+      } NBA snapshots from DB for IDs: ${unfetchedGameIds.join(", ")}`
+    );
+
+    // Fetch from Supabase. Select all columns Python upserts.
+    // Ensure column names here match what Python upserts (headline_stats, bar_chart_data etc.)
+    // And don't use the old aliases (bar_data, radar_data, pie_data)
+    const { data, error, status } = await supabase
+      .from(NBA_SNAPSHOT_TABLE)
+      .select(
+        `
+        game_id,
+        game_date,
+        season,
+        headline_stats,
+        bar_chart_data,
+        radar_chart_data,
+        pie_chart_data,
+        last_updated
+        `
+      )
+      .in("game_id", unfetchedGameIds);
+
+    if (error) {
+      console.error(
+        `Service: Supabase error fetching NBA snapshots by IDs: ${error.message}`
+      );
+      const dbErr = new Error(
+        error.message || "Failed fetching NBA snapshot data by IDs"
+      );
+      dbErr.status = status || 503;
+      throw dbErr;
+    }
+
+    if (data && data.length > 0) {
+      for (const snapshot of data) {
+        // Cache newly fetched snapshots
+        cache.set(snapshot.game_id, snapshot);
+
+        // Perform runtime shape-check for the fetched data
+        function assertArray(col, name) {
+          if (!Array.isArray(snapshot[col])) {
+            console.warn(
+              `Snapshot for game_id ${
+                snapshot.game_id
+              }: ${name} expected as Array, got ${typeof snapshot[col]}.`
+            );
+            // Optionally throw or replace with empty array if critical
+            snapshot[col] = [];
+          }
+        }
+        assertArray("headline_stats", "headline_stats");
+        assertArray("bar_chart_data", "bar_chart_data");
+        assertArray("radar_chart_data", "radar_chart_data");
+        assertArray("pie_chart_data", "pie_chart_data");
+
+        fetchedSnapshots.push(snapshot);
+      }
+    } else {
+      console.log(
+        `Service: No snapshots found in DB for IDs: ${unfetchedGameIds.join(
+          ", "
+        )}`
+      );
+    }
+  }
+
+  // Sort the results to maintain consistency with the input gameIds order if needed, or by date.
+  // For now, return as gathered.
+  return fetchedSnapshots;
+}
+
+export async function fetchNbaSnapshotData(gameId) {
+  if (cache.has(gameId)) {
     return cache.get(gameId);
   }
   // 1) fetch + alias columns so the JS property names match your Python payload

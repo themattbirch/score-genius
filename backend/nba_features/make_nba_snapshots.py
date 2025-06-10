@@ -244,6 +244,7 @@ def make_nba_snapshot(game_id: Union[str, int]):
     df_features = run_nba_feature_pipeline(
         df_game.copy(), # Pass a copy to avoid modifying original df_game in engine
         db_conn=sb_client, # Pass Supabase client for internal fetching by engine if needed
+        adv_splits_lookup_offset=0, # Look up advanced stats for the current season (2024 in this case)
         debug=True # Set to True for initial debugging
     )
     if df_features.empty:
@@ -386,6 +387,8 @@ def make_nba_snapshot(game_id: Union[str, int]):
 
     # 7) Upsert into Supabase
     snapshot_payload = {
+        'season':         nba_season_full_str,
+        'game_date':      current_game_dt_obj.isoformat(),
         'game_id':        game_id_str,
         'headline_stats': headline,
         'bar_chart_data': bar, 

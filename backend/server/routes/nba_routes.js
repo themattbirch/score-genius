@@ -12,15 +12,10 @@ import {
   getNbaAllPlayersSeasonStats,
   getNbaAdvancedStats,
   getNbaSnapshot,
+  getNbaSnapshots,
 } from "../controllers/nba_controller.js";
 
-
-import { LRUCache } from "lru-cache";
-
-// simple 5-minute LRU cache
-const cache = new LRUCache({ max: 100, ttl: 5 * 60 * 1000 });
 const router = express.Router();
-const NBA_SNAPSHOT_TABLE = "nba_snapshots";
 
 // --- Define NBA Routes ---
 
@@ -39,18 +34,9 @@ router.get("/advanced-stats", getNbaAdvancedStats);
 // **Original Player Stats Lookup
 router.get("/players/:player_id/stats/history", getNbaPlayerGameHistory);
 // ── Snapshot endpoint ──
-// GET /api/v1/nba/snapshots?gameIds=1,2,3
-router.get("/snapshots", async (req, res, next) => {
-  try {
-    const ids = (req.query.gameIds || "").split(",");
-    const { data, error } = await supabase
-      .from(NBA_SNAPSHOT_TABLE)
-      .select("*")
-      .in("game_id", ids);
-    if (error) throw error;
-    return res.json(data);
-  } catch (err) {
-    next(err);
-  }
-});
+// ── Snapshot endpoints ──
+// GET /api/v1/nba/snapshots/:gameId (for single game, triggers generation if not found)
+router.get("/snapshots/:gameId", getNbaSnapshot); // Existing function handles single ID + generation
+router.get("/snapshots", getNbaSnapshots);
+
 export default router;

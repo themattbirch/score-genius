@@ -1,7 +1,12 @@
 // backend/server/controllers/nba_controller.js
 import * as nbaService from "../services/nba_service.js";
-import { getSchedule } from "../services/nba_service.js";
-import { fetchNbaSnapshotData } from "../services/nba_service.js";
+import {
+  getSchedule,
+  fetchNbaSnapshotData,
+  fetchNbaSnapshotsByIds,
+} from "../services/nba_service.js";
+
+import { spawnSync } from "child_process";
 
 // Controller to handle GET /api/v1/nba/schedule
 export const getNbaSchedule = async (req, res, next) => {
@@ -318,28 +323,92 @@ export async function getNbaSnapshot(req, res, next) {
     // only regenerate on a 404 “not found”
     if (err.status === 404) {
       try {
-        const { spawnSync } = require("child_process");
+        // Correct path to the Python script assuming Node.js server runs from project root
+        const pythonScriptPath = "backend/nba_features/make_nba_snapshots.py";
+        console.warn(
+          `Snapshot for game ${gameId} not found. Triggering generation via: python3 ${pythonScriptPath} ${gameId}`
+        );
+
+        // Use the top-level imported spawnSync (no `require` needed here now)
         const result = spawnSync(
           "python3",
-          ["backend/nba_features/make_nba_snapshots.py", gameId],
-          { encoding: "utf-8" }
+          [pythonScriptPath, gameId],
+          { encoding: "utf-8", cwd: process.cwd() } // Set cwd to project root for robust path
         );
 
         if (result.error) {
-          console.error("Snapshot generation failed:", result.error);
+          console.error(
+            "Snapshot generation failed (spawnSync error):",
+            result.error
+          );
+          console.error("Python stderr:", result.stderr);
+          console.error("Python stdout:", result.stdout); // Log stdout too, for potential Python prints
           return res
             .status(500)
-            .json({ message: "Failed to generate NBA snapshot" });
+            .json({
+              message: "Failed to generate NBA snapshot",
+              details: result.stderr || result.error.message,
+            });
+        }
+
+        if (result.status !== 0) {
+          // Non-zero exit code indicates Python script failure
+          console.error(
+            `Python script exited with code ${result.status} for game ${gameId}`
+          );
+          console.error("Python stderr:", result.stderr);
+          console.error("Python stdout:", result.stdout);
+          return res
+            .status(500)
+            .json({
+              message: "Python script failed to generate snapshot",
+              details: result.stderr || "Unknown Python error",
+            });
         }
 
         // re-fetch after generating
         const newSnap = await fetchNbaSnapshotData(gameId);
+        if (!newSnap) {
+          // If regeneration failed for some reason (e.g. Python ran but didn't upsert)
+          console.error(
+            `Snapshot regeneration for ${gameId} completed, but re-fetch found no data.`
+          );
+          return res
+            .status(500)
+            .json({ message: "Snapshot regeneration failed to produce data." });
+        }
         return res.json(newSnap);
       } catch (genErr) {
-        next(genErr);
+        console.error(
+          `Error during snapshot regeneration for game ${gameId}:`,
+          genErr
+        );
+        next(genErr); // Pass errors to the error handling middleware
       }
     } else {
-      next(err); // non-404 errors bubble up
+      next(err);
     }
+  }
+}
+export async function getNbaSnapshots(req, res, next) {
+  try {
+    const ids = (req.query.gameIds || "").split(",").filter((id) => id); // Split by comma and filter out empty strings
+    if (ids.length === 0) {
+      return res.status(400).json({ message: "No gameIds provided." });
+    }
+
+    const snapshots = await fetchNbaSnapshotsByIds(ids); // Call the new service function
+
+    // For batch fetching, we return what's found.
+    // The single /:gameId route (getNbaSnapshot) handles on-demand generation for individual missing games.
+    // Frontend logic might decide to trigger generation for missing IDs from this batch.
+
+    return res.json(snapshots);
+  } catch (err) {
+    console.error(
+      `Error in getNbaSnapshots controller for gameIds ${req.query.gameIds}:`,
+      err
+    );
+    next(err); // Pass errors to the error handling middleware
   }
 }
