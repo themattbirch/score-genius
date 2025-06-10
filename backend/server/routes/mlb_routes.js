@@ -10,9 +10,10 @@ import {
   getMlbSnapshot,
 } from "../controllers/mlb_controller.js";
 
-import LRU from "lru-cache";
+import { LRUCache } from "lru-cache";
+
 // simple 5-minute LRU cache
-const cache = new LRU({ max: 100, ttl: 5 * 60 * 1000 });
+const cache = new LRUCache({ max: 100, ttl: 5 * 60 * 1000 });
 const router = express.Router();
 const MLB_SNAPSHOT_TABLE = "mlb_snapshots";
 
