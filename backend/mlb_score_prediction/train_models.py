@@ -1054,17 +1054,17 @@ def run_training_pipeline(args: argparse.Namespace):
     }
 
     MLB_LGBM_PARAM_DIST = {
-        'lgbm__estimator__n_estimators':       randint(300, 1200),
-        'lgbm__estimator__num_leaves':         randint(20,  40),
-        'lgbm__estimator__max_depth':          randint(3,   12),
-        'lgbm__estimator__learning_rate':      loguniform(1e-2, 1e-1),
-        'lgbm__estimator__min_child_samples':  randint(20,  60),
-        'lgbm__estimator__min_split_gain':     uniform(0.0, 0.1),
-        'lgbm__estimator__subsample':          uniform(0.7, 0.2),
-        'lgbm__estimator__subsample_freq':     randint(0,    5),
-        'lgbm__estimator__colsample_bytree':   uniform(0.7, 0.2),
-        'lgbm__estimator__lambda_l1':          loguniform(1e-2, 1.0),
-        'lgbm__estimator__lambda_l2':          loguniform(1e-2, 1.0),
+        'model__n_estimators': randint(300, 1200),
+        'model__num_leaves': randint(20, 40),
+        'model__max_depth': randint(3, 12),
+        'model__learning_rate': loguniform(1e-2, 1e-1),
+        'model__min_child_samples': randint(20, 60),
+        'model__min_split_gain': uniform(0.0, 0.1),
+        'model__subsample': uniform(0.7, 0.2),
+        'model__subsample_freq': randint(0, 5),
+        'model__colsample_bytree': uniform(0.7, 0.2),
+        'model__lambda_l1': loguniform(1e-2, 1.0),
+        'model__lambda_l2': loguniform(1e-2, 1.0),
     }
 
     # --- 5. MODEL TRAINING LOOP (UNIFIED) ---
@@ -1115,8 +1115,6 @@ def run_training_pipeline(args: argparse.Namespace):
 
     
     # Ensemble Weight Optimization & Evaluation (using MLB specific names and collector)
-    # ... (Logic for optimizing and evaluating ensemble as in NBA, using mlb variables) ...
-    # (This section is long, assume it's ported correctly)
     successful_mlb_models = list(validation_predictions_collector_mlb.keys())
     if len(successful_mlb_models) > 1:
         opt_weights_mlb = optimize_ensemble_weights(

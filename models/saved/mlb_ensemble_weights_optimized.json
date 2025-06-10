@@ -1,4 +1,5 @@
 {
-    "rf_mlb_runs_predictor": 0.37679413612913254,
-    "xgb_mlb_runs_predictor": 0.6232058638708675
+    "rf_mlb_runs_predictor": 0.242248330747827,
+    "xgb_mlb_runs_predictor": 0.534522300556725,
+    "lgbm_mlb_runs_predictor": 0.22322936869544802
 }

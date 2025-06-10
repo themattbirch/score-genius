@@ -180,7 +180,7 @@ class BaseScorePredictor:
 
         # handle sample weights
         if sample_weights is not None and len(sample_weights) == len(X_num):
-            sw_param = f"{self.pipeline_home.steps[-1][0]}__sample_weight"  # model__sample_weight
+            sw_param = f"{self.pipeline_home.steps[-1][0]}__sample_weight"
             fit_kw_h[sw_param] = sample_weights
             fit_kw_a[sw_param] = sample_weights
 
@@ -198,6 +198,7 @@ class BaseScorePredictor:
                 "model__eval_set": [(X_val_trans, y_val_a)],
                 "model__early_stopping_rounds": 30
             })
+        # early-stopping for LGBM
         elif eval_set_data and isinstance(self.pipeline_home.named_steps["model"], LGBMRegressor):
             X_val_raw, y_val_h, y_val_a = eval_set_data
             X_val_trans = self.pipeline_home.named_steps["preprocessing"].fit_transform(
@@ -211,9 +212,23 @@ class BaseScorePredictor:
                 "model__eval_set": [(X_val_trans, y_val_a)],
                 "model__early_stopping_rounds": 50
             })
-        # fit
-        self.pipeline_home.fit(X_num, y_train_home, **fit_kw_h)
-        self.pipeline_away.fit(X_num, y_train_away, **fit_kw_a)
+
+        # fit with fallback if LGBM doesn't accept early-stopping args
+        try:
+            self.pipeline_home.fit(X_num, y_train_home, **fit_kw_h)
+            self.pipeline_away.fit(X_num, y_train_away, **fit_kw_a)
+        except TypeError as e:
+            msg = str(e).lower()
+            if "early_stopping_rounds" in msg or "eval_set" in msg:
+                logger.warning(f"Early-stopping not supported by this estimator ({e}); retrying without it.")
+                fit_kw_h.pop("model__eval_set", None)
+                fit_kw_h.pop("model__early_stopping_rounds", None)
+                fit_kw_a.pop("model__eval_set", None)
+                fit_kw_a.pop("model__early_stopping_rounds", None)
+                self.pipeline_home.fit(X_num, y_train_home)
+                self.pipeline_away.fit(X_num, y_train_away)
+            else:
+                raise
 
         self.training_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.training_duration = time.time() - start
