@@ -87,7 +87,7 @@ def fetch_nba_raw_game_data(game_id: Union[str, int]) -> pd.DataFrame:
 
     # Fallback to game schedule for pre-game info
     logger.debug(f"NBA Game {game_id_str} not in historical, trying nba_game_schedule.")
-    schedule_cols_select = "game_id, game_date, scheduled_time_utc, home_team, away_team, home_team_id, away_team_id"  # No quarter scores here
+    schedule_cols_select = "game_id, game_date, scheduled_time, home_team, away_team"  # No quarter scores here
     response2 = (
         sb_client.table("nba_game_schedule")
         .select(schedule_cols_select)
