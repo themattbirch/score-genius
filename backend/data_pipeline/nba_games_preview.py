@@ -1,4 +1,3 @@
-# ─── existing imports ───
 import os, logging, threading, sys, time
 
 if os.getenv("CI") or os.getenv("LOG_LEVEL_OVERRIDE", "").upper() == "ERROR":
@@ -57,6 +56,7 @@ except ImportError as e:
 # shared constants from prediction.py
 from backend.config import MAIN_MODELS_DIR as MODELS_DIR
 from caching.supabase_client import supabase
+from backend.nba_features.make_nba_snapshots import make_nba_snapshot
 from nba_score_prediction.prediction import (
     DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
     generate_predictions,
@@ -404,7 +404,7 @@ def _fetch_games_for_date(date_iso: str) -> List[Dict[str, Any]]:
     return list(espn_by_id.values())
 
 # --- Game Preview Building/Upserting Functions ---
-def build_game_preview(window_days: int = 3) -> List[Dict[str, Any]]:
+def build_game_preview(window_days: int = 2) -> List[Dict[str, Any]]:
     """Fetch pregame NBA schedule + odds and return preview dicts for today + next window_days-1 days."""
     all_games: List[Dict[str, Any]] = []
     today_et = datetime.now(ET_ZONE).date()
@@ -607,7 +607,7 @@ def main():
         update_injuries_table_clear_insert(normalized)
 
         # 3) Previews + odds for today & tomorrow
-        previews = build_game_preview(window_days=3)
+        previews = build_game_preview(window_days=2)
         if previews:
             # ─── REMOVE ANY EXISTING schedule rows for these preview dates ─────────────────
             # We extract the distinct game_date values from the new `previews` list,
@@ -624,10 +624,19 @@ def main():
             fetch_and_parse_betting_odds(supabase, game_ids)
             print(f"Upserted {len(previews)} game previews")
 
+            # ─── Generate + upsert NBA snapshots for each previewed game ─────────
+            print(f"Generating NBA snapshots for {len(game_ids)} games…")
+            for gid in game_ids:
+                try:
+                    make_nba_snapshot(gid)
+                    print(f"✅ NBA snapshot generated for game {gid}")
+                except Exception as e:
+                    print(f"❌ NBA snapshot failed for game {gid}: {e}")
+
             # 4) Generate & upsert predictions
             print("\n--- Generating Predictions ---")
             preds, _ = generate_predictions(
-                days_window=3,
+                days_window=2,
                 model_dir=MODELS_DIR,
                 historical_lookback=DEFAULT_LOOKBACK_DAYS_FOR_FEATURES,
                 debug_mode=False
