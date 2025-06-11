@@ -18,6 +18,7 @@ from typing import Dict, Optional, Tuple, List, Any
 from dateutil import parser as dateutil_parser
 import subprocess, sys, shutil
 from backend.mlb_score_prediction import prediction
+from backend.mlb_features.make_mlb_snapshots import make_mlb_snapshot
 
 import undetected_chromedriver as uc
 from selenium.webdriver.chrome.options import Options
@@ -796,15 +797,23 @@ def build_and_upsert_mlb_previews() -> int:
 
     if previews_to_upsert:
         print(f"\nStep 4: Upserting {len(previews_to_upsert)} processed previews to Supabase...")
-        try:
-            supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-            _upsert_response = supabase.table(SUPABASE_TABLE_NAME).upsert(previews_to_upsert, on_conflict="game_id").execute()
-            print("Supabase upsert completed.")
-        except Exception as e:
-            print(f"Error during Supabase upsert call: {e}")
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        supabase.table(SUPABASE_TABLE_NAME).upsert(previews_to_upsert, on_conflict="game_id").execute()
+        print("Supabase upsert completed.")
+
+        # ─── NEW: generate + upsert snapshots for each previewed game ─────────────────
+        print(f"\nStep 5: Generating MLB snapshots for {len(previews_to_upsert)} games...")
+        for preview in previews_to_upsert:
+            game_id = preview["game_id"]
+            try:
+                make_mlb_snapshot(game_id)
+                print(f"✅ Snapshot generated for MLB game {game_id}")
+            except Exception as e:
+                print(f"❌ Error generating snapshot for MLB game {game_id}: {e}")
+
     else:
         print("\nStep 4: No valid game previews generated to upsert.")
-
+        
     script_end_time = time.time()
     print(f"\n--- MLB Preview Script finished. Processed {len(processed_game_ids)} unique games. ---")
     print(f"Total execution time: {script_end_time - script_start_time:.2f} seconds.")
@@ -830,15 +839,15 @@ if __name__ == "__main__":
     # Step 4: Scrape & patch today’s probable pitchers
     update_pitchers_for_date(today)
 
-    # ← NEW: Immediately copy today’s (just-patched) handedness into history
+    # Step 5: Immediately copy today’s (just-patched) handedness into history
     propagate_handedness_to_historical(today)
 
-    # Step 5: Aggregate LHP/RHP splits into team stats
+    # Step 6: Aggregate LHP/RHP splits into team stats
     season = today.year
     print(f"Running handedness-split aggregation for season {season}")
     run_handedness_aggregation_rpc(season)
         # =======================================================
-    # Step 6: Run the prediction pipeline
+    # Step 7: Run the prediction pipeline
     # =======================================================
     print("\n--- Running MLB Score Prediction Pipeline ---")
     try:
