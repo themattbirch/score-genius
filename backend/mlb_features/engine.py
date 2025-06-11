@@ -87,11 +87,56 @@ def run_mlb_feature_pipeline(
     team_stats = mlb_historical_team_stats_df.copy() if mlb_historical_team_stats_df is not None else pd.DataFrame()
     working_df = df.copy()
 
-    # Ensure date parsing
-    for d in (hist_games, working_df):
-        if not d.empty:
-            date_col = "game_date_et" if "game_date_et" in d else "game_date"
-            d["game_date_et"] = pd.to_datetime(d[date_col], errors="coerce")
+    for df_key, df_obj_ref in {"hist_games": hist_games, "working_df": working_df}.items():
+        # Make a modifiable copy if it's not already one (important for loop iterators)
+        current_df_obj = df_obj_ref.copy() if not df_obj_ref.empty else pd.DataFrame() 
+
+        if not current_df_obj.empty:
+            target_date_col_name = "game_date_et"
+            source_date_col_name = None
+
+            # Prioritize existing 'game_date_et' if it's already the standardized one
+            if target_date_col_name in current_df_obj.columns:
+                source_date_col_name = target_date_col_name
+            # Then check for 'game_date_time_utc' which is common in mlb_historical_game_stats
+            elif "game_date_time_utc" in current_df_obj.columns:
+                source_date_col_name = "game_date_time_utc"
+            # Fallback to a generic 'game_date' if it exists (less common for MLB raw data)
+            elif "game_date" in current_df_obj.columns:
+                source_date_col_name = "game_date"
+            
+            if source_date_col_name:
+                # perform robust datetime parsing, handling timezone awareness
+                dt_series = pd.to_datetime(current_df_obj[source_date_col_name], errors='coerce')
+
+                # If it's naive, localize entire series to UTC, then convert to ET
+                if dt_series.dt.tz is None:
+                    dt_series = dt_series.dt.tz_localize('UTC')
+                dt_series = dt_series.dt.tz_convert('America/New_York')
+
+                # extract just the date part
+                current_df_obj[target_date_col_name] = dt_series.dt.date
+
+                # drop the original source if it isn’t the same
+                if source_date_col_name != target_date_col_name and source_date_col_name in current_df_obj.columns:
+                    current_df_obj = current_df_obj.drop(columns=[source_date_col_name])
+            else:
+                logger.warning(f"ENGINE: No suitable date column found for DF {df_key}. Date parsing skipped. Ensure '{target_date_col_name}' is available downstream.")
+                # Ensure the target column exists as NaT if no source was found
+                current_df_obj[target_date_col_name] = pd.NaT 
+        else:
+            # If the DataFrame is empty, ensure the target_date_col_name is present as a column
+            # so subsequent feature modules don't hit KeyError
+            if target_date_col_name not in current_df_obj.columns:
+                 current_df_obj[target_date_col_name] = pd.Series(dtype='object') # Create empty column
+
+        # Update the original DataFrame reference outside the loop, as DataFrames are passed by reference
+        # when working_df or hist_games is mutable from outside.
+        # This explicit assignment ensures changes are reflected back.
+        if df_key == "hist_games":
+            hist_games = current_df_obj
+        elif df_key == "working_df":
+            working_df = current_df_obj
     if "season" not in working_df.columns:
         working_df["season"] = working_df["game_date_et"].dt.year
 

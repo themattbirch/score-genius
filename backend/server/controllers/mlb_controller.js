@@ -1,7 +1,10 @@
 // backend/server/controllers/mlb_controller.js
 import * as mlbService from "../services/mlb_service.js";
-import { fetchMlbSnapshotData } from "../services/mlb_service.js";
-
+import {
+  fetchMlbSnapshotData,
+  fetchMlbSnapshotsByIds,
+} from "../services/mlb_service.js";
+import { spawnSync } from "child_process";
 /* --------------------------------------------------------------
  * GET /api/v1/mlb/schedule?date=YYYY-MM-DD
  * -------------------------------------------------------------*/
@@ -202,35 +205,95 @@ export async function getMlbSnapshot(req, res, next) {
 
   try {
     const start = Date.now();
-    const snapshot = await fetchMlbSnapshotData(gameId);
+    const snapshot = await fetchMlbSnapshotData(gameId); // This fetches a single snapshot
     console.log(`getMlbSnapshot(${gameId}) → ${Date.now() - start}ms`);
     return res.json(snapshot); // 🚩 send it back immediately
   } catch (err) {
     // only regenerate on a 404 “not found”
     if (err.status === 404) {
       try {
-        const { spawnSync } = require("child_process");
+        const pythonScriptPath = "backend/mlb_features/make_mlb_snapshots.py";
+        console.warn(
+          `Snapshot for game ${gameId} not found. Triggering generation via: python3 ${pythonScriptPath} ${gameId}`
+        );
+
         const result = spawnSync(
           "python3",
-          ["backend/mlb_features/make_mlb_snapshots.py", gameId],
-          { encoding: "utf-8" }
+          [pythonScriptPath, gameId],
+          { encoding: "utf-8", cwd: process.cwd() } // Set cwd to project root for robust path
         );
 
         if (result.error) {
-          console.error("Snapshot generation failed:", result.error);
-          return res
-            .status(500)
-            .json({ message: "Failed to generate MLB snapshot" });
+          console.error(
+            "Snapshot generation failed (spawnSync error):",
+            result.error
+          );
+          console.error("Python stderr:", result.stderr);
+          console.error("Python stdout:", result.stdout);
+          return res.status(500).json({
+            message: "Failed to generate MLB snapshot",
+            details: result.stderr || result.error.message,
+          });
+        }
+
+        if (result.status !== 0) {
+          // Non-zero exit code indicates Python script failure
+          console.error(
+            `Python script exited with code ${result.status} for game ${gameId}`
+          );
+          console.error("Python stderr:", result.stderr);
+          console.error("Python stdout:", result.stdout);
+          return res.status(500).json({
+            message: "Python script failed to generate snapshot",
+            details: result.stderr || "Unknown Python error",
+          });
         }
 
         // re-fetch after generating
-        const newSnap = await fetchNbaSnapshotData(gameId);
+        const newSnap = await fetchMlbSnapshotData(gameId); // <--- FIXED: Call fetchMlbSnapshotData (NOT fetchNbaSnapshotData)
+        if (!newSnap) {
+          // If regeneration failed for some reason (e.g. Python ran but didn't upsert)
+          console.error(
+            `Snapshot regeneration for ${gameId} completed, but re-fetch found no data.`
+          );
+          return res
+            .status(500)
+            .json({ message: "Snapshot regeneration failed to produce data." });
+        }
         return res.json(newSnap);
       } catch (genErr) {
-        next(genErr);
+        console.error(
+          `Error during snapshot regeneration for game ${gameId}:`,
+          genErr
+        );
+        next(genErr); // Pass errors to the error handling middleware
       }
     } else {
       next(err); // non-404 errors bubble up
     }
+  }
+}
+
+// New: Controller function for fetching multiple snapshots
+export async function getMlbSnapshots(req, res, next) {
+  try {
+    const ids = (req.query.gameIds || "").split(",").filter((id) => id); // Split by comma and filter out empty strings
+    if (ids.length === 0) {
+      return res.status(400).json({ message: "No gameIds provided." });
+    }
+
+    const snapshots = await fetchMlbSnapshotsByIds(ids); // Call the new service function for batch fetching
+
+    // For batch fetching, we return what's found.
+    // The single /:gameId route (getMlbSnapshot) handles on-demand generation for individual missing games.
+    // The frontend should handle missing data for specific games.
+
+    return res.json(snapshots);
+  } catch (err) {
+    console.error(
+      `Error in getMlbSnapshots controller for gameIds ${req.query.gameIds}:`,
+      err
+    );
+    next(err); // Pass errors to the error handling middleware
   }
 }

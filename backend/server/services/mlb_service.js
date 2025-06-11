@@ -459,49 +459,182 @@ export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
 };
 export async function fetchMlbSnapshotData(gameId) {
   if (cache.has(gameId)) {
+    console.log(`Service: CACHE HIT for MLB snapshot ${gameId}`);
     return cache.get(gameId);
   }
-  // 1) fetch + alias columns so the JS property names match your Python payload
+  console.log(
+    `Service: CACHE MISS for MLB snapshot ${gameId}. Fetching from DB.`
+  );
+
+  // 1) fetch direct column names (Python upserts these directly)
+  //    No aliasing needed as Python now uses correct final names.
   const { data, error, status } = await supabase
     .from(MLB_SNAPSHOT_TABLE)
     .select(
       `
+      game_id,
+      game_date,
+      season,
       headline_stats,
-      bar_chart_data:bar_data,       -- maps bar_data → bar_chart_data
-      radar_chart_data:radar_data,   -- maps radar_data → radar_chart_data
-      pie_chart_data:pie_data        -- maps pie_data   → pie_chart_data
+      bar_chart_data,       -- Corrected: no aliasing needed
+      radar_chart_data,     -- Corrected: no aliasing needed
+      pie_chart_data,       -- Corrected: no aliasing needed
+      last_updated
     `
     )
     .eq("game_id", gameId)
-    .maybeSingle();
+    .maybeSingle(); // Use maybeSingle for single row, returns null if not found
 
   // 2) supabase error → 5xx
   if (error) {
     const err = new Error(error.message || "Failed fetching MLB snapshot data");
     err.status = status || 503;
+    console.error(
+      `Service: Supabase error fetching MLB snapshot ${gameId}:`,
+      error
+    );
     throw err;
   }
 
   // 3) no row → 404
   if (!data) {
     const err = new Error(`Snapshot for game ${gameId} not found`);
-    err.status = 404;
+    err.status = 404; // Mark as 404 so controller can trigger regeneration
+    console.log(`Service: Snapshot for game ${gameId} not found in DB.`);
     throw err;
   }
 
-  // 4) runtime shape‐check
-  function assertArray(col, name) {
-    if (!Array.isArray(col)) {
-      const err = new Error(`${name} expected as Array, got ${typeof col}`);
-      err.status = 500;
-      throw err;
+  // 4) runtime shape‐check (optional, but good for data integrity)
+  function assertArray(colValue, colName) {
+    if (!Array.isArray(colValue)) {
+      console.warn(
+        `Service: Snapshot for game ${gameId}: ${colName} expected as Array, got ${typeof colValue}. Defaulting to empty array.`
+      );
+      return []; // Return empty array to prevent frontend errors
     }
+    return colValue;
   }
-  assertArray(data.headline_stats, "headline_stats");
-  assertArray(data.bar_chart_data, "bar_chart_data");
-  assertArray(data.radar_chart_data, "radar_chart_data");
-  assertArray(data.pie_chart_data, "pie_chart_data");
+  data.headline_stats = assertArray(data.headline_stats, "headline_stats");
+  data.bar_chart_data = assertArray(data.bar_chart_data, "bar_chart_data");
+  data.radar_chart_data = assertArray(
+    data.radar_chart_data,
+    "radar_chart_data"
+  );
+  data.pie_chart_data = assertArray(data.pie_chart_data, "pie_chart_data");
 
   cache.set(gameId, data);
+  console.log(`Service: Fetched and cached MLB snapshot for ${gameId}.`);
   return data;
+}
+
+// New: Fetches multiple MLB snapshots by game_id
+/**
+ * Fetches multiple MLB snapshots by game_id from the Supabase table.
+ * Includes caching for already generated snapshots.
+ *
+ * @param {string[]} gameIds - An array of MLB game_ids.
+ * @returns {Promise<object[]>} - A promise resolving to an array of snapshot data objects.
+ */
+export async function fetchMlbSnapshotsByIds(gameIds) {
+  if (!gameIds || gameIds.length === 0) {
+    return [];
+  }
+
+  const fetchedSnapshots = [];
+  const unfetchedGameIds = [];
+  const cacheTtl = 5 * 60 * 1000; // 5 minutes cache TTL for multiple snapshots
+
+  // Check cache for each gameId first
+  for (const gameId of gameIds) {
+    if (cache.has(gameId)) {
+      fetchedSnapshots.push(cache.get(gameId));
+    } else {
+      unfetchedGameIds.push(gameId);
+    }
+  }
+
+  if (unfetchedGameIds.length > 0) {
+    console.log(
+      `Service: Fetching ${
+        unfetchedGameIds.length
+      } MLB snapshots from DB for IDs: ${unfetchedGameIds.join(", ")}`
+    );
+
+    // Fetch from Supabase. Select all columns Python upserts.
+    const { data, error, status } = await supabase
+      .from(MLB_SNAPSHOT_TABLE)
+      .select(
+        `
+        game_id,
+        game_date,
+        season,
+        headline_stats,
+        bar_chart_data,
+        radar_chart_data,
+        pie_chart_data,
+        last_updated
+        `
+      )
+      .in("game_id", unfetchedGameIds);
+
+    if (error) {
+      console.error(
+        `Service: Supabase error fetching MLB snapshots by IDs: ${error.message}`
+      );
+      const dbErr = new Error(
+        error.message || "Failed fetching MLB snapshot data by IDs"
+      );
+      dbErr.status = status || 503;
+      throw dbErr;
+    }
+
+    if (data && data.length > 0) {
+      for (const snapshot of data) {
+        // Cache newly fetched snapshots
+        cache.set(snapshot.game_id, snapshot, cacheTtl);
+
+        // Perform runtime shape-check (optional but good)
+        function assertArray(colValue, colName) {
+          if (!Array.isArray(snapshot[colValue])) {
+            console.warn(
+              `Service: Snapshot for game_id ${
+                snapshot.game_id
+              }: ${colName} expected as Array, got ${typeof snapshot[
+                colValue
+              ]}. Defaulting to empty array.`
+            );
+            return [];
+          }
+          return snapshot[colValue];
+        }
+        snapshot.headline_stats = assertArray(
+          "headline_stats",
+          "headline_stats"
+        );
+        snapshot.bar_chart_data = assertArray(
+          "bar_chart_data",
+          "bar_chart_data"
+        );
+        snapshot.radar_chart_data = assertArray(
+          "radar_chart_data",
+          "radar_chart_data"
+        );
+        snapshot.pie_chart_data = assertArray(
+          "pie_chart_data",
+          "pie_chart_data"
+        );
+
+        fetchedSnapshots.push(snapshot);
+      }
+    } else {
+      console.log(
+        `Service: No snapshots found in DB for IDs: ${unfetchedGameIds.join(
+          ", "
+        )}`
+      );
+    }
+  }
+
+  // Return all snapshots (cached + newly fetched)
+  return fetchedSnapshots;
 }

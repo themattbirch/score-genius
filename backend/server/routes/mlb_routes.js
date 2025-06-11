@@ -8,6 +8,7 @@ import {
   getMlbAllTeamsSeasonStats,
   getMlbAdvancedTeamStats,
   getMlbSnapshot,
+  getMlbSnapshots,
 } from "../controllers/mlb_controller.js";
 
 import { LRUCache } from "lru-cache";
@@ -28,21 +29,10 @@ router.get("/team-stats/advanced", getMlbAdvancedTeamStats);
 // **Old: Single team** season stats
 router.get("/teams/:team_id/stats/:season", getMlbTeamSeasonStats);
 
-// ── Snapshot endpoint ──
-// GET /api/v1/mlb/snapshots/:gameId
-// GET /api/v1/nba/snapshots?gameIds=1,2,3
-router.get("/snapshots", async (req, res, next) => {
-  try {
-    const ids = (req.query.gameIds || "").split(",");
-    const { data, error } = await supabase
-      .from(MLB_SNAPSHOT_TABLE)
-      .select("*")
-      .in("game_id", ids);
-    if (error) throw error;
-    return res.json(data);
-  } catch (err) {
-    next(err);
-  }
-});
+// ── Snapshot endpoints ──
+// GET /api/v1/mlb/snapshots/:gameId (for single game, triggers generation if not found)
+router.get("/snapshots/:gameId", getMlbSnapshot);
 
+// GET /api/v1/mlb/snapshots?gameIds=1,2,3 (for multiple games, fetches pre-generated)
+router.get("/snapshots", getMlbSnapshots);
 export default router;
