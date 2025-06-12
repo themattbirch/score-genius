@@ -29,6 +29,11 @@
   --color-brand-green: #00b140;
   --color-brand-green-light: #34d058;
   --color-brand-orange: #ff7f00;
+
+  --color-btn-snapshot: var(
+    --color-brand-green
+  ); /* Using default brand green */
+  --color-badge-weather: var(--color-brand-orange); /* Using brand orange */
 }
 
 /* -------------------------------------------------------------
@@ -39,6 +44,13 @@
   --color-panel: #161b22; /* Slightly lighter panel */
   --color-text-primary: #f1f5f9; /* Off‑white */
   --color-text-secondary: #9ca3af;
+
+  --color-btn-snapshot: var(
+    --color-brand-green-light
+  ); /* Using lighter brand green for better contrast in dark mode */
+  --color-badge-weather: var(
+    --color-brand-orange
+  ); /* Keeping brand orange for dark mode */
 }
 
 /* -------------------------------------------------------------

@@ -1,6 +1,9 @@
 // frontend/src/App.tsx
 
-import React, { useState } from "react";
+// frontend/src/App.tsx
+
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import GamesScreen from "./screens/game_screen";
@@ -9,17 +12,24 @@ import StatsScreen from "./screens/stats_screen";
 import MoreScreen from "./screens/more_screen";
 import HowToUseScreen from "./screens/how_to_use_screen";
 import { TourProvider } from "@/components/ui/joyride_tour";
-
 import Header from "./components/layout/Header";
 import { SportProvider } from "./contexts/sport_context";
 import { DateProvider } from "@/contexts/date_context";
 import BottomTabBar from "./components/layout/BottomTabBar";
 import { ThemeProvider } from "./contexts/theme_context";
-import type { Sport } from "@/contexts/sport_context";
 
-// --- Layout Component ---
+// 1) Create a single QueryClient instance
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 120 * 1000,
+      retry: 1,
+    },
+  },
+});
+
+// 2) Layout stays the same
 const Layout: React.FC = () => {
-  console.log(`%c[Layout] Rendering...`, "color: orange");
   const isGamesRoute = useLocation().pathname.startsWith("/games");
   return (
     <div className="flex h-screen flex-col">
@@ -32,11 +42,9 @@ const Layout: React.FC = () => {
   );
 };
 
-// --- App Component ---
-const App: React.FC = () => {
-  console.log(`%c[App] Rendering...`, "color: purple");
-  return (
-    // *** WRAP with ThemeProvider ***
+// 3) Wrap everything in QueryClientProvider
+const App: React.FC = () => (
+  <QueryClientProvider client={queryClient}>
     <TourProvider>
       <ThemeProvider>
         <SportProvider>
@@ -56,7 +64,7 @@ const App: React.FC = () => {
         </SportProvider>
       </ThemeProvider>
     </TourProvider>
-  );
-};
+  </QueryClientProvider>
+);
 
 export default App;
