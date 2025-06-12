@@ -20,6 +20,8 @@ module.exports = {
         "brand-orange": "#FF7F00",
         "text-primary": "#F1F5F9",
         "text-secondary": "#9CA3AF",
+        "btn-snapshot": "var(--color-btn-snapshot, #00B140)", // Default to brand-green DEFAULT
+        "badge-weather": "var(--color-badge-weather, #FF7F00)", // Default to brand-orange
       },
       fontFamily: {
         sans: ['"Source Sans 3"', ...defaultTheme.fontFamily.sans],
@@ -58,7 +60,7 @@ module.exports = {
         /* kill 16px margin on the month card */
         ".calendar-reset .rdp-month": {
           margin: "0 !important",
-          padding: "0 !important", // ← NEW  (kills the 1 rem left / right)
+          padding: "0 !important",
           width: "100% !important",
         },
         ".calendar-reset .rdp-month_grid": {
@@ -68,7 +70,7 @@ module.exports = {
         /* turn the caption row into a 3-col grid */
         ".calendar-reset .rdp-month_caption": {
           paddingLeft: "0.75rem !important",
-          paddingTop: "0.75rem !important", // 2.5 rem = your 40 px cell
+          paddingTop: "0.75rem !important",
         },
 
         /* keep the label flush left inside its column */
