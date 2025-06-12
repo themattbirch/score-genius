@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from inspect import signature
 
 from .rest import transform as rest_transform
 from .season import transform as season_transform
@@ -71,10 +72,6 @@ def run_mlb_feature_pipeline(
     debug: bool = False,
     **extra_kwargs,
 ) -> pd.DataFrame:
-    """
-    Orchestrates all MLB feature transforms in the given execution_order,
-    merging new columns season by season.
-    """
     if debug:
         logger.setLevel(logging.DEBUG)
 
@@ -115,7 +112,8 @@ def run_mlb_feature_pipeline(
                 dt_series = dt_series.dt.tz_convert('America/New_York')
 
                 # extract just the date part
-                current_df_obj[target_date_col_name] = dt_series.dt.date
+                current_df_obj[target_date_col_name] = dt_series.dt.normalize()
+
 
                 # drop the original source if it isn’t the same
                 if source_date_col_name != target_date_col_name and source_date_col_name in current_df_obj.columns:
@@ -148,85 +146,120 @@ def run_mlb_feature_pipeline(
         logger.info(f"ENGINE: Processing season {season}...")
         season_df = working_df[working_df["season"] == season].copy()
         cutoff = season_df["game_date_et"].min()
-        hist_context = hist_games[hist_games["game_date_et"] < cutoff] if pd.notna(cutoff) else pd.DataFrame()
+        hist_context = (
+            hist_games[hist_games["game_date_et"] < cutoff]
+            if pd.notna(cutoff)
+            else pd.DataFrame()
+        )
+        # DEBUG: list out modules
+        logger.debug(f"Modules in execution_order: {execution_order}")
 
+        # ----- per‐module dispatch -----
         for module_name in execution_order:
+            logger.debug(f"→ about to run module: {module_name}")
             fn = TRANSFORMS.get(module_name)
             if fn is None:
+                logger.debug(f"   ✗ no transform found for {module_name}")
                 continue
+
+            # ✨ DEBUG: see exactly what params this transform expects
+            logger.debug(
+                f"{module_name} signature → "
+                f"{list(signature(fn).parameters.keys())}"
+            )
 
             logger.debug(f"ENGINE: Running '{module_name}' for season {season}")
             kwargs: Dict[str, Any] = {}
 
-            # Common flags
+            # common flags
             if _supports_kwarg(fn, "debug"):
                 kwargs["debug"] = debug
             if flag_imputations and _supports_kwarg(fn, "flag_imputations"):
                 kwargs["flag_imputations"] = flag_imputations
 
-            # Module‐specific args
+            # ── rolling ──
             if module_name == "rolling":
                 if _supports_kwarg(fn, "window_sizes"):
                     kwargs["window_sizes"] = rolling_window_sizes
                 data_in = pd.concat([hist_context, season_df], ignore_index=True)
-                try:
-                    out = fn(data_in, **kwargs)
-                    # restrict back to this season
-                    ids = season_df["game_id"].astype(str)
-                    season_df = out[out["game_id"].astype(str).isin(ids)].copy()
-                except Exception as e:
-                    logger.error(f"ENGINE: rolling error: {e}", exc_info=True)
+                out = fn(data_in, **kwargs)
+                season_df = out[
+                    out["game_id"].astype(str).isin(season_df["game_id"].astype(str))
+                ].copy()
                 continue
 
+            # ── h2h ──
             if module_name == "h2h":
                 if _supports_kwarg(fn, "historical_df"):
                     kwargs["historical_df"] = hist_context
                 if _supports_kwarg(fn, "max_games"):
                     kwargs["max_games"] = h2h_max_games
 
+                out = fn(season_df, **kwargs)
+                if out is not None and not out.empty:
+                    season_df = out
+                continue
+
+            # ── season & advanced ──
             if module_name in ("season", "advanced"):
-                if _supports_kwarg(fn, "team_stats_df"):
-                    kwargs["team_stats_df"] = team_stats
-                if _supports_kwarg(fn, "historical_team_stats_df"):
-                    kwargs["historical_team_stats_df"] = team_stats
-                if _supports_kwarg(fn, "season_to_lookup"):
-                    kwargs["season_to_lookup"] = season - 1
+                lookup = season
+                prev_stats = team_stats[team_stats["season"] == lookup]
+                hist_stats = team_stats[team_stats["season"] <= lookup]
+                sig = signature(fn).parameters
+
+                if module_name == "season":
+                    if "team_stats_df" in sig:
+                        kwargs["team_stats_df"] = prev_stats
+                    logger.debug(f"season uses stats = {kwargs['team_stats_df']['season'].unique()}")
 
                 if module_name == "advanced":
-                    home_col = ("home_starter_pitcher_handedness"
-                                if "home_starter_pitcher_handedness" in season_df.columns
-                                else "home_probable_pitcher_handedness")
-                    away_col = ("away_starter_pitcher_handedness"
-                                if "away_starter_pitcher_handedness" in season_df.columns
-                                else "away_probable_pitcher_handedness")
-                    if _supports_kwarg(fn, "home_hand_col_param"):
-                        kwargs["home_hand_col_param"] = home_col
-                    if _supports_kwarg(fn, "away_hand_col_param"):
-                        kwargs["away_hand_col_param"] = away_col
-                    if _supports_kwarg(fn, "home_team_col_param"):
+                    if "historical_team_stats_df" in sig:
+                        kwargs["historical_team_stats_df"] = prev_stats
+                    if "season_to_lookup" in sig:
+                        kwargs["season_to_lookup"] = lookup
+                    # handedness & team‐col params
+                    hc = (
+                        "home_starter_pitcher_handedness"
+                        if "home_starter_pitcher_handedness" in season_df.columns
+                        else "home_probable_pitcher_handedness"
+                    )
+                    ac = (
+                        "away_starter_pitcher_handedness"
+                        if "away_starter_pitcher_handedness" in season_df.columns
+                        else "away_probable_pitcher_handedness"
+                    )
+                    if "home_hand_col_param" in sig:
+                        kwargs["home_hand_col_param"] = hc
+                    if "away_hand_col_param" in sig:
+                        kwargs["away_hand_col_param"] = ac
+                    if "home_team_col_param" in sig:
                         kwargs["home_team_col_param"] = "home_team_id"
-                    if _supports_kwarg(fn, "away_team_col_param"):
+                    if "away_team_col_param" in sig:
                         kwargs["away_team_col_param"] = "away_team_id"
 
-            # Execute transform
-            try:
+                    logger.debug(
+                        f"advanced will run with historical_team_stats_df seasons = "
+                        f"{kwargs['historical_team_stats_df']['season'].unique()}"
+                    )
+
                 out = fn(season_df, **kwargs)
                 if out is None or out.empty:
                     continue
-            except Exception as e:
-                logger.error(f"ENGINE: {module_name} error: {e}", exc_info=True)
+
+                new = [c for c in out.columns if c not in season_df.columns]
+                if new:
+                    season_df = pd.concat(
+                        [
+                            season_df.reset_index(drop=True),
+                            out[new].reset_index(drop=True),
+                        ],
+                        axis=1,
+                    )
                 continue
 
-            # Merge only brand-new columns
-            new_cols = [c for c in out.columns if c not in season_df.columns]
-            if new_cols:
-                season_df = pd.concat(
-                    [season_df.reset_index(drop=True),
-                     out[new_cols].reset_index(drop=True)],
-                    axis=1
-                )
-
+        # after all modules, keep this season’s chunk
         processed_chunks.append(season_df)
+
 
     if not processed_chunks:
         logger.error("ENGINE: No chunks processed")

@@ -50,21 +50,21 @@ EPSILON = 1e-6
 DEFAULTS: dict[str, Any] = {
     # --- Basic & Season Stats ---
     'win_pct': 0.5,
-    'avg_runs_for': -1.0,       # Use -1.0 to signal unknown
-    'avg_runs_against': -1.0,   # Use -1.0 to signal unknown
-    'runs_for_avg': -1.0,       # Alias used in some modules
-    'runs_against_avg': -1.0,   # Alias used in some modules
-    'net_runs_avg': 0.0,        # A diff/net metric, so 0 is a neutral default
+    'avg_runs_for': 4.6,       # CHANGED: Use League Average
+    'avg_runs_against': 4.6,   # CHANGED: Use League Average
+    'runs_for_avg': 4.6,       # CHANGED: Use League Average
+    'runs_against_avg': 4.6,   # CHANGED: Use League Average
+    'net_runs_avg': 0.0,        # Diff metric, 0 is neutral
 
-    # --- Common Rate Stats (Defaults signal 'unknown') ---
-    'batting_avg': -1.0,
-    'on_base_pct': -1.0,
-    'slugging_pct': -1.0,
-    'on_base_plus_slugging': -1.0,
-    'era': -1.0,                # Earned Run Average
-    'whip': -1.0,               # Walks and Hits per Inning Pitched
-    'k_per_9': -1.0,            # Strikeouts per 9 innings
-    'bb_per_9': -1.0,           # Walks per 9 innings
+    # --- Common Rate Stats (Sensible defaults, not 'unknown' signals) ---
+    'batting_avg': 0.250,       # CHANGED: Typical MLB average
+    'on_base_pct': 0.320,       # CHANGED: Typical MLB average
+    'slugging_pct': 0.410,      # CHANGED: Typical MLB average
+    'on_base_plus_slugging': 0.730, # (0.320 + 0.410)
+    'era': 4.00,                # CHANGED: Typical MLB average ERA
+    'whip': 1.30,               # CHANGED: Typical MLB average WHIP
+    'k_per_9': 8.5,             # CHANGED: Typical MLB K/9
+    'bb_per_9': 3.0,            # CHANGED: Typical MLB BB/9
 
     # --- Standard Deviations (for modeling variance if needed) ---
     'runs_scored_std': 3.0,     # Typical std dev of runs in a game
@@ -76,18 +76,21 @@ DEFAULTS: dict[str, Any] = {
     'momentum_direction': 0.0,  # 0 is a neutral default
 
     # --- Head-to-Head Matchup Stats ---
-    'matchup_num_games': 0.0,
-    'matchup_avg_run_diff': 0.0,
-    'matchup_home_win_pct': 0.5,
-    'matchup_avg_total_runs': -1.0,  # Use -1.0 to signal unknown
-    'matchup_avg_home_team_runs': -1.0,
-    'matchup_avg_away_team_runs': -1.0,
-    'matchup_home_team_streak': 0.0,
+    'matchup_num_games': 0.0,   # Count, 0 is sensible
+    'matchup_avg_run_diff': 0.0, # Diff, 0 is neutral
+    'matchup_home_win_pct': 0.5, # 0.5 is neutral
+    'matchup_avg_total_runs': 9.2, # CHANGED: 2 * League Average runs (4.6 * 2)
+    'matchup_avg_home_team_runs': 4.6, # CHANGED: League Average
+    'matchup_avg_away_team_runs': 4.6, # CHANGED: League Average
+    'matchup_home_team_streak': 0.0, # Diff, 0 is neutral
 
     # --- Rest/Schedule Stats ---
-    'rest_days': -1.0,          # Use -1.0 to signal unknown
-    'games_last_7_days': 0.0,   # Use 0 as these are counts
-    'games_last_14_days': 0.0,
+    'rest_days': 0.0,           # CHANGED: Neutral default (if not 0, use median or mean from data)
+    'games_last_7_days': 0.0,   # Count, 0 is sensible
+    'games_last_14_days': 0.0,  # Count, 0 is sensible
+
+    # --- Handedness-specific runs averages (new in snapshots) ---
+    'mlb_avg_runs_vs_hand': 4.6, # Added specific default for handedness runs
 }
 
 # --- MLB LEAGUE AVERAGES ---

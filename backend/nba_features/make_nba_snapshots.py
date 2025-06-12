@@ -1,3 +1,5 @@
+# backend/nba_features/make_nba_snapshots.py
+
 """
 Generate and upsert per-game NBA feature snapshots for frontend display.
 Fetches raw game data, historical context, computes features via an NBA engine,
@@ -87,7 +89,7 @@ def fetch_nba_raw_game_data(game_id: Union[str, int]) -> pd.DataFrame:
 
     # Fallback to game schedule for pre-game info
     logger.debug(f"NBA Game {game_id_str} not in historical, trying nba_game_schedule.")
-    schedule_cols_select = "game_id, game_date, scheduled_time, home_team, away_team"  # No quarter scores here
+    schedule_cols_select = "game_id, game_date, scheduled_time, home_team, away_team"
     response2 = (
         sb_client.table("nba_game_schedule")
         .select(schedule_cols_select)

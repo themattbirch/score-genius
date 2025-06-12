@@ -213,7 +213,6 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
     logger.info(f"Attempting to load MLB data from source: {source_type}")
     hist_df = pd.DataFrame()
     team_stats_df = pd.DataFrame()
-
     # Define numeric columns based on MLB required columns (excluding IDs, names, dates)
     hist_numeric_cols = [
         col for col in HISTORICAL_REQUIRED_COLS_MLB if col not in
@@ -1033,25 +1032,50 @@ def run_training_pipeline(args: argparse.Namespace):
     y_val_home, y_val_away     = val_df[TARGET_COLUMNS[0]], val_df[TARGET_COLUMNS[1]]
     y_test_home, y_test_away    = test_df[TARGET_COLUMNS[0]], test_df[TARGET_COLUMNS[1]]
     logger.info(f"Data Split Sizes: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
-    
+        
     MLB_RF_PARAM_DIST = {
-    'model__n_estimators': randint(200, 1200),
-    'model__max_depth': [None, 10, 20, 30, 40, 50],
-    'model__min_samples_split': randint(2, 30),
-    'model__min_samples_leaf': randint(1, 10),
-    'model__max_features': ['sqrt', 'log2', 0.3, 0.5, 0.7],
-    'model__bootstrap': [True, False],
+        # More trees but capped at 600 for efficiency
+        'model__n_estimators': randint(200, 600),
+
+        # Shallower trees to reduce overfitting
+        'model__max_depth': [5, 10, 15, 20],
+
+        # Force larger leaves and splits
+        'model__min_samples_split': randint(20, 40),
+        'model__min_samples_leaf': randint(10, 20),
+
+        # Decorrelate features aggressively
+        'model__max_features': ['sqrt', 0.3, 0.5],
+
+        # Stable bootstrap sampling
+        'model__bootstrap': [True],
     }
 
+
     MLB_XGB_PARAM_DIST = {
-        "model__max_depth": randint(3, 8),
-        "model__n_estimators": randint(100, 800),
-        "model__learning_rate": loguniform(1e-3, 3e-1),
-        "model__subsample": uniform(0.6, 0.4),
-        "model__colsample_bytree": uniform(0.6, 0.4),
-        "model__reg_alpha": loguniform(1e-3, 1.0),
-        "model__reg_lambda": loguniform(1e-3, 1.0),
+        # Let early stopping trim this
+        'model__n_estimators': randint(50, 400),
+
+        # Even simpler trees
+        'model__max_depth': randint(2, 6),
+
+        # Slower learning rates
+        'model__learning_rate': loguniform(1e-3, 1e-2),
+
+        # Mild regularization
+        'model__gamma': loguniform(1e-3, 1.0),
+        'model__min_child_weight': randint(5, 20),
+
+        # Subsampling for stability
+        'model__subsample': uniform(0.6, 0.2),
+        'model__colsample_bytree': uniform(0.6, 0.2),
+
+        # L1/L2 regularization tightened
+        'model__reg_alpha': loguniform(1e-3, 1.0),
+        'model__reg_lambda': loguniform(1e-2, 1.0),
     }
+
+
 
     MLB_LGBM_PARAM_DIST = {
         'model__n_estimators': randint(300, 1200),

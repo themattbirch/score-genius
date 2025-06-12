@@ -270,28 +270,35 @@ def load_recent_historical_data(supabase_client: SupabaseClient, days_lookback: 
         #    to numeric, coercing errors and filling NaNs with 0.
         #    These are typically scores, hits, errors, inning scores etc.
         logger.debug(f"Attempting numeric conversion for applicable columns...")
-        for col in df.columns: # Iterate over all columns in the DataFrame
+        
+        for col in df.columns:
             if col in final_required_hist_cols and col not in non_numeric_cols:
-                # This column was requested and is not in our explicit non_numeric_cols list
                 original_dtype = df[col].dtype
                 try:
+                    # Coerce to numeric; leave NaNs in place for now
                     df[col] = pd.to_numeric(df[col], errors='coerce')
-                    # Only fill with 0 if it's now a numeric type (float/int after coerce)
-                    if pd.api.types.is_numeric_dtype(df[col]):
-                        df[col] = df[col].fillna(0)
-                        if original_dtype == 'object' and df[col].dtype != 'object': # Log if type changed
-                             logger.debug(f"Converted column '{col}' from {original_dtype} to numeric; NaNs filled with 0.")
-                    else: # pd.to_numeric with errors='coerce' might leave it as object if all were unparseable
-                        logger.warning(f"Column '{col}' (original_dtype: {original_dtype}) could not be fully coerced to numeric. Check its content. NaNs not filled with 0 by numeric logic.")
-                        # If it's still object and you want to fill its NaNs differently (e.g. with ""), handle here
-                        if df[col].dtype == 'object':
-                             df[col] = df[col].fillna("")
 
+                    # Log only when we actually changed a string → numeric
+                    if pd.api.types.is_numeric_dtype(df[col]) and original_dtype == 'object':
+                        logger.debug(
+                            f"Converted column '{col}' from {original_dtype} to numeric. NaNs persist as expected."
+                        )
+
+                    # If everything still couldn’t parse, warn and fill strings’ NaNs
+                    if not pd.api.types.is_numeric_dtype(df[col]):
+                        logger.warning(
+                            f"Column '{col}' (original_dtype: {original_dtype}) could not be fully coerced "
+                            "to numeric. NaNs not filled by numeric logic."
+                        )
+                        if df[col].dtype == 'object':
+                            df[col] = df[col].fillna("")
 
                 except Exception as e:
-                    logger.error(f"Error during numeric conversion for column '{col}': {e}", exc_info=True)
-
-
+                    logger.error(
+                        f"Error during numeric conversion for column '{col}': {e}",
+                        exc_info=True
+                    )
+                    
         logger.info(f"Data types processed. Final historical DataFrame shape before sort: {df.shape}")
         return df.sort_values("game_date").reset_index(drop=True)
 
@@ -418,8 +425,8 @@ def load_trained_models(
 
     models: Dict[str, Any] = {}
     model_map = {
-        "rf": MLBRFPredictor,
-        "xgb": MLBXGBoostPredictor,
+        #"rf": MLBRFPredictor,
+        #"xgb": MLBXGBoostPredictor,
         "lgbm": MLBLightGBMPredictor,
     }
     for name, ClsMLB in model_map.items():
@@ -571,6 +578,9 @@ def generate_predictions(
     # hist_df_mlb will now have a longer lookback due to DEFAULT_LOOKBACK_DAYS_FOR_FEATURES_MLB change
     hist_df_mlb = load_recent_historical_data(supabase, historical_lookback)
     team_stats_df = load_team_stats_data(supabase)
+    max_season = team_stats_df["season"].max()
+    logger.debug(f"MAX team_stats_df: maximum season value = {max_season}")
+
     upcoming_df_raw = fetch_upcoming_games_data(supabase, days_window) # Keep original upcoming_df separate for now
 
     logger.info(
@@ -585,43 +595,60 @@ def generate_predictions(
     # This was 'status_short == 0' in your prediction.py snippet, but 'F' or 'Final' in train_models.py comments.
     # Clarify what indicates a completed game for historical data. Let's assume 'status_short' is a string like 'FT' or 'F'.
     if "status_short" in hist_df_mlb.columns:
-        logger.info(f"Debugging status_short BEFORE filtering. Number of rows: {len(hist_df_mlb)}")
+        # 1) Initial debug of raw values
+        logger.info(f"Debugging status_short BEFORE filtering. Rows: {len(hist_df_mlb)}")
         logger.info(f"Data type of status_short: {hist_df_mlb['status_short'].dtype}")
-        unique_statuses = hist_df_mlb['status_short'].unique()
-        logger.info(f"Unique status_short values in DataFrame: {unique_statuses}")
-        
-        # Check specifically for 'FT' and its variations
-        ft_count_exact = hist_df_mlb[hist_df_mlb['status_short'] == 'FT'].shape[0]
-        logger.info(f"Count of rows where status_short == 'FT' (exact match): {ft_count_exact}")
-        
-        # Check for 'FT' with potential whitespace issues
-        if hist_df_mlb['status_short'].dtype == 'object': # Only apply .str if it's an object/string type
-            hist_df_mlb['status_short_stripped'] = hist_df_mlb['status_short'].str.strip()
-            ft_count_stripped = hist_df_mlb[hist_df_mlb['status_short_stripped'] == 'FT'].shape[0]
-            logger.info(f"Count of rows where status_short.str.strip() == 'FT': {ft_count_stripped}")
-            unique_statuses_stripped = hist_df_mlb['status_short_stripped'].unique()
-            logger.info(f"Unique status_short_stripped values in DataFrame: {unique_statuses_stripped}")
+        raw_vals = hist_df_mlb["status_short"].unique()
+        logger.info(f"Unique raw status_short → {raw_vals}")
+
+        # 2) Numeric conversion check
+        hist_df_mlb["status_short_numeric"] = pd.to_numeric(
+            hist_df_mlb["status_short"], errors="coerce"
+        )
+        num_vals = hist_df_mlb["status_short_numeric"].unique()
+        logger.info(f"Unique status_short_numeric → {num_vals}")
+        zero_count = hist_df_mlb[hist_df_mlb["status_short_numeric"] == 0].shape[0]
+        logger.info(f"Count where status_short_numeric == 0 → {zero_count}")
+
+        # 3) String‐strip check (if object)
+        if hist_df_mlb["status_short"].dtype == object:
+            hist_df_mlb["status_short_stripped"] = (
+                hist_df_mlb["status_short"].str.strip()
+            )
+            stripped_vals = hist_df_mlb["status_short_stripped"].unique()
+            logger.info(f"Unique status_short_stripped → {stripped_vals}")
+            ft_stripped_count = hist_df_mlb[
+                hist_df_mlb["status_short_stripped"] == "FT"
+            ].shape[0]
+            logger.info(f"Count where status_short_stripped == 'FT' → {ft_stripped_count}")
         else:
-            logger.info("status_short is not of object type, skipping .str.strip().")
+            logger.info("status_short not object‐dtype; skipping .str.strip() checks.")
 
-    # Original filtering block (ensure completed_statuses is correct now)
-    if "status_short" in hist_df_mlb.columns:
-        completed_statuses = ['FT'] 
-        
-        # OPTION 1: Use the exact value if you are confident after debugging
-        # hist_df_mlb = hist_df_mlb[hist_df_mlb["status_short"].isin(completed_statuses)].copy()
-        
-        # OPTION 2: Or, if stripping spaces proved necessary from debug logs:
-        if 'status_short_stripped' in hist_df_mlb.columns: # Check if the debug column was created
-            hist_df_mlb = hist_df_mlb[hist_df_mlb["status_short_stripped"].isin(completed_statuses)].copy()
-            # Optionally drop the temporary column if you keep this method
-            # hist_df_mlb = hist_df_mlb.drop(columns=['status_short_stripped'], errors='ignore')
-        else: # Fallback to original if stripping wasn't applied or column doesn't exist
-            hist_df_mlb = hist_df_mlb[hist_df_mlb["status_short"].isin(completed_statuses)].copy()
-
-        logger.info(f"Filtered historical games to 'FT' status (using appropriate comparison), {len(hist_df_mlb)} rows remaining.")
+        # 4) Apply the most promising filter:
+        #    Prefer numeric 0 → else stripped 'FT' → else raw 'FT'
+        if zero_count > 0:
+            hist_df_mlb = hist_df_mlb[
+                hist_df_mlb["status_short_numeric"] == 0
+            ].copy()
+            logger.info(f"Filtered on status_short_numeric == 0; {len(hist_df_mlb)} rows remain")
+        elif "status_short_stripped" in hist_df_mlb.columns:
+            hist_df_mlb = hist_df_mlb[
+                hist_df_mlb["status_short_stripped"] == "FT"
+            ].copy()
+            logger.info(f"Filtered on status_short_stripped == 'FT'; {len(hist_df_mlb)} rows remain")
+        else:
+            hist_df_mlb = hist_df_mlb[
+                hist_df_mlb["status_short"] == "FT"
+            ].copy()
+            logger.info(f"Filtered on status_short == 'FT'; {len(hist_df_mlb)} rows remain")
     else:
         logger.warning("'status_short' column not found in hist_df_mlb. Cannot filter by status.")
+    
+    # — Clean up temporary debug columns —
+    hist_df_mlb = hist_df_mlb.drop(
+        columns=["status_short_numeric", "status_short_stripped"],
+        errors="ignore"
+    )
 
     assert "home_score" in hist_df_mlb.columns, "Historical DataFrame is missing 'home_score' column!"
     assert "away_score" in hist_df_mlb.columns, "Historical DataFrame is missing 'away_score' column!"
@@ -930,7 +957,7 @@ def generate_predictions(
         h2h_max_games=10, 
         execution_order=execution_order,
         flag_imputations=False, 
-        debug=debug_mode, # Passed from prediction.py args
+        debug=debug_mode,
     )
 
     if features_df.empty:
@@ -1390,6 +1417,15 @@ def generate_predictions(
                 }
             )
             preds_by_model[key] = df_pred[["predicted_home_runs", "predicted_away_runs"]]
+
+    # DIAGNOSTIC LOGGING
+    for name, df_pred in preds_by_model.items():
+        mean_home = df_pred["predicted_home_runs"].mean()
+        mean_away = df_pred["predicted_away_runs"].mean()
+        logger.info(
+            f"MODEL DIAGNOSTIC: {name.upper()} mean runs → "
+            f"home={mean_home:.2f}, away={mean_away:.2f}"
+        )
 
     if not preds_by_model:
         logger.error("All models failed to predict – aborting.")

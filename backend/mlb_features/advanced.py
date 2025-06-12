@@ -136,9 +136,8 @@ def transform(
     away_team_col = away_team_col_param
 
     # runtime defaults
-    def_win = MLB_DEFAULTS.get("mlb_hist_win_pct", 0.50)
-    def_run = MLB_DEFAULTS.get("mlb_hist_runs_avg", 4.50)
-
+    def_win = -1.0 
+    def_run = -1.0
     out = df.copy()
 
     # ------------------------------------------------------------------
