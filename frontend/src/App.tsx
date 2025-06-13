@@ -45,20 +45,6 @@ const Layout: React.FC = () => {
 // 3) Wrap everything in QueryClientProvider
 const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
-    {/* --- ADD THIS TEMPORARY LINE FOR BUILD VERIFICATION --- */}
-    <div
-      style={{
-        color: "red",
-        fontSize: "20px",
-        position: "fixed",
-        top: "10px",
-        left: "10px",
-        zIndex: 9999,
-      }}
-    >
-      BUILD TEST: {Math.random().toFixed(4)}
-    </div>
-    {/* --- END TEMPORARY LINE --- */}
     <TourProvider>
       <ThemeProvider>
         <SportProvider>

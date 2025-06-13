@@ -1,0 +1,7 @@
+# client-side SPA routing
+
+/app/\* /app.html 200
+
+# proxy all API calls to the backend
+
+/api/v1/\* https://score-genius-backend.onrender.com/api/v1/:splat 200
