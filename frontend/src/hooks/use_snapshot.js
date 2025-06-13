@@ -24,12 +24,10 @@ export const use_snapshot = (gameId, sport) => {
     typeof sport
   );
 
-  const query = useQuery(
-    ["snapshot", sport, gameId],
-    async () => {
-      if (!isEnabled) {
-        return null;
-      }
+  const query = useQuery({
+    queryKey: ["snapshot", sport, gameId],
+    queryFn: async () => {
+      if (!isEnabled) return null;
       console.log(
         `[apiFetch] Constructed URL: ${
           import.meta.env.VITE_API_BASE_URL
@@ -45,19 +43,15 @@ export const use_snapshot = (gameId, sport) => {
             response.status
           } - ${errorBody}`
         );
-        throw new Error(
-          `Failed to fetch snapshot for ${sport} game ${gameId}: ${response.statusText}`
-        );
+        throw new Error(`Failed to fetch snapshot: ${response.statusText}`);
       }
       return response.json();
     },
-    {
-      enabled: false, // only fetch when refetch() is called
-      staleTime: 120 * 1000, // 2 minutes
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      retry: 1,
-    }
-  );
+    enabled: false,
+    staleTime: 120 * 1000,
+    cacheTime: 5 * 60 * 1000,
+    retry: 1,
+  });
 
   return query;
 };
