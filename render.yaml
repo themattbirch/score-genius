@@ -1,31 +1,18 @@
-# render.yaml – Full blueprint for frontend and backend
-
-staticSites:
-  - name: scoregenius-frontend
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    envVars:
-      - key: VITE_API_BASE_URL
-        value: https://score-genius-backend.onrender.com
-    routes:
-      - type: rewrite
-        source: /app
-        destination: /app.html
-      - type: rewrite
-        source: /app/*
-        destination: /app.html
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
 services:
   - type: web
-    name: scoregenius-backend
-    rootDir: backend/server
-    buildCommand: npm install
-    startCommand: node server.js
+    name: score-genius-backend
+    rootDir: .                      # repo root
+    buildCommand: |
+      cd frontend
+      npm ci && npm run build       # ↩️ produces frontend/dist
+      cd ..                         # ← return to repo root
+      cd backend/server
+      npm install
+      cd ../..                      # ← return again so slug = entire repo
+    startCommand: node backend/server/server.js
     envVars:
+      - key: VITE_API_BASE_URL
+        value: http://localhost:3001 # during runtime, Express will proxy API requests
       - key: SUPABASE_URL
         from: env
       - key: SUPABASE_SERVICE_KEY
