@@ -3,7 +3,6 @@
 // frontend/src/App.tsx
 
 import React, { useEffect } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import GamesScreen from "./screens/game_screen";
@@ -17,16 +16,6 @@ import { SportProvider } from "./contexts/sport_context";
 import { DateProvider } from "@/contexts/date_context";
 import BottomTabBar from "./components/layout/BottomTabBar";
 import { ThemeProvider } from "./contexts/theme_context";
-
-// 1) Create a single QueryClient instance
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 120 * 1000,
-      retry: 1,
-    },
-  },
-});
 
 // 2) Layout stays the same
 const Layout: React.FC = () => {
@@ -48,27 +37,25 @@ const App: React.FC = () => {
     console.log("VITE_API_BASE_URL:", import.meta.env.VITE_API_BASE_URL);
   }, []);
   return (
-    <QueryClientProvider client={queryClient}>
-      <TourProvider>
-        <ThemeProvider>
-          <SportProvider>
-            <DateProvider>
-              <Routes>
-                <Route element={<Layout />}>
-                  <Route index element={<Navigate to="/games" replace />} />
-                  <Route path="games" element={<GamesScreen />} />
-                  <Route path="games/:gameId" element={<GameDetailScreen />} />
-                  <Route path="stats" element={<StatsScreen />} />
-                  <Route path="more" element={<MoreScreen />} />
-                  <Route path="how-to-use" element={<HowToUseScreen />} />
-                </Route>
-                <Route path="*" element={<Navigate to="/games" replace />} />
-              </Routes>
-            </DateProvider>
-          </SportProvider>
-        </ThemeProvider>
-      </TourProvider>
-    </QueryClientProvider>
+    <TourProvider>
+      <ThemeProvider>
+        <SportProvider>
+          <DateProvider>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route index element={<Navigate to="/games" replace />} />
+                <Route path="games" element={<GamesScreen />} />
+                <Route path="games/:gameId" element={<GameDetailScreen />} />
+                <Route path="stats" element={<StatsScreen />} />
+                <Route path="more" element={<MoreScreen />} />
+                <Route path="how-to-use" element={<HowToUseScreen />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/games" replace />} />
+            </Routes>
+          </DateProvider>
+        </SportProvider>
+      </ThemeProvider>
+    </TourProvider>
   );
 };
 

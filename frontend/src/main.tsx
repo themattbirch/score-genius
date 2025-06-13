@@ -6,7 +6,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 
-const queryClient = new QueryClient();
+// Create *one* client with your defaults
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 120_000,
+      retry: 1,
+    },
+  },
+});
+
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
