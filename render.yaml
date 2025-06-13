@@ -1,24 +1,21 @@
-# render.yaml (repo root)
-services:
-  - type: web
-    name: scoregenius-frontend # must match your Static Site’s name in the dashboard
-    runtime: static # tells Render this is a Static Site
-    rootDir: frontend # where to cd before building
+# render.yaml – Static Site + SPA rewrites
+staticSites:
+  - name: scoregenius-frontend
+    rootDir: frontend # where package.json and vite.config.ts live
     buildCommand: npm ci && npm run build
-    staticPublishPath: dist # the folder to publish (equivalent to publishDir)
+    staticPublishPath: dist # where Vite writes its build
     envVars:
       - key: VITE_API_BASE_URL
         value: https://score-genius-backend.onrender.com
+
+    # SPA rewrites
     routes:
-      # rewrite /app        to app.html
-      - type: rewrite
+      - type: rewrite # /app (no slash) → app.html
         source: /app
         destination: /app.html
-      # rewrite /app/*     to app.html
-      - type: rewrite
+      - type: rewrite # /app/* → app.html (client-side router)
         source: /app/*
         destination: /app.html
-      # everything else   to index.html
-      - type: rewrite
+      - type: rewrite # everything else → index.html (marketing site)
         source: /*
         destination: /index.html
