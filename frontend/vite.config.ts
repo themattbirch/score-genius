@@ -56,7 +56,7 @@ export default defineConfig(({ mode }) => {
         } as any,
 
         workbox: {
-          navigateFallback: "/app.html",
+          navigateFallback: "/app/offline.html",
           navigateFallbackAllowlist: [/^\/app(?:\/.*)?$/],
           globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
           cleanupOutdatedCaches: true,
