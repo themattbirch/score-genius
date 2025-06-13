@@ -48,7 +48,6 @@ app.use(
   createProxyMiddleware({
     target: "https://score-genius-backend.onrender.com",
     changeOrigin: true,
-    pathRewrite: { "^/api/v1": "/api/v1" },
     logLevel: "warn",
   })
 );
