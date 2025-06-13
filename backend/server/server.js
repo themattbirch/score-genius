@@ -10,56 +10,50 @@ import { createClient } from "@supabase/supabase-js";
 import { createProxyMiddleware } from "http-proxy-middleware";
 
 // ──────────────────────────────────────────────────────────────
-// 1) Determine file paths and load environment
+// 1) Resolve paths & load environment
 // ──────────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 const envPath = path.join(__dirname, "..", ".env");
-const frontEndDist = path.resolve(__dirname, "../../frontend/dist");
-
-console.log("🔍 [DEBUG] __dirname =", __dirname);
-console.log("🔍 [DEBUG] frontEndDist resolves to =", frontEndDist);
-console.log(
-  `🔍 [DEBUG] index.html exists?`,
-  fs.existsSync(path.join(frontEndDist, "index.html"))
-);
-console.log(
-  `🔍 [DEBUG] app.html exists?`,
-  fs.existsSync(path.join(frontEndDist, "app.html"))
-);
-
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
   console.log(`🔑  Loaded env from ${envPath}`);
 } else {
-  console.log("🔑  No local .env file found; assuming host provides vars");
+  console.log("🔑  No local .env file found; relying on host‐provided vars");
 }
 
+// location of built frontend (Vite copies public/* → dist/public)
+const frontEndDistPublic = path.resolve(
+  __dirname,
+  "../../frontend/dist/public"
+);
+console.log("🔍 [DEBUG] frontEndDistPublic =", frontEndDistPublic);
+console.log(
+  "🔍 [DEBUG] index.html exists?",
+  fs.existsSync(path.join(frontEndDistPublic, "index.html"))
+);
+
 // ──────────────────────────────────────────────────────────────
-// 2) Validate required Supabase environment variables
+// 2) Validate Supabase env vars & create client
 // ──────────────────────────────────────────────────────────────
 const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error(
-    "FATAL: SUPABASE_URL or SUPABASE_SERVICE_KEY missing in environment"
-  );
+  console.error("FATAL: SUPABASE_URL or SUPABASE_SERVICE_KEY missing");
   process.exit(1);
 }
 
-// ──────────────────────────────────────────────────────────────
-// 3) Initialize Supabase client
-// ──────────────────────────────────────────────────────────────
 export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
 // ──────────────────────────────────────────────────────────────
-// 4) Instantiate Express
+// 3) Instantiate Express
 // ──────────────────────────────────────────────────────────────
 const app = express();
 
 // ──────────────────────────────────────────────────────────────
-// 5) Proxy all /api/v1 requests to the backend service
+// 4) Proxy ALL /api/v1 calls to Render backend
 // ──────────────────────────────────────────────────────────────
 app.use(
   "/api/v1",
@@ -72,7 +66,20 @@ app.use(
 );
 
 // ──────────────────────────────────────────────────────────────
-// 6) Standard middleware
+// 5) Serve static assets from built frontend
+// ──────────────────────────────────────────────────────────────
+app.use(express.static(frontEndDistPublic));
+
+// ──────────────────────────────────────────────────────────────
+// 6) API route mounts (bypassed when proxy matches first)
+// ──────────────────────────────────────────────────────────────
+const nbaRoutes = (await import("./routes/nba_routes.js")).default;
+const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
+app.use("/api/v1/nba", nbaRoutes);
+app.use("/api/v1/mlb", mlbRoutes);
+
+// ──────────────────────────────────────────────────────────────
+// 7) Standard middleware (CORS, JSON, logging)
 // ──────────────────────────────────────────────────────────────
 app.disable("etag");
 app.use(
@@ -84,15 +91,6 @@ app.use(
     ],
   })
 );
-app.use((req, res, next) => {
-  res.set({
-    "Cache-Control": "private, no-store, max-age=0, must-revalidate",
-    Pragma: "no-cache",
-    Expires: "0",
-    "Surrogate-Control": "no-store",
-  });
-  next();
-});
 app.use(express.json());
 app.use((req, _res, next) => {
   console.log(`${new Date().toISOString()} – ${req.method} ${req.path}`);
@@ -100,22 +98,23 @@ app.use((req, _res, next) => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// 7) Mount API routes (bypassed by the proxy)
+// 8) SPA fallback – any GET not handled above returns index.html
 // ──────────────────────────────────────────────────────────────
-const nbaRoutes = (await import("./routes/nba_routes.js")).default;
-const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
-app.use("/api/v1/nba", nbaRoutes);
-app.use("/api/v1/mlb", mlbRoutes);
+app.get("/*", (req, res) => {
+  // Let proxy handle API routes
+  if (req.path.startsWith("/api/v1")) return res.status(404).end();
+  res.sendFile(path.join(frontEndDistPublic, "index.html")); // or app.html if that’s your entry
+});
 
 // ──────────────────────────────────────────────────────────────
-// 8) Health check endpoint
+// 9) Health check
 // ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
 // ──────────────────────────────────────────────────────────────
-// 9) Error handling
+// 10) Error handling
 // ──────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
   console.error(err.stack || err);
@@ -128,7 +127,7 @@ app.use((err, _req, res, _next) => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// 10) Start server
+// 11) Start server
 // ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
