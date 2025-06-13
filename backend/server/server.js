@@ -34,6 +34,9 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 // Point to your built frontend
 const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
 
+console.log("FRONTEND_DIST path:", FRONTEND_DIST);
+console.log("  exists?", fs.existsSync(FRONTEND_DIST));
+
 // 3) Express setup
 const app = express();
 app.use(cors({ origin: ["https://scoregenius.io"] }));
@@ -56,7 +59,8 @@ app.get("/health", (_req, res) =>
 );
 
 // 7) SPA fallback for /app and all nested paths
-app.get(/^\/app(\/.*)?$/, (_req, res) => {
+app.get(/^\/app(\/.*)?$/, (req, res) => {
+  console.log(`[SPA fallback] path=${req.path}`);
   res.sendFile(path.join(FRONTEND_DIST, "app.html"));
 });
 
