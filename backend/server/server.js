@@ -1,3 +1,4 @@
+// backend/server/server.js
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
@@ -6,13 +7,12 @@ import fs from "fs";
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
-import { createProxyMiddleware } from "http-proxy-middleware";
 
 // Resolve environment variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const envPath = path.join(__dirname, "..", ".env");
+const envPath = path.join(__dirname, "..", ".env"); // Path to backend/.env
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
   console.log(`🔑 Loaded env from ${envPath}`);
@@ -30,31 +30,37 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 // Initialize Supabase client
 export const supabase = createClient(
   SUPABASE_URL,
-  SUPABASE_SERVICE_KEY,
-  { auth: { persistSession: false } }
+  process.env.SUPABASE_SERVICE_KEY,
+  {
+    auth: { persistSession: false },
+  }
 );
 
-// Path to built frontend
+// Path to your **built frontend distribution** directory (e.g., /frontend/dist)
 const frontEndDist = path.resolve(__dirname, "../../frontend/dist");
 console.log("🔍 Serving static assets from", frontEndDist);
 
 // Create Express app
 const app = express();
 
-// 1) CORS and body parsing
+// --- 1. Essential Middleware (Order is CRUCIAL!) ---
 app.use(
-  cors({ origin: ["https://scoregenius.io", "http://localhost:5173", "http://localhost:4173"] })
+  cors({
+    origin: [
+      "https://scoregenius.io",
+      "http://localhost:5173", // Your frontend dev server
+      "http://localhost:4173", // Another common dev port
+    ],
+  })
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging
 app.use((req, _res, next) => {
   console.log(`${new Date().toISOString()} – ${req.method} ${req.path}`);
   next();
 });
 
-// Cache control headers
 app.disable("etag");
 app.use((req, res, next) => {
   res.set({
@@ -66,50 +72,71 @@ app.use((req, res, next) => {
   next();
 });
 
-// 2) Proxy API calls to backend
-app.use(
-  "/api/v1",
-  createProxyMiddleware({ target: "https://score-genius-backend.onrender.com", changeOrigin: true, logLevel: "warn" })
-);
-
-// 3) Mount API routes (bypassed by proxy)
+// --- 2. Mount API Routes (CRITICAL: BEFORE serving static files) ---
+// This server directly handles these API endpoints.
 const nbaRoutes = (await import("./routes/nba_routes.js")).default;
 const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
-// 4) Serve static frontend assets
+// --- 3. Serve Frontend Static Assets ---
+// This serves all files directly from the 'dist' folder.
+// This middleware will handle requests for /assets/*, /index.html, /app.html etc.
+// This MUST come AFTER API routes.
 app.use(express.static(frontEndDist));
 
-// 5) Serve index.html at root
+// --- 4. SPA Fallbacks for client-side routing (Order matters!) ---
+// These routes ensure the correct HTML file is served for client-side routing.
+// They must come AFTER express.static to avoid intercepting static file requests.
+
+// Serve index.html specifically at the root path "/"
+// This handles the manifest.start_url if it's '/'
 app.get("/", (_req, res) => {
   res.sendFile(path.join(frontEndDist, "index.html"));
 });
 
-// 6) Serve app.html at /app and /app/*
-app.get(["/app", "/app/*"], (_req, res) => {
+// Serve app.html specifically for /app and any paths under /app (PWA scope)
+// This handles the manifest.scope and manifest.start_url if it's '/app'
+app.get("/app", (_req, res) => {
+  // Handles exact /app path
   res.sendFile(path.join(frontEndDist, "app.html"));
 });
 
-// 7) SPA fallback for other GET requests (excluding API and assets)
-app.use((req, res, next) => {
-  if (req.method !== 'GET') return next();
-  if (req.path.startsWith('/api/v1')) return next();
-  if (req.path.includes('.')) return next(); // Skip asset requests
-  res.sendFile(path.join(frontEndDist, "index.html"));
+app.get("/app/*", (req, res) => {
+  // Handles /app/ and all sub-paths
+  res.sendFile(path.join(frontEndDist, "app.html"));
 });
 
-// Health check
+// Catch-all for any other GET requests not handled by previous middleware.
+// This is your general SPA fallback for deep links (e.g., /games/someId).
+app.get("/*", (req, res, next) => {
+  // If the request path starts with /api/v1, it should have been caught by the API routes above.
+  // If it somehow reaches here, let it fall through to subsequent error handlers (e.g., 404).
+  if (req.path.startsWith("/api/v1")) {
+    return next();
+  }
+  // Otherwise, assume it's a client-side route not explicitly mapped above and serve index.html
+  // (or app.html if that's the primary fallback for all non-root SPA routes).
+  // Given your manifest scope, app.html is likely your primary SPA entry.
+  res.sendFile(path.join(frontEndDist, "app.html"));
+});
+
+// --- Health Check Endpoint ---
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// Error handling
+// --- Error-handling Middleware ---
 app.use((err, _req, res, _next) => {
   console.error(err.stack || err);
-  res.status(err.status || 500).json({ error: { message: err.message } });
+  res.status(err.status || 500).json({
+    error: {
+      message: err.message ?? "Internal Server Error",
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    },
+  });
 });
 
-// Start server
-const PORT = process.env.PORT || 3001;
+// --- Start server ---
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
