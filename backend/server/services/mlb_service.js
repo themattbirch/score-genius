@@ -36,46 +36,7 @@ const getUTCDateString = (date) => {
  * @property {'schedule' | 'historical'} dataType
  */
 
-// --- This function seems unrelated to the specific date schedule needed ---
-// Keeping it as it was, but ensure it's not being called by mistake by the controller
-export const fetchMlbScheduleForTodayAndTomorrow = async () => {
-  console.log("Service: Fetching MLB schedule for today/tomorrow ET...");
-  const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
-  const todayStr = nowEt.toISODate();
-  const tomorrowStr = nowEt.plus({ days: 1 }).toISODate();
-  console.log(
-    `Service: Querying ${MLB_SCHEDULE_TABLE} for dates: ${todayStr}, ${tomorrowStr}`
-  );
-  try {
-    const { data, error, status } = await supabase
-      .from(MLB_SCHEDULE_TABLE)
-      .select(
-        `game_id, scheduled_time_utc, game_date_et, status_detail, status_state, home_team_name, away_team_name, home_probable_pitcher_name, home_probable_pitcher_handedness, away_probable_pitcher_name, away_probable_pitcher_handedness, moneyline_home_clean, moneyline_away_clean, spread_home_line_clean, spread_home_price_clean, spread_away_price_clean, total_line_clean, total_over_price_clean, total_under_price_clean`
-      )
-      .in("game_date_et", [todayStr, tomorrowStr])
-      .order("scheduled_time_utc", { ascending: true });
-
-    if (error) {
-      console.error(
-        "Supabase error fetching MLB schedule (Today/Tomorrow):",
-        error
-      );
-      throw error; // Re-throw Supabase errors
-    }
-    console.log(
-      `Service: Found ${data?.length ?? 0} MLB games (Today/Tomorrow).`
-    );
-    return data || [];
-  } catch (error) {
-    console.error(
-      "Error in fetchMlbScheduleForTodayAndTomorrow service:",
-      error
-    );
-    throw error; // Re-throw other errors
-  }
-};
-
-// --- CORRECTED: MLB Historical Game List (Removed misplaced schedule code) ---
+// --- MLB Historical Game List (Removed misplaced schedule code) ---
 export const fetchMlbGameHistory = async (options) => {
   const cacheKey = `mlb_game_history_${JSON.stringify(options)}`;
   const ttl = 86400;
@@ -198,7 +159,6 @@ export const WorkspaceMlbScheduleForTodayAndTomorrow = async () => {
   }
 };
 
-// --- CORRECTED & REFACTORED function to get schedule/results by specific date ---
 /**
  * Fetches EITHER schedule/odds data (today/future) OR historical results (past dates)
  * for MLB games on a specific date (ET).
@@ -476,9 +436,9 @@ export async function fetchMlbSnapshotData(gameId) {
       game_date,
       season,
       headline_stats,
-      bar_chart_data,       -- Corrected: no aliasing needed
-      radar_chart_data,     -- Corrected: no aliasing needed
-      pie_chart_data,       -- Corrected: no aliasing needed
+      bar_chart_data,  
+      radar_chart_data,
+      pie_chart_data,
       last_updated
     `
     )
@@ -595,18 +555,19 @@ export async function fetchMlbSnapshotsByIds(gameIds) {
 
         // Perform runtime shape-check (optional but good)
         function assertArray(colValue, colName) {
-          if (!Array.isArray(snapshot[colValue])) {
+          if (!Array.isArray(snapshot[colName])) {
             console.warn(
               `Service: Snapshot for game_id ${
                 snapshot.game_id
               }: ${colName} expected as Array, got ${typeof snapshot[
-                colValue
+                colName
               ]}. Defaulting to empty array.`
             );
-            return [];
+            return []; // Return empty array to prevent frontend errors
           }
-          return snapshot[colValue];
+          return snapshot[colName];
         }
+        // Pass the string column name, and the function accesses snapshot[colName]
         snapshot.headline_stats = assertArray(
           "headline_stats",
           "headline_stats"

@@ -1,5 +1,3 @@
-# backend/nba_features/make_nba_snapshots.py
-
 """
 Generate and upsert per-game NBA feature snapshots for frontend display.
 Fetches raw game data, historical context, computes features via an NBA engine,
@@ -13,6 +11,7 @@ from typing import Union, List, Dict, Any, Optional
 import pandas as pd
 from supabase import create_client, Client
 from dateutil import parser as dateutil_parser # For robust date parsing
+import numpy as np # For pd.NA handling
 
 import logging
 logging.basicConfig(
@@ -55,13 +54,6 @@ except ImportError:
 from backend.nba_features.utils import normalize_team_name as normalize_nba_team_name
 from backend.nba_features.utils import DEFAULTS as NBA_DEFAULTS
 from backend.nba_features.utils import determine_season as determine_nba_season # For NBA season string
-
-# --- Logger Configuration ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
-)
-logger = logging.getLogger(__name__)
 
 # --- Supabase Client ---
 sb_client: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -131,9 +123,9 @@ def fetch_nba_team_season_stats() -> pd.DataFrame:
     logger.debug(f"Fetched {len(df)} rows from nba_historical_team_stats.")
     return df
 
-def fetch_nba_season_advanced_stats_rpc(season_identifier: Union[str, int]) -> pd.DataFrame: 
+def fetch_nba_season_advanced_stats_rpc(season_identifier: Union[str, int]) -> pd.DataFrame:
     """Season-to-date advanced metrics for each NBA team via RPC."""
-    rpc_name = "get_nba_advanced_team_stats" 
+    rpc_name = "get_nba_advanced_team_stats"
     logger.debug(f"Fetching NBA season advanced stats for season '{season_identifier}' via RPC: {rpc_name}")
     try:
         response = sb_client.rpc(rpc_name, {"p_season_year": season_identifier}).execute()
@@ -154,13 +146,13 @@ def fetch_nba_season_advanced_stats_rpc(season_identifier: Union[str, int]) -> p
 
 # --- Form String Helper (NBA specific, using nba_historical_game_stats) ---
 def _get_nba_team_form_string(
-    team_identifier: Union[str, int], 
+    team_identifier: Union[str, int],
     current_game_date: pd.Timestamp | str,
-    all_historical_games: pd.DataFrame, 
+    all_historical_games: pd.DataFrame,
     num_form_games: int = 5
 ) -> str:
     normalized_team = normalize_nba_team_name(str(team_identifier))
-    
+
     current_game_dt = pd.to_datetime(current_game_date, errors='coerce').date()
     if pd.isna(current_game_dt) or all_historical_games.empty:
         logger.debug(f"Cannot get form for {team_identifier}: invalid date or no historical games.")
@@ -177,7 +169,7 @@ def _get_nba_team_form_string(
         ((all_historical_games['home_team_norm'] == normalized_team) | \
          (all_historical_games['away_team_norm'] == normalized_team)) & \
         (all_historical_games['parsed_game_date'] < current_game_dt) & \
-        (pd.notna(all_historical_games['home_score']) & pd.notna(all_historical_games['away_score'])) 
+        (pd.notna(all_historical_games['home_score']) & pd.notna(all_historical_games['away_score']))
     ].copy()
 
     if team_games.empty:
@@ -185,7 +177,7 @@ def _get_nba_team_form_string(
         return "N/A"
 
     recent_games = team_games.sort_values(by='parsed_game_date', ascending=False).head(num_form_games)
-    if recent_games.empty: 
+    if recent_games.empty:
         logger.debug(f"Not enough recent completed games for {team_identifier} before {current_game_dt}.")
         return "N/A"
 
@@ -194,15 +186,23 @@ def _get_nba_team_form_string(
         is_home = game_row['home_team_norm'] == normalized_team
         team_score = int(game_row['home_score'] if is_home else game_row['away_score'])
         opponent_score = int(game_row['away_score'] if is_home else game_row['home_score'])
-        
+
         if team_score > opponent_score: form_results.append("W")
         elif team_score < opponent_score: form_results.append("L")
-        else: form_results.append("T") 
+        else: form_results.append("T")
     return "".join(form_results) if form_results else "N/A"
 
 
 # --- NBA Snapshot Generator ---
-def make_nba_snapshot(game_id: Union[str, int]):
+def make_nba_snapshot(
+    game_id: Union[str, int],
+    # Default column names used in this function that access df_game (from schedule/historical)
+    input_game_date_col: str = "game_date", # Primary date col in nba_game_schedule
+    input_home_team_col: str = "home_team",
+    input_away_team_col: str = "away_team",
+    input_home_score_col: str = "home_score", # From nba_historical_game_stats
+    input_away_score_col: str = "away_score",
+    ):
     game_id_str = str(game_id)
     logger.info(f"--- Generating NBA Snapshot for game_id: {game_id_str} ---")
 
@@ -213,8 +213,8 @@ def make_nba_snapshot(game_id: Union[str, int]):
         return
 
     is_historical_game = df_game['is_historical_game'].iloc[0]
-    
-    current_game_dt_obj = df_game['game_date'].iloc[0] 
+
+    current_game_dt_obj = df_game['game_date'].iloc[0]
     if pd.isna(current_game_dt_obj):
         logger.error(f"Invalid game_date for NBA game_id {game_id_str}. Cannot proceed.")
         return
@@ -232,10 +232,10 @@ def make_nba_snapshot(game_id: Union[str, int]):
 
     # 3) Generate Form Strings and add to df_game
     df_game["home_current_form"] = _get_nba_team_form_string(
-        df_game["home_team"].iloc[0], current_game_dt_obj, df_full_history
+        df_game[input_home_team_col].iloc[0], current_game_dt_obj, df_full_history
     )
     df_game["away_current_form"] = _get_nba_team_form_string(
-        df_game["away_team"].iloc[0], current_game_dt_obj, df_full_history
+        df_game[input_away_team_col].iloc[0], current_game_dt_obj, df_full_history
     )
     logger.debug(f"Form strings: Home: {df_game['home_current_form'].iloc[0]}, Away: {df_game['away_current_form'].iloc[0]}")
 
@@ -258,11 +258,21 @@ def make_nba_snapshot(game_id: Union[str, int]):
             logger.warning("Proceeding with the first row from feature pipeline output.")
     row = df_features.iloc[0] # Assuming single game processing
 
+    # --- ADD THESE LOGS TO INSPECT FEATURE VALUES ---
+    logger.info(f"Raw feature values from feature pipeline for game {game_id_str}:")
+    logger.info(f"  rest_advantage: {row.get('rest_advantage')}")
+    logger.info(f"  form_win_pct_diff: {row.get('form_win_pct_diff')}")
+    logger.info(f"  momentum_diff: {row.get('momentum_diff')}")
+    logger.info(f"  season_win_pct_diff: {row.get('season_win_pct_diff')}")
+    logger.info(f"  season_net_rating_diff: {row.get('season_net_rating_diff')}")
+    # --- END ADD ---
+
+
     # 5) Fetch season-to-date advanced stats from NBA RPC (for radar/pre-game bar)
     logger.debug(f"Fetching NBA season advanced stats from RPC for season {nba_season_start_year}...")
     # FIX: Use nba_season_start_year (integer) for the RPC call
-    df_adv_rpc_data = fetch_nba_season_advanced_stats_rpc(nba_season_start_year) 
-    
+    df_adv_rpc_data = fetch_nba_season_advanced_stats_rpc(nba_season_start_year)
+
     # Ensure RPC data has 'team_norm' column for easy lookup
     if not df_adv_rpc_data.empty and 'team_name' in df_adv_rpc_data.columns:
         df_adv_rpc_data["team_norm"] = df_adv_rpc_data["team_name"].apply(normalize_nba_team_name)
@@ -271,8 +281,8 @@ def make_nba_snapshot(game_id: Union[str, int]):
         df_adv_rpc_data = pd.DataFrame(columns=['team_norm']) # Empty df with expected column
 
     # Normalize team names from the current game row for matching
-    current_game_home_team_norm = normalize_nba_team_name(row.get("home_team"))
-    current_game_away_team_norm = normalize_nba_team_name(row.get("away_team"))
+    current_game_home_team_norm = normalize_nba_team_name(row.get(input_home_team_col))
+    current_game_away_team_norm = normalize_nba_team_name(row.get(input_away_team_col))
 
     home_adv_season_stats = df_adv_rpc_data[df_adv_rpc_data["team_norm"] == current_game_home_team_norm]
     away_adv_season_stats = df_adv_rpc_data[df_adv_rpc_data["team_norm"] == current_game_away_team_norm]
@@ -283,23 +293,23 @@ def make_nba_snapshot(game_id: Union[str, int]):
 
     # 6) Build snapshot components (using NBA metrics from `row` and `*_adv_season_stats`)
     logger.info(f"Building NBA snapshot components for game {game_id_str}...")
-    
+
     # Headline: Using confirmed column names
-    headline = [
-        {'label': 'Rest Advantage (Home)', 'value': float(row.get("rest_advantage", 0))}, 
-        {'label': 'Form Momentum Diff',    'value': float(row.get("momentum_diff", 0.0))}, 
-        {'label': 'Form Win % Diff',       'value': float(row.get("form_win_pct_diff", 0.0))}, 
-        {'label': 'Season Win % Diff',     'value': float(row.get("season_win_pct_diff", 0.0))}, 
+    headlines = [
+        {'label': 'Rest Advantage (Home)', 'value': float(row.get("rest_advantage", 0))},
+        {'label': 'Form Momentum Diff',    'value': float(row.get("momentum_diff", 0.0))},
+        {'label': 'Form Win % Diff',       'value': float(row.get("form_win_pct_diff", 0.0))},
+        {'label': 'Season Win % Diff',     'value': float(row.get("season_win_pct_diff", 0.0))},
         # Net Rating Diff will come from season.py output if calculated, or RPC data
         # Prioritize `season_net_rating_diff` from `season.py` if available
         # Otherwise, derive from RPC `net_rating` if that's the primary source.
-        {'label': 'Season NetRtg Diff (H-A)', 
-         'value': round(float(row.get("season_net_rating_diff", 
+        {'label': 'Season NetRtg Diff (H-A)',
+         'value': round(float(row.get("season_net_rating_diff",
                             home_adv_season_stats.get("net_rating", 0) - away_adv_season_stats.get("net_rating", 0))), 1)
         },
     ]
     # Rounding headlines to 1 decimal where appropriate
-    for item in headline:
+    for item in headlines:
         if isinstance(item['value'], (float, int)):
             item['value'] = round(item['value'], 2 if item['label'] in ['Form Win % Diff', 'Season Win % Diff'] else 1)
             # Adjust rounding for Rest Advantage if it's always an integer
@@ -307,27 +317,27 @@ def make_nba_snapshot(game_id: Union[str, int]):
                 item['value'] = int(item['value'])
 
     # Bar: Home quarter points (from `row` if post-game, else season average from RPC)
-    bar = []
-    if is_historical_game and pd.notna(row.get("home_score")): # Post-game
+    bar_chart_data = []
+    if is_historical_game and pd.notna(row.get(input_home_score_col)): # Post-game
         for i in (1, 2, 3, 4):
             # Use .get() and ensure default to 0 for robustness
-            bar.append({'name': f'Q{i}', 'value': int(row.get(f'home_q{i}', 0))})
-        if pd.notna(row.get('home_ot')) and int(row.get('home_ot', 0)) > 0: 
-             bar.append({'name': 'OT', 'value': int(row.get('home_ot',0))})
-        logger.debug(f"Bar chart (post-game): {bar}")
+            bar_chart_data.append({'name': f'Q{i}', 'value': int(row.get(f'home_q{i}', 0))})
+        if pd.notna(row.get('home_ot')) and int(row.get('home_ot', 0)) > 0:
+             bar_chart_data.append({'name': 'OT', 'value': int(row.get('home_ot',0))})
+        logger.debug(f"Bar chart (post-game): {bar_chart_data}")
     else: # Pre-game, use avg points for from RPC or historical team stats
         home_pts_key = "avg_pts_for" # Assumed key from get_nba_advanced_team_stats RPC
         # Prioritize RPC average if available, else fallback to NBA_DEFAULTS or other pre-game feature if exists
         home_val = float(home_adv_season_stats.get(home_pts_key, NBA_DEFAULTS.get('avg_pts_for', 0)))
-        bar = [{'name': 'Avg Pts For', 'value': round(home_val, 1)}]
-        logger.debug(f"Bar chart (pre-game): {bar}")
+        bar_chart_data = [{'name': 'Avg Pts For', 'value': round(home_val, 1)}]
+        logger.debug(f"Bar chart (pre-game): {bar_chart_data}")
 
 
     # Radar: Advanced five-metric spider (from RPC data)
     # Ensure your get_nba_advanced_team_stats RPC returns these metrics as 'pace', 'off_rtg', etc.
     # Updated to directly use home_adv_season_stats and away_adv_season_stats Series
     radar_map = {
-        "Pace": "pace", "OffRtg": "off_rtg", "DefRtg": "def_rtg", 
+        "Pace": "pace", "OffRtg": "off_rtg", "DefRtg": "def_rtg",
         "eFG%": "efg_pct", "TOV%": "tov_pct" # Using tov_pct from RPC's output for consistency with other radar keys
     }
     default_radar_nba = {"Pace": 100.0, "OffRtg": 115.0, "DefRtg": 115.0, "eFG%": 0.53, "TOV%": 0.135} # Adjust TOV% default to match RPC scale
@@ -336,17 +346,17 @@ def make_nba_snapshot(game_id: Union[str, int]):
     for display_name, rpc_key in radar_map.items():
         home_val = float(home_adv_season_stats.get(rpc_key, default_radar_nba[display_name]))
         away_val = float(away_adv_season_stats.get(rpc_key, default_radar_nba[display_name]))
-        
+
         # TOV% from RPC is already a percentage (0.135 not 13.5)
         # If it's a percentage, multiply by 100 for display, but keep consistent with eFG% from RPC which is 0.xx
         if display_name in ["eFG%", "TOV%"]:
              # If RPC outputs 0.XX, then we should multiply by 100 for display if frontend expects 0-100 scale.
              # Based on game_advanced_metrics.py, eFG% is 0.xx, tov_rate is 0.xx
              # So RPC's tov_pct being 0.xx seems consistent.
-             round_digits = 2 # e.g. 0.53, 0.13
+             round_digits = 3 # e.g. 0.530, 0.135 (Changed to 3 for consistency and precision)
         else:
              round_digits = 1 # e.g. 100.5, 115.0
-        
+
         radar_payload.append({
             'metric': display_name,
             'home_value': round(home_val, round_digits),
@@ -354,9 +364,9 @@ def make_nba_snapshot(game_id: Union[str, int]):
         })
     logger.debug(f"Radar chart: {radar_payload}")
 
-    # Pie: Shot distribution (2P, 3P, FT) for Home team (from game_advanced_metrics.py output)
+    # Pie Chart Data (for post-game: Home Team's scoring contribution - simple proxy; for pre-game: offensive metrics)
     pie = []
-    if is_historical_game and pd.notna(row.get("home_score")): # Post-game
+    if is_historical_game and pd.notna(row.get(input_home_score_col)): # Post-game logic
         home_fgm = float(row.get('home_fg_made', 0))
         home_3pm = float(row.get('home_3pm', 0))
         home_ftm = float(row.get('home_ft_made', 0))
@@ -372,35 +382,42 @@ def make_nba_snapshot(game_id: Union[str, int]):
         if not pie: # If all values are zero
             pie = [{"category": "No Scoring Data", "value": 1, "color": "#cccccc"}]
         logger.debug(f"Pie chart (post-game): {pie}")
-    else: 
-        # Pre-game, using assumed season average shooting distribution
+    else:
+        # Pre-game: Provide key offensive efficiency metrics for comparison
+        # Data will come from home_adv_season_stats and away_adv_season_stats (from RPC)
+        home_off_rtg = float(home_adv_season_stats.get("off_rtg", NBA_DEFAULTS.get('off_rtg', 115.0)))
+        away_off_rtg = float(away_adv_season_stats.get("off_rtg", NBA_DEFAULTS.get('off_rtg', 115.0)))
         home_efg_pct = float(home_adv_season_stats.get("efg_pct", NBA_DEFAULTS.get('efg_pct', 0.53)))
-        home_tov_pct = float(home_adv_season_stats.get("tov_pct", NBA_DEFAULTS.get('tov_rate', 0.135))) # Using tov_pct from RPC
-        
-        # A more accurate pre-game pie chart would require RPC data on % of points from 2s, 3s, FTs.
-        # This is a heuristic. Let's aim for a simple representation: EFG% as offensive efficiency, TOV% as an anti-efficiency.
-        # This needs careful consideration for display. For a pie, values need to sum up to a meaningful total (e.g., 100).
-        # Showing these as parts of a "total offense pie" is tricky without more data.
-        # A simpler placeholder for pre-game pie, or omit it, might be better if no direct distribution data is available.
-        # Let's revert to a simpler "N/A" for pre-game pie if specific point distribution is not available.
-        pie = [{"category": "Pre-Game Distribution N/A", "value": 1}]
-        logger.debug(f"Pie chart (pre-game): {pie}")
+        away_efg_pct = float(away_adv_season_stats.get("efg_pct", NBA_DEFAULTS.get('efg_pct', 0.53)))
+        home_tov_pct = float(home_adv_season_stats.get("tov_pct", NBA_DEFAULTS.get('tov_rate', 0.135)))
+        away_tov_pct = float(away_adv_season_stats.get("tov_pct", NBA_DEFAULTS.get('tov_rate', 0.135)))
+
+        # --- FIX: Normalize OffRtg by dividing by 100 so it's on a similar scale (0-1 range) ---
+        normalized_home_off_rtg = home_off_rtg / 100.0
+        normalized_away_off_rtg = away_off_rtg / 100.0
+
+        pie = [ # This is the data that will be passed to NbaPreGameOffenseChart
+            {"metric": "OffRtg", "Home": round(normalized_home_off_rtg, 3), "Away": round(normalized_away_off_rtg, 3)}, # Round to 3 decimal places for consistency
+            {"metric": "eFG%", "Home": round(home_efg_pct, 3), "Away": round(away_efg_pct, 3)},
+            {"metric": "TOV%", "Home": round(home_tov_pct, 3), "Away": round(away_tov_pct, 3)},
+        ]
+        logger.debug(f"Pre-game NBA offensive efficiency data (normalized OffRtg): {pie}")
 
 
-    # 7) Upsert into Supabase
-    snapshot_payload = {
-        'season':         nba_season_full_str,
-        'game_date':      current_game_dt_obj.isoformat(),
-        'game_id':        game_id_str,
-        'headline_stats': headline,
-        'bar_chart_data': bar, 
-        'radar_chart_data': radar_payload, 
-        'pie_chart_data': pie, 
-        'last_updated': pd.Timestamp.utcnow().isoformat()
+    # 10) Upsert into Supabase
+    snapshot_payload_final = {
+        "game_id": game_id_str,
+        "game_date": current_game_dt_obj.isoformat(),
+        "season": str(nba_season_full_str),
+        "headline_stats": headlines,
+        "bar_chart_data": bar_chart_data,
+        "radar_chart_data": radar_payload,
+        "pie_chart_data": pie,
+        "last_updated": pd.Timestamp.utcnow().isoformat()
     }
 
     logger.info(f"Upserting NBA snapshot for game_id: {game_id_str}")
-    upsert_response = sb_client.table('nba_snapshots').upsert(snapshot_payload, on_conflict='game_id').execute()
+    upsert_response = sb_client.table('nba_snapshots').upsert(snapshot_payload_final, on_conflict='game_id').execute()
 
     if hasattr(upsert_response, 'error') and upsert_response.error:
         logger.error(f"NBA Snapshot upsert FAILED for game_id={game_id_str}: {upsert_response.error}")
@@ -409,7 +426,6 @@ def make_nba_snapshot(game_id: Union[str, int]):
         logger.warning(f"NBA Snapshot upsert for game_id={game_id_str} may have had an issue (no data/count returned). Response: {upsert_response}")
     else:
         logger.info(f"✅ NBA Snapshot upserted for game_id={game_id_str}")
-
 
 # --- CLI entry point ---
 if __name__ == '__main__':

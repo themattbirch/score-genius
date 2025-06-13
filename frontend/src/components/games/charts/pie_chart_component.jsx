@@ -49,11 +49,7 @@ const PieChartComponent = ({ data }) => {
     chartData[0].category === "Pre-Game Distribution N/A";
 
   if (isPlaceholder) {
-    return (
-      <div className="text-center text-text-secondary py-12">
-        Pre-Game Scoring Distribution N/A.
-      </div>
-    );
+    return null;
   }
 
   return (

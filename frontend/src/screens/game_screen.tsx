@@ -12,6 +12,48 @@ import { Calendar } from "@/components/ui/calendar";
 
 import NBAScheduleDisplay from "@/components/schedule/nba_schedule_display";
 import MLBScheduleDisplay from "@/components/schedule/mlb_schedule_display";
+import type { UnifiedGame } from "@/types";
+// --- FIX: Ensure the 'sport' property is explicitly added to each game object ---
+const mockGames: UnifiedGame[] = [ // Explicitly type the array to ensure compliance
+  {
+    id: "717904", // Example MLB game ID
+    game_date: "2025-06-13", // Use current/relevant date for testing
+    scheduled_time: "8:10 PM ET",
+    homeTeamName: "Houston Astros",
+    awayTeamName: "Chicago White Sox",
+    predicted_home_runs: 4.8,
+    predicted_away_runs: 4.3,
+    // --- ADD THIS LINE ---
+    sport: "MLB", // <--- CRITICAL FIX: Add the sport property
+    // --- Ensure all other required properties for UnifiedGame are present ---
+    dataType: "schedule",
+    homePitcher: "Shane Smith",
+    awayPitcher: "Lance McCullers Jr.",
+    homePitcherHand: "R",
+    awayPitcherHand: "R",
+    gameTimeUTC: "2025-06-13T00:10:00Z", // Example UTC time
+    statusState: "pre",
+    // Add any other properties from UnifiedGame that are not nullable and need values
+  },
+  {
+    id: "401766125", // This is the NBA game ID from your logs
+    game_date: "2025-06-13",
+    scheduled_time: "8:30 PM ET",
+    homeTeamName: "Indiana Pacers", // Note: Your log showed Indiana Pacers as home, OKC as away. Adjust to match actual data
+    awayTeamName: "Oklahoma City Thunder",
+    predictionHome: 113.5, // NBA uses predictionHome/Away
+    predictionAway: 118.1,
+    // --- ADD THIS LINE ---
+    sport: "NBA", // <--- CRITICAL FIX: Add the sport property
+    // --- Ensure all other required properties for UnifiedGame are present ---
+    dataType: "schedule",
+    gameTimeUTC: "2025-06-13T00:30:00Z", // Example UTC time
+    statusState: "pre",
+    // Add any other properties from UnifiedGame that are not nullable and need values
+  },
+  // Add more games as needed for testing
+];
+
 
 const GamesScreen: React.FC = () => {
   const { sport } = useSport();

@@ -37,7 +37,7 @@ const WeatherBadge = () => {
       aria-label={tooltipText}
     >
       <WeatherIcon /> {/* FR-WB-1: Shows "WX" icon */}
-      <span className="text-sm">— °F / — mph</span>{" "}
+      <span className="text-sm">Weather</span>{" "}
       {/* FR-WB-1: Shows "— °F / — mph" */}
     </div>
   );

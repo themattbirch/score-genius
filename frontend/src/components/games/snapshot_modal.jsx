@@ -1,36 +1,31 @@
 // frontend/src/components/games/snapshot_modal.jsx
-
 import React, { useRef, useEffect, Suspense, lazy } from "react";
 import PropTypes from "prop-types";
-import { use_snapshot } from "../../hooks/use_snapshot"; // Corrected path
-import HeadlineGrid from "./headline_grid"; // Corrected path
-import SkeletonLoader from "../ui/skeleton_loader"; // Corrected path and directory
+import { use_snapshot } from "../../hooks/use_snapshot";
+import HeadlineGrid from "./headline_grid";
+import SkeletonLoader from "../ui/skeleton_loader";
 
-// Lazy load charting components for performance (Technical Design: Charts lazy-loaded)
-// These will be implemented in a later step
 const BarChartComponent = lazy(() =>
   import(/* webpackChunkName: "charts" */ "./charts/bar_chart_component")
-); // Corrected path
+);
 const RadarChartComponent = lazy(() =>
   import(/* webpackChunkName: "charts" */ "./charts/radar_chart_component")
-); // Corrected path
+);
 const PieChartComponent = lazy(() =>
   import(/* webpackChunkName: "charts" */ "./charts/pie_chart_component")
-); // Corrected path
+);
+// NEW: Lazy load the NBA pre-game offense chart
+const NbaPreGameOffenseChart = lazy(() =>
+  import(/* webpackChunkName: "charts" */ "./charts/nba_pre_game_offense_chart")
+);
 
-/**
- * SnapshotModal Component
- * Full-screen overlay displaying game snapshot data.
- * Handles data fetching, loading states, and integrates chart components.
- * Follows FR-SM-1, FR-SM-2, FR-SM-3, FR-SM-4.
- */
 const SnapshotModal = ({ gameId, sport, isOpen, onClose }) => {
   const {
     data: snapshotData,
     isLoading,
     isError,
     error,
-  } = use_snapshot(gameId, sport); // Corrected hook name
+  } = use_snapshot(gameId, sport);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -75,6 +70,25 @@ const SnapshotModal = ({ gameId, sport, isOpen, onClose }) => {
       </div>
     );
   }
+
+  // Determine if it's an NBA pre-game scenario (where we'll show the offense chart)
+  // We assume is_historical_game is available in snapshotData if it's a historical game.
+  // The 'dataType' from UnifiedGame is not directly in snapshotData, so rely on backend to pass `is_historical_game` boolean if possible.
+  // Or infer from presence of final scores or absence of predictions.
+  // For simplicity, let's assume `make_nba_snapshots.py` sets a flag or the data structure for pie_chart_data.
+  // Based on current backend, if it's NBA and `pie_chart_data` has 'metric', 'Home', 'Away' it's pre-game offensive metrics.
+  // If `pie_chart_data` has 'category', 'value', 'color' it's post-game scoring distribution.
+
+  const isNbaPreGameOffenseData =
+    sport === "NBA" &&
+    snapshotData?.pie_chart_data &&
+    snapshotData.pie_chart_data.some(
+      (d) => "metric" in d && "Home" in d && "Away" in d
+    );
+
+  const pieChartSectionTitle = isNbaPreGameOffenseData
+    ? "Key Offensive Metrics"
+    : "Scoring Distribution";
 
   return (
     <div
@@ -131,7 +145,6 @@ const SnapshotModal = ({ gameId, sport, isOpen, onClose }) => {
             <h3 className="text-lg font-semibold text-text-primary mb-2">
               Game Flow
             </h3>
-            {/* Pass sport to BarChartComponent */}
             <BarChartComponent
               data={snapshotData?.bar_chart_data}
               sport={sport}
@@ -145,11 +158,16 @@ const SnapshotModal = ({ gameId, sport, isOpen, onClose }) => {
             <RadarChartComponent data={snapshotData?.radar_chart_data} />
           </section>
 
+          {/* Scoring Distribution / Offensive Metrics (Pie Chart or New Bar Chart) */}
           <section className="mb-6">
             <h3 className="text-lg font-semibold text-text-primary mb-2">
-              Scoring Distribution
+              {pieChartSectionTitle}
             </h3>
-            <PieChartComponent data={snapshotData?.pie_chart_data} />
+            {isNbaPreGameOffenseData ? (
+              <NbaPreGameOffenseChart data={snapshotData?.pie_chart_data} />
+            ) : (
+              <PieChartComponent data={snapshotData?.pie_chart_data} />
+            )}
           </section>
         </Suspense>
 

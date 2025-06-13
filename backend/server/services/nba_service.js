@@ -20,36 +20,6 @@ const NBA_SNAPSHOT_TABLE = "nba_snapshots";
 const getUTCDateString = (date) => date.toISOString().split("T")[0];
 // --- End Helper Function ---
 
-// Fetch today & tomorrow’s schedule
-export const fetchNbaScheduleForTodayAndTomorrow = async () => {
-  console.log("Service: Fetching NBA schedule for today/tomorrow ET...");
-  const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
-  const todayStr = nowEt.toISODate();
-  const tomorrowStr = nowEt.plus({ days: 1 }).toISODate();
-
-  const { data, error, status } = await supabase
-    .from(NBA_SCHEDULE_TABLE)
-    .select(
-      `game_id, game_date, scheduled_time, status,
-       home_team, away_team, venue,
-       predicted_home_score, predicted_away_score,
-       moneyline_clean, spread_clean, total_clean`
-    )
-    .in("game_date", [todayStr, tomorrowStr])
-    .order("scheduled_time", { ascending: true });
-
-  if (error) {
-    const dbErr = new Error(
-      error.message || "Supabase query failed (schedule)"
-    );
-    dbErr.status = status || 503; // ← mark as “upstream unavailable”
-    throw dbErr;
-  }
-
-  console.log(`Service: Found ${data?.length ?? 0} NBA games.`);
-  return data || [];
-};
-
 // --- Unified Data Structure ---
 // --- JSDoc Definition for the data structure returned by getSchedule ---
 /**
@@ -318,45 +288,6 @@ export const fetchNbaPlayerGameHistory = async (
   return data;
 };
 
-// Another schedule helper used by your controller
-export const WorkspaceNbaScheduleForTodayAndTomorrow = async () => {
-  const cacheKey = "nba_schedule_today_tomorrow";
-  const ttl = 1800;
-  const cached = cache.get(cacheKey);
-  if (cached !== undefined) {
-    console.log(`CACHE HIT: ${cacheKey}`);
-    return cached;
-  }
-
-  console.log(`CACHE MISS: ${cacheKey}. Querying schedule...`);
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const todayStr = getUTCDateString(today);
-  const tomorrowStr = getUTCDateString(tomorrow);
-
-  const { data, error } = await supabase
-    .from(NBA_SCHEDULE_TABLE)
-    .select(
-      `
-      game_id, game_date, home_team, away_team, scheduled_time,
-      venue, status, moneyline_clean, spread_clean, total_clean,
-      predicted_home_score, predicted_away_score, updated_at
-    `
-    )
-    .in("game_date", [todayStr, tomorrowStr])
-    .order("scheduled_time", { ascending: true });
-
-  if (error) {
-    console.error("Supabase error:", error);
-    return null;
-  }
-
-  console.log(`Fetched ${data.length} games. Caching ${ttl}s.`);
-  cache.set(cacheKey, data, ttl);
-  return data;
-};
-
 /**
  * Fetches EITHER schedule/prediction data (today/future) OR
  * historical results (past dates) for NBA games on a specific date (ET).
@@ -480,7 +411,7 @@ export const fetchNbaAllPlayerStatsBySeason = async (
 
   const { data, error } = await supabase.rpc(
     "get_nba_player_season_stats",
-    rpcParams // Pass the CORRECT params object
+    rpcParams
   );
 
   // Handle potential errors from the RPC call
@@ -654,11 +585,14 @@ export async function fetchNbaSnapshotsByIds(gameIds) {
     }
   }
 
-  // Sort the results to maintain consistency with the input gameIds order if needed, or by date.
-  // For now, return as gathered.
   return fetchedSnapshots;
 }
 
+/**
+ * Fetches a single NBA snapshot by game_id from the Supabase table.
+ * @param {string} gameId - The NBA game_id.
+ * @returns {Promise<object>} - A promise resolving to a single snapshot data object.
+ */
 export async function fetchNbaSnapshotData(gameId) {
   if (cache.has(gameId)) {
     return cache.get(gameId);
@@ -668,10 +602,14 @@ export async function fetchNbaSnapshotData(gameId) {
     .from(NBA_SNAPSHOT_TABLE)
     .select(
       `
+      game_id,
+      game_date,
+      season,
       headline_stats,
-      bar_chart_data:bar_data,       -- maps bar_data → bar_chart_data
-      radar_chart_data:radar_data,   -- maps radar_data → radar_chart_data
-      pie_chart_data:pie_data        -- maps pie_data   → pie_chart_data
+      bar_chart_data, 
+      radar_chart_data,
+      pie_chart_data,
+      last_updated
     `
     )
     .eq("game_id", gameId)
@@ -693,12 +631,17 @@ export async function fetchNbaSnapshotData(gameId) {
 
   // 4) runtime shape‐check
   function assertArray(col, name) {
+    // Note: 'col' here will be the actual data (e.g., data.headline_stats), not the column name string
+    // You might want to adjust these checks to 'Array.isArray(data[colName])' if you intend to pass column name strings.
+    // For now, assuming 'col' is the actual data property value.
     if (!Array.isArray(col)) {
+      // This 'col' parameter is the *value* of the property.
       const err = new Error(`${name} expected as Array, got ${typeof col}`);
       err.status = 500;
       throw err;
     }
   }
+  // Make sure these calls pass the *data property* itself, not just the string name
   assertArray(data.headline_stats, "headline_stats");
   assertArray(data.bar_chart_data, "bar_chart_data");
   assertArray(data.radar_chart_data, "radar_chart_data");
