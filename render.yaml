@@ -1,22 +1,15 @@
-# render.yaml
+# render.yaml (at repo root)
 staticSites:
-  - name: scoregenius-frontend # your Static Site’s service name
-    rootDir: frontend # where your code lives
+  - rootDir: frontend
     buildCommand: npm ci && npm run build
     publishDir: dist
-    envVars:
-      - key: VITE_API_BASE_URL
-        value: https://score-genius-backend.onrender.com
     redirects:
-      # ensure a request to /app (no trailing slash) serves app.html
       - source: "/app"
         destination: "/app.html"
         status: 200
-      # all deeper /app/* routes too
       - source: "/app/*"
         destination: "/app.html"
         status: 200
-      # everything else falls back to your homepage shell
       - source: "/*"
         destination: "/index.html"
         status: 200
