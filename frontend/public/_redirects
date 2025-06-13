@@ -1,7 +1,7 @@
-# client-side SPA routing
+# Serve your “app” SPA routes from app.html
 
 /app/\* /app.html 200
 
-# proxy all API calls to the backend
+# For everything else (root, deep links, etc.), serve index.html
 
-/api/v1/\* https://score-genius-backend.onrender.com/api/v1/:splat 200
+/\* /index.html 200
