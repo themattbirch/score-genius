@@ -2,7 +2,7 @@
 
 // frontend/src/App.tsx
 
-import React from "react";
+import React, { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 
@@ -43,28 +43,33 @@ const Layout: React.FC = () => {
 };
 
 // 3) Wrap everything in QueryClientProvider
-const App: React.FC = () => (
-  <QueryClientProvider client={queryClient}>
-    <TourProvider>
-      <ThemeProvider>
-        <SportProvider>
-          <DateProvider>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route index element={<Navigate to="/games" replace />} />
-                <Route path="games" element={<GamesScreen />} />
-                <Route path="games/:gameId" element={<GameDetailScreen />} />
-                <Route path="stats" element={<StatsScreen />} />
-                <Route path="more" element={<MoreScreen />} />
-                <Route path="how-to-use" element={<HowToUseScreen />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/games" replace />} />
-            </Routes>
-          </DateProvider>
-        </SportProvider>
-      </ThemeProvider>
-    </TourProvider>
-  </QueryClientProvider>
-);
+const App: React.FC = () => {
+  useEffect(() => {
+    console.log("VITE_API_BASE_URL:", import.meta.env.VITE_API_BASE_URL);
+  }, []);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TourProvider>
+        <ThemeProvider>
+          <SportProvider>
+            <DateProvider>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route index element={<Navigate to="/games" replace />} />
+                  <Route path="games" element={<GamesScreen />} />
+                  <Route path="games/:gameId" element={<GameDetailScreen />} />
+                  <Route path="stats" element={<StatsScreen />} />
+                  <Route path="more" element={<MoreScreen />} />
+                  <Route path="how-to-use" element={<HowToUseScreen />} />
+                </Route>
+                <Route path="*" element={<Navigate to="/games" replace />} />
+              </Routes>
+            </DateProvider>
+          </SportProvider>
+        </ThemeProvider>
+      </TourProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
