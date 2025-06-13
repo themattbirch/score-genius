@@ -32,9 +32,12 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
-// Path to your built frontend
-const frontEndDist = path.resolve(__dirname, "../../frontend/dist");
-console.log("🔍 Serving static assets from", frontEndDist);
+// Path to your built frontend public directory
+const frontEndDistPublic = path.resolve(
+  __dirname,
+  "../../frontend/dist/public"
+);
+console.log("🔍 Serving static assets from", frontEndDistPublic);
 
 // Create Express app
 const app = express();
@@ -51,13 +54,7 @@ app.use(
 );
 
 // Serve static frontend assets
-app.use(express.static(frontEndDist));
-
-// Mount API routes (bypassed by proxy)
-const nbaRoutes = (await import("./routes/nba_routes.js")).default;
-const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
-app.use("/api/v1/nba", nbaRoutes);
-app.use("/api/v1/mlb", mlbRoutes);
+app.use(express.static(frontEndDistPublic));
 
 // Optional CORS and JSON parsing
 app.use(
@@ -71,10 +68,16 @@ app.use(
 );
 app.use(express.json());
 
+// Mount API routes (bypassed by proxy)
+const nbaRoutes = (await import("./routes/nba_routes.js")).default;
+const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
+app.use("/api/v1/nba", nbaRoutes);
+app.use("/api/v1/mlb", mlbRoutes);
+
 // SPA fallback: serve app.html for all non-API GET requests
-app.get("*", (req, res, next) => {
+app.get("/*", (req, res, next) => {
   if (req.path.startsWith("/api/v1")) return next();
-  res.sendFile(path.join(frontEndDist, "app.html"));
+  res.sendFile(path.join(frontEndDistPublic, "app.html"));
 });
 
 // Health check
