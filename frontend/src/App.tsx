@@ -31,7 +31,6 @@ const Layout: React.FC = () => {
   );
 };
 
-// 3) Wrap everything in QueryClientProvider
 const App: React.FC = () => {
   useEffect(() => {
     console.log("VITE_API_BASE_URL:", import.meta.env.VITE_API_BASE_URL);
