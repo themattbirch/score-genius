@@ -85,41 +85,30 @@ app.use("/api/v1/mlb", mlbRoutes);
 // This MUST come AFTER API routes.
 app.use(express.static(frontEndDist));
 
-// --- 4. SPA Fallbacks for client-side routing (Order matters!) ---
-// These routes ensure the correct HTML file is served for client-side routing.
-// They must come AFTER express.static to avoid intercepting static file requests.
+// --- 4. SPA Fallbacks for client-side routing (DEBUGGING - SIMPLIFIED) ---
+// Temporarily comment out all complex client-side routing rules.
+// Only keep the most basic root route for initial testing.
 
 // Serve index.html specifically at the root path "/"
-// This handles the manifest.start_url if it's '/'
 app.get("/", (_req, res) => {
   res.sendFile(path.join(frontEndDist, "index.html"));
 });
 
-// Serve app.html specifically for /app and any paths under /app (PWA scope)
-// This handles the manifest.scope and manifest.start_url if it's '/app'
-app.get("/app", (_req, res) => {
-  // Handles exact /app path
-  res.sendFile(path.join(frontEndDist, "app.html"));
-});
+// COMMENT OUT THE FOLLOWING ROUTES TEMPORARILY:
+// app.get("/app", (_req, res) => {
+//   res.sendFile(path.join(frontEndDist, "app.html"));
+// });
 
-app.get("/app/*", (req, res) => {
-  // Handles /app/ and all sub-paths
-  res.sendFile(path.join(frontEndDist, "app.html"));
-});
+// app.get("/app/*", (req, res) => {
+//   res.sendFile(path.join(frontEndDist, "app.html"));
+// });
 
-// Catch-all for any other GET requests not handled by previous middleware.
-// This is your general SPA fallback for deep links (e.g., /games/someId).
-app.get("/*", (req, res, next) => {
-  // If the request path starts with /api/v1, it should have been caught by the API routes above.
-  // If it somehow reaches here, let it fall through to subsequent error handlers (e.g., 404).
-  if (req.path.startsWith("/api/v1")) {
-    return next();
-  }
-  // Otherwise, assume it's a client-side route not explicitly mapped above and serve index.html
-  // (or app.html if that's the primary fallback for all non-root SPA routes).
-  // Given your manifest scope, app.html is likely your primary SPA entry.
-  res.sendFile(path.join(frontEndDist, "app.html"));
-});
+// app.get("/*", (req, res, next) => {
+//   if (req.path.startsWith("/api/v1")) {
+//     return next();
+//   }
+//   res.sendFile(path.join(frontEndDist, "app.html"));
+// });
 
 // --- Health Check Endpoint ---
 app.get("/health", (_req, res) =>
