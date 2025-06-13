@@ -1,15 +1,24 @@
-# render.yaml (at repo root)
-staticSites:
-  - rootDir: frontend
+# render.yaml (repo root)
+services:
+  - type: web
+    name: scoregenius-frontend # must match your Static Site’s name in the dashboard
+    runtime: static # tells Render this is a Static Site
+    rootDir: frontend # where to cd before building
     buildCommand: npm ci && npm run build
-    publishDir: dist
-    redirects:
-      - source: "/app"
-        destination: "/app.html"
-        status: 200
-      - source: "/app/*"
-        destination: "/app.html"
-        status: 200
-      - source: "/*"
-        destination: "/index.html"
-        status: 200
+    staticPublishPath: dist # the folder to publish (equivalent to publishDir)
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://score-genius-backend.onrender.com
+    routes:
+      # rewrite /app        to app.html
+      - type: rewrite
+        source: /app
+        destination: /app.html
+      # rewrite /app/*     to app.html
+      - type: rewrite
+        source: /app/*
+        destination: /app.html
+      # everything else   to index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
