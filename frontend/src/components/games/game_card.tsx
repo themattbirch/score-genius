@@ -6,15 +6,16 @@ import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
 
 // Import our new components
-import SnapshotButton from './snapshot_button'; // Corrected path and snake_case
-import WeatherBadge from './weather_badge';     // Corrected path and snake_case
-import SnapshotModal from './snapshot_modal';   // Corrected path and snake_case
+import SnapshotButton from "./snapshot_button"; // Corrected path and snake_case
+import WeatherBadge from "./weather_badge"; // Corrected path and snake_case
+import SnapshotModal from "./snapshot_modal"; // Corrected path and snake_case
 
 interface GameCardProps {
   game: UnifiedGame;
 }
 
 const GameCard: React.FC<GameCardProps> = ({ game }) => {
+  console.log("GameCard - game prop:", game);
   const { sport } = useSport(); // This sport context can be used to determine MLB vs NBA for WeatherBadge
   const { date } = useDate();
   const isoDate = date ? date.toISOString().slice(0, 10) : "";
@@ -29,10 +30,16 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
 
   // Determine if it's an MLB game for WeatherBadge
-  const isMLB = game.sport === 'MLB'; // Use game.sport prop, not context sport for specific game type
+  const isMLB = game.sport === "MLB"; // Use game.sport prop, not context sport for specific game type
 
   // Handlers for the Snapshot Modal
   const handleOpenSnapshot = () => {
+    console.log(
+      "handleOpenSnapshot clicked for Game ID:",
+      gameId,
+      "Sport:",
+      game.sport
+    );
     setIsSnapshotModalOpen(true);
   };
 
@@ -43,7 +50,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   return (
     <div className="app-card flex flex-col gap-4" data-tour="game-card">
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1 max-w-md">
+        <div className="min-w-0 flex-1 max-w-md flex flex-col space-y-2">
           {/* NEW: Container for the Snapshot Button on the left */}
           <p className="font-semibold text-sm sm:text-base leading-tight">
             {awayTeamName}
@@ -64,7 +71,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
               ) &&
               ` (${displayStatus})`}
           </p>
-                    <div className="mb-1">
+          <div className="mb-1">
             <SnapshotButton onClick={handleOpenSnapshot} />
           </div>
         </div>
@@ -79,7 +86,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             </p>
           ) : game.dataType === "schedule" ? (
             sport === "NBA" ? ( // Use the `sport` from context here for general display logic.
-                                // For specific game data like predicted runs, use game.predicted_...
+              // For specific game data like predicted runs, use game.predicted_...
               <p className="font-medium text-sky-500 dark:text-sky-400">
                 {game.predictionAway?.toFixed(1) ?? "-"} –{" "}
                 {game.predictionHome?.toFixed(1) ?? "-"}
@@ -106,13 +113,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                   <p className="font-medium text-text-secondary">-</p>
                 )}
 
-                {/* WeatherBadge for MLB games (FR-GC-2) */}
-                {isMLB && (
-                  <div className="mt-1">
-                    <WeatherBadge />
-                  </div>
-                )}
-
                 {/* And always show the pitchers underneath for upcoming MLB games */}
                 <div className="mt-1">
                   <p className="text-xs font-normal text-text-secondary">
@@ -123,7 +123,14 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                     {game.homePitcher ?? "TBD"}{" "}
                     {game.homePitcherHand && `(${game.homePitcherHand})`}
                   </p>
-                </div>
+                    </div>
+                                    {/* WeatherBadge for MLB games (FR-GC-2) */}
+                {isMLB && (
+                  <div className="mt-1">
+                    <WeatherBadge />
+                  </div>
+                )}
+
               </div>
               // ==========================================================
               // END: Corrected MLB logic
@@ -134,7 +141,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           )}
         </div>
       </div>
-      
 
       {/* The Snapshot Modal for this specific game card */}
       <SnapshotModal

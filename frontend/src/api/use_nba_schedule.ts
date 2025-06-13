@@ -32,6 +32,7 @@ export const useNBASchedule = (date: string) =>
       const { data } = (await res.json()) as { data: UnifiedGame[] };
       return data.map((g) => ({
         ...g,
+        sport: "NBA",
         gameTimeET: new Date(g.scheduled_time).toLocaleTimeString("en-US", {
           timeZone: "America/New_York",
           hour: "numeric",

@@ -14,6 +14,18 @@ import { useQuery } from "@tanstack/react-query";
 export const use_snapshot = (gameId, sport) => {
   // Changed from useSnapshot to use_snapshot
   const isEnabled = !!gameId && !!sport;
+  console.log(
+    "use_snapshot hook - checking enabled status: isEnabled:",
+    isEnabled,
+    "gameId:",
+    gameId,
+    "typeof gameId:",
+    typeof gameId,
+    "sport:",
+    sport,
+    "typeof sport:",
+    typeof sport
+  );
 
   return useQuery({
     queryKey: ["snapshot", sport, gameId],

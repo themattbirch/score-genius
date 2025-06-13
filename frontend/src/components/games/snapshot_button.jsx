@@ -1,14 +1,18 @@
 // frontend/src/components/games/SnapshotButton.jsx
 
-import React from 'react';
-import PropTypes from 'prop-types'; // For type checking props
+import React from "react";
+import PropTypes from "prop-types"; // For type checking props
 
 /**
  * SnapshotButton Component
  * Displays a button to open the game snapshot modal.
  * Follows FR-GC-1 and UX/UI specifications.
  */
-const SnapshotButton = ({ onClick, isDisabled = false, tooltipText = "View Snapshot" }) => {
+const SnapshotButton = ({
+  onClick,
+  isDisabled = false,
+  tooltipText = "View Snapshot",
+}) => {
   return (
     <button
       onClick={onClick}
@@ -22,12 +26,16 @@ const SnapshotButton = ({ onClick, isDisabled = false, tooltipText = "View Snaps
         px-3 py-1 // Padding for a good button size
         inline-flex items-center justify-center // For centering text
         transition-opacity duration-200 // For hover effect
-        ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90 active:opacity-75'} // UX/UI hover:opacity-90, disabled state
+        ${
+          isDisabled
+            ? "opacity-50 cursor-not-allowed"
+            : "hover:opacity-90 active:opacity-75"
+        } // UX/UI hover:opacity-90, disabled state
       `}
       title={tooltipText} // FR-R-2 (Missing snapshot JSON mitigation)
       aria-label={tooltipText}
     >
-      Snapshot
+      Advanced Stats
     </button>
   );
 };
