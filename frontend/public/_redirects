@@ -1,7 +1,2 @@
-# Serve your “app” SPA routes from app.html
-
-/app/\* /app.html 200
-
-# For everything else (root, deep links, etc.), serve index.html
-
-/\* /index.html 200
+/app/*    /app.html   200
+/*        /index.html 200
