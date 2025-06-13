@@ -1,5 +1,6 @@
 // frontend/src/api/client.ts
-const API = "https://score-genius-backend.onrender.com"; // e.g. "https://score-genius-backend.onrender.com"
+const API = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+// e.g. "https://score-genius-backend.onrender.com"
 
 export async function apiFetch(path: string, init: RequestInit = {}) {
   // Allow callers to pass an absolute URL (handy for Supabase signed URLs etc.)
