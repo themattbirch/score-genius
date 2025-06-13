@@ -1,4 +1,5 @@
 // frontend/src/api/client.ts
+
 const API = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 // e.g. "https://score-genius-backend.onrender.com"
 
