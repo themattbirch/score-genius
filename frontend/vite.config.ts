@@ -114,5 +114,5 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       // (optional) if you still want the history fallback, add the middleware here
     },
-  }; // <--- Closing brace for the main config object returned by defineConfig
-}); // <--- Closing brace for the defineConfig function
+  };
+});
