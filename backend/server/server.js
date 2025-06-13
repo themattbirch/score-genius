@@ -1,4 +1,3 @@
-// backend/server/server.js
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
@@ -9,52 +8,38 @@ import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 import { createProxyMiddleware } from "http-proxy-middleware";
 
-// ──────────────────────────────────────────────────────────────
-// 1) Resolve paths & load environment
-// ──────────────────────────────────────────────────────────────
+// Resolve environment
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const envPath = path.join(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
-  console.log(`🔑  Loaded env from ${envPath}`);
+  console.log(`🔑 Loaded env from ${envPath}`);
 } else {
-  console.log("🔑  No local .env file found; relying on host‐provided vars");
+  console.log("🔑 No local .env file found; using host-provided vars");
 }
 
-// location of built frontend (Vite copies public/* → dist/public)
-const frontEndDistPublic = path.resolve(
-  __dirname,
-  "../../frontend/dist/public"
-);
-console.log("🔍 [DEBUG] frontEndDistPublic =", frontEndDistPublic);
-console.log(
-  "🔍 [DEBUG] index.html exists?",
-  fs.existsSync(path.join(frontEndDistPublic, "index.html"))
-);
-
-// ──────────────────────────────────────────────────────────────
-// 2) Validate Supabase env vars & create client
-// ──────────────────────────────────────────────────────────────
+// Validate Supabase credentials
 const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("FATAL: SUPABASE_URL or SUPABASE_SERVICE_KEY missing");
   process.exit(1);
 }
 
+// Initialize Supabase client
 export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
-// ──────────────────────────────────────────────────────────────
-// 3) Instantiate Express
-// ──────────────────────────────────────────────────────────────
+// Path to your built frontend
+const frontEndDist = path.resolve(__dirname, "../../frontend/dist");
+console.log("🔍 Serving static assets from", frontEndDist);
+
+// Create Express app
 const app = express();
 
-// ──────────────────────────────────────────────────────────────
-// 4) Proxy ALL /api/v1 calls to Render backend
-// ──────────────────────────────────────────────────────────────
+// Proxy middleware for API calls
 app.use(
   "/api/v1",
   createProxyMiddleware({
@@ -65,23 +50,16 @@ app.use(
   })
 );
 
-// ──────────────────────────────────────────────────────────────
-// 5) Serve static assets from built frontend
-// ──────────────────────────────────────────────────────────────
-app.use(express.static(frontEndDistPublic));
+// Serve static frontend assets
+app.use(express.static(frontEndDist));
 
-// ──────────────────────────────────────────────────────────────
-// 6) API route mounts (bypassed when proxy matches first)
-// ──────────────────────────────────────────────────────────────
+// Mount API routes (bypassed by proxy)
 const nbaRoutes = (await import("./routes/nba_routes.js")).default;
 const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
-// ──────────────────────────────────────────────────────────────
-// 7) Standard middleware (CORS, JSON, logging)
-// ──────────────────────────────────────────────────────────────
-app.disable("etag");
+// Optional CORS and JSON parsing
 app.use(
   cors({
     origin: [
@@ -92,42 +70,24 @@ app.use(
   })
 );
 app.use(express.json());
-app.use((req, _res, next) => {
-  console.log(`${new Date().toISOString()} – ${req.method} ${req.path}`);
-  next();
+
+// SPA fallback: serve app.html for all non-API GET requests
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/v1")) return next();
+  res.sendFile(path.join(frontEndDist, "app.html"));
 });
 
-// ──────────────────────────────────────────────────────────────
-// 8) SPA fallback – any GET not handled above returns index.html
-// ──────────────────────────────────────────────────────────────
-app.get("/*", (req, res) => {
-  // Let proxy handle API routes
-  if (req.path.startsWith("/api/v1")) return res.status(404).end();
-  res.sendFile(path.join(frontEndDistPublic, "index.html")); // or app.html if that’s your entry
-});
-
-// ──────────────────────────────────────────────────────────────
-// 9) Health check
-// ──────────────────────────────────────────────────────────────
+// Health check
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// ──────────────────────────────────────────────────────────────
-// 10) Error handling
-// ──────────────────────────────────────────────────────────────
+// Error handler
 app.use((err, _req, res, _next) => {
   console.error(err.stack || err);
-  res.status(err.status || 500).json({
-    error: {
-      message: err.message ?? "Internal Server Error",
-      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-    },
-  });
+  res.status(err.status || 500).json({ error: { message: err.message } });
 });
 
-// ──────────────────────────────────────────────────────────────
-// 11) Start server
-// ──────────────────────────────────────────────────────────────
+// Start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
