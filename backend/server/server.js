@@ -87,20 +87,6 @@ app.use("/api/v1/mlb", mlbRoutes);
 // This MUST come AFTER API routes, so API requests are handled first.
 app.use(express.static(frontEndDist));
 
-// --- 4. SPA Fallback (Catch-all for client-side routing) ---
-// For any GET request not handled by previous middleware (APIs or static files),
-// send the main HTML file (your SPA entry point) to allow client-side routing.
-// This ensures that refreshing deep links (e.g., /app/games) works.
-app.get("/*", (req, res, next) => {
-  // If the request path begins with /api/v1, let it fall through to subsequent error handlers
-  // if it wasn't caught by the specific API routes above.
-  if (req.path.startsWith("/api/v1")) {
-    return next();
-  }
-  // Otherwise, assume it's a client-side route and serve app.html (or index.html)
-  res.sendFile(path.join(frontEndDist, "app.html")); // Assuming your main SPA entry is app.html
-});
-
 // --- Health Check ---
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
