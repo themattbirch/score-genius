@@ -100,14 +100,6 @@ app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// 5) Serve snapshots
-app.use(
-  "/snapshots",
-  express.static(path.join(__dirname, "../../reports/snapshots"), {
-    extensions: ["json"],
-  })
-);
-
 /* --------------------------- Error-handling --------------------------- */
 app.use((err, _req, res, _next) => {
   console.error(err.stack || err);
