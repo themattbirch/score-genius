@@ -25,9 +25,18 @@ const SnapshotModal = ({ gameId, sport, isOpen, onClose }) => {
     isLoading,
     isError,
     error,
+    refetch,
   } = use_snapshot(gameId, sport);
   const scrollRef = useRef(null);
 
+  // 1) Fire the query whenever the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      refetch();
+    }
+  }, [isOpen, refetch]);
+
+  // 2) Prevent background scrolling when modal is open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
