@@ -28,9 +28,11 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 }
 
 // Initialize Supabase client
-export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false },
-});
+export const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_KEY,
+  { auth: { persistSession: false } }
+);
 
 // Path to built frontend
 const frontEndDist = path.resolve(__dirname, "../../frontend/dist");
@@ -41,13 +43,7 @@ const app = express();
 
 // 1) CORS and body parsing
 app.use(
-  cors({
-    origin: [
-      "https://scoregenius.io",
-      "http://localhost:5173",
-      "http://localhost:4173",
-    ],
-  })
+  cors({ origin: ["https://scoregenius.io", "http://localhost:5173", "http://localhost:4173"] })
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -73,11 +69,7 @@ app.use((req, res, next) => {
 // 2) Proxy API calls to backend
 app.use(
   "/api/v1",
-  createProxyMiddleware({
-    target: "https://score-genius-backend.onrender.com",
-    changeOrigin: true,
-    logLevel: "warn",
-  })
+  createProxyMiddleware({ target: "https://score-genius-backend.onrender.com", changeOrigin: true, logLevel: "warn" })
 );
 
 // 3) Mount API routes (bypassed by proxy)
@@ -99,9 +91,11 @@ app.get(["/app", "/app/*"], (_req, res) => {
   res.sendFile(path.join(frontEndDist, "app.html"));
 });
 
-// 7) SPA fallback for other client routes
-app.get("/*", (req, res, next) => {
-  if (req.path.startsWith("/api/v1")) return next();
+// 7) SPA fallback for other GET requests (excluding API and assets)
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
+  if (req.path.startsWith('/api/v1')) return next();
+  if (req.path.includes('.')) return next(); // Skip asset requests
   res.sendFile(path.join(frontEndDist, "index.html"));
 });
 
