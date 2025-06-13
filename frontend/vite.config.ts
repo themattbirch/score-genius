@@ -81,27 +81,38 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       target: "es2022",
       rollupOptions: {
-        // ① each HTML file listed here lands in dist/ (not dist/public/)
         input: {
-          index: resolve(__dirname, "index.html"),
+          index: resolve(__dirname, "public/index.html"),
           app: resolve(__dirname, "app.html"),
         },
         output: {
           entryFileNames: "assets/[name].[hash].js",
-          chunkFileNames: "assets/[name].[name].[hash].js",
+          chunkFileNames: "assets/[name].[name].[hash].js", // Often useful to include [name] for better chunk naming
           assetFileNames: "assets/[name].[hash].[ext]",
-          manualChunks(id) {
+          // ← manualChunks splits each npm package into its own chunk
+          manualChunks(id: string) {
             if (id.includes("node_modules")) {
+              // Ensure consistent chunk names, e.g., 'vendor-react', 'vendor-recharts'
               const parts = id.split("node_modules/")[1].split("/");
-              return `vendor-${parts[0].replace("@", "")}`;
+              return `vendor-${parts[0].replace("@", "")}`; // Handles scoped packages like @tanstack
             }
           },
         },
       },
     },
 
+    // Move the 'define' block INSIDE the main configuration object,
+    // before the 'preview' property. This is where it belongs.
     define: {
+      // This is the crucial part: it replaces `import.meta.env.VITE_API_BASE_URL`
+      // with the actual string value of `API_BASE_URL` at build time.
+      // `JSON.stringify` ensures it's injected as a string literal.
       "import.meta.env.VITE_API_BASE_URL": JSON.stringify(API_BASE_URL),
     },
-  };
-});
+
+    preview: {
+      port: 3000,
+      // (optional) if you still want the history fallback, add the middleware here
+    },
+  }; // <--- Closing brace for the main config object returned by defineConfig
+}); // <--- Closing brace for the defineConfig function
