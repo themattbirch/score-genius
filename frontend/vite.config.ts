@@ -3,18 +3,13 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
-import fs from "fs";
 
-// The defineConfig function should take an argument, commonly `{ mode }`,
-// to allow access to `process.env` variables during the build.
-export default defineConfig(({ mode }) => { // <--- ADD `{ mode }` HERE
+export default defineConfig(({ mode }) => {
+  const API_BASE_URL =
+    process.env.VITE_API_BASE_URL || "http://localhost:10000"; // Fallback for local dev
 
-  // Define API_BASE_URL here, inside the defineConfig callback.
-  // It will be accessible within the configuration object below.
-  // This is where process.env.VITE_API_BASE_URL is read.
-  const API_BASE_URL = process.env.VITE_API_BASE_URL || 'http://localhost:10000'; // Fallback for local dev
-
-  return { // <--- This is the main configuration object being returned by defineConfig
+  return {
+    //
     plugins: [
       react(),
 
@@ -86,38 +81,27 @@ export default defineConfig(({ mode }) => { // <--- ADD `{ mode }` HERE
       outDir: "dist",
       target: "es2022",
       rollupOptions: {
+        // ① each HTML file listed here lands in dist/ (not dist/public/)
         input: {
-          index: resolve(__dirname, "public/index.html"),
+          index: resolve(__dirname, "index.html"),
           app: resolve(__dirname, "app.html"),
         },
         output: {
           entryFileNames: "assets/[name].[hash].js",
-          chunkFileNames: "assets/[name].[name].[hash].js", // Often useful to include [name] for better chunk naming
+          chunkFileNames: "assets/[name].[name].[hash].js",
           assetFileNames: "assets/[name].[hash].[ext]",
-          // ← manualChunks splits each npm package into its own chunk
-          manualChunks(id: string) {
+          manualChunks(id) {
             if (id.includes("node_modules")) {
-              // Ensure consistent chunk names, e.g., 'vendor-react', 'vendor-recharts'
               const parts = id.split("node_modules/")[1].split("/");
-              return `vendor-${parts[0].replace('@', '')}`; // Handles scoped packages like @tanstack
+              return `vendor-${parts[0].replace("@", "")}`;
             }
           },
         },
       },
     },
 
-    // Move the 'define' block INSIDE the main configuration object,
-    // before the 'preview' property. This is where it belongs.
     define: {
-      // This is the crucial part: it replaces `import.meta.env.VITE_API_BASE_URL`
-      // with the actual string value of `API_BASE_URL` at build time.
-      // `JSON.stringify` ensures it's injected as a string literal.
-      'import.meta.env.VITE_API_BASE_URL': JSON.stringify(API_BASE_URL),
+      "import.meta.env.VITE_API_BASE_URL": JSON.stringify(API_BASE_URL),
     },
-  
-    preview: {
-      port: 3000,
-      // (optional) if you still want the history fallback, add the middleware here
-    },
-  }; // <--- Closing brace for the main config object returned by defineConfig
-}); // <--- Closing brace for the defineConfig function
+  };
+});
