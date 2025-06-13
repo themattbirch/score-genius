@@ -6,13 +6,13 @@ import fs from "fs";
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
-// REMOVED: import { createProxyMiddleware } from "http-proxy-middleware"; // NOT NEEDED
+import { createProxyMiddleware } from "http-proxy-middleware";
 
-// Resolve environment variables (assuming this server is in backend/server/)
+// Resolve environment variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const envPath = path.join(__dirname, "..", ".env"); // Path to backend/.env
+const envPath = path.join(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
   console.log(`🔑 Loaded env from ${envPath}`);
@@ -32,35 +32,33 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
-// Path to your **built frontend distribution** directory (e.g., /frontend/dist)
-// This server will serve these files.
+// Path to built frontend
 const frontEndDist = path.resolve(__dirname, "../../frontend/dist");
 console.log("🔍 Serving static assets from", frontEndDist);
 
 // Create Express app
 const app = express();
 
-// --- 1. Essential Middleware (Order matters!) ---
+// 1) CORS and body parsing
 app.use(
   cors({
-    // CORS configuration to allow your frontend domain(s)
     origin: [
       "https://scoregenius.io",
-      "http://localhost:5173", // Your frontend dev server
-      "http://localhost:4173", // Another common dev port
+      "http://localhost:5173",
+      "http://localhost:4173",
     ],
   })
 );
-app.use(express.json()); // To parse JSON request bodies
-app.use(express.urlencoded({ extended: true })); // To parse URL-encoded request bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Request logger
+// Request logging
 app.use((req, _res, next) => {
   console.log(`${new Date().toISOString()} – ${req.method} ${req.path}`);
   next();
 });
 
-// Cache control headers (Optional, but good for production)
+// Cache control headers
 app.disable("etag");
 app.use((req, res, next) => {
   res.set({
@@ -72,38 +70,52 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- 2. Mount API Routes (CRITICAL: BEFORE serving static files) ---
-// These are the API routes handled directly by this server.
+// 2) Proxy API calls to backend
+app.use(
+  "/api/v1",
+  createProxyMiddleware({
+    target: "https://score-genius-backend.onrender.com",
+    changeOrigin: true,
+    logLevel: "warn",
+  })
+);
+
+// 3) Mount API routes (bypassed by proxy)
 const nbaRoutes = (await import("./routes/nba_routes.js")).default;
 const mlbRoutes = (await import("./routes/mlb_routes.js")).default;
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
-// Optional: Serve /snapshots if you still need to serve static JSON files directly
-// app.use("/snapshots", express.static(path.join(__dirname, "../../reports/snapshots"), { extensions: ["json"] }));
-
-// --- 3. Serve Frontend Static Assets ---
-// This serves all the files from your frontend's 'dist' folder (index.html, CSS, JS, assets)
-// This MUST come AFTER API routes, so API requests are handled first.
+// 4) Serve static frontend assets
 app.use(express.static(frontEndDist));
 
-// --- Health Check ---
+// 5) Serve index.html at root
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(frontEndDist, "index.html"));
+});
+
+// 6) Serve app.html at /app and /app/*
+app.get(["/app", "/app/*"], (_req, res) => {
+  res.sendFile(path.join(frontEndDist, "app.html"));
+});
+
+// 7) SPA fallback for other client routes
+app.get("/*", (req, res, next) => {
+  if (req.path.startsWith("/api/v1")) return next();
+  res.sendFile(path.join(frontEndDist, "index.html"));
+});
+
+// Health check
 app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// --- Error-handling Middleware ---
-// This must be the last app.use()
+// Error handling
 app.use((err, _req, res, _next) => {
   console.error(err.stack || err);
-  res.status(err.status || 500).json({
-    error: {
-      message: err.message ?? "Internal Server Error",
-      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-    },
-  });
+  res.status(err.status || 500).json({ error: { message: err.message } });
 });
 
-// --- Start server ---
-const PORT = process.env.PORT || 10000; // Use 10000 as default, matching previous backend
+// Start server
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
