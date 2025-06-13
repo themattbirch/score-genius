@@ -55,11 +55,8 @@ app.get("/health", (_req, res) =>
   res.status(200).json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// 7) SPA fallback for /app and any nested route
-app.get("/app", (_req, res) => {
-  res.sendFile(path.join(FRONTEND_DIST, "app.html"));
-});
-app.get("/app/*", (_req, res) => {
+// 7) SPA fallback for /app and all nested paths
+app.get(/^\/app(\/.*)?$/, (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIST, "app.html"));
 });
 
