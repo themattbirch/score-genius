@@ -32,7 +32,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 });
 
 /* ─── 3. Front-end build location ───────────────────────────────────────── */
-const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
+const FRONTEND_DIST = path.resolve(__dirname, "./static");
 console.log("FRONTEND_DIST path:", FRONTEND_DIST);
 console.log("  exists?", fs.existsSync(FRONTEND_DIST)); // should be true
 

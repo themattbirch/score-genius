@@ -1,18 +1,23 @@
 services:
   - type: web
     name: score-genius-backend
-    rootDir: .                      # repo root
+    rootDir: .
     buildCommand: |
+      # ── front-end build ─────────────────────────────
       cd frontend
-      npm ci && npm run build       # ↩️ produces frontend/dist
-      cd ..                         # ← return to repo root
+      npm ci && npm run build            # → produces frontend/dist
+      # copy the build into the backend tree so it’s kept in the slug
+      mkdir -p ../backend/server/static
+      cp -R dist/* ../backend/server/static/
+      cd ..                              # back to repo root
+
+      # ── back-end deps ──────────────────────────────
       cd backend/server
       npm install
-      cd ../..                      # ← return again so slug = entire repo
     startCommand: node backend/server/server.js
     envVars:
       - key: VITE_API_BASE_URL
-        value: http://localhost:3001 # during runtime, Express will proxy API requests
+        value: http://localhost:3001
       - key: SUPABASE_URL
         from: env
       - key: SUPABASE_SERVICE_KEY
