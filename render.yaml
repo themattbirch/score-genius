@@ -3,15 +3,16 @@ services:
     name: score-genius-backend
     rootDir: .
     buildCommand: |
-      # ── front-end build ─────────────────────────────
+      # ── front-end build ──────────────────────────────
       cd frontend
-      npm ci && npm run build            # → produces frontend/dist
-      # copy the build into the backend tree so it’s kept in the slug
-      mkdir -p ../backend/server/static
-      cp -R dist/* ../backend/server/static/
-      cd ..                              # back to repo root
+      npm ci && npm run build          # → creates frontend/dist
+      cd ..                            # back to repo root
 
-      # ── back-end deps ──────────────────────────────
+      # move (not copy) the entire dist folder into backend/server
+      rm -rf backend/server/static     # clean old build if it exists
+      mv frontend/dist backend/server/static
+
+      # ── back-end deps ───────────────────────────────
       cd backend/server
       npm install
     startCommand: node backend/server/server.js
