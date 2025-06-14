@@ -5,9 +5,12 @@ import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 
 export default defineConfig(({ mode }) => {
+  // In dev, use your env var (or fallback localhost).
+  // In production, use relative URLs so fetch('/api/...') hits the same origin.
   const API_BASE_URL =
-    process.env.VITE_API_BASE_URL || "http://localhost:10000"; // Fallback for local dev
-
+    mode === "development"
+      ? process.env.VITE_API_BASE_URL || "http://localhost:10000"
+      : "";
   return {
     //
     plugins: [
