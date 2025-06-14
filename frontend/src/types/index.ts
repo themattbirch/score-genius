@@ -10,7 +10,7 @@ export interface UnifiedGame {
   homeTeamName: string;
   awayTeamName: string;
   gameTimeUTC?: string | null; // ISO UTC timestamp for scheduled or historical
-  statusState?: string | null; // Status description/short code
+  statusState?: string | null; // Status description + short code
   // Schedule specific (might be null if historical)
   sport: Sport;
   homePitcher?: string | null;
