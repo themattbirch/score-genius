@@ -46,13 +46,21 @@ app.use((req, _res, next) => {
   next();
 });
 
-// 4) Serve PWA static assets and SPA fallback
+// 4) Serve PWA static assets, SW, and SPA fallback
 const staticDir = path.join(__dirname, "static");
 
-// 4a) Serve built assets under /app
-app.use("/app", express.static(staticDir, { index: false }));
+// 4a) Root redirect to /app/
+app.get("/", (_req, res) => res.redirect(301, "/app/"));
 
-// 4b) SPA fallback: any GET to /app or /app/* returns app.html
+// 4b) Serve service worker file at root
+app.get("/sw.js", (_req, res) =>
+  res.sendFile(path.join(staticDir, "app-sw.js"))
+);
+
+// 4c) Serve built assets under /app with no redirect on directory
+app.use("/app", express.static(staticDir, { index: false, redirect: false }));
+
+// 4d) SPA fallback for any GET /app* route
 app.get(/^\/app(\/.*)?$/, (_req, res) =>
   res.sendFile(path.join(staticDir, "app.html"))
 );
@@ -75,6 +83,6 @@ app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ error: err.message || "Server Error" });
 });
 
-// 9) Start server
+// 9) Start server on correct port
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
