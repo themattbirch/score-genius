@@ -17,7 +17,7 @@ import { DateProvider } from "@/contexts/date_context";
 import BottomTabBar from "./components/layout/BottomTabBar";
 import { ThemeProvider } from "./contexts/theme_context";
 
-// 2) Layout stays the same
+// 2) Layout
 const Layout: React.FC = () => {
   const isGamesRoute = useLocation().pathname.startsWith("/games");
   return (
