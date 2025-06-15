@@ -21,7 +21,7 @@ COPY backend/ ./backend/
 # 3) Copy all your marketing pages (static HTML) into the image
 #    Use a wildcard so the directory itself need not exist yet in build cache
 RUN mkdir -p backend/server/static/public
-COPY backend/server/static/public/*.html \
+COPY frontend/public/*.html \
      backend/server/static/public/
 
 # 4) Overlay only the SPA’s index.html into that folder
