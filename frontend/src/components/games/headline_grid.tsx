@@ -1,15 +1,26 @@
-// frontend/src/components/games/headline_grid.jsx
+// frontend/src/components/games/headline_grid.tsx
 
 import React from "react";
-import PropTypes from "prop-types";
 import SkeletonLoader from "../ui/skeleton_loader";
-/**
- * HeadlineGrid Component
- * Displays key statistical headlines in a grid format.
- * @param {Array<Object>} headlines - Array of headline objects: [{ label: string, value: any }]
- * @param {boolean} isLoading - Whether the data is currently loading.
- */
-const HeadlineGrid = ({ headlines, isLoading }) => {
+import { useTheme } from "@/contexts/theme_context";
+import { HeadlineStat } from "@/types"; // Import HeadlineStat type
+
+// Define the interface for HeadlineGrid's props
+interface HeadlineGridProps {
+  headlines: HeadlineStat[]; // Use the imported HeadlineStat type
+  isLoading?: boolean; // isLoading is optional based on its default usage
+}
+
+const HeadlineGrid: React.FC<HeadlineGridProps> = ({
+  headlines = [],
+  isLoading = false,
+}) => {
+  const { theme } = useTheme();
+
+  const textColorPrimary = theme === "dark" ? "#f1f5f9" : "#0d1117";
+  const textColorSecondary = theme === "dark" ? "#9ca3af" : "#475569";
+  const panelBgColor = theme === "dark" ? "#161b22" : "#f8fafc";
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-gray-700/50 my-4">
@@ -37,11 +48,16 @@ const HeadlineGrid = ({ headlines, isLoading }) => {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-[var(--color-panel)] shadow-md my-4">
+    <div
+      className="grid grid-cols-2 gap-4 p-4 rounded-lg shadow-md my-4"
+      style={{ backgroundColor: panelBgColor }}
+    >
       {headlines.map((item, index) => (
         <div key={index} className="flex flex-col">
-          <p className="text-text-secondary text-sm mb-0.5">{item.label}</p>
-          <p className="text-text-primary text-lg font-bold">
+          <p className="text-sm mb-0.5" style={{ color: textColorSecondary }}>
+            {item.label}
+          </p>
+          <p className="text-lg font-bold" style={{ color: textColorPrimary }}>
             {typeof item.value === "number"
               ? item.value.toLocaleString()
               : item.value}
@@ -50,22 +66,6 @@ const HeadlineGrid = ({ headlines, isLoading }) => {
       ))}
     </div>
   );
-};
-
-HeadlineGrid.propTypes = {
-  headlines: PropTypes.arrayOf(
-    PropTypes.shape({
-      label: PropTypes.string.isRequired,
-      value: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
-        .isRequired,
-    })
-  ),
-  isLoading: PropTypes.bool,
-};
-
-HeadlineGrid.defaultProps = {
-  headlines: [],
-  isLoading: false,
 };
 
 export default HeadlineGrid;
