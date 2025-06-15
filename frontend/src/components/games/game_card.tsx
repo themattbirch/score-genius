@@ -87,7 +87,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           ) : game.dataType === "schedule" ? (
             sport === "NBA" ? ( // Use the `sport` from context here for general display logic.
               // For specific game data like predicted runs, use game.predicted_...
-              <p className="font-medium text-sky-500 dark:text-sky-400">
+              <p className="font-medium text-green-600 dark:text-green-500">
                 {game.predictionAway?.toFixed(1) ?? "-"} –{" "}
                 {game.predictionHome?.toFixed(1) ?? "-"}
                 <span className="block text-xs font-normal text-text-secondary">
@@ -102,7 +102,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                 {/* Always show a "score" line. Show prediction if available, otherwise a placeholder. */}
                 {game.predicted_home_runs != null &&
                 game.predicted_away_runs != null ? (
-                  <p className="font-medium text-sky-500 dark:text-sky-400">
+                  <p className="font-medium text-green-600 dark:text-green-500">
                     {game.predicted_away_runs.toFixed(1)} –{" "}
                     {game.predicted_home_runs.toFixed(1)}
                     <span className="block text-xs font-normal text-text-secondary">
@@ -123,14 +123,13 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                     {game.homePitcher ?? "TBD"}{" "}
                     {game.homePitcherHand && `(${game.homePitcherHand})`}
                   </p>
-                    </div>
-                                    {/* WeatherBadge for MLB games (FR-GC-2) */}
+                </div>
+                {/* WeatherBadge for MLB games (FR-GC-2) */}
                 {isMLB && (
                   <div className="mt-1">
                     <WeatherBadge />
                   </div>
                 )}
-
               </div>
               // ==========================================================
               // END: Corrected MLB logic

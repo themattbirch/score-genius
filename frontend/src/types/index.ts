@@ -1,7 +1,40 @@
 // src/types/index.ts
 import type { LucideIcon } from "lucide-react";
+
 export type IconType = LucideIcon;
 export type Sport = "NBA" | "MLB";
+
+// Define interfaces for chart data structures, if not already present
+export interface BarChartData {
+  category: string;
+  Home: number; // Assuming this structure from your BarChartComponent
+  Away: number;
+}
+
+export interface RadarChartData {
+  metric: string;
+  home_value: number; // Assuming this structure from your RadarChartComponent
+  away_value: number;
+}
+
+export interface PieChartDataItem {
+  category: string;
+  value: number;
+  color?: string; // Color might be optional
+}
+
+export interface NbaPreGameOffenseDataItem {
+  metric: string;
+  Home: number;
+  Away: number;
+}
+
+// Define interface for Headline Stats
+export interface HeadlineStat {
+  label: string;
+  value: string | number;
+}
+
 
 export interface UnifiedGame {
   id: string;
@@ -117,4 +150,19 @@ export interface NbaAdvancedTeamStats {
 
   /* allow extension */
   [key: string]: string | number | undefined | null;
+}
+interface SnapshotModalProps {
+  gameId: string;
+  sport: Sport; // Use the Sport type here
+  isOpen: boolean;
+  onClose: () => void;
+}
+export interface SnapshotData {
+  headline_stats?: HeadlineStat[]; // Optional, as it might be loading
+  bar_chart_data?: BarChartData[];
+  radar_chart_data?: RadarChartData[];
+  pie_chart_data?: PieChartDataItem[] | NbaPreGameOffenseDataItem[]; // Can be either
+  // Add other properties that snapshotData might have from your backend, e.g.,
+  // is_historical_game?: boolean;
+  // some_other_field?: string;
 }
