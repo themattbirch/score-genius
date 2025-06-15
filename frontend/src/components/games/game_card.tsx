@@ -3,55 +3,64 @@
 import React, { useState } from "react";
 import { UnifiedGame, Sport } from "@/types";
 import { useSport } from "@/contexts/sport_context";
-import { useDate } from "@/contexts/date_context";
 
-// Import our new components
-import SnapshotButton from "./snapshot_button"; // Corrected path and snake_case
-import WeatherBadge from "./weather_badge"; // Corrected path and snake_case
-import SnapshotModal from "./snapshot_modal"; // Corrected path and snake_case
+// --- Step 1: Import the new hook and modal ---
+import { useWeather } from "@/hooks/use_weather";
+import WeatherBadge from "./weather_badge";
+import WeatherModal from "./weather_modal";
+import SnapshotButton from "./snapshot_button";
+import SnapshotModal from "./snapshot_modal";
 
 interface GameCardProps {
   game: UnifiedGame;
 }
 
 const GameCard: React.FC<GameCardProps> = ({ game }) => {
-  console.log("GameCard - game prop:", game);
-  const { sport } = useSport(); // This sport context can be used to determine MLB vs NBA for WeatherBadge
-  const { date } = useDate();
-  const isoDate = date ? date.toISOString().slice(0, 10) : "";
+  const { sport: contextSport } = useSport();
 
-  const gameId = game.id;
-  const homeTeamName = game.homeTeamName;
-  const awayTeamName = game.awayTeamName;
-  const displayTime = game.gameTimeUTC;
-  const displayStatus = game.statusState;
+  const {
+    id: gameId,
+    homeTeamName,
+    awayTeamName,
+    gameTimeUTC,
+    statusState,
+    game_date,
+    dataType,
+    sport,
+    away_final_score,
+    home_final_score,
+    predictionAway,
+    predictionHome,
+    predicted_home_runs,
+    predicted_away_runs,
+    awayPitcher,
+    awayPitcherHand,
+    homePitcher,
+    homePitcherHand,
+  } = game;
 
-  // State to control the visibility of the Snapshot Modal for this specific game card
+  // State for the Snapshot modal
   const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
 
-  // Determine if it's an MLB game for WeatherBadge
-  const isMLB = game.sport === "MLB"; // Use game.sport prop, not context sport for specific game type
+  // --- Step 2: Add state for the new Weather modal ---
+  const [isWeatherModalOpen, setWeatherModalOpen] = useState(false);
 
-  // Handlers for the Snapshot Modal
-  const handleOpenSnapshot = () => {
-    console.log(
-      "handleOpenSnapshot clicked for Game ID:",
-      gameId,
-      "Sport:",
-      game.sport
-    );
-    setIsSnapshotModalOpen(true);
-  };
+  // Determine if it's an MLB game for the Weather feature
+  const isMLB = sport === "MLB";
 
-  const handleCloseSnapshot = () => {
-    setIsSnapshotModalOpen(false);
-  };
+  // --- Step 3: Call our use_weather hook ---
+  // It's conditionally enabled, so it will only run for MLB games.
+  const {
+    data: weatherData,
+    isLoading: isWeatherLoading,
+    isError: isWeatherError,
+  } = useWeather(isMLB ? sport : undefined, isMLB ? homeTeamName : undefined);
 
   return (
     <div className="app-card flex flex-col gap-4" data-tour="game-card">
       <div className="flex items-start justify-between gap-4">
+        {/* Team names and Snapshot button */}
         <div className="min-w-0 flex-1 max-w-md flex flex-col space-y-2">
-          {/* NEW: Container for the Snapshot Button on the left */}
           <p className="font-semibold text-sm sm:text-base leading-tight">
             {awayTeamName}
           </p>
@@ -59,52 +68,47 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             @ {homeTeamName}
           </p>
           <p className="text-xs text-text-secondary pt-1">
-            {displayTime
-              ? new Date(displayTime).toLocaleTimeString([], {
+            {gameTimeUTC
+              ? new Date(gameTimeUTC).toLocaleTimeString([], {
                   hour: "numeric",
                   minute: "2-digit",
                 })
-              : game.game_date}
-            {displayStatus &&
+              : game_date}
+            {statusState &&
               !["final", "sched", "pre"].some((s) =>
-                displayStatus.toLowerCase().includes(s)
+                statusState.toLowerCase().includes(s)
               ) &&
-              ` (${displayStatus})`}
+              ` (${statusState})`}
           </p>
           <div className="mb-1">
-            <SnapshotButton onClick={handleOpenSnapshot} />
+            <SnapshotButton onClick={() => setIsSnapshotModalOpen(true)} />
           </div>
         </div>
 
+        {/* Scores / Predictions / Weather */}
         <div className="w-36 md:w-auto text-right text-sm">
-          {game.dataType === "historical" ? (
+          {dataType === "historical" ? (
             <p className="font-semibold text-lg w-full">
-              {game.away_final_score ?? "-"} – {game.home_final_score ?? "-"}
+              {away_final_score ?? "-"} – {home_final_score ?? "-"}
               <span className="block text-xs font-normal text-text-secondary">
                 (Final)
               </span>
             </p>
-          ) : game.dataType === "schedule" ? (
-            sport === "NBA" ? ( // Use the `sport` from context here for general display logic.
-              // For specific game data like predicted runs, use game.predicted_...
+          ) : dataType === "schedule" ? (
+            contextSport === "NBA" ? (
               <p className="font-medium text-green-600 dark:text-green-500">
-                {game.predictionAway?.toFixed(1) ?? "-"} –{" "}
-                {game.predictionHome?.toFixed(1) ?? "-"}
+                {predictionAway?.toFixed(1) ?? "-"} –{" "}
+                {predictionHome?.toFixed(1) ?? "-"}
                 <span className="block text-xs font-normal text-text-secondary">
                   (Pred.)
                 </span>
               </p>
             ) : (
-              // ==========================================================
-              // START: Corrected logic for MLB
-              // ==========================================================
               <div>
-                {/* Always show a "score" line. Show prediction if available, otherwise a placeholder. */}
-                {game.predicted_home_runs != null &&
-                game.predicted_away_runs != null ? (
+                {predicted_home_runs != null && predicted_away_runs != null ? (
                   <p className="font-medium text-green-600 dark:text-green-500">
-                    {game.predicted_away_runs.toFixed(1)} –{" "}
-                    {game.predicted_home_runs.toFixed(1)}
+                    {predicted_away_runs.toFixed(1)} –{" "}
+                    {predicted_home_runs.toFixed(1)}
                     <span className="block text-xs font-normal text-text-secondary">
                       (Pred.)
                     </span>
@@ -112,28 +116,28 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                 ) : (
                   <p className="font-medium text-text-secondary">-</p>
                 )}
-
-                {/* And always show the pitchers underneath for upcoming MLB games */}
                 <div className="mt-1">
                   <p className="text-xs font-normal text-text-secondary">
-                    {game.awayPitcher ?? "TBD"}{" "}
-                    {game.awayPitcherHand && `(${game.awayPitcherHand})`}
+                    {awayPitcher ?? "TBD"}{" "}
+                    {awayPitcherHand && `(${awayPitcherHand})`}
                   </p>
                   <p className="text-xs font-normal text-text-secondary">
-                    {game.homePitcher ?? "TBD"}{" "}
-                    {game.homePitcherHand && `(${game.homePitcherHand})`}
+                    {homePitcher ?? "TBD"}{" "}
+                    {homePitcherHand && `(${homePitcherHand})`}
                   </p>
                 </div>
-                {/* WeatherBadge for MLB games (FR-GC-2) */}
+                {/* --- Step 4: Update the WeatherBadge call --- */}
                 {isMLB && (
-                  <div className="mt-1">
-                    <WeatherBadge />
+                  <div className="mt-2 flex justify-end">
+                    <WeatherBadge
+                      isLoading={isWeatherLoading}
+                      isError={isWeatherError}
+                      data={weatherData}
+                      onClick={() => setWeatherModalOpen(true)}
+                    />
                   </div>
                 )}
               </div>
-              // ==========================================================
-              // END: Corrected MLB logic
-              // ==========================================================
             )
           ) : (
             <p className="font-medium w-full">—</p>
@@ -141,12 +145,18 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
         </div>
       </div>
 
-      {/* The Snapshot Modal for this specific game card */}
+      {/* RENDER THE MODALS */}
       <SnapshotModal
         gameId={gameId}
-        sport={game.sport as Sport} // Pass the specific game's sport (NBA or MLB)
+        sport={sport as Sport}
         isOpen={isSnapshotModalOpen}
-        onClose={handleCloseSnapshot}
+        onClose={() => setIsSnapshotModalOpen(false)}
+      />
+      {/* --- Step 5: Add the new WeatherModal --- */}
+      <WeatherModal
+        isOpen={isWeatherModalOpen}
+        onClose={() => setWeatherModalOpen(false)}
+        weatherData={weatherData}
       />
     </div>
   );

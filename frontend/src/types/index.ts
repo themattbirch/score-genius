@@ -35,7 +35,6 @@ export interface HeadlineStat {
   value: string | number;
 }
 
-
 export interface UnifiedGame {
   id: string;
   game_date: string; // YYYY-MM-DD (ET, based on backend logic)
@@ -72,6 +71,8 @@ export interface UnifiedGame {
   // Discriminator
   dataType: "schedule" | "historical";
   // Implicit: sport (can be derived from context if needed, or added here by backend)
+
+  venueLocation?: VenueLocation;
 }
 
 export interface UnifiedTeamStats {
@@ -165,4 +166,23 @@ export interface SnapshotData {
   // Add other properties that snapshotData might have from your backend, e.g.,
   // is_historical_game?: boolean;
   // some_other_field?: string;
+}
+export interface WeatherData {
+  temperature: number;
+  feels_like: number;
+  humidity: number;
+  windSpeed: number;
+  windDirection: string;
+  description: string;
+  icon: string;
+  city: string;
+}
+
+/**
+ * Defines the structure for a game's location, which will be
+ * passed from the GameCard down to the WeatherBadge.
+ */
+export interface VenueLocation {
+  latitude: number;
+  longitude: number;
 }
