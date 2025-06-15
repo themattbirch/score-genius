@@ -1,4 +1,3 @@
-# ──────── STAGE 1: build frontend ────────
 FROM node:18-alpine AS builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
@@ -6,17 +5,23 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-# ──────── STAGE 2: install backend & assemble ────────
 FROM node:18-slim AS runner
 WORKDIR /app
 
-# 1) install only server deps
+# Install only production dependencies for the server
 COPY backend/server/package*.json ./backend/server/
 RUN cd backend/server && npm ci --production
 
-# 2) copy backend code + static assets
+# Copy the backend source (routes, server.js, etc.)
 COPY backend/ ./backend/
-COPY --from=builder /app/frontend/dist ./backend/server/static
+
+# Copy just the built frontend artifacts into the server’s static folder,
+# without overwriting the marketing HTML in static/public:
+COPY --from=builder /app/frontend/dist/app.html            ./backend/server/static/app.html
+COPY --from=builder /app/frontend/dist/manifest.webmanifest ./backend/server/static/manifest.webmanifest
+COPY --from=builder /app/frontend/dist/assets             ./backend/server/static/assets
+COPY --from=builder /app/frontend/dist/media              ./backend/server/static/media
+COPY --from=builder /app/frontend/dist/app-sw.js          ./backend/server/static/app-sw.js
 
 WORKDIR /app/backend/server
 EXPOSE 10000

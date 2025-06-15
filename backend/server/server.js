@@ -8,19 +8,11 @@ import dotenv from "dotenv";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const envLocations = [
-  path.join(__dirname, "../.env"),
-  path.join(__dirname, "../../.env"),
-];
-let loaded = false;
-for (const envPath of envLocations) {
-  if (!loaded && fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath, override: true });
-    console.log(`🔑 Loaded env from ${envPath}`);
-    loaded = true;
-  }
-}
-if (!loaded) console.log("🔑 No .env file found; relying on process.env");
+// Try loading .env files
+["../.env", "../../.env"].forEach((rel) => {
+  const p = path.join(__dirname, rel);
+  if (fs.existsSync(p)) dotenv.config({ path: p, override: true });
+});
 
 // Import after env is set
 import express from "express";
@@ -43,6 +35,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 // --- Static paths ---
 const staticRoot = path.join(__dirname, "static");
 const marketingDir = path.join(staticRoot, "public");
+const mediaDir = path.join(staticRoot, "media");
 const assetsDir = path.join(staticRoot, "assets");
 
 // Express app
@@ -65,28 +58,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve video and other media
-app.use(
-  "/media",
-  express.static(path.join(staticRoot, "media"), { maxAge: "1d" })
-);
+// Static assets
+app.use("/media", express.static(mediaDir, { maxAge: "1d" }));
+app.use("/assets", express.static(assetsDir, { maxAge: "1d" }));
 
-// Serve marketing HTML pages (e.g. /support -> support.html)
-app.use(
-  express.static(marketingDir, {
-    index: false,
-    extensions: ["html"],
-    maxAge: "1d",
-  })
-);
-
-// Root serves index.html
-app.get("/", (_req, res) =>
-  res.sendFile(path.join(marketingDir, "index.html"))
-);
-
-// Serve PWA assets
-app.use("/assets", express.static(assetsDir));
+// PWA service worker
 app.get("/sw.js", (_req, res) =>
   res.sendFile(path.join(staticRoot, "app-sw.js"))
 );
@@ -101,12 +77,36 @@ app.get(/^\/app(\/.*)?$/, (_req, res) =>
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
+// SEO pages (standalone marketing HTML)
+const seoPages = [
+  "404",
+  "disclaimer",
+  "documentation",
+  "privacy",
+  "support",
+  "terms",
+];
+seoPages.forEach((page) => {
+  app.get(`/${page}`, (_req, res) => {
+    const file = path.join(marketingDir, `${page}.html`);
+    if (fs.existsSync(file)) {
+      return res.sendFile(file);
+    }
+    return res.status(404).json({ error: "Not Found" });
+  });
+});
+
+// Root route serves index.html
+app.get("/", (_req, res) =>
+  res.sendFile(path.join(marketingDir, "index.html"))
+);
+
 // Health check
 app.get("/health", (_req, res) =>
   res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// Fallback 404: if HTML file not found, serve JSON 404 for API or catch-all
+// Fallback 404 for other routes
 app.use((req, res) => res.status(404).json({ error: "Not Found" }));
 app.use((err, req, res, next) => {
   console.error(err);
