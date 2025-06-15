@@ -8,20 +8,21 @@ import dotenv from "dotenv";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Try loading .env from backend/, then project root
 const envLocations = [
   path.join(__dirname, "../.env"),
   path.join(__dirname, "../../.env"),
 ];
 let loaded = false;
-envLocations.forEach((envPath) => {
+for (const envPath of envLocations) {
   if (!loaded && fs.existsSync(envPath)) {
     dotenv.config({ path: envPath, override: true });
     console.log(`🔑 Loaded env from ${envPath}`);
     loaded = true;
   }
-});
-if (!loaded) console.log("🔑 No .env file found; relying on process.env");
+}
+if (!loaded) {
+  console.log("🔑 No .env file found; relying on process.env");
+}
 
 // Import after env is set
 import express from "express";
@@ -41,8 +42,14 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
+// --- Static paths (must be declared before using them) ---
+const staticRoot = path.join(__dirname, "static");
+const marketingDir = path.join(staticRoot, "public");
+const assetsDir = path.join(staticRoot, "assets");
+
 // Express app
 const app = express();
+
 app.use(
   cors({
     origin: [
@@ -52,26 +59,23 @@ app.use(
     ],
   })
 );
+
 app.use(express.json());
+
 app.use((req, res, next) => {
   // normalize multiple slashes
   req.url = req.url.replace(/\/\/+/, "/");
   console.log(`${new Date().toISOString()} – ${req.method} ${req.url}`);
   next();
 });
-// Serve video and other media from frontend/dist/media
+
+// Serve video and other media from static/media
 app.use(
   "/media",
   express.static(path.join(staticRoot, "media"), {
-    // optional: set cache headers, e.g. 1 day
     maxAge: "1d",
   })
 );
-
-// Static paths
-const staticRoot = path.join(__dirname, "static");
-const marketingDir = path.join(staticRoot, "public");
-const assetsDir = path.join(staticRoot, "assets");
 
 // Marketing site at root
 app.use(express.static(marketingDir, { index: false }));
