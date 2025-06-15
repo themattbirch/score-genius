@@ -14,7 +14,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 # 3) Now import your snapshot function
 from backend.mlb_features.make_mlb_snapshots import make_mlb_snapshot
 
-# ← Replace this with actual game_id from mlb_game_schedule
+# ← Replace this with the actual game_id from mlb_game_schedule
 TEST_GAME_ID = "164288"
 
 def main():
