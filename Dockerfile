@@ -15,23 +15,30 @@ WORKDIR /app
 COPY backend/server/package*.json ./backend/server/
 RUN cd backend/server && npm ci --production
 
-# 2) Copy backend source (with its marketing HTML in static/public)
+# 2) Copy backend source
 COPY backend/ ./backend/
 
-# 3) Copy all your marketing pages (the “public” folder you committed)
-#    into the image before bringing in the SPA
-COPY backend/server/static/public ./backend/server/static/public
+# 3) Copy all your marketing pages (static HTML) into the image
+#    Use a wildcard so the directory itself need not exist yet in build cache
+RUN mkdir -p backend/server/static/public
+COPY backend/server/static/public/*.html \
+     backend/server/static/public/
 
-# 4) Overlay only the SPA’s index.html into that same folder
+# 4) Overlay only the SPA’s index.html into that folder
 COPY --from=builder /app/frontend/dist/public/index.html \
-     ./backend/server/static/public/index.html
+     backend/server/static/public/index.html
 
 # 5) Copy the rest of the SPA build artifacts
-COPY --from=builder /app/frontend/dist/app.html             ./backend/server/static/app.html
-COPY --from=builder /app/frontend/dist/manifest.webmanifest  ./backend/server/static/manifest.webmanifest
-COPY --from=builder /app/frontend/dist/assets               ./backend/server/static/assets
-COPY --from=builder /app/frontend/dist/media                ./backend/server/static/media
-COPY --from=builder /app/frontend/dist/app-sw.js            ./backend/server/static/app-sw.js
+COPY --from=builder /app/frontend/dist/app.html                    \
+     backend/server/static/app.html
+COPY --from=builder /app/frontend/dist/manifest.webmanifest       \
+     backend/server/static/manifest.webmanifest
+COPY --from=builder /app/frontend/dist/assets                      \
+     backend/server/static/assets
+COPY --from=builder /app/frontend/dist/media                       \
+     backend/server/static/media
+COPY --from=builder /app/frontend/dist/app-sw.js                   \
+     backend/server/static/app-sw.js
 
 WORKDIR /app/backend/server
 EXPOSE 10000
