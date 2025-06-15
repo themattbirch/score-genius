@@ -2,7 +2,6 @@
 FROM node:18-alpine AS builder
 WORKDIR /app/frontend
 
-# Install frontend deps & build
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
@@ -16,15 +15,18 @@ WORKDIR /app
 COPY backend/server/package*.json ./backend/server/
 RUN cd backend/server && npm ci --production
 
-# 2) Copy backend source (including all your marketing HTML in static/public)
+# 2) Copy backend source (with its marketing HTML in static/public)
 COPY backend/ ./backend/
 
-# 3) Copy only the new frontend SPA index.html into the marketing folder
-#    (so we don’t clobber documentation.html, privacy.html, etc.)
+# 3) Copy all your marketing pages (the “public” folder you committed)
+#    into the image before bringing in the SPA
+COPY backend/server/static/public ./backend/server/static/public
+
+# 4) Overlay only the SPA’s index.html into that same folder
 COPY --from=builder /app/frontend/dist/public/index.html \
      ./backend/server/static/public/index.html
 
-# 4) Copy the rest of your PWA build artifacts
+# 5) Copy the rest of the SPA build artifacts
 COPY --from=builder /app/frontend/dist/app.html             ./backend/server/static/app.html
 COPY --from=builder /app/frontend/dist/manifest.webmanifest  ./backend/server/static/manifest.webmanifest
 COPY --from=builder /app/frontend/dist/assets               ./backend/server/static/assets
