@@ -25,9 +25,11 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   process.exit(1);
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false },
-});
+export const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_KEY,
+  { auth: { persistSession: false } }
+);
 
 // --- Static paths ---
 const staticRoot = path.join(__dirname, "static");
@@ -87,8 +89,7 @@ app.get("/health", (_req, res) =>
 
 // Fallback 404 for unmatched routes
 app.use((req, res) => {
-  // If HTML 404 page exists, serve it
-  const file = path.join(marketingDir, "404.html");
+  const file = path.join(marketingDir, '404.html');
   if (fs.existsSync(file)) {
     return res.status(404).sendFile(file);
   }

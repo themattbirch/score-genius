@@ -17,7 +17,11 @@ RUN cd backend/server && npm ci --production
 # 2) Copy backend source (including static/public/*)
 COPY backend/ ./backend/
 
-# 3) Copy all your built frontend artifacts INTO the server’s static folder:
+# 3) Copy the entire marketing pages into static/public
+COPY --from=builder /app/frontend/dist/public \
+     ./backend/server/static/public
+
+# 4) Copy all your built frontend artifacts INTO the server’s static folder:
 COPY --from=builder /app/frontend/dist/app.html             ./backend/server/static/app.html
 COPY --from=builder /app/frontend/dist/manifest.webmanifest  ./backend/server/static/manifest.webmanifest
 COPY --from=builder /app/frontend/dist/assets               ./backend/server/static/assets
