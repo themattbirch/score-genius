@@ -24,8 +24,6 @@ COPY --from=builder /app/frontend/dist/assets               ./backend/server/sta
 COPY --from=builder /app/frontend/dist/media                ./backend/server/static/media
 COPY --from=builder /app/frontend/dist/app-sw.js            ./backend/server/static/app-sw.js
 
-COPY --from=builder /app/frontend/dist/public               ./backend/server/static/public
-
 WORKDIR /app/backend/server
 EXPOSE 10000
 CMD ["node", "server.js"]
