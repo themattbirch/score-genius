@@ -42,7 +42,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
-// --- Static paths (must be declared before using them) ---
+// --- Static paths ---
 const staticRoot = path.join(__dirname, "static");
 const marketingDir = path.join(staticRoot, "public");
 const assetsDir = path.join(staticRoot, "assets");
@@ -61,20 +61,17 @@ app.use(
 );
 
 app.use(express.json());
-
 app.use((req, res, next) => {
   // normalize multiple slashes
-  req.url = req.url.replace(/\/\/+/, "/");
+  req.url = req.url.replace(/\/\/+/g, "/");
   console.log(`${new Date().toISOString()} – ${req.method} ${req.url}`);
   next();
 });
 
-// Serve video and other media from static/media
+// Serve video and other media
 app.use(
   "/media",
-  express.static(path.join(staticRoot, "media"), {
-    maxAge: "1d",
-  })
+  express.static(path.join(staticRoot, "media"), { maxAge: "1d" })
 );
 
 // Marketing site at root
@@ -82,6 +79,21 @@ app.use(express.static(marketingDir, { index: false }));
 app.get("/", (_req, res) =>
   res.sendFile(path.join(marketingDir, "index.html"))
 );
+
+// Serve standalone marketing pages
+const staticPages = [
+  "404",
+  "disclaimer",
+  "documentation",
+  "privacy",
+  "support",
+  "terms",
+];
+staticPages.forEach((page) => {
+  app.get(`/${page}`, (_req, res) =>
+    res.sendFile(path.join(marketingDir, `${page}.html`))
+  );
+});
 
 // Serve PWA assets
 app.use("/assets", express.static(assetsDir));
