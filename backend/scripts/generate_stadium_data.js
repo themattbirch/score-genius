@@ -1,0 +1,409 @@
+// backend/scripts/generate_stadium_data.js
+
+const fs = require("fs");
+const path = require("path");
+
+// Define the single output path for the generated JSON file
+// __dirname is globally available in CommonJS modules, so this is simpler.
+const outputPath = path.join(__dirname, "../data/stadium_data.json");
+
+// Source of truth for MLB stadium data
+const mlbData = {
+  "Arizona Diamondbacks": {
+    stadium: "Chase Field",
+    city: "Phoenix",
+    latitude: 33.4453,
+    longitude: -112.0667,
+  },
+  "Atlanta Braves": {
+    stadium: "Truist Park",
+    city: "Atlanta",
+    latitude: 33.8907,
+    longitude: -84.4677,
+  },
+  "Baltimore Orioles": {
+    stadium: "Oriole Park at Camden Yards",
+    city: "Baltimore",
+    latitude: 39.284,
+    longitude: -76.6217,
+  },
+  "Boston Red Sox": {
+    stadium: "Fenway Park",
+    city: "Boston",
+    latitude: 42.3467,
+    longitude: -71.0972,
+  },
+  "Chicago Cubs": {
+    stadium: "Wrigley Field",
+    city: "Chicago",
+    latitude: 41.9484,
+    longitude: -87.6553,
+  },
+  "Chicago White Sox": {
+    stadium: "Guaranteed Rate Field",
+    city: "Chicago",
+    latitude: 41.83,
+    longitude: -87.6338,
+  },
+  "Cincinnati Reds": {
+    stadium: "Great American Ball Park",
+    city: "Cincinnati",
+    latitude: 39.0974,
+    longitude: -84.5069,
+  },
+  "Cleveland Guardians": {
+    stadium: "Progressive Field",
+    city: "Cleveland",
+    latitude: 41.4962,
+    longitude: -81.6852,
+  },
+  "Colorado Rockies": {
+    stadium: "Coors Field",
+    city: "Denver",
+    latitude: 39.7562,
+    longitude: -104.9942,
+  },
+  "Detroit Tigers": {
+    stadium: "Comerica Park",
+    city: "Detroit",
+    latitude: 42.339,
+    longitude: -83.0485,
+  },
+  "Houston Astros": {
+    stadium: "Minute Maid Park",
+    city: "Houston",
+    latitude: 29.7572,
+    longitude: -95.3555,
+  },
+  "Kansas City Royals": {
+    stadium: "Kauffman Stadium",
+    city: "Kansas City",
+    latitude: 39.0517,
+    longitude: -94.4803,
+  },
+  "Los Angeles Angels": {
+    stadium: "Angel Stadium",
+    city: "Anaheim",
+    latitude: 33.8003,
+    longitude: -117.8827,
+  },
+  "Los Angeles Dodgers": {
+    stadium: "Dodger Stadium",
+    city: "Los Angeles",
+    latitude: 34.0739,
+    longitude: -118.24,
+  },
+  "Miami Marlins": {
+    stadium: "loanDepot park",
+    city: "Miami",
+    latitude: 25.7781,
+    longitude: -80.2196,
+  },
+  "Milwaukee Brewers": {
+    stadium: "American Family Field",
+    city: "Milwaukee",
+    latitude: 43.028,
+    longitude: -87.9712,
+  },
+  "Minnesota Twins": {
+    stadium: "Target Field",
+    city: "Minneapolis",
+    latitude: 44.9817,
+    longitude: -93.278,
+  },
+  "New York Mets": {
+    stadium: "Citi Field",
+    city: "Queens",
+    latitude: 40.7571,
+    longitude: -73.8458,
+  },
+  "New York Yankees": {
+    stadium: "Yankee Stadium",
+    city: "Bronx",
+    latitude: 40.8296,
+    longitude: -73.9262,
+  },
+  "Oakland Athletics": {
+    stadium: "Oakland-Alameda County Coliseum",
+    city: "Oakland",
+    latitude: 37.7516,
+    longitude: -122.2005,
+  },
+  "Philadelphia Phillies": {
+    stadium: "Citizens Bank Park",
+    city: "Philadelphia",
+    latitude: 39.9061,
+    longitude: -75.1665,
+  },
+  "Pittsburgh Pirates": {
+    stadium: "PNC Park",
+    city: "Pittsburgh",
+    latitude: 40.4469,
+    longitude: -80.0057,
+  },
+  "San Diego Padres": {
+    stadium: "Petco Park",
+    city: "San Diego",
+    latitude: 32.7077,
+    longitude: -117.157,
+  },
+  "San Francisco Giants": {
+    stadium: "Oracle Park",
+    city: "San Francisco",
+    latitude: 37.7786,
+    longitude: -122.3893,
+  },
+  "Seattle Mariners": {
+    stadium: "T-Mobile Park",
+    city: "Seattle",
+    latitude: 47.5914,
+    longitude: -122.3325,
+  },
+  "St. Louis Cardinals": {
+    stadium: "Busch Stadium",
+    city: "St. Louis",
+    latitude: 38.6226,
+    longitude: -90.1928,
+  },
+  "Tampa Bay Rays": {
+    stadium: "Tropicana Field",
+    city: "St. Petersburg",
+    latitude: 27.7682,
+    longitude: -82.6534,
+  },
+  "Texas Rangers": {
+    stadium: "Globe Life Field",
+    city: "Arlington",
+    latitude: 32.7473,
+    longitude: -97.0828,
+  },
+  "Toronto Blue Jays": {
+    stadium: "Rogers Centre",
+    city: "Toronto",
+    latitude: 43.6414,
+    longitude: -79.3894,
+  },
+  "Washington Nationals": {
+    stadium: "Nationals Park",
+    city: "Washington",
+    latitude: 38.8732,
+    longitude: -77.0074,
+  },
+};
+
+// Source of truth for NFL stadium data
+const nflData = {
+  "Arizona Cardinals": {
+    stadium: "State Farm Stadium",
+    city: "Glendale",
+    latitude: 33.5276,
+    longitude: -112.2626,
+  },
+  "Atlanta Falcons": {
+    stadium: "Mercedes-Benz Stadium",
+    city: "Atlanta",
+    latitude: 33.7554,
+    longitude: -84.4005,
+  },
+  "Baltimore Ravens": {
+    stadium: "M&T Bank Stadium",
+    city: "Baltimore",
+    latitude: 39.278,
+    longitude: -76.6227,
+  },
+  "Buffalo Bills": {
+    stadium: "Highmark Stadium",
+    city: "Orchard Park",
+    latitude: 42.7738,
+    longitude: -78.7869,
+  },
+  "Carolina Panthers": {
+    stadium: "Bank of America Stadium",
+    city: "Charlotte",
+    latitude: 35.2259,
+    longitude: -80.8529,
+  },
+  "Chicago Bears": {
+    stadium: "Soldier Field",
+    city: "Chicago",
+    latitude: 41.8623,
+    longitude: -87.6167,
+  },
+  "Cincinnati Bengals": {
+    stadium: "Paycor Stadium",
+    city: "Cincinnati",
+    latitude: 39.0954,
+    longitude: -84.516,
+  },
+  "Cleveland Browns": {
+    stadium: "Cleveland Browns Stadium",
+    city: "Cleveland",
+    latitude: 41.5061,
+    longitude: -81.6995,
+  },
+  "Dallas Cowboys": {
+    stadium: "AT&T Stadium",
+    city: "Arlington",
+    latitude: 32.7478,
+    longitude: -97.0929,
+  },
+  "Denver Broncos": {
+    stadium: "Empower Field at Mile High",
+    city: "Denver",
+    latitude: 39.7439,
+    longitude: -105.0201,
+  },
+  "Detroit Lions": {
+    stadium: "Ford Field",
+    city: "Detroit",
+    latitude: 42.34,
+    longitude: -83.0456,
+  },
+  "Green Bay Packers": {
+    stadium: "Lambeau Field",
+    city: "Green Bay",
+    latitude: 44.5013,
+    longitude: -88.0622,
+  },
+  "Houston Texans": {
+    stadium: "NRG Stadium",
+    city: "Houston",
+    latitude: 29.6847,
+    longitude: -95.4107,
+  },
+  "Indianapolis Colts": {
+    stadium: "Lucas Oil Stadium",
+    city: "Indianapolis",
+    latitude: 39.7601,
+    longitude: -86.1639,
+  },
+  "Jacksonville Jaguars": {
+    stadium: "EverBank Stadium",
+    city: "Jacksonville",
+    latitude: 30.3239,
+    longitude: -81.6373,
+  },
+  "Kansas City Chiefs": {
+    stadium: "Arrowhead Stadium",
+    city: "Kansas City",
+    latitude: 39.0489,
+    longitude: -94.4839,
+  },
+  "Las Vegas Raiders": {
+    stadium: "Allegiant Stadium",
+    city: "Las Vegas",
+    latitude: 36.0908,
+    longitude: -115.1837,
+  },
+  "Los Angeles Chargers": {
+    stadium: "SoFi Stadium",
+    city: "Inglewood",
+    latitude: 33.9535,
+    longitude: -118.3392,
+  },
+  "Los Angeles Rams": {
+    stadium: "SoFi Stadium",
+    city: "Inglewood",
+    latitude: 33.9535,
+    longitude: -118.3392,
+  },
+  "Miami Dolphins": {
+    stadium: "Hard Rock Stadium",
+    city: "Miami Gardens",
+    latitude: 25.958,
+    longitude: -80.2389,
+  },
+  "Minnesota Vikings": {
+    stadium: "U.S. Bank Stadium",
+    city: "Minneapolis",
+    latitude: 44.9736,
+    longitude: -93.2577,
+  },
+  "New England Patriots": {
+    stadium: "Gillette Stadium",
+    city: "Foxborough",
+    latitude: 42.0909,
+    longitude: -71.2643,
+  },
+  "New Orleans Saints": {
+    stadium: "Caesars Superdome",
+    city: "New Orleans",
+    latitude: 29.9508,
+    longitude: -90.0812,
+  },
+  "New York Giants": {
+    stadium: "MetLife Stadium",
+    city: "East Rutherford",
+    latitude: 40.8135,
+    longitude: -74.0745,
+  },
+  "New York Jets": {
+    stadium: "MetLife Stadium",
+    city: "East Rutherford",
+    latitude: 40.8135,
+    longitude: -74.0745,
+  },
+  "Philadelphia Eagles": {
+    stadium: "Lincoln Financial Field",
+    city: "Philadelphia",
+    latitude: 39.9008,
+    longitude: -75.1675,
+  },
+  "Pittsburgh Steelers": {
+    stadium: "Acrisure Stadium",
+    city: "Pittsburgh",
+    latitude: 40.4467,
+    longitude: -80.0158,
+  },
+  "San Francisco 49ers": {
+    stadium: "Levi's Stadium",
+    city: "Santa Clara",
+    latitude: 37.4033,
+    longitude: -121.9697,
+  },
+  "Seattle Seahawks": {
+    stadium: "Lumen Field",
+    city: "Seattle",
+    latitude: 47.5952,
+    longitude: -122.3316,
+  },
+  "Tampa Bay Buccaneers": {
+    stadium: "Raymond James Stadium",
+    city: "Tampa",
+    latitude: 27.9759,
+    longitude: -82.5033,
+  },
+  "Tennessee Titans": {
+    stadium: "Nissan Stadium",
+    city: "Nashville",
+    latitude: 36.1665,
+    longitude: -86.7713,
+  },
+  "Washington Commanders": {
+    stadium: "FedExField",
+    city: "Landover",
+    latitude: 38.9077,
+    longitude: -76.8645,
+  },
+};
+
+// Combine all league data into a single object, namespaced by league
+const allData = {
+  MLB: mlbData,
+  NFL: nflData,
+};
+
+try {
+  // Ensure the output directory exists
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  // Write the combined data to the single JSON file
+  fs.writeFileSync(outputPath, JSON.stringify(allData, null, 2));
+
+  console.log(
+    `✅ Successfully generated consolidated stadium data at: ${outputPath}`
+  );
+} catch (error) {
+  console.error(`❌ Error writing stadium data file: ${error}`);
+  process.exit(1);
+}

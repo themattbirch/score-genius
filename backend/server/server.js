@@ -17,6 +17,7 @@ import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 import nbaRoutes from "./routes/nba_routes.js";
 import mlbRoutes from "./routes/mlb_routes.js";
+import weatherRoutes from "./routes/weather_routes.js";
 
 // Validate Supabase keys
 const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
@@ -94,6 +95,7 @@ app.get(/^\/app(\/.*)?$/, (_req, res) =>
 // API routes
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
+app.use("/api/weather", weatherRoutes);
 
 // Health check
 app.get("/health", (_req, res) =>
