@@ -20,9 +20,7 @@ for (const envPath of envLocations) {
     loaded = true;
   }
 }
-if (!loaded) {
-  console.log("🔑 No .env file found; relying on process.env");
-}
+if (!loaded) console.log("🔑 No .env file found; relying on process.env");
 
 // Import after env is set
 import express from "express";
@@ -59,7 +57,6 @@ app.use(
     ],
   })
 );
-
 app.use(express.json());
 app.use((req, res, next) => {
   // normalize multiple slashes
@@ -74,26 +71,19 @@ app.use(
   express.static(path.join(staticRoot, "media"), { maxAge: "1d" })
 );
 
-// Marketing site at root
-app.use(express.static(marketingDir, { index: false }));
+// Serve marketing HTML pages (e.g. /support -> support.html)
+app.use(
+  express.static(marketingDir, {
+    index: false,
+    extensions: ["html"],
+    maxAge: "1d",
+  })
+);
+
+// Root serves index.html
 app.get("/", (_req, res) =>
   res.sendFile(path.join(marketingDir, "index.html"))
 );
-
-// Serve standalone marketing pages
-const staticPages = [
-  "404",
-  "disclaimer",
-  "documentation",
-  "privacy",
-  "support",
-  "terms",
-];
-staticPages.forEach((page) => {
-  app.get(`/${page}`, (_req, res) =>
-    res.sendFile(path.join(marketingDir, `${page}.html`))
-  );
-});
 
 // Serve PWA assets
 app.use("/assets", express.static(assetsDir));
@@ -116,7 +106,7 @@ app.get("/health", (_req, res) =>
   res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// 404 / error handlers
+// Fallback 404: if HTML file not found, serve JSON 404 for API or catch-all
 app.use((req, res) => res.status(404).json({ error: "Not Found" }));
 app.use((err, req, res, next) => {
   console.error(err);
