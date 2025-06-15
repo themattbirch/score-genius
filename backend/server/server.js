@@ -24,12 +24,9 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("FATAL: SUPABASE_URL or SUPABASE_SERVICE_KEY missing");
   process.exit(1);
 }
-
-export const supabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_KEY,
-  { auth: { persistSession: false } }
-);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  auth: { persistSession: false },
+});
 
 // --- Static paths ---
 const staticRoot = path.join(__dirname, "static");
@@ -37,8 +34,9 @@ const marketingDir = path.join(staticRoot, "public");
 const mediaDir = path.join(staticRoot, "media");
 const assetsDir = path.join(staticRoot, "assets");
 
-// Create Express app
 const app = express();
+
+// CORS & JSON
 app.use(
   cors({
     origin: [
@@ -49,18 +47,33 @@ app.use(
   })
 );
 app.use(express.json());
+
+// Normalize URLs and log
 app.use((req, res, next) => {
   req.url = req.url.replace(/\/\/+/g, "/");
   console.log(`${new Date().toISOString()} – ${req.method} ${req.url}`);
   next();
 });
 
-// Serve marketing HTML pages (public folder)
+// Serve all marketing HTML (index.html + public/*.html)
 app.use(
   express.static(marketingDir, {
+    index: "index.html",
     extensions: ["html"],
     maxAge: "1d",
   })
+);
+
+// Explicit “pretty” routes for standalone pages
+["404", "disclaimer", "documentation", "privacy", "support", "terms"].forEach(
+  (page) => {
+    app.get(`/${page}`, (_req, res) => {
+      const file = path.join(marketingDir, `${page}.html`);
+      return fs.existsSync(file)
+        ? res.sendFile(file)
+        : res.status(404).send("Not Found");
+    });
+  }
 );
 
 // Static assets
@@ -72,7 +85,7 @@ app.get("/sw.js", (_req, res) =>
   res.sendFile(path.join(staticRoot, "app-sw.js"))
 );
 
-// Application shell (SPA)
+// SPA shell under /app
 app.use("/app", express.static(staticRoot, { index: false }));
 app.get(/^\/app(\/.*)?$/, (_req, res) =>
   res.sendFile(path.join(staticRoot, "app.html"))
@@ -87,13 +100,13 @@ app.get("/health", (_req, res) =>
   res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// Fallback 404 for unmatched routes
+// Fallback 404 handler
 app.use((req, res) => {
-  const file = path.join(marketingDir, '404.html');
-  if (fs.existsSync(file)) {
-    return res.status(404).sendFile(file);
+  const file404 = path.join(marketingDir, "404.html");
+  if (fs.existsSync(file404)) {
+    return res.status(404).sendFile(file404);
   }
-  return res.status(404).json({ error: "Not Found" });
+  res.status(404).json({ error: "Not Found" });
 });
 
 // Error handler
@@ -102,6 +115,6 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || "Server Error" });
 });
 
-// Start server
+// Start
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));

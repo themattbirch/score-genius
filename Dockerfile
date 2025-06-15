@@ -1,6 +1,8 @@
 # ─── Stage 1: build frontend ───
 FROM node:18-alpine AS builder
 WORKDIR /app/frontend
+
+# Install frontend deps & build
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
@@ -17,17 +19,18 @@ RUN cd backend/server && npm ci --production
 # 2) Copy backend source (including static/public/*)
 COPY backend/ ./backend/
 
-# 3) Copy the entire marketing pages into static/public
+# 3) Pull in your entire marketing pages into static/public
 COPY --from=builder /app/frontend/dist/public \
      ./backend/server/static/public
 
-# 4) Copy all your built frontend artifacts INTO the server’s static folder:
+# 4) Copy all other built frontend artifacts into static
 COPY --from=builder /app/frontend/dist/app.html             ./backend/server/static/app.html
 COPY --from=builder /app/frontend/dist/manifest.webmanifest  ./backend/server/static/manifest.webmanifest
 COPY --from=builder /app/frontend/dist/assets               ./backend/server/static/assets
 COPY --from=builder /app/frontend/dist/media                ./backend/server/static/media
 COPY --from=builder /app/frontend/dist/app-sw.js            ./backend/server/static/app-sw.js
 
+# Final workdir for runtime
 WORKDIR /app/backend/server
 EXPOSE 10000
 CMD ["node", "server.js"]
