@@ -16,26 +16,20 @@ WORKDIR /app
 COPY backend/server/package*.json ./backend/server/
 RUN cd backend/server && npm ci --production
 
-# 2) Copy backend source (including your original marketing HTML in static/public)
+# 2) Copy backend source (including all your marketing HTML in static/public)
 COPY backend/ ./backend/
 
-# 3) Merge in the new index.html without clobbering other pages
-#    First, the repo’s static/public (already present from COPY backend/)
-#    Then overwrite only index.html with the builder output
+# 3) Copy only the new frontend SPA index.html into the marketing folder
+#    (so we don’t clobber documentation.html, privacy.html, etc.)
 COPY --from=builder /app/frontend/dist/public/index.html \
      ./backend/server/static/public/index.html
 
-# 4) Copy the rest of the SPA and PWA assets
-COPY --from=builder /app/frontend/dist/app.html             \
-     ./backend/server/static/app.html
-COPY --from=builder /app/frontend/dist/manifest.webmanifest  \
-     ./backend/server/static/manifest.webmanifest
-COPY --from=builder /app/frontend/dist/assets               \
-     ./backend/server/static/assets
-COPY --from=builder /app/frontend/dist/media                \
-     ./backend/server/static/media
-COPY --from=builder /app/frontend/dist/app-sw.js            \
-     ./backend/server/static/app-sw.js
+# 4) Copy the rest of your PWA build artifacts
+COPY --from=builder /app/frontend/dist/app.html             ./backend/server/static/app.html
+COPY --from=builder /app/frontend/dist/manifest.webmanifest  ./backend/server/static/manifest.webmanifest
+COPY --from=builder /app/frontend/dist/assets               ./backend/server/static/assets
+COPY --from=builder /app/frontend/dist/media                ./backend/server/static/media
+COPY --from=builder /app/frontend/dist/app-sw.js            ./backend/server/static/app-sw.js
 
 WORKDIR /app/backend/server
 EXPOSE 10000
