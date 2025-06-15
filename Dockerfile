@@ -19,6 +19,10 @@ RUN npm run build
  # 2) Copy backend source (including all your marketing HTML in static/public)
  COPY backend/ ./backend/
 
+ # 2.1) bring in the marketing pages:
+COPY --from=builder /app/frontend/dist/public \
+     ./backend/server/static/public
+
  # 3) Only copy the frontend’s own built assets
  COPY --from=builder /app/frontend/dist/app.html             ./backend/server/static/app.html
  COPY --from=builder /app/frontend/dist/manifest.webmanifest  ./backend/server/static/manifest.webmanifest
