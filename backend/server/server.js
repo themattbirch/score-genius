@@ -4,17 +4,14 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 
-// --- Load environment variables early ---
+// --- Load environment variables ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Try loading .env files
 ["../.env", "../../.env"].forEach((rel) => {
   const p = path.join(__dirname, rel);
   if (fs.existsSync(p)) dotenv.config({ path: p, override: true });
 });
 
-// Import after env is set
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
@@ -38,9 +35,8 @@ const marketingDir = path.join(staticRoot, "public");
 const mediaDir = path.join(staticRoot, "media");
 const assetsDir = path.join(staticRoot, "assets");
 
-// Express app
+// Create Express app
 const app = express();
-
 app.use(
   cors({
     origin: [
@@ -52,11 +48,18 @@ app.use(
 );
 app.use(express.json());
 app.use((req, res, next) => {
-  // normalize multiple slashes
   req.url = req.url.replace(/\/\/+/g, "/");
   console.log(`${new Date().toISOString()} – ${req.method} ${req.url}`);
   next();
 });
+
+// Serve marketing HTML pages (public folder)
+app.use(
+  express.static(marketingDir, {
+    extensions: ["html"],
+    maxAge: "1d",
+  })
+);
 
 // Static assets
 app.use("/media", express.static(mediaDir, { maxAge: "1d" }));
@@ -67,7 +70,7 @@ app.get("/sw.js", (_req, res) =>
   res.sendFile(path.join(staticRoot, "app-sw.js"))
 );
 
-// Serve application shell
+// Application shell (SPA)
 app.use("/app", express.static(staticRoot, { index: false }));
 app.get(/^\/app(\/.*)?$/, (_req, res) =>
   res.sendFile(path.join(staticRoot, "app.html"))
@@ -77,37 +80,22 @@ app.get(/^\/app(\/.*)?$/, (_req, res) =>
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 
-// SEO pages (standalone marketing HTML)
-const seoPages = [
-  "404",
-  "disclaimer",
-  "documentation",
-  "privacy",
-  "support",
-  "terms",
-];
-seoPages.forEach((page) => {
-  app.get(`/${page}`, (_req, res) => {
-    const file = path.join(marketingDir, `${page}.html`);
-    if (fs.existsSync(file)) {
-      return res.sendFile(file);
-    }
-    return res.status(404).json({ error: "Not Found" });
-  });
-});
-
-// Root route serves index.html
-app.get("/", (_req, res) =>
-  res.sendFile(path.join(marketingDir, "index.html"))
-);
-
 // Health check
 app.get("/health", (_req, res) =>
   res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// Fallback 404 for other routes
-app.use((req, res) => res.status(404).json({ error: "Not Found" }));
+// Fallback 404 for unmatched routes
+app.use((req, res) => {
+  // If HTML 404 page exists, serve it
+  const file = path.join(marketingDir, "404.html");
+  if (fs.existsSync(file)) {
+    return res.status(404).sendFile(file);
+  }
+  return res.status(404).json({ error: "Not Found" });
+});
+
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || "Server Error" });
