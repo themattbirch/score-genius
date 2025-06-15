@@ -59,6 +59,14 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} – ${req.method} ${req.url}`);
   next();
 });
+// Serve video and other media from frontend/dist/media
+app.use(
+  "/media",
+  express.static(path.join(staticRoot, "media"), {
+    // optional: set cache headers, e.g. 1 day
+    maxAge: "1d",
+  })
+);
 
 // Static paths
 const staticRoot = path.join(__dirname, "static");
