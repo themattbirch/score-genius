@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react";
 import { WeatherData } from "@/types";
+import RelativeWindIcon from "./relative_wind_icon";
 
 interface WeatherModalProps {
   isOpen: boolean;
@@ -96,9 +97,12 @@ const WeatherModal: React.FC<WeatherModalProps> = ({
               </div>
               <div className="col-span-2">
                 <p className="text-sm text-gray-500 dark:text-gray-400">Wind</p>
-                <p className="text-lg font-semibold">
-                  {weatherData.windSpeed} mph {weatherData.windDirection}
-                </p>
+                <div className="flex items-center justify-center gap-3 mt-1">
+                  <RelativeWindIcon rotation={weatherData.ballparkWindAngle} />
+                  <p className="text-lg font-semibold">
+                    {weatherData.windSpeed} mph ({weatherData.ballparkWindText})
+                  </p>
+                </div>
               </div>
             </div>
           </div>

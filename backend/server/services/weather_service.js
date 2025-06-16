@@ -1,15 +1,11 @@
-// backend/server/services/weather_service.js
-
 import fs from "fs";
 import path from "path";
 import axios from "axios";
 import { fileURLToPath } from "url";
 
-// Recreate __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Memoize the stadium data to avoid reading the file on every single request.
 let stadiumDataCache = null;
 
 function getStadiumData() {
@@ -28,14 +24,8 @@ function getStadiumData() {
   }
 }
 
-// Load the data as soon as the service is initialized
 getStadiumData();
 
-/**
- * Converts wind degrees to a cardinal direction.
- * @param {number} degrees - Wind direction in degrees.
- * @returns {string} The cardinal direction (e.g., 'NNE').
- */
 function getWindDirection(degrees) {
   if (degrees === undefined) return "N/A";
   const directions = [
@@ -61,11 +51,47 @@ function getWindDirection(degrees) {
 }
 
 /**
- * Fetches weather data for a given team and sport.
- * @param {string} sport - The league ('MLB' or 'NFL').
- * @param {string} teamName - The name of the team (e.g., "Houston Astros").
- * @returns {Promise<object>} A simplified weather data object.
+ * FINAL CORRECTED VERSION: Calculates the wind's direction relative to the ballpark's layout.
  */
+function getRelativeWindInfo(windDegrees, stadiumOrientation) {
+  if (
+    windDegrees === undefined ||
+    stadiumOrientation === null ||
+    stadiumOrientation === undefined
+  ) {
+    return { text: "N/A", angle: 0 };
+  }
+  if (stadiumOrientation === 0) {
+    return { text: "Indoor/N/A", angle: 0 };
+  }
+
+  const rotationAngle = (windDegrees - stadiumOrientation + 360) % 360;
+
+  let description = "Variable";
+  // The logic below is now corrected to match the icon's visual rotation
+  if (rotationAngle >= 337.5 || rotationAngle < 22.5)
+    description = "Blowing Out";
+  else if (rotationAngle >= 22.5 && rotationAngle < 67.5)
+    description = "Out to Right";
+  else if (rotationAngle >= 67.5 && rotationAngle < 112.5)
+    description = "L to R";
+  else if (rotationAngle >= 112.5 && rotationAngle < 157.5)
+    description = "In from Left";
+  else if (rotationAngle >= 157.5 && rotationAngle < 202.5)
+    description = "Blowing In";
+  else if (rotationAngle >= 202.5 && rotationAngle < 247.5)
+    description = "In from Right"; // Corrected
+  else if (rotationAngle >= 247.5 && rotationAngle < 292.5)
+    description = "R to L";
+  else if (rotationAngle >= 292.5 && rotationAngle < 337.5)
+    description = "Out to Left"; // Corrected
+
+  return {
+    text: description,
+    angle: rotationAngle,
+  };
+}
+
 async function getWeatherDataForTeam(sport, teamName) {
   const { WEATHER_API_KEY } = process.env;
   if (!WEATHER_API_KEY) {
@@ -84,21 +110,26 @@ async function getWeatherDataForTeam(sport, teamName) {
     );
   }
 
-  const { latitude, longitude } = teamInfo;
+  const { latitude, longitude, orientation } = teamInfo;
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=imperial&appid=${WEATHER_API_KEY}`;
 
   try {
     const response = await axios.get(url);
     const { data } = response;
+
+    const relativeWind = getRelativeWindInfo(data.wind.deg, orientation);
+
     return {
       temperature: Math.round(data.main.temp),
       feels_like: Math.round(data.main.feels_like),
       humidity: data.main.humidity,
-      windSpeed: Math.round(data.wind.speed),
-      windDirection: getWindDirection(data.wind.deg),
       description: data.weather[0].description,
       icon: data.weather[0].icon,
       city: teamInfo.city,
+      windSpeed: Math.round(data.wind.speed),
+      windDirection: getWindDirection(data.wind.deg),
+      ballparkWindText: relativeWind.text,
+      ballparkWindAngle: relativeWind.angle,
     };
   } catch (error) {
     console.error(
@@ -109,5 +140,4 @@ async function getWeatherDataForTeam(sport, teamName) {
   }
 }
 
-// Use a named export
 export { getWeatherDataForTeam };
