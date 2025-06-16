@@ -176,6 +176,8 @@ export interface WeatherData {
   description: string;
   icon: string;
   city: string;
+  ballparkWindText: string;
+  ballparkWindAngle: number;
 }
 
 /**

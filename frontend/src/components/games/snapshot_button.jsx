@@ -25,6 +25,8 @@ const SnapshotButton = ({
         font-semibold // UX/UI
         px-3 py-1 // Padding for a good button size
         inline-flex items-center justify-center // For centering text
+        hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-offset-2 
+        focus:ring-sky-500 focus:ring-offset-gray-800
         transition-opacity duration-200 // For hover effect
         ${
           isDisabled
