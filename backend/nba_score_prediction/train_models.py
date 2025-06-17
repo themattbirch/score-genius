@@ -75,7 +75,7 @@ from scipy.stats import loguniform, randint, uniform
 # ─── Project Imports ─────────────────────────────────────────────────────────
 # config will auto-load backend/.env
 from backend import config
-from backend.nba_score_prediction import utils
+from backend.nba_features import utils
 
 # Import your new feature-pipeline orchestrator
 from backend.nba_features.engine import run_feature_pipeline
@@ -1644,7 +1644,7 @@ def run_training_pipeline(args: argparse.Namespace):
 
     if args.feature_selection == "lasso":
 
-        fixed_alphas = [0.10, 0.15]
+        fixed_alphas = [0.15]
         for alpha in fixed_alphas:
             logger.info(f"--- Running fixed‐α Lasso selection at α = {alpha:.2f} ---")
 

@@ -166,50 +166,31 @@ def run_feature_pipeline(
     # --- MODIFIED LOGIC FOR adv_splits DATA FETCHING ---
     _all_fetched_adv_splits_df: Optional[pd.DataFrame] = None
     if 'adv_splits' in active_order:
-        if active_db_conn:
-            if not processed_df['game_date'].dropna().empty:
-                # Determine the season for which advanced stats should be looked up, for each game
-                processed_df['game_nba_season_start_year'] = processed_df['game_date'].dropna().apply(
-                    lambda date: int(determine_season(date).split('-')[0]) if pd.notna(date) else pd.NA
-                )
-                processed_df['adv_stats_lookup_season'] = (
-                    pd.to_numeric(processed_df['game_nba_season_start_year'], errors='coerce') + adv_splits_lookup_offset
-                ).astype('Int64') # Keep as nullable integer
-
-                unique_lookup_seasons = processed_df['adv_stats_lookup_season'].dropna().unique().tolist()
-                
-                if unique_lookup_seasons:
-                    logger.info(f"Need to fetch advanced splits for lookup seasons: {sorted(unique_lookup_seasons)}")
-                    all_splits_list = []
-                    for season_year_to_fetch in unique_lookup_seasons:
-                        logger.debug(f"Fetching adv_splits for lookup season: {season_year_to_fetch}")
-                        fetched_data_for_season = _fetch_adv_splits_for_season(active_db_conn, season_year_to_fetch)
-                        if not fetched_data_for_season.empty:
-                            # IMPORTANT: Ensure fetched_data_for_season['season'] correctly reflects season_year_to_fetch
-                            # If 'season' column is already correct from Supabase, this is fine.
-                            # If not, you might need to assign it: fetched_data_for_season['season_of_stats'] = season_year_to_fetch
-                            all_splits_list.append(fetched_data_for_season)
-                        else:
-                            logger.warning(f"No advanced splits data found for lookup season: {season_year_to_fetch}")
-                    
-                    if all_splits_list:
-                        _all_fetched_adv_splits_df = pd.concat(all_splits_list, ignore_index=True)
-                        logger.info(f"Concatenated advanced splits for {len(unique_lookup_seasons)} lookup season(s). Total rows: {len(_all_fetched_adv_splits_df)}")
-                        # Ensure the 'season' column in _all_fetched_adv_splits_df correctly identifies
-                        # which season the stats themselves pertain to. This is crucial for advanced.py.
-                        # The _fetch_adv_splits_for_season already filters by season, so the 'season' column
-                        # in fetched_data_for_season should be the season_year_to_fetch.
-                    else:
-                        logger.warning("No advanced splits data could be fetched for any required lookup season.")
-                        _all_fetched_adv_splits_df = pd.DataFrame() # Pass empty if nothing found
-                else:
-                    logger.warning("No valid lookup seasons determined for 'adv_splits'.")
-                    _all_fetched_adv_splits_df = pd.DataFrame()
-            else:
-                logger.warning("Cannot determine lookup seasons for 'adv_splits': 'game_date' is empty or all NaT.")
-                _all_fetched_adv_splits_df = pd.DataFrame()
+        # Step 1: Determine the lookup season for each game (e.g., prior season).
+        # The advanced.py module needs this column on the main DataFrame to know which stats to find.
+        if not processed_df['game_date'].dropna().empty:
+            processed_df['game_nba_season_start_year'] = processed_df['game_date'].dropna().apply(
+                lambda date: int(determine_season(date).split('-')[0]) if pd.notna(date) else pd.NA
+            )
+            processed_df['adv_stats_lookup_season'] = (
+                pd.to_numeric(processed_df['game_nba_season_start_year'], errors='coerce') + adv_splits_lookup_offset
+            ).astype('Int64')
+            logger.info("Determined 'adv_stats_lookup_season' for each game.")
         else:
-            logger.warning("'adv_splits' module active, but no database connection. Will pass empty DataFrame to advanced.py.")
+            logger.warning("Cannot determine 'adv_stats_lookup_season' because 'game_date' is empty or all NaT.")
+
+        # Step 2: Fetch the ENTIRE historical splits table without pre-filtering.
+        # Let advanced.py handle the normalization and merging.
+        if active_db_conn:
+            logger.info("Fetching all rows from 'nba_team_seasonal_advanced_splits'...")
+            _all_fetched_adv_splits_df = _fetch_table_from_supabase(
+                active_db_conn,
+                "nba_team_seasonal_advanced_splits"
+            )
+            if _all_fetched_adv_splits_df.empty:
+                 logger.warning("Fetched 'nba_team_seasonal_advanced_splits' but it was empty.")
+        else:
+            logger.warning("'adv_splits' module active, but no database connection. Will pass empty DataFrame.")
             _all_fetched_adv_splits_df = pd.DataFrame()
     # --- END OF MODIFIED LOGIC FOR adv_splits ---
 

@@ -79,7 +79,7 @@ try:
     from nba_features.engine import run_feature_pipeline, DEFAULT_ORDER
     from nba_score_prediction.models import RidgeScorePredictor, SVRScorePredictor, XGBoostScorePredictor
     from nba_score_prediction.simulation import PredictionUncertaintyEstimator
-    import nba_score_prediction.utils as utils
+    from backend.nba_features import utils
     PROJECT_MODULES_IMPORTED = True
 except ImportError as e:
     logger.error(f"Critical imports failed: {e}", exc_info=True)

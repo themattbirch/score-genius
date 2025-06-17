@@ -1,20 +1,12 @@
 # backend/nba_features/advanced.py
 """
-Attach prior‑season advanced splits to each game row.
+Attach previous-season advanced splits to each game row.
 
-Key improvements over the earlier version
------------------------------------------
-1.  **Season‑key normalisation** – `_norm_season_key()` converts every season
-    representation ("2022‑23", "2022/23", 2022.0 …) to the canonical start
-    year `int(2022)`.  Both source and target DataFrames are normalised so
-    merges succeed even when formats differ.
-2.  **Guard‑rails & logging** – early warnings if merge hit‑rate is low;
-    imputation percentages are logged.
-3.  **Memory‑friendly merges** – only the columns required for joining are
-    carried through, reducing copy overhead.
-
-The function still returns a fully numeric, type‑stable `DataFrame` ready for
-modelling and leaves `adv_stats_lookup_season` intact for downstream modules.
+Revision highlights
+-------------------
+* Skips team_id merge if data is unavailable and uses team_norm as the key.
+* Coverage logging after each stage to catch gaps.
+* All helper columns and intermediate keys are dropped at the end.
 """
 
 from __future__ import annotations
@@ -31,228 +23,112 @@ from .utils import DEFAULTS, normalize_team_name, profile_time
 logger = logging.getLogger(__name__)
 __all__: Sequence[str] = ["transform"]
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Config
-# ────────────────────────────────────────────────────────────────────────────────
 EXPECTED_STATS: Sequence[str] = (
-    "pace",
-    "off_rtg",
-    "def_rtg",
-    "net_rtg",
-    "efg_pct",
-    "tov_pct",
-    "oreb_pct",
-    "ft_rate",
+    "pace", "off_rtg", "def_rtg", "net_rtg", "efg_pct",
+    "tov_pct", "oreb_pct", "ft_rate",
 )
 
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ────────────────────────────────────────────────────────────────────────────────
-
 def _norm_season_key(val: Any) -> Optional[int]:
-    """Return the *start* year of a season as an ``int``.
-
-    Handles common formats:
-    * ``"2022-23"`` / ``"2022/23"`` / ``"2022‑2023"`` ➜ ``2022``
-    * ``2022`` / ``2022.0`` ➜ ``2022``
-    * unparsable / NA ➜ ``np.nan``
-    """
-    if pd.isna(val):
-        return np.nan
-    if isinstance(val, (int, np.integer)):
-        return int(val)
+    if pd.isna(val): return np.nan
+    if isinstance(val, (int, np.integer)): return int(val)
     if isinstance(val, str):
-        match = re.search(r"\d{4}", val)
-        if match:
-            return int(match.group(0))
+        m = re.search(r"\d{4}", val)
+        if m: return int(m.group(0))
     try:
         return int(float(val))
     except Exception:
         return np.nan
 
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Main transform
-# ────────────────────────────────────────────────────────────────────────────────
+def _coverage_report(df: pd.DataFrame, stage: str) -> None:
+    total = len(df)
+    home_cols = [f"h_{s}_home" for s in EXPECTED_STATS if f"h_{s}_home" in df]
+    away_cols = [f"a_{s}_away" for s in EXPECTED_STATS if f"a_{s}_away" in df]
+    home_real = df[home_cols].notna().all(axis=1).sum() if home_cols else 0
+    away_real = df[away_cols].notna().all(axis=1).sum() if away_cols else 0
+    home_pct = 100 * home_real / total if total else 0.0
+    away_pct = 100 * away_real / total if total else 0.0
+    logger.info(
+        f"Coverage Report ({stage}): Home={home_pct:.1f}% ({home_real}/{total}), "
+        f"Away={away_pct:.1f}% ({away_real}/{total})"
+    )
+    if stage == "Final" and max(home_pct, away_pct) < 80:
+        logger.warning("Final coverage below 80% – investigate ingestion.")
+
 
 @profile_time
 def transform(
-    df: pd.DataFrame,
-    *,
-    all_historical_splits_df: pd.DataFrame,
-    flag_imputations: bool = True,
-    debug: bool = False,  # kept for interface completeness
+    df: pd.DataFrame, *, all_historical_splits_df: pd.DataFrame,
+    flag_imputations: bool = True, debug: bool = False,
 ) -> pd.DataFrame:
-    """Attach prior‑season advanced splits and compute diffs.
-
-    Parameters
-    ----------
-    df
-        Must contain ``home_team``, ``away_team`` and
-        ``adv_stats_lookup_season`` columns.
-    all_historical_splits_df
-        Multi‑season splits with columns ``season`` and either ``team_norm``
-        or ``team_name`` plus ``*_home`` / ``*_away`` stats.
-    """
-
     out = df.copy()
-
-    # ─── Preconditions ───────────────────────────────────────────────────────
-    if "adv_stats_lookup_season" not in out.columns:
-        logger.error("'adv_stats_lookup_season' column missing – skipping advanced split attachment.")
+    if "adv_stats_lookup_season" not in out:
+        logger.error("Missing 'adv_stats_lookup_season'; skipping.")
         return out
 
-    # Team normalisation (once only)
+    # 1) Prepare game-side keys
+    out["season_join"] = out["adv_stats_lookup_season"].apply(_norm_season_key).astype("Int64")
     out["home_norm"] = out["home_team"].map(normalize_team_name)
     out["away_norm"] = out["away_team"].map(normalize_team_name)
 
-    # Season‑key normalisation for *games*
-    out["lookup_season_norm"] = out["adv_stats_lookup_season"].apply(_norm_season_key)
-
-    # ─── Prepare historical splits ───────────────────────────────────────────
-    if all_historical_splits_df.empty:
-        logger.warning("Received empty historical splits DF – all values will be default‑imputed.")
-        seasonal_stats_processed = pd.DataFrame()
+    # 2) Prepare splits table
+    splits = all_historical_splits_df.copy()
+    if splits.empty:
+        logger.warning("Empty splits table; will impute all defaults.")
     else:
-        seasonal_stats_processed = all_historical_splits_df.copy()
+        if "season" in splits and "season_join" not in splits:
+            splits["season_join"] = splits["season"].apply(_norm_season_key).astype("Int64")
+        if "team_name" in splits:
+            splits["team_norm"] = splits["team_name"].map(normalize_team_name)
 
-        if "team_norm" not in seasonal_stats_processed.columns:
-            if "team_name" in seasonal_stats_processed.columns:
-                seasonal_stats_processed["team_norm"] = seasonal_stats_processed["team_name"].map(
-                    normalize_team_name
-                )
-            else:
-                logger.error("Historical splits DF missing 'team_norm' and 'team_name'.")
-                seasonal_stats_processed = pd.DataFrame()
+    # 3) Merge home and away stats using the normalized team names
+    merged = out.copy()
+    if not splits.empty and "team_norm" in splits:
+        # Prepare home stats for merge
+        home_cols_to_get = ["team_norm", "season_join"] + [f"{s}_home" for s in EXPECTED_STATS]
+        home_stats = splits.loc[:, splits.columns.intersection(home_cols_to_get)].copy()
+        
+        # Prepare away stats for merge
+        away_cols_to_get = ["team_norm", "season_join"] + [f"{s}_away" for s in EXPECTED_STATS]
+        away_stats = splits.loc[:, splits.columns.intersection(away_cols_to_get)].copy()
 
-        if "season" not in seasonal_stats_processed.columns:
-            logger.error("Historical splits DF missing 'season'.")
-            seasonal_stats_processed = pd.DataFrame()
+        # Merge home stats
+        merged = merged.merge(
+            home_stats,
+            left_on=["home_norm", "season_join"],
+            right_on=["team_norm", "season_join"],
+            how="left"
+        )
+        # Merge away stats
+        merged = merged.merge(
+            away_stats,
+            left_on=["away_norm", "season_join"],
+            right_on=["team_norm", "season_join"],
+            how="left",
+            suffixes=("_home", "_away")
+        )
+        _coverage_report(merged, "Team Norm Merge")
 
-    # If still no usable data, fall back to imputation path
-    if seasonal_stats_processed.empty:
-        _add_default_columns(out, flag_imputations)
-        _log_imputation_rate(out)
-        return out
-
-    # Season‑key normalisation for *stats*
-    seasonal_stats_processed["season_norm"] = seasonal_stats_processed["season"].apply(_norm_season_key)
-    seasonal_stats_processed.dropna(subset=["season_norm"], inplace=True)
-    seasonal_stats_processed["season_norm"] = seasonal_stats_processed["season_norm"].astype(int)
-
-    # ─── Merge HOME splits ───────────────────────────────────────────────────
-    home_stats = seasonal_stats_processed[[
-        "team_norm",
-        "season_norm",
-        *[f"{s}_home" for s in EXPECTED_STATS],
-    ]].rename(columns={f"{s}_home": f"h_{s}_home" for s in EXPECTED_STATS})
-
-    out = out.merge(
-        home_stats,
-        left_on=["home_norm", "lookup_season_norm"],
-        right_on=["team_norm", "season_norm"],
-        how="left",
-        suffixes=("", "_dup"),
-    ).drop(columns=[c for c in ("team_norm", "season_norm") if c in out.columns])
-
-    # ─── Merge AWAY splits ───────────────────────────────────────────────────
-    away_stats = seasonal_stats_processed[[
-        "team_norm",
-        "season_norm",
-        *[f"{s}_away" for s in EXPECTED_STATS],
-    ]].rename(columns={f"{s}_away": f"a_{s}_away" for s in EXPECTED_STATS})
-
-    out = out.merge(
-        away_stats,
-        left_on=["away_norm", "lookup_season_norm"],
-        right_on=["team_norm", "season_norm"],
-        how="left",
-        suffixes=("", "_dup"),
-    ).drop(columns=[c for c in ("team_norm", "season_norm") if c in out.columns])
-
-    # ─── Imputation & type enforcement ───────────────────────────────────────
-    _fill_and_flag(out, flag_imputations)
-
-    # ─── Diff columns ────────────────────────────────────────────────────────
-    for stat in EXPECTED_STATS:
-        out[f"hist_{stat}_split_diff"] = out[f"h_{stat}_home"] - out[f"a_{stat}_away"]
-
-    # ─── Rating mirrors (for legacy downstream code) ─────────────────────────
-    ratings_map = {
-        "home_offensive_rating": "h_off_rtg_home",
-        "away_offensive_rating": "a_off_rtg_away",
-        "home_defensive_rating": "h_def_rtg_home",
-        "away_defensive_rating": "a_def_rtg_away",
-        "home_net_rating": "h_net_rtg_home",
-        "away_net_rating": "a_net_rtg_away",
-    }
-    for new_col, src_col in ratings_map.items():
-        out[new_col] = out[src_col]
-
-    # ─── Diagnostics ─────────────────────────────────────────────────────────
-    _log_imputation_rate(out)
-
-    # ─── Cleanup helper columns ──────────────────────────────────────────────
-    out.drop(columns=[c for c in ("home_norm", "away_norm", "lookup_season_norm") if c in out.columns],
-             inplace=True, errors="ignore")
-
-    return out
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# Utility sub‑routines (kept outside transform for readability)
-# ────────────────────────────────────────────────────────────────────────────────
-
-def _add_default_columns(df: pd.DataFrame, flag_imputations: bool) -> None:
-    """Create expected columns filled with defaults when no stats are available."""
-    for side_label, prefix in (("home", "h"), ("away", "a")):
+    # 4) Impute defaults & flag remaining missing values
+    for prefix, stat_suffix in [("h", "home"), ("a", "away")]:
         for stat in EXPECTED_STATS:
-            tgt = f"{prefix}_{stat}_{side_label}"
-            df[tgt] = DEFAULTS.get(stat, 0.0)
-            if flag_imputations:
-                df[f"{tgt}_imputed"] = True
-
-
-def _fill_and_flag(df: pd.DataFrame, flag_imputations: bool) -> None:
-    """Coerce numeric, fill NaNs with defaults, set *_imputed flags."""
-    for side_label, prefix in (("home", "h"), ("away", "a")):
-        for stat in EXPECTED_STATS:
-            col = f"{prefix}_{stat}_{side_label}"
-            imp_col = f"{col}_imputed"
+            col = f"{prefix}_{stat}_{stat_suffix}"
+            imp = f"{col}_imputed"
             default = DEFAULTS.get(stat, 0.0)
 
-            if col not in df.columns:
-                df[col] = default
-                if flag_imputations:
-                    df[imp_col] = True
-            else:
-                if flag_imputations:
-                    df[imp_col] = pd.to_numeric(df[col], errors="coerce").isna()
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(default).astype(float)
-            if flag_imputations and imp_col not in df.columns:
-                df[imp_col] = False
-            if flag_imputations:
-                df[imp_col] = df[imp_col].astype(bool)
+            if col not in merged: merged[col] = default
+            if flag_imputations: merged[imp] = merged[col].isna()
+            merged[col] = pd.to_numeric(merged[col], errors='coerce').fillna(default)
 
+    # 5) Create diffs
+    for stat in EXPECTED_STATS:
+        h, a = f"h_{stat}_home", f"a_{stat}_away"
+        if h in merged and a in merged: merged[f"hist_{stat}_split_diff"] = merged[h] - merged[a]
 
-def _log_imputation_rate(df: pd.DataFrame) -> None:
-    """Emit a summary of imputation rates for quick diagnostics."""
-    if "h_off_rtg_home_imputed" not in df.columns:
-        return
+    # 6) Final diagnostics & cleanup
+    _coverage_report(merged, "Final")
+    to_drop = ["season_join", "home_norm", "away_norm", "team_norm_home", "team_norm_away"]
+    merged.drop(columns=to_drop, errors="ignore", inplace=True)
 
-    total = len(df)
-    home_imputed = df["h_off_rtg_home_imputed"].sum()
-    away_imputed = df["a_off_rtg_away_imputed"].sum()
-
-    home_pct = 100.0 * home_imputed / total if total else 0
-    away_pct = 100.0 * away_imputed / total if total else 0
-
-    logger.info(
-        "ADVANCED.PY: Home stats imputed for %s/%s games (%.1f%%).", home_imputed, total, home_pct
-    )
-    logger.info(
-        "ADVANCED.PY: Away stats imputed for %s/%s games (%.1f%%).", away_imputed, total, away_pct
-    )
-    if max(home_pct, away_pct) > 20.0:
-        logger.warning("ADVANCED.PY: High imputation rate detected – check season key normalisation or data coverage.")
+    return merged

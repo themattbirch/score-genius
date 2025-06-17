@@ -1,5 +1,4 @@
 {
-    "ridge_score_predictor": 0.38358149535633557,
-    "svr_score_predictor": 0.4108792795219596,
-    "xgb_score_predictor": 0.20553922512170483
+    "ridge_score_predictor": 0.6669126502254245,
+    "svr_score_predictor": 0.33308734977457555
 }

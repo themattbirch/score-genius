@@ -44,10 +44,10 @@ const BarChartComponent: React.FC<BarChartComponentProps> = ({
     );
   }
 
-  // Type assertion for 'd' within the .some() callback for better type inference
-  const isMultiSeries =
-    sport === "MLB" &&
-    data.some((d: BarChartData) => "Home" in d && "Away" in d);
+  // Plot two bars whenever an object has both Home and Away
+  const isMultiSeries = data.some(
+    (d: BarChartData) => d.Home !== undefined && d.Away !== undefined
+  );
 
   const HomeColor = "#4ade80";
   const AwayColor = "#60a5fa";

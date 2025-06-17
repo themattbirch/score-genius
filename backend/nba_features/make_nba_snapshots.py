@@ -64,44 +64,60 @@ def fetch_nba_raw_game_data(game_id: Union[str, int]) -> pd.DataFrame:
     Return one-row DataFrame: nba_historical_game_stats if available, else nba_game_schedule.
     Ensures a 'game_date' column is present and parsed.
     """
+    # Normalize ID to int when possible (your column is int8)
     game_id_str = str(game_id)
-    logger.debug(f"Fetching raw game data for NBA game_id: {game_id_str}")
+    try:
+        game_id_val = int(game_id_str)
+    except ValueError:
+        game_id_val = game_id_str
 
-    # Try historical stats (completed games) FIRST
-    hist_cols_select = "*"  # Select all columns needed for historical games
-    response = sb_client.table("nba_historical_game_stats").select(hist_cols_select).eq("game_id", game_id_str).execute()
-    df = pd.DataFrame(response.data or [])
+    logger.info(f"[RAW DATA] Fetching nba_historical_game_stats where game_id == {game_id_val!r}")
+    hist_response = (
+        sb_client
+        .table("nba_historical_game_stats")
+        .select("*")
+        .filter("game_id", "eq", game_id_val)
+        .execute()
+    )
+    logger.info(f"[RAW DATA] → historical rows returned: {len(hist_response.data or [])}")
 
+    df = pd.DataFrame(hist_response.data or [])
     if not df.empty:
-        logger.debug(f"Found NBA game {game_id_str} in nba_historical_game_stats.")
+        logger.info(f"[RAW DATA] Historical columns: {list(df.columns)[:10]}…")
+        # Parse game_date and flag
         if 'game_date' in df.columns:
             df['game_date'] = pd.to_datetime(df['game_date'], errors='coerce').dt.date
-        df['is_historical_game'] = True  # Flag for logic later
+        df['is_historical_game'] = True
         return df
 
     # Fallback to game schedule for pre-game info
-    logger.debug(f"NBA Game {game_id_str} not in historical, trying nba_game_schedule.")
-    schedule_cols_select = "game_id, game_date, scheduled_time, home_team, away_team"
-    response2 = (
-        sb_client.table("nba_game_schedule")
-        .select(schedule_cols_select)
+    logger.info(f"[RAW DATA] No historical row for {game_id_val!r}; falling back to schedule")
+    schedule_response = (
+        sb_client
+        .table("nba_game_schedule")
+        .select("game_id, game_date, scheduled_time, home_team, away_team")
         .eq("game_id", game_id_str)
         .execute()
     )
-    df2 = pd.DataFrame(response2.data or [])
+    df2 = pd.DataFrame(schedule_response.data or [])
     if not df2.empty:
-        logger.debug(f"Found NBA game {game_id_str} in nba_game_schedule.")
+        logger.info(f"[RAW DATA] Schedule row found; marking as pre-game")
         if 'game_date' in df2.columns:
             df2['game_date'] = pd.to_datetime(df2['game_date'], errors='coerce').dt.date
-        df2['is_historical_game'] = False  # Flag for logic later
-        # Add placeholder columns for pre-game, to avoid key errors in feature pipeline
-        for col in ['home_score', 'away_score', 'home_q1', 'home_q2', 'home_q3', 'home_q4', 'home_ot',
-                    'home_fg_made', 'home_3pm', 'home_ft_made',
-                    'home_fg_attempted', 'home_3pa', 'home_ft_attempted', 'home_off_reb', 'home_def_reb', 'home_total_reb', 'home_turnovers',
-                    'away_fg_made', 'away_3pm', 'away_ft_made',
-                    'away_fg_attempted', 'away_3pa', 'away_ft_attempted', 'away_off_reb', 'away_def_reb', 'away_total_reb', 'away_turnovers',]:
+        df2['is_historical_game'] = False
+        # Add any missing pre-game columns
+        for col in [
+            'home_score', 'away_score',
+            'home_q1','home_q2','home_q3','home_q4','home_ot',
+            'home_fg_made','home_3pm','home_ft_made',
+            'home_fg_attempted','home_3pa','home_ft_attempted',
+            'home_off_reb','home_def_reb','home_total_reb','home_turnovers',
+            'away_fg_made','away_3pm','away_ft_made',
+            'away_fg_attempted','away_3pa','away_ft_attempted',
+            'away_off_reb','away_def_reb','away_total_reb','away_turnovers',
+        ]:
             if col not in df2.columns:
-                df2[col] = pd.NA  # Use pandas NA for nullable integer/float columns
+                df2[col] = pd.NA
     return df2
 
 def fetch_nba_full_history() -> pd.DataFrame:
@@ -192,6 +208,56 @@ def _get_nba_team_form_string(
         else: form_results.append("T")
     return "".join(form_results) if form_results else "N/A"
 
+def _get_season_form_string(
+    team_identifier: Union[str, int],
+    current_game_date: pd.Timestamp | str,
+    all_historical_games: pd.DataFrame,
+    season_year: int,
+    num_form_games: int = 5,
+) -> str:
+    normalized = normalize_nba_team_name(str(team_identifier))
+    cur_dt = pd.to_datetime(current_game_date, errors='coerce').date()
+    if pd.isna(cur_dt) or all_historical_games.empty:
+        return "N/A"
+
+    # ensure norm/date columns
+    if 'home_team_norm' not in all_historical_games:
+        all_historical_games['home_team_norm'] = all_historical_games['home_team'].apply(normalize_nba_team_name)
+        all_historical_games['away_team_norm'] = all_historical_games['away_team'].apply(normalize_nba_team_name)
+        all_historical_games['parsed_game_date'] = pd.to_datetime(
+            all_historical_games['game_date'], errors='coerce'
+        ).dt.date
+
+    # filter to this season only
+    all_historical_games['season_start'] = pd.to_datetime(
+        all_historical_games['season'].str.split('-').str[0], errors='coerce'
+    ).dt.year
+
+    mask = (
+        (all_historical_games['season_start'] == season_year) &
+        (all_historical_games['parsed_game_date'] < cur_dt) &
+        (
+            (all_historical_games['home_team_norm'] == normalized) |
+            (all_historical_games['away_team_norm'] == normalized)
+        ) &
+        pd.notna(all_historical_games['home_score']) &
+        pd.notna(all_historical_games['away_score'])
+    )
+    team_games = all_historical_games.loc[mask].copy()
+    if team_games.empty:
+        return "N/A"
+
+    recent = team_games.sort_values('parsed_game_date', ascending=False).head(num_form_games)
+    if recent.empty:
+        return "N/A"
+
+    results = []
+    for _, g in recent.sort_values('parsed_game_date').iterrows():
+        is_home = g['home_team_norm'] == normalized
+        ts = int(g['home_score'] if is_home else g['away_score'])
+        os = int(g['away_score'] if is_home else g['home_score'])
+        results.append("W" if ts > os else "L" if ts < os else "T")
+    return "".join(results)
 
 # --- NBA Snapshot Generator ---
 def make_nba_snapshot(
@@ -230,15 +296,35 @@ def make_nba_snapshot(
     df_full_history = fetch_nba_full_history()
     df_historical_team_stats = fetch_nba_team_season_stats()
 
-    # 3) Generate Form Strings and add to df_game
-    df_game["home_current_form"] = _get_nba_team_form_string(
-        df_game[input_home_team_col].iloc[0], current_game_dt_obj, df_full_history
+    # 3) Populate in-df_game form strings
+    df_game["home_current_form"] = _get_season_form_string(
+        df_game[input_home_team_col].iloc[0],
+        current_game_dt_obj,
+        df_full_history,
+        nba_season_start_year,         # ← pass season here
     )
-    df_game["away_current_form"] = _get_nba_team_form_string(
-        df_game[input_away_team_col].iloc[0], current_game_dt_obj, df_full_history
+    df_game["away_current_form"] = _get_season_form_string(
+        df_game[input_away_team_col].iloc[0],
+        current_game_dt_obj,
+        df_full_history,
+        nba_season_start_year,
     )
-    logger.debug(f"Form strings: Home: {df_game['home_current_form'].iloc[0]}, Away: {df_game['away_current_form'].iloc[0]}")
 
+    # 4) Manually compute win‐% diff
+    home_id = df_game[input_home_team_col].iloc[0]
+    away_id = df_game[input_away_team_col].iloc[0]
+
+    home_form = _get_season_form_string(home_id, current_game_dt_obj, df_full_history, nba_season_start_year)
+    away_form = _get_season_form_string(away_id, current_game_dt_obj, df_full_history, nba_season_start_year)
+    logger.debug(f"RAW FORM STRINGS → Home: {home_form}, Away: {away_form}")
+
+    def win_pct(form_str: str) -> float:
+        if form_str in ("", "N/A"):
+            return 0.0
+        return form_str.count("W") / len(form_str)
+
+    manual_form_diff = round((win_pct(home_form) - win_pct(away_form)) * 100, 2)
+    logger.debug(f"MANUAL_FORM_DIFF = {manual_form_diff}%")
 
     # 4) Compute features via NBA engine
     logger.info(f"Running NBA feature pipeline for game {game_id_str}...")
@@ -291,21 +377,43 @@ def make_nba_snapshot(
     home_adv_season_stats = home_adv_season_stats.iloc[0] if not home_adv_season_stats.empty else pd.Series()
     away_adv_season_stats = away_adv_season_stats.iloc[0] if not away_adv_season_stats.empty else pd.Series()
 
-    # 6) Build snapshot components (using NBA metrics from `row` and `*_adv_season_stats`)
+    # 6) Build snapshot components
     logger.info(f"Building NBA snapshot components for game {game_id_str}...")
 
-    # Headline: Using confirmed column names
+    # Compute rest days for each team (make sure your feature pipeline populates these)
+    rest_home = int(row.get("rest_days_home", 0))
+    rest_away = int(row.get("rest_days_away", 0))
+    logger.debug(f"DEBUG REST: rest_days_home={rest_home}, rest_days_away={rest_away}")
+
+    # Extract and debug Form Win % Diff
+    form_win_pct_diff = float(row.get("form_win_pct_diff", 0.0))
+    logger.debug(f"DEBUG_FORM: form_win_pct_diff raw = {form_win_pct_diff}")
+    if "form_win_pct_diff" not in df_features.columns:
+        logger.warning("form_win_pct_diff missing from feature pipeline output")
+    else:
+        logger.debug(
+            f"DEBUG_FORM: df_features form_win_pct_diff = "
+            f"{df_features['form_win_pct_diff'].iloc[0]}"
+        )
+
+    # Assemble your headlines list
     headlines = [
-        {'label': 'Rest Advantage (Home)', 'value': float(row.get("rest_advantage", 0))},
-        {'label': 'Form Momentum Diff',    'value': float(row.get("momentum_diff", 0.0))},
-        {'label': 'Form Win % Diff',       'value': float(row.get("form_win_pct_diff", 0.0))},
-        {'label': 'Season Win % Diff',     'value': float(row.get("season_win_pct_diff", 0.0))},
-        # Net Rating Diff will come from season.py output if calculated, or RPC data
-        # Prioritize `season_net_rating_diff` from `season.py` if available
-        # Otherwise, derive from RPC `net_rating` if that's the primary source.
-        {'label': 'Season NetRtg Diff (H-A)',
-         'value': round(float(row.get("season_net_rating_diff",
-                            home_adv_season_stats.get("net_rating", 0) - away_adv_season_stats.get("net_rating", 0))), 1)
+        {"label": "Rest Days (Home)",  "value": rest_home},
+        {"label": "Rest Days (Away)",  "value": rest_away},
+        {"label": "Form Momentum Diff", "value": float(row.get("momentum_diff", 0.0))},
+        {"label": "Form Win % Diff",    "value": manual_form_diff},
+        {"label": "Season Win % Diff",  "value": float(row.get("season_win_pct_diff", 0.0))},
+        {"label": "Season NetRtg Diff (H-A)",
+        "value": round(
+            float(
+                row.get(
+                    "season_net_rating_diff",
+                    home_adv_season_stats.get("net_rating", 0)
+                    - away_adv_season_stats.get("net_rating", 0),
+                )
+            ),
+            1,
+        ),
         },
     ]
     # Rounding headlines to 1 decimal where appropriate
@@ -316,23 +424,52 @@ def make_nba_snapshot(
             if item['label'] == 'Rest Advantage (Home)':
                 item['value'] = int(item['value'])
 
-    # Bar: Home quarter points (from `row` if post-game, else season average from RPC)
+    # Bar: Quarter-by-quarter Home vs Away points
     bar_chart_data = []
-    if is_historical_game and pd.notna(row.get(input_home_score_col)): # Post-game
-        for i in (1, 2, 3, 4):
-            # Use .get() and ensure default to 0 for robustness
-            bar_chart_data.append({'name': f'Q{i}', 'value': int(row.get(f'home_q{i}', 0))})
-        if pd.notna(row.get('home_ot')) and int(row.get('home_ot', 0)) > 0:
-             bar_chart_data.append({'name': 'OT', 'value': int(row.get('home_ot',0))})
-        logger.debug(f"Bar chart (post-game): {bar_chart_data}")
-    else: # Pre-game, use avg points for from RPC or historical team stats
-        home_pts_key = "avg_pts_for" # Assumed key from get_nba_advanced_team_stats RPC
-        # Prioritize RPC average if available, else fallback to NBA_DEFAULTS or other pre-game feature if exists
-        home_val = float(home_adv_season_stats.get(home_pts_key, NBA_DEFAULTS.get('avg_pts_for', 0)))
-        bar_chart_data = [{'name': 'Avg Pts For', 'value': round(home_val, 1)}]
-        logger.debug(f"Bar chart (pre-game): {bar_chart_data}")
+    if is_historical_game and pd.notna(row.get(input_home_score_col)):
+        for q in range(1, 5):
+            home_pts = int(row.get(f'home_q{q}', 0) or 0)
+            away_pts = int(row.get(f'away_q{q}', 0) or 0)
+            bar_chart_data.append({
+                'category': f'Q{q}',
+                'Home': home_pts,
+                'Away': away_pts,
+            })
+        # Include OT if either team scored
+        ot_home = int(row.get('home_ot', 0) or 0)
+        ot_away = int(row.get('away_ot', 0) or 0)
+        if ot_home > 0 or ot_away > 0:
+            bar_chart_data.append({
+                'category': 'OT',
+                'Home': ot_home,
+                'Away': ot_away,
+            })
+        logger.debug(f"Bar chart (post-game quarters): {bar_chart_data}")
+    else:
+        # Pre-game: compute per-quarter season averages for Home vs Away
+        bar_chart_data = []
+        # df_full_history was fetched earlier via fetch_nba_full_history()
+        # Filter historical games for each team
+        home_hist = df_full_history[
+            df_full_history[input_home_team_col] == row[input_home_team_col]
+        ]
+        away_hist = df_full_history[
+            df_full_history[input_away_team_col] == row[input_away_team_col]
+        ]
+        for q in range(1, 5):
+            # Pull the quarter column, drop NA, cast to numeric
+            hq = pd.to_numeric(home_hist.get(f'home_q{q}', pd.Series()), errors='coerce').dropna()
+            aq = pd.to_numeric(away_hist.get(f'away_q{q}', pd.Series()), errors='coerce').dropna()
 
+            home_avg_q = round(hq.mean(), 1) if len(hq) > 0 else 0
+            away_avg_q = round(aq.mean(), 1) if len(aq) > 0 else 0
 
+            bar_chart_data.append({
+                'category': f'Q{q}',
+                'Home': home_avg_q,
+                'Away': away_avg_q,
+            })
+        logger.info(f"Bar chart (pre-game quarter averages): {bar_chart_data}")
     # Radar: Advanced five-metric spider (from RPC data)
     # Ensure your get_nba_advanced_team_stats RPC returns these metrics as 'pace', 'off_rtg', etc.
     # Updated to directly use home_adv_season_stats and away_adv_season_stats Series
@@ -342,25 +479,25 @@ def make_nba_snapshot(
     }
     default_radar_nba = {"Pace": 100.0, "OffRtg": 115.0, "DefRtg": 115.0, "eFG%": 0.53, "TOV%": 0.135} # Adjust TOV% default to match RPC scale
     radar_payload = []
-
     for display_name, rpc_key in radar_map.items():
+        # raw values (fallback to default_radar_nba if missing)
         home_val = float(home_adv_season_stats.get(rpc_key, default_radar_nba[display_name]))
         away_val = float(away_adv_season_stats.get(rpc_key, default_radar_nba[display_name]))
 
-        # TOV% from RPC is already a percentage (0.135 not 13.5)
-        # If it's a percentage, multiply by 100 for display, but keep consistent with eFG% from RPC which is 0.xx
-        if display_name in ["eFG%", "TOV%"]:
-             # If RPC outputs 0.XX, then we should multiply by 100 for display if frontend expects 0-100 scale.
-             # Based on game_advanced_metrics.py, eFG% is 0.xx, tov_rate is 0.xx
-             # So RPC's tov_pct being 0.xx seems consistent.
-             round_digits = 3 # e.g. 0.530, 0.135 (Changed to 3 for consistency and precision)
-        else:
-             round_digits = 1 # e.g. 100.5, 115.0
+        # invert lower-is-better metrics
+        if display_name in ("DefRtg", "TOV%"):
+            # choose a sensible max – here, twice your default as an example
+            max_ref = default_radar_nba[display_name] * 2
+            home_val = max_ref - home_val
+            away_val = max_ref - away_val
+
+        # choose rounding precision
+        round_digits = 3 if display_name in ("eFG%", "TOV%") else 1
 
         radar_payload.append({
-            'metric': display_name,
-            'home_value': round(home_val, round_digits),
-            'away_value': round(away_val, round_digits)
+            "metric": display_name,
+            "home_value": round(home_val, round_digits),
+            "away_value": round(away_val, round_digits),
         })
     logger.debug(f"Radar chart: {radar_payload}")
 

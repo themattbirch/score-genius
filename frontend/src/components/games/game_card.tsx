@@ -100,7 +100,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                 {predictionAway?.toFixed(1) ?? "-"} –{" "}
                 {predictionHome?.toFixed(1) ?? "-"}
                 <span className="block text-xs font-normal text-text-secondary">
-                  (Pred.)
+                  (Predicted Score)
                 </span>
               </p>
             ) : (
@@ -110,7 +110,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                     {predicted_away_runs.toFixed(1)} –{" "}
                     {predicted_home_runs.toFixed(1)}
                     <span className="block text-xs font-normal text-text-secondary">
-                      (Pred.)
+                      (Predicted Score)
                     </span>
                   </p>
                 ) : (
