@@ -64,6 +64,7 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
   const textColorSecondary = theme === "dark" ? "#9ca3af" : "#475569";
   const panelBgColor = theme === "dark" ? "#161b22" : "#f8fafc";
 
+
   useEffect(() => {
     if (isOpen) {
       refetch();
@@ -191,7 +192,7 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
               className="text-lg font-semibold mb-2 text-center"
               style={{ color: textColorPrimary }}
             >
-              Game Flow
+              Quarter Scoring Averages
             </h3>
             <BarChartComponent
               data={snapshotData?.bar_chart_data}
