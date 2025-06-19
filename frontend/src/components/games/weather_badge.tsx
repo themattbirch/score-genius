@@ -1,3 +1,5 @@
+// frontend/src/components/games/weather_badge.tsx
+
 import React from "react";
 import { WeatherData } from "@/types";
 import RelativeWindIcon from "./relative_wind_icon";
