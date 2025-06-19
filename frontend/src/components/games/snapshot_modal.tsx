@@ -24,7 +24,6 @@ interface SnapshotModalProps {
 }
 
 // SIMPLIFIED LAZY-LOADED COMPONENTS (assuming each chart component uses 'export default MyComponent;')
-// With "esModuleInterop": true, TypeScript should correctly infer the types without explicit 'as React.ComponentType'
 const BarChartComponent = lazy(() => import("./charts/bar_chart_component"));
 const RadarChartComponent = lazy(
   () => import("./charts/radar_chart_component")
@@ -40,30 +39,26 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  // Type the return of use_snapshot
   const {
-    data: snapshotData, // Type 'data' as SnapshotData
+    data: snapshotData,
     isLoading,
     isError,
     error,
     refetch,
   } = use_snapshot(gameId, sport) as {
-    // Add type assertion here
-    data: SnapshotData | undefined; // data can be undefined during loading/error
+    data: SnapshotData | undefined;
     isLoading: boolean;
     isError: boolean;
     error: Error | null;
     refetch: () => void;
   };
 
-  const scrollRef = useRef<HTMLDivElement>(null); // Type useRef for better DOM inference
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const { theme } = useTheme();
 
   const textColorPrimary = theme === "dark" ? "#f1f5f9" : "#0d1117";
-  const textColorSecondary = theme === "dark" ? "#9ca3af" : "#475569";
   const panelBgColor = theme === "dark" ? "#161b22" : "#f8fafc";
-
 
   useEffect(() => {
     if (isOpen) {
@@ -83,7 +78,6 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    // Explicitly type the event parameter
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && isOpen) {
         onClose();
@@ -94,6 +88,33 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isOpen, onClose]);
+
+  // --- DYNAMIC TITLE LOGIC ---
+  // This logic determines the correct titles for the charts based on the sport and game state.
+  let barChartTitle = "Scoring Data"; // Default title
+
+  const isNbaPreGameOffenseData =
+    sport === "NBA" &&
+    snapshotData?.pie_chart_data &&
+    (snapshotData.pie_chart_data as NbaPreGameOffenseDataItem[]).some(
+      (d: NbaPreGameOffenseDataItem) =>
+        "metric" in d && "Home" in d && "Away" in d
+    );
+
+  const pieChartSectionTitle = isNbaPreGameOffenseData
+    ? "Key Offensive Metrics"
+    : "Scoring Distribution";
+
+  if (sport === "NBA") {
+    barChartTitle = snapshotData?.is_historical
+      ? "Quarter Scoring"
+      : "Season Scoring Averages";
+  } else if (sport === "MLB") {
+    barChartTitle = snapshotData?.is_historical
+      ? "Inning Scores"
+      : "Season Scoring Averages";
+  }
+  // --- END DYNAMIC TITLE LOGIC ---
 
   if (!isOpen) return null;
 
@@ -114,20 +135,6 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
       </div>
     );
   }
-
-  const isNbaPreGameOffenseData =
-    sport === "NBA" &&
-    snapshotData?.pie_chart_data &&
-    // Cast snapshotData.pie_chart_data to the specific type before .some()
-    (snapshotData.pie_chart_data as NbaPreGameOffenseDataItem[]).some(
-      // Type 'd' within the callback
-      (d: NbaPreGameOffenseDataItem) =>
-        "metric" in d && "Home" in d && "Away" in d
-    );
-
-  const pieChartSectionTitle = isNbaPreGameOffenseData
-    ? "Key Offensive Metrics"
-    : "Scoring Distribution";
 
   return (
     <div
@@ -177,7 +184,7 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
             Key Insights
           </h3>
           <HeadlineGrid
-            headlines={snapshotData?.headline_stats || []} // Provide empty array if undefined
+            headlines={snapshotData?.headline_stats || []}
             isLoading={isLoading}
           />
         </section>
@@ -187,18 +194,20 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
             <SkeletonLoader count={1} type="rect" className="h-48 my-4" />
           }
         >
+          {/* --- BAR CHART SECTION WITH DYNAMIC TITLE --- */}
           <section className="mb-6">
             <h3
               className="text-lg font-semibold mb-2 text-center"
               style={{ color: textColorPrimary }}
             >
-              Quarter Scoring Averages
+              {isLoading ? "Loading..." : barChartTitle}
             </h3>
             <BarChartComponent
               data={snapshotData?.bar_chart_data}
               sport={sport}
             />
           </section>
+          {/* --- END BAR CHART SECTION --- */}
 
           <section className="mb-6">
             <h3
