@@ -163,9 +163,7 @@ export interface SnapshotData {
   bar_chart_data?: BarChartData[];
   radar_chart_data?: RadarChartData[];
   pie_chart_data?: PieChartDataItem[] | NbaPreGameOffenseDataItem[]; // Can be either
-  // Add other properties that snapshotData might have from your backend, e.g.,
-  // is_historical_game?: boolean;
-  // some_other_field?: string;
+  is_historical?: boolean;
 }
 export interface WeatherData {
   temperature: number;

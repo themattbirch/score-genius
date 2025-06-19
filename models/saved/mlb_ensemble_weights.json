@@ -1,0 +1,5 @@
+{
+  "lgbm_mlb_runs_predictor": 0.7,
+  "rf_mlb_runs_predictor": 0.3,
+  "xgb_mlb_runs_predictor": 0.0
+}

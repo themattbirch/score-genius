@@ -1,211 +1,101 @@
 # backend/mlb_features/advanced.py
 
-from __future__ import annotations
 import logging
-from typing import Any, Dict as TypingDict, Tuple
-
-import numpy as np
+from typing import Optional
 import pandas as pd
-
-from . import handedness_for_display      # <- keeps vs-hand logic isolated
 
 logger = logging.getLogger(__name__)
 
-try:
-    from .utils import DEFAULTS as MLB_DEFAULTS, normalize_team_name
-except ImportError:               # unit-test context / isolated run
-    MLB_DEFAULTS: dict = {}
-    def normalize_team_name(v: Any) -> str:           # noqa: N802
-        return str(v).strip().lower() if pd.notna(v) else "Unknown"
-
-
-# --------------------------------------------------------------------------- #
-#  Public globals – the test-suite references these attributes directly
-# --------------------------------------------------------------------------- #
-home_team_col: str = "home_team_id"
-away_team_col: str = "away_team_id"
-
-
-# --------------------------------------------------------------------------- #
-#  Shared normaliser – identical copy lives in handedness_for_display
-# --------------------------------------------------------------------------- #
-def _safe_norm(val: Any) -> str:
-    """
-    Turn any team identifier into a compact merge key:
-
-    1. Try `normalize_team_name`; if it returns something OTHER than an
-       'unknown' sentinel, use that.
-    2. Otherwise fall back to the raw value, stripped/lower-cased with
-       spaces removed.  NaN → 'unknown'.
-    """
-    if pd.isna(val):
-        return "unknown"
-
-    mapped = normalize_team_name(val)
-    if isinstance(mapped, str) and not mapped.lower().startswith("unknown"):
-        base = mapped
-    else:
-        base = str(val)
-
-    return base.strip().lower().replace(" ", "")
-
-
-# --------------------------------------------------------------------------- #
-#  Internal helpers
-# --------------------------------------------------------------------------- #
-def _attach_split(
-    df_to_mod: pd.DataFrame,
-    team_col: str,
-    lookup_df: pd.DataFrame,
-    mappings: TypingDict[str, Tuple[str, str, float]],
-    flag_imp: bool,
+def _precompute_two_season_aggregates(
+    historical_team_stats_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Add home/away historical splits (win-%, runs for/against) to *df_to_mod*.
-    `mappings` maps new-col → (hist-col, defaults-key, fallback).
-    """
-    if team_col not in df_to_mod.columns:
-        out = df_to_mod.copy()
-        for new_c, (_, k, fb) in mappings.items():
-            out[new_c] = MLB_DEFAULTS.get(k, fb)
-            if flag_imp:
-                out[f"{new_c}_imputed"] = 1
-        return out
+    logger.info("Pre-computing two-season aggregated stats for all teams...")
+    if historical_team_stats_df.empty:
+        return pd.DataFrame()
 
-    df = df_to_mod.copy()
-    df["_merge_key"] = df[team_col].apply(_safe_norm)
+    stats = (
+        historical_team_stats_df
+        .sort_values(["team_norm", "season"])
+        .reset_index(drop=True)
+    )
 
-    if lookup_df.empty:
-        for new_c, (_, k, fb) in mappings.items():
-            df[new_c] = MLB_DEFAULTS.get(k, fb)
-            if flag_imp:
-                df[f"{new_c}_imputed"] = 1
-        return df.drop(columns=["_merge_key"])
+    total_cols = [
+        'wins_all_total', 'games_played_all', 'runs_for_total_all',
+        'runs_against_total_all', 'wins_home_total', 'games_played_home',
+        'wins_away_total', 'games_played_away'
+    ]
+    grp = stats.groupby("team_norm", group_keys=False)
+    for col in total_cols:
+        stats[f"agg_{col}"] = grp[col].rolling(2, min_periods=1).sum().values
 
-    needed = {h for h, _, _ in mappings.values()}
-    avail  = [c for c in needed if c in lookup_df.columns]
+    stats['season_win_pct'] = stats['agg_wins_all_total'] / stats['agg_games_played_all']
+    stats['season_runs_for_avg'] = stats['agg_runs_for_total_all'] / stats['agg_games_played_all']
+    stats['season_runs_against_avg'] = stats['agg_runs_against_total_all'] / stats['agg_games_played_all']
+    stats['venue_win_pct_home'] = stats['agg_wins_home_total'] / stats['agg_games_played_home']
+    stats['venue_win_pct_away'] = stats['agg_wins_away_total'] / stats['agg_games_played_away']
+    stats['venue_win_advantage'] = stats['venue_win_pct_home'] - stats['season_win_pct']
+    stats['venue_win_advantage_away'] = stats['venue_win_pct_away'] - stats['season_win_pct']
 
-    hist = (lookup_df[avail + ["team_norm"]]
-            .drop_duplicates("team_norm")
-            .set_index("team_norm"))
-
-    df = df.merge(hist, left_on="_merge_key", right_index=True, how="left")
-
-    for new_c, (hist_c, k, fb) in mappings.items():
-        default_val = MLB_DEFAULTS.get(k, fb)
-        if hist_c in df.columns:
-            df[new_c] = df[hist_c].fillna(default_val)
-            if flag_imp:
-                df[f"{new_c}_imputed"] = df[hist_c].isna().astype(int)
-        else:
-            df[new_c] = default_val
-            if flag_imp:
-                df[f"{new_c}_imputed"] = 1
-
-    return df.drop(columns=["_merge_key"] + list(needed & set(df.columns)), errors="ignore")
+    final_cols = [
+        'team_norm', 'season',
+        'season_win_pct', 'season_runs_for_avg', 'season_runs_against_avg',
+        'venue_win_pct_home', 'venue_win_pct_away',
+        'venue_win_advantage', 'venue_win_advantage_away'
+    ]
+    return stats[final_cols].fillna(0)
 
 
-# --------------------------------------------------------------------------- #
-#  Main entry point
-# --------------------------------------------------------------------------- #
 def transform(
     df: pd.DataFrame,
-    historical_team_stats_df: pd.DataFrame,
     *,
-    flag_imputations: bool = True,
-    season_to_lookup: int | None = None,
-    home_team_col_param: str = "home_team_id",
-    away_team_col_param: str = "away_team_id",
-    home_hand_col_param: str = "home_probable_pitcher_handedness",
-    away_hand_col_param: str = "away_probable_pitcher_handedness",
+    precomputed_stats: Optional[pd.DataFrame] = None,
+    debug: bool = False,
+    **kwargs
 ) -> pd.DataFrame:
-    """
-    Build advanced features:
-    ▸ Home/Away historical splits  
-    ▸ Offence vs opponent pitcher handedness
-    """
-    logger.info("ENGINE: advanced.transform starting (debug mode)")
+    if debug:
+        logger.setLevel(logging.DEBUG)
+    logger.info("advanced.transform: Attaching pre-computed stats.")
 
-    # short-circuit on empty input
-    if df.empty:
-        return df.copy()
+    if precomputed_stats is None or precomputed_stats.empty:
+        logger.warning("Advanced: No precomputed_stats provided. Skipping.")
+        return df
 
-    # bind globals for the unit-tests
-    global home_team_col, away_team_col
-    home_team_col = home_team_col_param
-    away_team_col = away_team_col_param
+    # 1) set up for fast index-join
+    pre = precomputed_stats.set_index(["team_norm", "season"])
+    result = df.copy()
 
-    # runtime defaults
-    def_win = -1.0 
-    def_run = -1.0
-    out = df.copy()
-
-    # ------------------------------------------------------------------
-    # Build & normalize lookup table
-    # ------------------------------------------------------------------
-    if historical_team_stats_df is not None and not historical_team_stats_df.empty:
-        lookup = historical_team_stats_df.copy()
-        if season_to_lookup is not None and "season" in lookup.columns:
-            lookup = lookup[lookup["season"] == season_to_lookup].copy()
-        if "team_norm" not in lookup.columns:
-            key_col = "team_id" if "team_id" in lookup.columns else (
-                "team_name" if "team_name" in lookup.columns else None
-            )
-            if key_col:
-                lookup["team_norm"] = lookup[key_col].apply(_safe_norm)
-            else:
-                lookup["team_norm"] = lookup.index.to_series().apply(_safe_norm)
-    else:
-        lookup = pd.DataFrame()
-
-    # ------------------------------------------------------------------
-    # Home/Away split features
-    # ------------------------------------------------------------------
-    split_map = {
-        "h_team_hist_HA_win_pct":        ("wins_home_percentage",    "mlb_hist_win_pct", def_win),
-        "h_team_hist_HA_runs_for_avg":   ("runs_for_avg_home",       "mlb_hist_runs_avg", def_run),
-        "h_team_hist_HA_runs_against_avg": ("runs_against_avg_home","mlb_hist_runs_avg", def_run),
-        "a_team_hist_HA_win_pct":        ("wins_away_percentage",    "mlb_hist_win_pct", def_win),
-        "a_team_hist_HA_runs_for_avg":   ("runs_for_avg_away",       "mlb_hist_runs_avg", def_run),
-        "a_team_hist_HA_runs_against_avg": ("runs_against_avg_away","mlb_hist_runs_avg", def_run),
-    }
-    out = _attach_split(
-        out, home_team_col_param, lookup,
-        {k: v for k, v in split_map.items() if k.startswith("h_")},
-        flag_imputations
+    # 2) join home stats
+    result = result.join(
+        pre,
+        on=["home_team_norm", "season"],
+        rsuffix="_home"
     )
-    out = _attach_split(
-        out, away_team_col_param, lookup,
-        {k: v for k, v in split_map.items() if k.startswith("a_")},
-        flag_imputations
+    # 3) join away stats
+    result = result.join(
+        pre,
+        on=["away_team_norm", "season"],
+        rsuffix="_away"
     )
 
-    # ensure the handedness module uses the same MLB_DEFAULTS dict
-    handedness_for_display.MLB_DEFAULTS = MLB_DEFAULTS
+    # 4) rename the joined columns to match old names
+    result = result.rename(columns={
+        'season_win_pct':            'home_season_win_pct',
+        'season_runs_for_avg':       'home_season_runs_for_avg',
+        'season_runs_against_avg':   'home_season_runs_against_avg',
+        'venue_win_pct_home':        'home_venue_win_pct_home',
+        'venue_win_pct_away':        'home_venue_win_pct_away',
+        'venue_win_advantage':       'home_venue_win_advantage',
+        'venue_win_advantage_away':  'home_venue_win_advantage_away',
+        # away side
+        'season_win_pct_away':       'away_season_win_pct',
+        'season_runs_for_avg_away':  'away_season_runs_for_avg',
+        'season_runs_against_avg_away': 'away_season_runs_against_avg',
+        'venue_win_pct_home_away':   'away_venue_win_pct_home',
+        'venue_win_pct_away_away':   'away_venue_win_pct_away',
+        'venue_win_advantage_away':  'away_venue_win_advantage',
+        'venue_win_advantage_away_away': 'away_venue_win_advantage_away',
+    })
 
-    # ------------------------------------------------------------------
-    # Offence vs opponent pitcher handedness (delegated)
-    # ------------------------------------------------------------------
-    out = handedness_for_display.transform(
-        df                    = out,
-        mlb_pitcher_splits_df = lookup,
-        season_to_lookup      = season_to_lookup,
-        home_team_col_param   = home_team_col_param,
-        away_team_col_param   = away_team_col_param,
-        home_pitcher_hand_col = home_hand_col_param,
-        away_pitcher_hand_col = away_hand_col_param,
-        flag_imputations      = flag_imputations,
-    )
-
-    # ------------------------------------------------------------------
-    # Final cleanup – drop raw IDs / handedness cols
-    # ------------------------------------------------------------------
-    drop_cols = [
-        home_team_col_param,
-        away_team_col_param,
-        home_hand_col_param,
-        away_hand_col_param,
-    ]
-    out = out.drop(columns=[c for c in drop_cols if c in out.columns], errors="ignore")
-
-    return out
+    result.fillna(0, inplace=True)
+    logger.info("advanced.transform: Finished attaching stats.")
+    return result

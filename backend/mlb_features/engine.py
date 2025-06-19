@@ -2,59 +2,38 @@
 
 import logging
 import time
-import re
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 import pandas as pd
+import numpy as np # Import numpy for calculations
 from inspect import signature
 
+# Import all transform functions
 from .rest import transform as rest_transform
 from .season import transform as season_transform
 from .rolling import transform as rolling_transform
 from .form import transform as form_transform
 from .h2h import transform as h2h_transform
-from .advanced import transform as advanced_transform
-from .utils import DEFAULTS as MLB_DEFAULTS
+from .advanced import transform as advanced_transform, _precompute_two_season_aggregates
+from .handedness_for_display import transform as handedness_transform
+
+# Import shared utilities
+from .utils import DEFAULTS as MLB_DEFAULTS, normalize_team_name
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ORDER: List[str] = ["rest", "season", "rolling", "form", "h2h", "advanced"]
+DEFAULT_ORDER: List[str] = [
+    "rest", "season", "rolling", "form", "h2h",
+    "advanced", "handedness_for_display",
+]
+
 TRANSFORMS: Dict[str, Any] = {
-    "rest": rest_transform,
-    "season": season_transform,
-    "rolling": rolling_transform,
-    "form": form_transform,
-    "h2h": h2h_transform,
-    "advanced": advanced_transform,
+    "rest": rest_transform, "season": season_transform, "rolling": rolling_transform,
+    "form": form_transform, "h2h": h2h_transform, "advanced": advanced_transform,
+    "handedness_for_display": handedness_transform
 }
 
-def normalize_team_name(team_id: Any) -> str:
-    """
-    Normalize any team identifier (int, float, str, e.g. '10.0', 10, 'LAD') into the
-    canonical key used in MLB_DEFAULTS. Falls back to 'unknown_team'.
-    """
-    # 1) Null or NaN → unknown
-    if team_id is None or (isinstance(team_id, float) and pd.isna(team_id)):
-        return "unknown_team"
-
-    # 2) Stringify and strip whitespace
-    team_str = str(team_id).strip()
-
-    # 3) Remove trailing '.0' from floats represented as strings
-    if team_str.lower().endswith(".0"):
-        team_str = team_str[:-2]
-
-    # 4) Try key variants: as-is, lowercase, uppercase
-    for key in (team_str, team_str.lower(), team_str.upper()):
-        if key in MLB_DEFAULTS:
-            return MLB_DEFAULTS[key]
-
-    # 5) Nothing matched → unknown
-    return "unknown_team"
-
 def _supports_kwarg(func: Any, kw: str) -> bool:
-    from inspect import signature
     try:
         return kw in signature(func).parameters
     except (ValueError, TypeError):
@@ -67,204 +46,174 @@ def run_mlb_feature_pipeline(
     mlb_historical_team_stats_df: Optional[pd.DataFrame] = None,
     rolling_window_sizes: List[int] = [15, 30, 60, 100],
     h2h_max_games: int = 10,
+    num_form_games: int = 5,
     execution_order: List[str] = DEFAULT_ORDER,
     flag_imputations: bool = True,
     debug: bool = False,
-    **extra_kwargs,
 ) -> pd.DataFrame:
     if debug:
         logger.setLevel(logging.DEBUG)
-
     if df is None or df.empty:
-        logger.error("Input DataFrame is empty")
         return pd.DataFrame()
 
-    # Prepare working copies
     hist_games = mlb_historical_games_df.copy() if mlb_historical_games_df is not None else pd.DataFrame()
     team_stats = mlb_historical_team_stats_df.copy() if mlb_historical_team_stats_df is not None else pd.DataFrame()
     working_df = df.copy()
 
-    for df_key, df_obj_ref in {"hist_games": hist_games, "working_df": working_df}.items():
-        # Make a modifiable copy if it's not already one (important for loop iterators)
-        current_df_obj = df_obj_ref.copy() if not df_obj_ref.empty else pd.DataFrame() 
+    logger.info("ENGINE: Normalizing team identifiers and dates in all dataframes...")
+    for df_ref in [hist_games, team_stats, working_df]:
+        if df_ref.empty:
+            continue
+        if 'home_team_id' in df_ref.columns:
+            df_ref['home_team_norm'] = df_ref['home_team_id'].apply(normalize_team_name)
+        if 'away_team_id' in df_ref.columns:
+            df_ref['away_team_norm'] = df_ref['away_team_id'].apply(normalize_team_name)
+        if 'team_id' in df_ref.columns:
+            df_ref['team_norm'] = df_ref['team_id'].apply(normalize_team_name)
+        source_date_col = None
+        if 'game_date_et' in df_ref.columns:
+            source_date_col = 'game_date_et'
+        elif 'game_date_time_utc' in df_ref.columns:
+            source_date_col = 'game_date_time_utc'
+        elif 'game_date' in df_ref.columns:
+            source_date_col = 'game_date'
+        if source_date_col:
+            dt_series = pd.to_datetime(df_ref[source_date_col], errors='coerce')
+            if dt_series.dt.tz is None:
+                dt_series = dt_series.dt.tz_localize('UTC')
+            df_ref['game_date_et'] = dt_series.dt.tz_convert('America/New_York').dt.normalize()
 
-        if not current_df_obj.empty:
-            target_date_col_name = "game_date_et"
-            source_date_col_name = None
+    logger.info("ENGINE: Standardizing game_id to string to prevent dtype conflicts.")
+    if not working_df.empty and 'game_id' in working_df.columns:
+        working_df['game_id'] = working_df['game_id'].astype(str)
+    if not hist_games.empty and 'game_id' in hist_games.columns:
+        hist_games['game_id'] = hist_games['game_id'].astype(str)
 
-            # Prioritize existing 'game_date_et' if it's already the standardized one
-            if target_date_col_name in current_df_obj.columns:
-                source_date_col_name = target_date_col_name
-            # Then check for 'game_date_time_utc' which is common in mlb_historical_game_stats
-            elif "game_date_time_utc" in current_df_obj.columns:
-                source_date_col_name = "game_date_time_utc"
-            # Fallback to a generic 'game_date' if it exists (less common for MLB raw data)
-            elif "game_date" in current_df_obj.columns:
-                source_date_col_name = "game_date"
-            
-            if source_date_col_name:
-                # perform robust datetime parsing, handling timezone awareness
-                dt_series = pd.to_datetime(current_df_obj[source_date_col_name], errors='coerce')
-
-                # If it's naive, localize entire series to UTC, then convert to ET
-                if dt_series.dt.tz is None:
-                    dt_series = dt_series.dt.tz_localize('UTC')
-                dt_series = dt_series.dt.tz_convert('America/New_York')
-
-                # extract just the date part
-                current_df_obj[target_date_col_name] = dt_series.dt.normalize()
-
-
-                # drop the original source if it isn’t the same
-                if source_date_col_name != target_date_col_name and source_date_col_name in current_df_obj.columns:
-                    current_df_obj = current_df_obj.drop(columns=[source_date_col_name])
-            else:
-                logger.warning(f"ENGINE: No suitable date column found for DF {df_key}. Date parsing skipped. Ensure '{target_date_col_name}' is available downstream.")
-                # Ensure the target column exists as NaT if no source was found
-                current_df_obj[target_date_col_name] = pd.NaT 
-        else:
-            # If the DataFrame is empty, ensure the target_date_col_name is present as a column
-            # so subsequent feature modules don't hit KeyError
-            if target_date_col_name not in current_df_obj.columns:
-                 current_df_obj[target_date_col_name] = pd.Series(dtype='object') # Create empty column
-
-        # Update the original DataFrame reference outside the loop, as DataFrames are passed by reference
-        # when working_df or hist_games is mutable from outside.
-        # This explicit assignment ensures changes are reflected back.
-        if df_key == "hist_games":
-            hist_games = current_df_obj
-        elif df_key == "working_df":
-            working_df = current_df_obj
-    if "season" not in working_df.columns:
+    if "season" not in working_df.columns and "game_date_et" in working_df.columns:
         working_df["season"] = working_df["game_date_et"].dt.year
+    elif "season" not in working_df.columns:
+        working_df["season"] = pd.Timestamp.now().year
 
-    all_seasons = sorted(working_df["season"].dropna().unique().astype(int))
-    processed_chunks: List[pd.DataFrame] = []
+    logger.info("ENGINE: Pre-computing 2-season aggregate stats for all available data...")
+    precomputed_adv_stats = _precompute_two_season_aggregates(team_stats)
+    for col in ("team_norm", "season"):
+        if col in precomputed_adv_stats:
+            precomputed_adv_stats[col] = precomputed_adv_stats[col].astype("category")
+
     start_time = time.time()
+    processed_chunks: List[pd.DataFrame] = []
 
-    for season in all_seasons:
+    for season in sorted(working_df["season"].dropna().unique().astype(int)):
         logger.info(f"ENGINE: Processing season {season}...")
         season_df = working_df[working_df["season"] == season].copy()
-        cutoff = season_df["game_date_et"].min()
-        hist_context = (
-            hist_games[hist_games["game_date_et"] < cutoff]
-            if pd.notna(cutoff)
-            else pd.DataFrame()
-        )
-        # DEBUG: list out modules
-        logger.debug(f"Modules in execution_order: {execution_order}")
 
-        # ----- per‐module dispatch -----
+        season_start = season_df["game_date_et"].min()
+        raw_hist_games = (
+            hist_games[hist_games["game_date_et"] < season_start]
+            if not hist_games.empty else pd.DataFrame()
+        )
+
         for module_name in execution_order:
-            logger.debug(f"→ about to run module: {module_name}")
             fn = TRANSFORMS.get(module_name)
             if fn is None:
-                logger.debug(f"   ✗ no transform found for {module_name}")
                 continue
 
-            # ✨ DEBUG: see exactly what params this transform expects
-            logger.debug(
-                f"{module_name} signature → "
-                f"{list(signature(fn).parameters.keys())}"
-            )
-
-            logger.debug(f"ENGINE: Running '{module_name}' for season {season}")
             kwargs: Dict[str, Any] = {}
-
-            # common flags
             if _supports_kwarg(fn, "debug"):
                 kwargs["debug"] = debug
-            if flag_imputations and _supports_kwarg(fn, "flag_imputations"):
+            if _supports_kwarg(fn, "flag_imputations"):
                 kwargs["flag_imputations"] = flag_imputations
 
-            # ── rolling ──
-            if module_name == "rolling":
-                if _supports_kwarg(fn, "window_sizes"):
+            input_df = season_df
+
+            if module_name in ("rest", "rolling"):
+                input_df = pd.concat([raw_hist_games, season_df], ignore_index=True)
+                if module_name == "rolling":
                     kwargs["window_sizes"] = rolling_window_sizes
-                data_in = pd.concat([hist_context, season_df], ignore_index=True)
-                out = fn(data_in, **kwargs)
-                season_df = out[
-                    out["game_id"].astype(str).isin(season_df["game_id"].astype(str))
-                ].copy()
-                continue
+                if module_name == "rest":
+                    kwargs["historical_df"] = raw_hist_games
+            elif module_name in ("h2h", "form"):
+                kwargs["historical_df"] = raw_hist_games
+                if module_name == "h2h": kwargs["max_games"] = h2h_max_games
+                if module_name == "form": kwargs["num_form_games"] = num_form_games
+            elif module_name == "season":
+                kwargs["historical_team_stats_df"] = team_stats[team_stats["season"] == (season - 1)].copy()
+            elif module_name == "advanced":
+                kwargs["precomputed_stats"] = precomputed_adv_stats
+            elif module_name == "handedness_for_display":
+                kwargs["historical_team_stats_df"] = (
+                    team_stats[team_stats["season"] == season]
+                    if not team_stats.empty else pd.DataFrame()
+                )
 
-            # ── h2h ──
-            if module_name == "h2h":
-                if _supports_kwarg(fn, "historical_df"):
-                    kwargs["historical_df"] = hist_context
-                if _supports_kwarg(fn, "max_games"):
-                    kwargs["max_games"] = h2h_max_games
+            output_df = fn(input_df, **kwargs)
 
-                out = fn(season_df, **kwargs)
-                if out is not None and not out.empty:
-                    season_df = out
-                continue
-
-            # ── season & advanced ──
-            if module_name in ("season", "advanced"):
-                lookup = season
-                prev_stats = team_stats[team_stats["season"] == lookup]
-                hist_stats = team_stats[team_stats["season"] <= lookup]
-                sig = signature(fn).parameters
-
-                if module_name == "season":
-                    if "team_stats_df" in sig:
-                        kwargs["team_stats_df"] = prev_stats
-                    logger.debug(f"season uses stats = {kwargs['team_stats_df']['season'].unique()}")
-
-                if module_name == "advanced":
-                    if "historical_team_stats_df" in sig:
-                        kwargs["historical_team_stats_df"] = prev_stats
-                    if "season_to_lookup" in sig:
-                        kwargs["season_to_lookup"] = lookup
-                    # handedness & team‐col params
-                    hc = (
-                        "home_starter_pitcher_handedness"
-                        if "home_starter_pitcher_handedness" in season_df.columns
-                        else "home_probable_pitcher_handedness"
+            if module_name in ("rest", "rolling"):
+                season_df = output_df[output_df["game_id"].isin(season_df["game_id"])].copy()
+            else:
+                produced = [c for c in output_df.columns if c not in season_df.columns and c != "game_id"]
+                if produced:
+                    season_df = season_df.merge(
+                        output_df[["game_id", *produced]].drop_duplicates(subset="game_id"),
+                        on="game_id", how="left"
                     )
-                    ac = (
-                        "away_starter_pitcher_handedness"
-                        if "away_starter_pitcher_handedness" in season_df.columns
-                        else "away_probable_pitcher_handedness"
-                    )
-                    if "home_hand_col_param" in sig:
-                        kwargs["home_hand_col_param"] = hc
-                    if "away_hand_col_param" in sig:
-                        kwargs["away_hand_col_param"] = ac
-                    if "home_team_col_param" in sig:
-                        kwargs["home_team_col_param"] = "home_team_id"
-                    if "away_team_col_param" in sig:
-                        kwargs["away_team_col_param"] = "away_team_id"
+            # ── after advanced runs, drop the unwanted hand-split metric ─────
+            if module_name == "advanced":
+                season_df.drop(columns=["h_team_off_avg_runs_vs_opp_hand"], inplace=True, errors=True)
 
-                    logger.debug(
-                        f"advanced will run with historical_team_stats_df seasons = "
-                        f"{kwargs['historical_team_stats_df']['season'].unique()}"
-                    )
+            # --- [DEBUG LOGGING] ---
+            # This block runs after each module and provides a health report.
+            if debug:
+                logger.debug(f"--- ENGINE/Debug Report For: {module_name.upper()} ---")
+                try:
+                    if module_name == 'rest':
+                        pct_default = (season_df['rest_advantage'] == 0).sum() / len(season_df) * 100
+                        logger.debug(f"  Rest Advantage Stats: Mean={season_df['rest_advantage'].mean():.2f}, Max={season_df['rest_advantage'].max():.1f}")
+                        logger.debug(f"  Coverage: {100-pct_default:.1f}% of games have a non-zero rest advantage.")
+                    
+                    elif module_name == 'season':
+                        imputed_pct = season_df['home_prev_season_win_pct_imputed'].sum() / len(season_df) * 100
+                        logger.debug(f"  Prev Season Win% Diff: Mean={season_df['prev_season_win_pct_diff'].mean():.3f}")
+                        logger.debug(f"  Imputation Rate: {imputed_pct:.1f}% of rows used default previous season data.")
 
-                out = fn(season_df, **kwargs)
-                if out is None or out.empty:
-                    continue
+                    elif module_name == 'form':
+                        # Check for 'N/A' which indicates a failure to calculate form string
+                        failed_calcs = (season_df['home_current_form'] == 'N/A').sum() / len(season_df) * 100
+                        logger.debug(f"  Form Win% Diff: Mean={season_df['form_win_pct_diff'].mean():.3f}")
+                        logger.debug(f"  Coverage: {100-failed_calcs:.1f}% of rows have a valid form string.")
 
-                new = [c for c in out.columns if c not in season_df.columns]
-                if new:
-                    season_df = pd.concat(
-                        [
-                            season_df.reset_index(drop=True),
-                            out[new].reset_index(drop=True),
-                        ],
-                        axis=1,
-                    )
-                continue
+                    elif module_name == 'h2h':
+                        # Default for matchup_home_win_pct is often 0.5 if no games exist
+                        default_pct = (season_df['matchup_home_win_pct'] == 0.5).sum() / len(season_df) * 100
+                        logger.debug(f"  H2H Home Win %: Mean={season_df['matchup_home_win_pct'].mean():.3f}")
+                        logger.debug(f"  Coverage: Potentially {100-default_pct:.1f}% of matchups have historical H2H data.")
 
-        # after all modules, keep this season’s chunk
+                    elif module_name == 'advanced':
+                        logger.debug(f"  Venue Win Advantage (Home): Mean={season_df['home_venue_win_advantage'].mean():.3f}")
+                        logger.debug(f"  Venue Win Advantage (Away): Mean={season_df['away_venue_win_advantage_away'].mean():.3f}")
+
+                    elif module_name == 'handedness_for_display':
+                        imputed_pct = season_df['h_team_off_avg_runs_vs_opp_hand_imputed'].sum() / len(season_df) * 100
+                        logger.debug(f"  Home Offense vs Opp Hand: Mean={season_df['h_team_off_avg_runs_vs_opp_hand'].mean():.2f}")
+                        logger.debug(f"  Imputation Rate: {imputed_pct:.1f}% of rows used default handedness data.")
+
+                except KeyError as e:
+                    logger.warning(f"  Could not generate debug report for '{module_name}': Missing key {e}")
+                except Exception as e:
+                    logger.error(f"  An error occurred during debug report generation for '{module_name}': {e}")
+            # --- [END DEBUG LOGGING] ---
+
+        season_df = season_df.loc[:, ~season_df.columns.duplicated()].reset_index(drop=True)
         processed_chunks.append(season_df)
 
-
     if not processed_chunks:
-        logger.error("ENGINE: No chunks processed")
         return pd.DataFrame()
-
     final_df = pd.concat(processed_chunks, ignore_index=True)
+    # drop your legacy column—but tell pandas to ignore it if it's not there
+    final_df.drop(
+        columns=["h_team_off_avg_runs_vs_opp_hand"],
+        inplace=True,
+        errors="ignore"          # <-- change from True to "ignore" here
+    )
     logger.info(f"ENGINE: Finished in {time.time() - start_time:.2f}s; final shape {final_df.shape}")
     return final_df

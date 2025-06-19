@@ -56,9 +56,9 @@ PACIFIC_TZ = pytz.timezone("America/Los_Angeles")  # Retain if used, though ET/U
 DEFAULT_LOOKBACK_DAYS_FOR_FEATURES_MLB = 2190
 DEFAULT_UPCOMING_DAYS_WINDOW_MLB = 7  # Predict for a week
 
-ENSEMBLE_WEIGHTS_FILENAME_MLB = "mlb_ensemble_weights_optimized.json"  # MLB specific
+ENSEMBLE_WEIGHTS_FILENAME_MLB = "mlb_ensemble_weights.json"  # MLB specific
 # Fallback weights if file not found, keys are simple model names
-FALLBACK_ENSEMBLE_WEIGHTS_MLB: Dict[str, float] = {"rf": 0.3, "xgb": 0.4, "lgbm": 0.3}
+FALLBACK_ENSEMBLE_WEIGHTS_MLB: Dict[str, float] = {"rf": 0.4, "xgb": 0.1, "lgbm": 0.5}
 # Update with columns from your mlb_historical_game_stats
 REQUIRED_HISTORICAL_COLS_MLB = [
     "game_id",
@@ -425,8 +425,8 @@ def load_trained_models(
 
     models: Dict[str, Any] = {}
     model_map = {
-        #"rf": MLBRFPredictor,
-        #"xgb": MLBXGBoostPredictor,
+        "rf": MLBRFPredictor,
+        "xgb": MLBXGBoostPredictor,
         "lgbm": MLBLightGBMPredictor,
     }
     for name, ClsMLB in model_map.items():
@@ -956,7 +956,7 @@ def generate_predictions(
         rolling_window_sizes=[15, 30, 60, 100], 
         h2h_max_games=10, 
         execution_order=execution_order,
-        flag_imputations=False, 
+        flag_imputations=True, 
         debug=debug_mode,
     )
 
