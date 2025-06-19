@@ -18,10 +18,51 @@ interface RadarChartComponentProps {
   data?: RadarChartData[];
 }
 
+/* ---------------------------------------------------------
+ * Custom tooltip – shows raw stat first and the league index
+ * ---------------------------------------------------------*/
+const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
+  if (!active || !payload || !payload.length) return null;
+
+  const p0 = payload[0]?.payload; // full row
+  if (!p0) return null;
+
+  const homeRaw = p0.home_raw;
+  const awayRaw = p0.away_raw;
+  const homeIdx = p0.home_idx.toFixed(1);
+  const awayIdx = p0.away_idx.toFixed(1);
+
+  return (
+    <div className="rounded-md p-2 bg-[var(--color-panel)] border border-border-muted text-xs">
+      <div className="font-medium mb-1 text-[var(--color-text-primary)]">
+        {label}
+      </div>
+      <div className="flex flex-col gap-1 text-[var(--color-text-secondary)]">
+        <div className="flex items-center gap-1">
+          <span
+            className="w-2 h-2 rounded-sm inline-block"
+            style={{ background: "#4ade80" }}
+          />
+          Home&nbsp;•&nbsp;
+          <span className="font-medium">{homeRaw}</span>
+          <span className="opacity-70">&nbsp;(idx&nbsp;{homeIdx})</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span
+            className="w-2 h-2 rounded-sm inline-block"
+            style={{ background: "#60a5fa" }}
+          />
+          Away&nbsp;•&nbsp;
+          <span className="font-medium">{awayRaw}</span>
+          <span className="opacity-70">&nbsp;(idx&nbsp;{awayIdx})</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /**
- * Radar Chart Component
- * Displays Home vs Away and Away vs Home deltas in advanced metrics,
- * with symmetric grid labels.
+ * Radar Chart Component – league‑indexed strengths (0‑100, 50 = league average)
  */
 const RadarChartComponent: React.FC<RadarChartComponentProps> = ({
   data = [],
@@ -29,11 +70,9 @@ const RadarChartComponent: React.FC<RadarChartComponentProps> = ({
   const { theme } = useTheme();
   const textColorPrimary = theme === "dark" ? "#f1f5f9" : "#0d1117";
   const textColorSecondary = theme === "dark" ? "#9ca3af" : "#475569";
-  const panelBgColor = theme === "dark" ? "#161b22" : "#f8fafc";
-  const subtleBorderColor =
-    theme === "dark" ? "rgba(51, 65, 85, 0.6)" : "#e2e8f0";
+  const subtleBorderColor = theme === "dark" ? "rgba(51,65,85,.6)" : "#e2e8f0";
 
-  if (!data || data.length === 0) {
+  if (!data.length) {
     return (
       <div className="text-center text-text-secondary py-12">
         No radar chart data available.
@@ -41,71 +80,53 @@ const RadarChartComponent: React.FC<RadarChartComponentProps> = ({
     );
   }
 
-  // Calculate Home - Away delta, invert lower-is-better metrics
-  const deltaData = data.map((d) => {
-    let home = d.home_value ?? 0;
-    let away = d.away_value ?? 0;
-    if (d.metric === "DefRtg" || d.metric === "TOV%") {
-      const maxRef = d.metric === "DefRtg" ? 230 : 0.27;
-      home = maxRef - home;
-      away = maxRef - away;
-    }
-    const delta = home - away;
-    return { metric: d.metric, delta, inverse: -delta };
-  });
-
-  // Determine symmetric domain for radius axis
-  const maxVal = Math.max(
-    ...deltaData.flatMap((d) => [Math.abs(d.delta), Math.abs(d.inverse)])
-  );
-  const domain: [number, number] = [-maxVal, maxVal];
-
   return (
-    <div className="p-2 rounded-lg bg-[var(--color-panel)] shadow-md h-[240px] w-full overflow-hidden">
+    <div className="p-2 rounded-lg bg-[var(--color-panel)] shadow-md h-[260px] w-full overflow-hidden">
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={deltaData}>
-          <PolarGrid stroke={subtleBorderColor} />
+        <RadarChart data={data} cx="50%" cy="55%" outerRadius="84%">
+          <PolarGrid stroke={subtleBorderColor} radialLines={false} />
+
           <PolarAngleAxis
             dataKey="metric"
             stroke={textColorSecondary}
             tick={{ fill: textColorPrimary, fontSize: 10 }}
           />
+
+          {/* 0‑100 scale, tick marks every 25 */}
           <PolarRadiusAxis
-            angle={30}
-            domain={domain}
+            domain={[0, 100]}
             tickCount={5}
             tick={{ fill: textColorSecondary, fontSize: 8 }}
           />
+
+          {/* Home polygon */}
           <Radar
             name="Home vs Away"
-            dataKey="delta"
+            dataKey="home_idx"
             stroke="#4ade80"
+            strokeWidth={2}
             fill="#4ade80"
-            fillOpacity={0.6}
+            fillOpacity={0.25}
+            dot={false}
           />
+
+          {/* Away polygon */}
           <Radar
             name="Away vs Home"
-            dataKey="inverse"
+            dataKey="away_idx"
             stroke="#60a5fa"
+            strokeWidth={2}
             fill="#60a5fa"
-            fillOpacity={0.4}
+            fillOpacity={0.25}
+            dot={false}
           />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: panelBgColor,
-              border: `1px solid ${subtleBorderColor}`,
-              borderRadius: "4px",
-            }}
-            labelStyle={{ color: textColorPrimary }}
-            itemStyle={{ color: textColorSecondary }}
-            formatter={(value: number, name: string, props) => {
-              const metric = (props.payload as any).metric as string;
-              const sign = value >= 0 ? "+" : "";
-              const decimals = metric === "eFG%" || metric === "TOV%" ? 3 : 1;
-              return [`${sign}${value.toFixed(decimals)}`, name];
-            }}
+
+          <Tooltip content={<CustomTooltip />} />
+          <Legend
+            verticalAlign="bottom"
+            wrapperStyle={{ color: textColorPrimary, fontSize: 11 }}
+            iconSize={10}
           />
-          <Legend wrapperStyle={{ color: textColorPrimary }} />
         </RadarChart>
       </ResponsiveContainer>
     </div>

@@ -50,6 +50,7 @@ def run_mlb_feature_pipeline(
     execution_order: List[str] = DEFAULT_ORDER,
     flag_imputations: bool = True,
     debug: bool = False,
+    keep_display_only_features: bool = False
 ) -> pd.DataFrame:
     if debug:
         logger.setLevel(logging.DEBUG)
@@ -139,8 +140,10 @@ def run_mlb_feature_pipeline(
             elif module_name == "season":
                 kwargs["historical_team_stats_df"] = team_stats[team_stats["season"] == (season - 1)].copy()
             elif module_name == "advanced":
+                # The 'advanced' module gets the pre-computed stats we make earlier
                 kwargs["precomputed_stats"] = precomputed_adv_stats
             elif module_name == "handedness_for_display":
+                # The 'handedness' module only needs the current season's data
                 kwargs["historical_team_stats_df"] = (
                     team_stats[team_stats["season"] == season]
                     if not team_stats.empty else pd.DataFrame()
@@ -159,8 +162,9 @@ def run_mlb_feature_pipeline(
                     )
             # ── after advanced runs, drop the unwanted hand-split metric ─────
             if module_name == "advanced":
-                season_df.drop(columns=["h_team_off_avg_runs_vs_opp_hand"], inplace=True, errors=True)
-
+                if not keep_display_only_features:
+                    logger.debug("Dropping display-only columns from seasonal chunk...")
+                    season_df.drop(columns=["h_team_off_avg_runs_vs_opp_hand"], inplace=True, errors="ignore")
             # --- [DEBUG LOGGING] ---
             # This block runs after each module and provides a health report.
             if debug:
@@ -190,7 +194,7 @@ def run_mlb_feature_pipeline(
 
                     elif module_name == 'advanced':
                         logger.debug(f"  Venue Win Advantage (Home): Mean={season_df['home_venue_win_advantage'].mean():.3f}")
-                        logger.debug(f"  Venue Win Advantage (Away): Mean={season_df['away_venue_win_advantage_away'].mean():.3f}")
+                        logger.debug(f"  Venue Win Advantage (Away): Mean={season_df['away_venue_win_advantage'].mean():.3f}")
 
                     elif module_name == 'handedness_for_display':
                         imputed_pct = season_df['h_team_off_avg_runs_vs_opp_hand_imputed'].sum() / len(season_df) * 100
@@ -210,10 +214,14 @@ def run_mlb_feature_pipeline(
         return pd.DataFrame()
     final_df = pd.concat(processed_chunks, ignore_index=True)
     # drop your legacy column—but tell pandas to ignore it if it's not there
-    final_df.drop(
-        columns=["h_team_off_avg_runs_vs_opp_hand"],
-        inplace=True,
-        errors="ignore"          # <-- change from True to "ignore" here
-    )
+    if not keep_display_only_features:
+        logger.info("ENGINE: Dropping display-only columns from final dataframe.")
+        final_df.drop(
+            columns=["h_team_off_avg_runs_vs_opp_hand", "a_team_off_avg_runs_vs_opp_hand"], # Drop both home and away
+            inplace=True,
+            errors="ignore"
+        )
+    # --- END MODIFICATION ---
+
     logger.info(f"ENGINE: Finished in {time.time() - start_time:.2f}s; final shape {final_df.shape}")
     return final_df

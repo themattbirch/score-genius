@@ -1,3 +1,5 @@
+// backend/server/services/weather_service.js
+
 import fs from "fs";
 import path from "path";
 import axios from "axios";
@@ -54,42 +56,32 @@ function getWindDirection(degrees) {
  * FINAL CORRECTED VERSION: Calculates the wind's direction relative to the ballpark's layout.
  */
 function getRelativeWindInfo(windDegrees, stadiumOrientation) {
-  if (
-    windDegrees === undefined ||
-    stadiumOrientation === null ||
-    stadiumOrientation === undefined
-  ) {
+  // Basic guards
+  if (windDegrees == null || stadiumOrientation == null) {
     return { text: "N/A", angle: 0 };
   }
   if (stadiumOrientation === 0) {
+    // domes / indoor
     return { text: "Indoor/N/A", angle: 0 };
   }
 
-  const rotationAngle = (windDegrees - stadiumOrientation + 360) % 360;
+  // Convert “from” ➜ “to”
+  const windTo = (windDegrees + 180) % 360;
 
-  let description = "Variable";
-  // The logic below is now corrected to match the icon's visual rotation
-  if (rotationAngle >= 337.5 || rotationAngle < 22.5)
-    description = "Blowing Out";
-  else if (rotationAngle >= 22.5 && rotationAngle < 67.5)
-    description = "Out to Right";
-  else if (rotationAngle >= 67.5 && rotationAngle < 112.5)
-    description = "L to R";
-  else if (rotationAngle >= 112.5 && rotationAngle < 157.5)
-    description = "In from Left";
-  else if (rotationAngle >= 157.5 && rotationAngle < 202.5)
-    description = "Blowing In";
-  else if (rotationAngle >= 202.5 && rotationAngle < 247.5)
-    description = "In from Right"; // Corrected
-  else if (rotationAngle >= 247.5 && rotationAngle < 292.5)
-    description = "R to L";
-  else if (rotationAngle >= 292.5 && rotationAngle < 337.5)
-    description = "Out to Left"; // Corrected
+  // Δ between wind-to vector and the home-to-CF line
+  const delta = (windTo - stadiumOrientation + 360) % 360;
 
-  return {
-    text: description,
-    angle: rotationAngle,
-  };
+  let text;
+  if (delta < 22.5 || delta >= 337.5) text = "Blowing Out";
+  else if (delta < 67.5) text = "Out to Right";
+  else if (delta < 112.5) text = "L to R";
+  else if (delta < 157.5) text = "In from Left";
+  else if (delta < 202.5) text = "Blowing In";
+  else if (delta < 247.5) text = "In from Right";
+  else if (delta < 292.5) text = "R to L";
+  else text = "Out to Left";
+
+  return { text, angle: delta };
 }
 
 async function getWeatherDataForTeam(sport, teamName) {
