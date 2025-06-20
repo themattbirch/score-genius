@@ -10,6 +10,18 @@ const __dirname = path.dirname(__filename);
 
 let stadiumDataCache = null;
 
+function normalizeTeamKey(teamName) {
+  // Fix “St.Louis” → “St. Louis”
+  if (/^St\.\S/.test(teamName)) {
+    return teamName.replace(/^St\.(?=\S)/, "St. ");
+  }
+  // Alias “Oakland Athletics” → “Athletics”
+  if (teamName === "Oakland Athletics") {
+    return "Athletics";
+  }
+  return teamName;
+}
+
 function getStadiumData() {
   if (stadiumDataCache) {
     return stadiumDataCache;
@@ -52,9 +64,6 @@ function getWindDirection(degrees) {
   return directions[index];
 }
 
-/**
- * FINAL CORRECTED VERSION: Calculates the wind's direction relative to the ballpark's layout.
- */
 function getRelativeWindInfo(windDegrees, stadiumOrientation) {
   // Basic guards
   if (windDegrees == null || stadiumOrientation == null) {
@@ -95,10 +104,12 @@ async function getWeatherDataForTeam(sport, teamName) {
     throw new Error(`Invalid sport specified: ${sport}.`);
   }
 
-  const teamInfo = leagueData[teamName];
+  const lookupKey = normalizeTeamKey(teamName);
+  const teamInfo = leagueData[lookupKey];
+
   if (!teamInfo) {
     throw new Error(
-      `Could not find stadium information for team: ${teamName} in ${sport}.`
+      `Could not find stadium information for team: ${teamName} (normalized to ${lookupKey}) in ${sport}.`
     );
   }
 
