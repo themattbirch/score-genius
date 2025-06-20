@@ -1,21 +1,23 @@
 // frontend/src/components/games/snapshot_modal.tsx
 
+/* ------------------------------------------------------------------
+ * Snapshot Modal  |  shows per-game snapshot for MLB / NBA
+ * ------------------------------------------------------------------*/
 import React, { useRef, useEffect, Suspense, lazy } from "react";
-import { use_snapshot } from "../../hooks/use_snapshot";
+import { use_snapshot } from "@/hooks/use_snapshot";
 import HeadlineGrid from "./headline_grid";
 import SkeletonLoader from "../ui/skeleton_loader";
 import { useTheme } from "@/contexts/theme_context";
-// Import all necessary types from your types file
-import {
-  Sport,
-  SnapshotData,
-  HeadlineStat,
-  NbaPreGameOffenseDataItem,
-  PieChartDataItem,
-  BarChartData,
-  RadarChartData,
-} from "@/types";
+import { Sport, SnapshotData, PieChartDataItem } from "@/types";
 
+/* Lazy-loaded charts */
+const BarChartComponent = lazy(() => import("./charts/bar_chart_component"));
+const RadarChartComponent = lazy(
+  () => import("./charts/radar_chart_component")
+);
+const PieChartComponent = lazy(() => import("./charts/pie_chart_component"));
+
+/* Props */
 interface SnapshotModalProps {
   gameId: string;
   sport: Sport;
@@ -23,22 +25,13 @@ interface SnapshotModalProps {
   onClose: () => void;
 }
 
-// SIMPLIFIED LAZY-LOADED COMPONENTS (assuming each chart component uses 'export default MyComponent;')
-const BarChartComponent = lazy(() => import("./charts/bar_chart_component"));
-const RadarChartComponent = lazy(
-  () => import("./charts/radar_chart_component")
-);
-const PieChartComponent = lazy(() => import("./charts/pie_chart_component"));
-const NbaPreGameOffenseChart = lazy(
-  () => import("./charts/nba_pre_game_offense_chart")
-);
-
 const SnapshotModal: React.FC<SnapshotModalProps> = ({
   gameId,
   sport,
   isOpen,
   onClose,
 }) => {
+  /* data fetch */
   const {
     data: snapshotData,
     isLoading,
@@ -53,69 +46,54 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
     refetch: () => void;
   };
 
+  console.log("Full snapshotData object received in modal:", snapshotData);
+
+  /* guards */
+  const hasPie = (snapshotData?.pie_chart_data?.length ?? 0) > 0;
+  const hasKeyMetrics = (snapshotData?.key_metrics_data?.length ?? 0) > 0;
+
+  /* bar title */
+  const barChartTitle =
+    sport === "MLB"
+      ? snapshotData?.is_historical
+        ? "Inning Scores"
+        : "Quarter Scoring Averages"
+      : snapshotData?.is_historical
+      ? "Quarter Scoring"
+      : "Quarter Scoring Averages";
+
+  /* multi-pie? */
+  const isMultiPie =
+    hasPie &&
+    Array.isArray(snapshotData?.pie_chart_data) &&
+    (snapshotData!.pie_chart_data as any[])[0]?.data !== undefined;
+
+  /* theme helpers */
+  const { theme } = useTheme();
+  const textColor = theme === "dark" ? "#f1f5f9" : "#0d1117";
+  const panelBg = theme === "dark" ? "#161b22" : "#f8fafc";
+
+  /* effects */
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { theme } = useTheme();
-
-  const textColorPrimary = theme === "dark" ? "#f1f5f9" : "#0d1117";
-  const panelBgColor = theme === "dark" ? "#161b22" : "#f8fafc";
-
   useEffect(() => {
-    if (isOpen) {
-      refetch();
-    }
+    if (isOpen) refetch();
   }, [isOpen, refetch]);
 
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    document.body.style.overflow = isOpen ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
   }, [isOpen]);
 
   useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && isOpen) {
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("keydown", handleEscape);
-    };
+    const h = (e: KeyboardEvent) => e.key === "Escape" && isOpen && onClose();
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
   }, [isOpen, onClose]);
 
-  // --- DYNAMIC TITLE LOGIC ---
-  // This logic determines the correct titles for the charts based on the sport and game state.
-  let barChartTitle = "Scoring Data"; // Default title
-
-  const isNbaPreGameOffenseData =
-    sport === "NBA" &&
-    snapshotData?.pie_chart_data &&
-    (snapshotData.pie_chart_data as NbaPreGameOffenseDataItem[]).some(
-      (d: NbaPreGameOffenseDataItem) =>
-        "metric" in d && "Home" in d && "Away" in d
-    );
-
-  const pieChartSectionTitle = isNbaPreGameOffenseData
-    ? "Key Offensive Metrics"
-    : "Scoring Distribution";
-
-  if (sport === "NBA") {
-    barChartTitle = snapshotData?.is_historical
-      ? "Quarter Scoring"
-      : "Season Scoring Averages";
-  } else if (sport === "MLB") {
-    barChartTitle = snapshotData?.is_historical
-      ? "Inning Scores"
-      : "Season Scoring Averages";
-  }
-  // --- END DYNAMIC TITLE LOGIC ---
-
+  /* early outs */
   if (!isOpen) return null;
 
   if (isError) {
@@ -136,50 +114,42 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
     );
   }
 
+  /* ------------------------------------------------------------------
+   * RENDER
+   * ------------------------------------------------------------------*/
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto fle items-start justify-center py-4"
       ref={scrollRef}
       role="dialog"
       aria-modal="true"
       aria-label={`${sport} Game Snapshot`}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto flex items-start justify-center py-4"
     >
       <div
-        className="relative w-full max-w-sm mx-auto rounded-lg shadow-lg overflow-hidden flex flex-col p-4 space-y-8"
-        style={{ backgroundColor: panelBgColor }}
+        className="relative w-full max-w-lg mx-auto rounded-lg shadow-lg overflow-hidden flex flex-col p-2 space-y-8"
+        style={{ backgroundColor: panelBg }}
       >
+        {/* close btn */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-text-secondary hover:text-text-primary z-10 focus-ring"
           aria-label="Close snapshot"
+          className="absolute top-4 right-4 text-text-secondary hover:text-text-primary z-10 focus-ring"
         >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M6 18L18 6M6 6l12 12"
-            ></path>
-          </svg>
+          ×
         </button>
 
         <h2
           className="text-xl font-bold mb-4 text-center"
-          style={{ color: textColorPrimary }}
+          style={{ color: textColor }}
         >
-          {isLoading ? "Loading Snapshot..." : `${sport} Game Snapshot`}
+          {isLoading ? "Loading Snapshot…" : `${sport} Game Snapshot`}
         </h2>
 
-        <section className="mb-6">
+        {/* Headlines */}
+        <section className="mb-6 px-8">
           <h3
-            className="text-lg font-semibold mb-2"
-            style={{ color: textColorPrimary }}
+            className="text-lg font-semibold mb-2 text-center"
+            style={{ color: textColor }}
           >
             Key Insights
           </h3>
@@ -189,30 +159,31 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
           />
         </section>
 
+        {/* All charts inside one Suspense */}
         <Suspense
           fallback={
             <SkeletonLoader count={1} type="rect" className="h-48 my-4" />
           }
         >
-          {/* --- BAR CHART SECTION WITH DYNAMIC TITLE --- */}
+          {/* Quarter / Inning Bar */}
           <section className="mb-6">
             <h3
               className="text-lg font-semibold mb-2 text-center"
-              style={{ color: textColorPrimary }}
+              style={{ color: textColor }}
             >
-              {isLoading ? "Loading..." : barChartTitle}
+              {isLoading ? "Loading…" : barChartTitle}
             </h3>
             <BarChartComponent
               data={snapshotData?.bar_chart_data}
               sport={sport}
             />
           </section>
-          {/* --- END BAR CHART SECTION --- */}
 
+          {/* Radar */}
           <section className="mb-6">
             <h3
               className="text-lg font-semibold mb-2 text-center"
-              style={{ color: textColorPrimary }}
+              style={{ color: textColor }}
             >
               Team Strengths
             </h3>
@@ -221,28 +192,61 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
             </div>
           </section>
 
-          <section className="mb-6">
-            <h3
-              className="text-lg font-semibold mb-2 text-center"
-              style={{ color: textColorPrimary }}
-            >
-              {pieChartSectionTitle}
-            </h3>
-            {isNbaPreGameOffenseData ? (
-              <NbaPreGameOffenseChart
-                data={
-                  snapshotData?.pie_chart_data as NbaPreGameOffenseDataItem[]
-                }
+          {/* Pie */}
+          {hasPie && (
+            <section className="mb-6 px-4">
+              <h3
+                className="text-lg font-semibold mb-4 text-center"
+                style={{ color: textColor }}
+              >
+                Scoring Distribution
+              </h3>
+
+              {isMultiPie ? (
+                <div className="flex flex-wrap justify-center items-center gap-4 py-4">
+                  {(snapshotData!.pie_chart_data as any[]).map((p, i) => (
+                    <div key={i} className="flex flex-col items-center">
+                      <h4
+                        // --- Change mb-1 to mb-2 ---
+                        className="mb-2 text-sm font-medium"
+                        style={{ color: textColor }}
+                      >
+                        {p.title}
+                      </h4>
+                      <PieChartComponent data={p.data as PieChartDataItem[]} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex justify-center py-4">
+                  <PieChartComponent
+                    data={snapshotData!.pie_chart_data as PieChartDataItem[]}
+                  />
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Key Metrics */}
+          {hasKeyMetrics && (
+            <section className="mb-8 px-4">
+              <h3
+                className="text-lg font-semibold mb-3 text-center"
+                style={{ color: textColor }}
+              >
+                Key Offensive Metrics (Per Game)
+              </h3>
+              {/* Make ABSOLUTELY sure the 'data' prop uses key_metrics_data here */}
+              <BarChartComponent
+                key={`${gameId}-keymetrics`}
+                data={snapshotData!.key_metrics_data!}
+                sport={sport}
               />
-            ) : (
-              <PieChartComponent
-                data={snapshotData?.pie_chart_data as PieChartDataItem[]}
-              />
-            )}
-          </section>
+            </section>
+          )}
         </Suspense>
 
-        <div className="h-8"></div>
+        <div className="h-8" />
       </div>
     </div>
   );

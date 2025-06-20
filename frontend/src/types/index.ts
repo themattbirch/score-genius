@@ -162,6 +162,7 @@ export interface SnapshotData {
   headline_stats?: HeadlineStat[]; // Optional, as it might be loading
   bar_chart_data?: BarChartData[];
   radar_chart_data?: RadarChartData[];
+  key_metrics_data?: BarChartData[];
   pie_chart_data?: PieChartDataItem[] | NbaPreGameOffenseDataItem[]; // Can be either
   is_historical?: boolean;
 }

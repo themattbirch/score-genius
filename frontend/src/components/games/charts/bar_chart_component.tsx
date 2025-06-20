@@ -1,5 +1,7 @@
 // frontend/src/components/games/charts/bar_chart_component.tsx
 
+// frontend/src/components/games/charts/bar_chart_component.tsx
+
 import React from "react";
 import {
   BarChart,
@@ -13,7 +15,6 @@ import {
 } from "recharts";
 import { useTheme } from "@/contexts/theme_context";
 import { Sport, BarChartData } from "@/types";
-// Import specific types for tooltip formatter clarity from Recharts
 import {
   ValueType,
   NameType,
@@ -30,6 +31,11 @@ const BarChartComponent: React.FC<BarChartComponentProps> = ({
 }) => {
   const { theme } = useTheme();
 
+  // --- ★★★ START OF DEBUG CODE ★★★ ---
+  // This will log the data this component receives every time it renders.
+  console.log("BarChartComponent rendered with data:", data);
+  // --- ★★★ END OF DEBUG CODE ★★★ ---
+
   const textColorPrimary = theme === "dark" ? "#f1f5f9" : "#0d1117";
   const textColorSecondary = theme === "dark" ? "#9ca3af" : "#475569";
   const panelBgColor = theme === "dark" ? "#161b22" : "#f8fafc";
@@ -37,6 +43,8 @@ const BarChartComponent: React.FC<BarChartComponentProps> = ({
     theme === "dark" ? "rgba(51, 65, 85, 0.6)" : "#e2e8f0";
 
   if (!data || data.length === 0) {
+    // This also helps us debug. If we see this message, the data array is empty.
+    console.log("BarChartComponent determined data is empty or unavailable.");
     return (
       <div className="text-center text-text-secondary py-12">
         No bar chart data available.
@@ -44,7 +52,6 @@ const BarChartComponent: React.FC<BarChartComponentProps> = ({
     );
   }
 
-  // Plot two bars whenever an object has both Home and Away
   const isMultiSeries = data.some(
     (d: BarChartData) => d.Home !== undefined && d.Away !== undefined
   );
@@ -68,7 +75,7 @@ const BarChartComponent: React.FC<BarChartComponentProps> = ({
         >
           <CartesianGrid strokeDasharray="3 3" stroke={subtleBorderColor} />
           <XAxis
-            dataKey="category" // Changed from "name" to "category" to match your BarChartData type
+            dataKey="category"
             stroke={textColorSecondary}
             tickLine={false}
             axisLine={false}
@@ -86,13 +93,11 @@ const BarChartComponent: React.FC<BarChartComponentProps> = ({
             }}
             labelStyle={{ color: textColorPrimary }}
             itemStyle={{ color: textColorSecondary }}
-            // FIX: Add type guard for 'value' before calling toFixed()
-            // Also explicitly type 'value' and 'name' for clarity and ensure correct return format for Recharts
             formatter={(value: ValueType, name: NameType) => {
               if (typeof value === "number") {
-                return [value.toFixed(1), name]; // Return array [formattedValue, name]
+                return [value.toFixed(1), name];
               }
-              return [value, name]; // If not a number (e.g., string), return as is with its name
+              return [value, name];
             }}
           />
           {isMultiSeries ? (
@@ -102,8 +107,6 @@ const BarChartComponent: React.FC<BarChartComponentProps> = ({
               <Bar dataKey="Away" fill={AwayColor} name="Away" />
             </>
           ) : (
-            // Assuming for NBA, the data key for a single series is 'value'
-            // If this is not always 'value' for NBA, you might need to adjust BarChartData or this line.
             <Bar dataKey="value" fill={NBAColor} name="Points" />
           )}
         </BarChart>
