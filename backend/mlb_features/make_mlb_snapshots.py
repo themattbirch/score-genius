@@ -248,23 +248,27 @@ def make_mlb_snapshot(
     season_year = determine_season(pd.Timestamp(current_game_date_et))
 
     # 2) Radar metric → feature-column map
-    radar_metrics_map: dict[str, dict[str, str | int]] = {
-        "Venue Win %": {
+    radar_metrics_map: dict[str, dict[str, Any]] = {
+        "Pythagorean W%": {
+            "db_name": "Pythagorean Win %",
+            "home_col": "home_pythag_win_pct",
+            "away_col": "away_pythag_win_pct",
+            "round": 3
+        },
+        "Run Differential": {
+            "db_name": "Run Differential",
+            "home_col": "home_run_differential",
+            "away_col": "away_run_differential",
+            "round": 2
+        },
+        "Venue W%": {
+            "db_name": "Venue Win %",
             "home_col": "home_venue_win_pct_home",
             "away_col": "away_venue_win_pct_away",
             "round": 3
         },
-        "Season Runs Scored": {
-            "home_col": "home_season_runs_for_avg",
-            "away_col": "away_season_runs_for_avg",
-            "round": 2
-        },
-        "Season Runs Against": {
-            "home_col": "home_season_runs_against_avg",
-            "away_col": "away_season_runs_against_avg",
-            "round": 2
-        },
-        "Home/Away Win Advantage": {
+        "H/A Advantage": {
+            "db_name": "Home/Away Win Advantage",
             "home_col": "home_venue_win_advantage",
             "away_col": "away_venue_win_advantage",
             "round": 3
@@ -296,7 +300,22 @@ def make_mlb_snapshot(
         return
     if len(df_features) > 1:
         logger.warning(f"Expected 1 feature row, got {len(df_features)}; using first.")
-    row = df_features.iloc[0]
+    row = df_features.iloc[0].copy()
+
+        # 5a. Calculate our new display-only metrics for the Radar Chart
+    logger.debug("Calculating Run Differential and Pythagorean Win % for Radar Chart...")
+    home_runs_for = row.get('home_season_runs_for_avg', 4.5)
+    home_runs_against = row.get('home_season_runs_against_avg', 4.5)
+    away_runs_for = row.get('away_season_runs_for_avg', 4.5)
+    away_runs_against = row.get('away_season_runs_against_avg', 4.5)
+
+    row['home_run_differential'] = home_runs_for - home_runs_against
+    row['away_run_differential'] = away_runs_for - away_runs_against
+
+    # Using the "Pythagorean Expectation" formula
+    row['home_pythag_win_pct'] = (home_runs_for ** 2) / ((home_runs_for ** 2) + (home_runs_against ** 2))
+    row['away_pythag_win_pct'] = (away_runs_for ** 2) / ((away_runs_for ** 2) + (away_runs_against ** 2))
+
 
     # 6) Add display-only handedness features
     df_pitcher_splits = fetch_mlb_pitcher_splits_data(season_year)
@@ -359,12 +378,14 @@ def make_mlb_snapshot(
         ha = home_adv_rpc_data.get("runs_against_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_against", 0.0))
         aa = away_adv_rpc_data.get("runs_against_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_against", 0.0))
         bar_chart_data = [
-            {"name": "Avg Runs For", "Home": round(float(hf), 2), "Away": round(float(af), 2)},
-            {"name": "Avg Runs Against", "Home": round(float(ha), 2), "Away": round(float(aa), 2)},
+            {"category": "Avg Runs For", "Home": round(float(hf), 2), "Away": round(float(af), 2)},
+            {"category": "Avg Runs Against", "Home": round(float(ha), 2), "Away": round(float(aa), 2)},
         ]
 
     # 10) Fetch league ranges via RPC for radar
     ranges_rows = sb_client.rpc("get_mlb_metric_ranges", {"p_season": season_year}).execute().data or []
+    
+    # FIRST, build the dictionary from the database response
     league_ranges = {
         r["metric"]: {
             "min":    float(r["min_value"]),
@@ -373,8 +394,24 @@ def make_mlb_snapshot(
         }
         for r in ranges_rows
     }
-    if not league_ranges:
-        logger.warning("get_mlb_metric_ranges RPC empty; falling back to df_team_stats")
+
+    # SECOND, manually compute and add ranges for our new metrics if they don't already exist.
+    # This prevents KeyErrors during the radar payload creation.
+    if "Pythagorean Win %" not in league_ranges and not df_team_stats.empty:
+        pythag_series = (df_team_stats['runs_for_avg_all'] ** 2) / ((df_team_stats['runs_for_avg_all'] ** 2) + (df_team_stats['runs_against_avg_all'] ** 2))
+        league_ranges["Pythagorean Win %"] = {"min": pythag_series.min(), "max": pythag_series.max(), "invert": False}
+        logger.debug("Manually calculated and added 'Pythagorean Win %' to league_ranges.")
+
+    if "Run Differential" not in league_ranges and not df_team_stats.empty:
+        run_diff_series = df_team_stats['runs_for_avg_all'] - df_team_stats['runs_against_avg_all']
+        league_ranges["Run Differential"] = {"min": run_diff_series.min(), "max": run_diff_series.max(), "invert": False}
+        logger.debug("Manually calculated and added 'Run Differential' to league_ranges.")
+
+    # The original fallback logic for when the RPC returns nothing is still needed
+    if not ranges_rows: # Check against the original RPC result
+        logger.warning("get_mlb_metric_ranges RPC empty; falling back to df_team_stats for all ranges")
+        # Note: This fallback will not include our two new metrics unless they are added here as well.
+        # The logic above already handles adding them, so this is fine.
         league_ranges = {
             "Venue Win %": {
                 "min": df_team_stats["wins_home_percentage"].min(),
@@ -400,19 +437,23 @@ def make_mlb_snapshot(
 
     # 11) Build radar payload
     radar_payload: List[Dict[str, Any]] = []
-    for metric, cfg in radar_metrics_map.items():
+    for display_metric, cfg in radar_metrics_map.items():
+        db_metric = cfg["db_name"] # Get the original DB name for lookup
         h = float(row.get(cfg["home_col"], 0.0))
         a = float(row.get(cfg["away_col"], 0.0))
-        rng = league_ranges[metric]
+
+        # Look up the range using the name from the database
+        rng = league_ranges[db_metric]
+
         def scale(v: float) -> float:
             if rng["max"] == rng["min"]:
                 pct = 50.0
             else:
                 pct = 100.0 * (v - rng["min"]) / (rng["max"] - rng["min"])
-            return 100.0 - pct if rng["invert"] else pct
+            return 100.0 - pct if rng.get("invert", False) else pct
 
         radar_payload.append({
-            "metric":   metric,
+            "metric":   display_metric, # Use the new short name for the frontend
             "home_raw": round(h, cfg["round"]),
             "away_raw": round(a, cfg["round"]),
             "home_idx": round(scale(h), 1),

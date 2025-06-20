@@ -56,11 +56,11 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
   const barChartTitle =
     sport === "MLB"
       ? snapshotData?.is_historical
-        ? "Inning Scores"
-        : "Quarter Scoring Averages"
+        ? "Scoring Averages" // Correct for MLB post-game
+        : "Scoring Averages" // Correct for MLB pre-game
       : snapshotData?.is_historical
-      ? "Quarter Scoring"
-      : "Quarter Scoring Averages";
+      ? "Quarter Scoring" // Correct for NBA post-game
+      : "Quarter Scoring Average"; // Correct for NBA pre-game
 
   /* multi-pie? */
   const isMultiPie =
@@ -213,7 +213,10 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
                       >
                         {p.title}
                       </h4>
-                      <PieChartComponent data={p.data as PieChartDataItem[]} />
+                      <PieChartComponent
+                        data={p.data as PieChartDataItem[]}
+                        sport={sport}
+                      />
                     </div>
                   ))}
                 </div>
@@ -221,6 +224,7 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
                 <div className="flex justify-center py-4">
                   <PieChartComponent
                     data={snapshotData!.pie_chart_data as PieChartDataItem[]}
+                    sport={sport}
                   />
                 </div>
               )}
