@@ -1,3 +1,5 @@
+# backend/nba_features/make_nba_snapshots.py
+
 """
 Generate and upsert per-game NBA feature snapshots for frontend display.
 Fetches raw game data, historical context, computes features via an NBA engine,
@@ -296,6 +298,8 @@ def make_nba_snapshot(
     df_full_history = fetch_nba_full_history()
     df_historical_team_stats = fetch_nba_team_season_stats()
 
+    
+
     # 3) Populate in-df_game form strings
     df_game["home_current_form"] = _get_season_form_string(
         df_game[input_home_team_col].iloc[0],
@@ -309,6 +313,59 @@ def make_nba_snapshot(
         df_full_history,
         nba_season_start_year,
     )
+
+    def _per_game_avg(df: pd.DataFrame, team: str, fg_col: str, three_col: str, ft_col: str) -> tuple[float,float]:
+        """
+        Season-to-date averages *before the current game date*
+        for:   2-P made  (= FG – 3P)   and   FT made.
+        df       : full historical games for the season
+        team     : canonical team string (normed)
+        Returns  : (avg_2pm, avg_ftm)
+        """
+        # home rows for team
+        h = df.loc[df["home_team_norm"] == team, ["home_fg_made",
+                                                "home_3pm",
+                                                "home_ft_made"]].copy()
+        # away rows for team
+        a = df.loc[df["away_team_norm"] == team, ["away_fg_made",
+                                                "away_3pm",
+                                                "away_ft_made"]].copy()
+
+        h.columns = a.columns = ["fg", "tp", "ft"]          # unify names
+        allg      = pd.concat([h, a], ignore_index=True)
+
+        if allg.empty:
+            return 0.0, 0.0
+
+        allg["2pm"] = allg["fg"] - allg["tp"]
+        return float(allg["2pm"].mean()), float(allg["ft"].mean())
+    # ------------------------------------------------------------
+
+    # ---------- per-game helper -------------------------------------------------
+    def _avg_2pm_ftm(df_season: pd.DataFrame, team_norm: str) -> tuple[float, float]:
+        """
+        Season-to-date averages (before the snapshot date) of
+        2-point FG made and FT made, for the given team.
+        """
+        h = df_season[df_season["home_team_norm"] == team_norm]
+        a = df_season[df_season["away_team_norm"] == team_norm]
+
+        # unify column names
+        h = h.rename(columns={"home_fg_made":"fg",
+                            "home_3pm":"tp",
+                            "home_ft_made":"ft"})
+        a = a.rename(columns={"away_fg_made":"fg",
+                            "away_3pm":"tp",
+                            "away_ft_made":"ft"})
+
+        all_rows = pd.concat([h[["fg","tp","ft"]], a[["fg","tp","ft"]]], ignore_index=True)
+        if all_rows.empty:
+            return 0.0, 0.0
+
+        all_rows["2pm"] = all_rows["fg"] - all_rows["tp"]
+        return float(all_rows["2pm"].mean()), float(all_rows["ft"].mean())
+    # ----------------------------------------------------------------------------
+
 
     # 4) Manually compute win‐% diff
     home_id = df_game[input_home_team_col].iloc[0]
@@ -367,8 +424,10 @@ def make_nba_snapshot(
         df_adv_rpc_data = pd.DataFrame(columns=['team_norm']) # Empty df with expected column
 
     # Normalize team names from the current game row for matching
-    current_game_home_team_norm = normalize_nba_team_name(row.get(input_home_team_col))
-    current_game_away_team_norm = normalize_nba_team_name(row.get(input_away_team_col))
+    home_team_original = df_game[input_home_team_col].iloc[0]
+    away_team_original = df_game[input_away_team_col].iloc[0]
+    current_game_home_team_norm = normalize_nba_team_name(home_team_original)
+    current_game_away_team_norm = normalize_nba_team_name(away_team_original)
 
     home_adv_season_stats = df_adv_rpc_data[df_adv_rpc_data["team_norm"] == current_game_home_team_norm]
     away_adv_season_stats = df_adv_rpc_data[df_adv_rpc_data["team_norm"] == current_game_away_team_norm]
@@ -400,10 +459,10 @@ def make_nba_snapshot(
     headlines = [
         {"label": "Rest Days (Home)",  "value": rest_home},
         {"label": "Rest Days (Away)",  "value": rest_away},
-        {"label": "Form Momentum Diff", "value": float(row.get("momentum_diff", 0.0))},
+        {"label": "Recent Form Margin", "value": float(row.get("momentum_diff", 0.0))},
         {"label": "Form Win % Diff",    "value": manual_form_diff},
-        {"label": "Season Win % Diff",  "value": float(row.get("season_win_pct_diff", 0.0))},
-        {"label": "Season NetRtg Diff (H-A)",
+        {"label": "Season Winning % Diff",  "value": float(row.get("season_win_pct_diff", 0.0))},
+        {"label": "Net Rating Diff (Home/Away)",
         "value": round(
             float(
                 row.get(
@@ -419,7 +478,8 @@ def make_nba_snapshot(
     # Rounding headlines to 1 decimal where appropriate
     for item in headlines:
         if isinstance(item['value'], (float, int)):
-            item['value'] = round(item['value'], 2 if item['label'] in ['Form Win % Diff', 'Season Win % Diff'] else 1)
+            # FIX: The labels here now match the new names shown in your screenshot.
+            item['value'] = round(item['value'], 2 if item['label'] in ['Form Win % Diff', 'Season Winning % Diff'] else 1)
             # Adjust rounding for Rest Advantage if it's always an integer
             if item['label'] == 'Rest Advantage (Home)':
                 item['value'] = int(item['value'])
@@ -470,87 +530,192 @@ def make_nba_snapshot(
                 'Away': away_avg_q,
             })
         logger.info(f"Bar chart (pre-game quarter averages): {bar_chart_data}")
-    # Radar: Advanced five-metric spider (from RPC data)
-    # Ensure your get_nba_advanced_team_stats RPC returns these metrics as 'pace', 'off_rtg', etc.
-    # Updated to directly use home_adv_season_stats and away_adv_season_stats Series
-    radar_map = {
-        "Pace": "pace", "OffRtg": "off_rtg", "DefRtg": "def_rtg",
-        "eFG%": "efg_pct", "TOV%": "tov_pct" # Using tov_pct from RPC's output for consistency with other radar keys
+
+
+    #
+    # ------------------------------------------------------------------
+    #  RADAR: league-indexed (0–100) spider for Pace / OffRtg / DefRtg / eFG% / TOV%
+    # ------------------------------------------------------------------
+    default_radar_nba = {
+        "Pace":   100.0,
+        "OffRtg": 115.0,
+        "DefRtg": 115.0,
+        "eFG%":   0.53,
+        "TOV%":   0.135,
     }
-    default_radar_nba = {"Pace": 100.0, "OffRtg": 115.0, "DefRtg": 115.0, "eFG%": 0.53, "TOV%": 0.135} # Adjust TOV% default to match RPC scale
-    radar_payload = []
-    for display_name, rpc_key in radar_map.items():
-        # raw values (fallback to default_radar_nba if missing)
-        home_val = float(home_adv_season_stats.get(rpc_key, default_radar_nba[display_name]))
-        away_val = float(away_adv_season_stats.get(rpc_key, default_radar_nba[display_name]))
 
-        # invert lower-is-better metrics
-        if display_name in ("DefRtg", "TOV%"):
-            # choose a sensible max – here, twice your default as an example
-            max_ref = default_radar_nba[display_name] * 2
-            home_val = max_ref - home_val
-            away_val = max_ref - away_val
+    metric_map: dict[str, tuple[str, bool]] = {
+        "Pace"   : ("pace",     False),
+        "OffRtg" : ("off_rtg",  False),
+        "DefRtg" : ("def_rtg",  True ),   # invert – lower is better
+        "eFG%"   : ("efg_pct",  False),
+        "TOV%"   : ("tov_pct",  True ),   # invert
+    }
 
-        # choose rounding precision
-        round_digits = 3 if display_name in ("eFG%", "TOV%") else 1
+    # ---------------- 1) league ranges ----------------
+    league_ranges: dict[str, dict[str, float | bool]] = {}
+    for label, (col, invert) in metric_map.items():
+        if col in df_adv_rpc_data.columns:
+            series = (
+                pd.to_numeric(df_adv_rpc_data[col], errors="coerce")
+                .dropna()
+            )
+            if series.empty:
+                # column present but all NULL
+                mn = default_radar_nba[label] * 0.5
+                mx = default_radar_nba[label] * 1.5
+            else:
+                mn, mx = float(series.min()), float(series.max())
+        else:
+            # RPC did not send this column – fabricate range
+            mn = default_radar_nba[label] * 0.5
+            mx = default_radar_nba[label] * 1.5
 
+        league_ranges[label] = {"min": mn, "max": mx, "invert": invert}
+
+    # ---------------- 2) build payload ----------------
+    radar_payload: list[dict[str, float | str]] = []
+
+    def to_idx(v: float, rng: dict[str, float | bool]) -> float:
+        if np.isnan(v) or rng["max"] == rng["min"]:
+            return 50.0
+        pct = 100.0 * (v - rng["min"]) / (rng["max"] - rng["min"])
+        return 100.0 - pct if rng["invert"] else pct
+
+    for label, (col, _invert) in metric_map.items():
+        raw_home = float(home_adv_season_stats.get(col, default_radar_nba[label]))
+        raw_away = float(away_adv_season_stats.get(col, default_radar_nba[label]))
+        rng      = league_ranges[label]
+
+        dec = 3 if label in ("eFG%", "TOV%") else 1
         radar_payload.append({
-            "metric": display_name,
-            "home_value": round(home_val, round_digits),
-            "away_value": round(away_val, round_digits),
+            "metric"  : label,
+            "home_raw": round(raw_home, dec),
+            "away_raw": round(raw_away, dec),
+            "home_idx": round(to_idx(raw_home, rng), 1),
+            "away_idx": round(to_idx(raw_away, rng), 1),
         })
-    logger.debug(f"Radar chart: {radar_payload}")
 
-    # Pie Chart Data (for post-game: Home Team's scoring contribution - simple proxy; for pre-game: offensive metrics)
-    pie = []
-    if is_historical_game and pd.notna(row.get(input_home_score_col)): # Post-game logic
-        home_fgm = float(row.get('home_fg_made', 0))
-        home_3pm = float(row.get('home_3pm', 0))
-        home_ftm = float(row.get('home_ft_made', 0))
+    logger.debug("radar_payload = %s", radar_payload)
+    # ------------------------------------------------------------------
 
-        twop_made = home_fgm - home_3pm # 2P = Total FG Made - 3P Made
+    # ─── Key Metrics Bar Chart (RPG / SPG / 3PG) ────────────────────────────────
+    home_team_original = df_game[input_home_team_col].iloc[0]
+    away_team_original = df_game[input_away_team_col].iloc[0]
+    home_norm = normalize_nba_team_name(home_team_original)
+    away_norm = normalize_nba_team_name(away_team_original)
 
-        pie_data_raw = [
-            {'category': '2P FG Made', 'value': int(max(0, twop_made)), 'color': '#4ade80'},
-            {'category': '3P FG Made', 'value': int(max(0, home_3pm)),  'color': '#60a5fa'},
-            {'category': 'FT Made',    'value': int(max(0, home_ftm)),    'color': '#fbbf24'},
-        ]
-        pie = [item for item in pie_data_raw if item['value'] > 0]
-        if not pie: # If all values are zero
-            pie = [{"category": "No Scoring Data", "value": 1, "color": "#cccccc"}]
-        logger.debug(f"Pie chart (post-game): {pie}")
+    misc_resp = sb_client.rpc(
+        "get_nba_misc_team_stats",
+        {"p_season_year": nba_season_start_year}
+    ).execute()
+    df_misc = pd.DataFrame(misc_resp.data or [])
+
+    # Normalise for lookup
+    if not df_misc.empty and "team" in df_misc.columns:
+        df_misc["team_norm"] = df_misc["team"].apply(normalize_nba_team_name)
     else:
-        # Pre-game: Provide key offensive efficiency metrics for comparison
-        # Data will come from home_adv_season_stats and away_adv_season_stats (from RPC)
-        home_off_rtg = float(home_adv_season_stats.get("off_rtg", NBA_DEFAULTS.get('off_rtg', 115.0)))
-        away_off_rtg = float(away_adv_season_stats.get("off_rtg", NBA_DEFAULTS.get('off_rtg', 115.0)))
-        home_efg_pct = float(home_adv_season_stats.get("efg_pct", NBA_DEFAULTS.get('efg_pct', 0.53)))
-        away_efg_pct = float(away_adv_season_stats.get("efg_pct", NBA_DEFAULTS.get('efg_pct', 0.53)))
-        home_tov_pct = float(home_adv_season_stats.get("tov_pct", NBA_DEFAULTS.get('tov_rate', 0.135)))
-        away_tov_pct = float(away_adv_season_stats.get("tov_pct", NBA_DEFAULTS.get('tov_rate', 0.135)))
+        df_misc["team_norm"] = pd.Series(dtype=str)
 
-        # --- FIX: Normalize OffRtg by dividing by 100 so it's on a similar scale (0-1 range) ---
-        normalized_home_off_rtg = home_off_rtg / 100.0
-        normalized_away_off_rtg = away_off_rtg / 100.0
+    def _safe_row(df: pd.DataFrame, norm: str) -> dict[str, Any]:
+        return (
+            df.loc[df["team_norm"] == norm].iloc[0].to_dict()
+            if not df.loc[df["team_norm"] == norm].empty
+            else {}
+        )
 
-        pie = [ # This is the data that will be passed to NbaPreGameOffenseChart
-            {"metric": "OffRtg", "Home": round(normalized_home_off_rtg, 3), "Away": round(normalized_away_off_rtg, 3)}, # Round to 3 decimal places for consistency
-            {"metric": "eFG%", "Home": round(home_efg_pct, 3), "Away": round(away_efg_pct, 3)},
-            {"metric": "TOV%", "Home": round(home_tov_pct, 3), "Away": round(away_tov_pct, 3)},
+    home_misc = _safe_row(df_misc, home_norm)
+    away_misc = _safe_row(df_misc, away_norm)
+
+        # --- ADD THE FOLLOWING 3 LINES FOR DEBUGGING ---
+    logger.info(f"[DEBUG] Home team norm for lookup: '{home_norm}'")
+    logger.info(f"[DEBUG] Away team norm for lookup: '{away_norm}'")
+    logger.info(f"[DEBUG] Misc stats data returned from RPC:\n{df_misc.to_string()}")
+    # --- END OF ADDED LINES ---
+
+
+
+    key_metrics_data = [
+        {  # x-axis label expected by BarChartComponent
+            "category": "Rebs",
+            "Home": round(float(home_misc.get("rpg", 0.0)), 1),
+            "Away": round(float(away_misc.get("rpg", 0.0)), 1),
+        },
+        {
+            "category": "Steals",
+            "Home": round(float(home_misc.get("spg", 0.0)), 1),
+            "Away": round(float(away_misc.get("spg", 0.0)), 1),
+        },
+        {
+            "category": "3PM",
+            "Home": round(float(home_misc.get("tp_pct", 0.0) * 100), 1),
+            "Away": round(float(away_misc.get("tp_pct", 0.0) * 100), 1),
+        },
+    ]
+    logger.debug("Key Metrics bar chart: %s", key_metrics_data)
+    # ────────────────────────────────────────────────────────────────────────────
+
+    # ──────────────────────────── PIE CHART DATA ──────────────────────────────
+    pie: list[dict[str, Any]] = []
+
+    if is_historical_game and pd.notna(row.get(input_home_score_col)):
+        # ---------- POST-GAME : show HOME scoring mix (2P vs FT) ----------
+        home_fgm = float(row.get("home_fg_made", 0) or 0)
+        home_3pm = float(row.get("home_3pm",     0) or 0)
+        home_ftm = float(row.get("home_ft_made", 0) or 0)
+
+        twop_made = max(0, home_fgm - home_3pm)
+
+        pie = [
+            {"category": "2P FG Made", "value": int(twop_made), "color": "#4ade80"},
+            {"category": "FT Made",    "value": int(home_ftm),  "color": "#fbbf24"},
         ]
-        logger.debug(f"Pre-game NBA offensive efficiency data (normalized OffRtg): {pie}")
+        if all(s["value"] == 0 for s in pie):
+            pie = [{"category": "No Scoring Data", "value": 1, "color": "#cccccc"}]
 
+        logger.debug("Pie chart (post-game) = %s", pie)
 
-    # 10) Upsert into Supabase
+    else:
+        # ---------- PRE-GAME : two separate pies (avg 2P vs avg FT) ----------
+        season_rows = df_full_history[
+            (df_full_history["season_start"] == nba_season_start_year) &
+            (df_full_history["parsed_game_date"] < current_game_dt_obj)
+        ]
+
+        home_avg_2pm, home_avg_ftm = _avg_2pm_ftm(season_rows, home_norm)
+        away_avg_2pm, away_avg_ftm = _avg_2pm_ftm(season_rows, away_norm)
+
+        pie = [
+            {   # pie 1
+                "title": "Avg 2P Made",
+                "data": [
+                    {"category": "Home", "value": round(home_avg_2pm, 1), "color": "#4ade80"},
+                    {"category": "Away", "value": round(away_avg_2pm, 1), "color": "#60a5fa"},
+                ],
+            },
+            {   # pie 2
+                "title": "Avg FT Made",
+                "data": [
+                    {"category": "Home", "value": round(home_avg_ftm, 1), "color": "#4ade80"},
+                    {"category": "Away", "value": round(away_avg_ftm, 1), "color": "#60a5fa"},
+                ],
+            },
+        ]
+        logger.debug("Pie chart (pre-game, two pies) = %s", pie)
+
+    # 10) Upsert into Supabase  —— note: pie_chart_data precedes key_metrics_data
     snapshot_payload_final = {
-        "game_id": game_id_str,
-        "game_date": current_game_dt_obj.isoformat(),
-        "season": str(nba_season_full_str),
-        "headline_stats": headlines,
-        "bar_chart_data": bar_chart_data,
+        "game_id"        : game_id_str,
+        "game_date"      : current_game_dt_obj.isoformat(),
+        "season"         : str(nba_season_full_str),
+
+        "pie_chart_data" : pie,               # ← ordering matters for FE
+        "key_metrics_data": key_metrics_data, #    bar chart follows pie
+
+        "headline_stats" : headlines,
+        "bar_chart_data" : bar_chart_data,
         "radar_chart_data": radar_payload,
-        "pie_chart_data": pie,
-        "last_updated": pd.Timestamp.utcnow().isoformat()
+        "last_updated"   : pd.Timestamp.utcnow().isoformat(),
     }
 
     logger.info(f"Upserting NBA snapshot for game_id: {game_id_str}")

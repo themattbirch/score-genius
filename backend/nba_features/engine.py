@@ -14,10 +14,8 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from typing import Any, Optional, List, Dict, Sequence # Added Sequence
-
 import pandas as pd
-# numpy is used by pandas and potentially by some feature modules indirectly
-# import numpy as np # Not directly used in this version of engine.py
+import numpy as np
 
 # Load .env (backend/.env or project-root/.env)
 for env_path in (
@@ -259,6 +257,35 @@ def run_feature_pipeline(
         logger.warning(f"Removing leftover duplicate columns from merge: {cols_to_drop}")
         processed_df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
     # --- END CLEANUP BLOCK ---
+
+        # AGGREGATION STEP: If modules created multiple rows per game (e.g., from splits),
+    # aggregate them back down to a single, representative row.
+    if not processed_df.empty and 'game_id' in processed_df.columns:
+        num_rows = len(processed_df)
+        num_unique_games = processed_df['game_id'].nunique()
+        
+        if num_rows > num_unique_games:
+            logger.info(
+                f"Aggregating {num_rows} feature rows back to {num_unique_games} unique game(s)..."
+            )
+            
+            # Define aggregations: mean for numbers, first for everything else
+            numeric_cols = processed_df.select_dtypes(include=np.number).columns
+            agg_dict = {col: 'mean' for col in numeric_cols}
+            
+            non_numeric_cols = processed_df.select_dtypes(exclude=np.number).columns
+            for col in non_numeric_cols:
+                if col != 'game_id': # Don't aggregate the group key
+                    agg_dict[col] = 'first'
+            
+            processed_df = processed_df.groupby('game_id', as_index=False).agg(agg_dict)
+            
+            # Restore original column order as best as possible
+            final_ordered_cols = [col for col in final_cols if col in processed_df.columns]
+            processed_df = processed_df[final_ordered_cols]
+            
+            logger.info(f"Aggregation complete. Final DataFrame shape: {processed_df.shape}")
+
 
     if debug:
         logger.setLevel(original_logger_level)

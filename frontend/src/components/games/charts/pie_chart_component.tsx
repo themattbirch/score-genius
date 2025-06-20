@@ -1,39 +1,25 @@
 // frontend/src/components/games/charts/pie_chart_component.tsx
 
 import React from "react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from "recharts";
+import { PieChart, Pie, Cell, Tooltip } from "recharts";
 import { useTheme } from "@/contexts/theme_context";
-import { PieChartDataItem } from "@/types"; // Import type
+import { PieChartDataItem } from "@/types";
 import {
   ValueType,
   NameType,
-} from "recharts/types/component/DefaultTooltipContent"; // Import for Tooltip formatter
+} from "recharts/types/component/DefaultTooltipContent";
 
-// --- START OF REQUIRED CHANGES ---
-// 1. Explicitly define props interface for the component
 interface PieChartComponentProps {
-  data?: PieChartDataItem[]; // <--- CRITICAL: Explicitly type data here
+  data?: PieChartDataItem[];
 }
 
-// 2. Use React.FC with the defined props interface
 const PieChartComponent: React.FC<PieChartComponentProps> = ({ data = [] }) => {
-  // --- END OF REQUIRED CHANGES ---
-
   const { theme } = useTheme();
 
   const textColorPrimary = theme === "dark" ? "#f1f5f9" : "#0d1117";
-  const textColorSecondary = theme === "dark" ? "#9ca3af" : "#475569";
   const panelBgColor = theme === "dark" ? "#161b22" : "#f8fafc";
   const subtleBorderColor =
     theme === "dark" ? "rgba(51, 65, 85, 0.6)" : "#e2e8f0";
-
   const defaultColors = [
     "#4ade80",
     "#60a5fa",
@@ -51,9 +37,6 @@ const PieChartComponent: React.FC<PieChartComponentProps> = ({ data = [] }) => {
     );
   }
 
-  // Now 'item' will be correctly inferred as PieChartDataItem due to PieChartComponentProps
-  // This resolves "Spread types may only be created from object types."
-  // And "Property 'color' does not exist on type 'never'."
   const chartData = data.map((item, index) => ({
     ...item,
     color: item.color || defaultColors[index % defaultColors.length],
@@ -68,41 +51,51 @@ const PieChartComponent: React.FC<PieChartComponentProps> = ({ data = [] }) => {
   }
 
   return (
-    <div className="p-2 rounded-lg bg-[var(--color-panel)] shadow-md h-[240px] w-full overflow-hidden">
-      {" "}
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={chartData}
-            dataKey="value"
-            nameKey="category"
-            cx="50%"
-            cy="50%"
-            outerRadius={80}
-            labelLine={false}
-            label={false} // ← remove all inline slice labels
+    <div className="flex flex-col items-center">
+      <PieChart width={150} height={150}>
+        <Tooltip
+          contentStyle={{
+            backgroundColor: panelBgColor,
+            border: `1px solid ${subtleBorderColor}`,
+            borderRadius: "4px",
+          }}
+          formatter={(value: ValueType) =>
+            typeof value === "number" ? value.toLocaleString() : String(value)
+          }
+        />
+        <Pie
+          data={chartData}
+          dataKey="value"
+          nameKey="category"
+          cx="50%"
+          cy="50%"
+          outerRadius={70}
+          innerRadius={0} /* FIX #1: Set to 0 for a solid pie chart */
+          labelLine={false}
+          label={false}
+          stroke="none"
+        >
+          {chartData.map((entry) => (
+            <Cell key={`cell-${entry.category}`} fill={entry.color} />
+          ))}
+        </Pie>
+      </PieChart>
+
+      {/* FIX #2: Make the legend container a centered flex column */}
+      <div className="w-full mt-2 text-xs space-y-1 flex flex-col items-center">
+        {chartData.map((entry) => (
+          <div
+            key={entry.category}
+            className="flex items-center justify-center gap-2"
           >
-            {chartData.map((entry, index) => (
-              <Cell key={index} fill={entry.color} />
-            ))}
-          </Pie>
-
-          <Tooltip
-            contentStyle={{
-              backgroundColor: panelBgColor,
-              border: `1px solid ${subtleBorderColor}`,
-              borderRadius: "4px",
-            }}
-            labelStyle={{ color: textColorPrimary }}
-            itemStyle={{ color: textColorSecondary }}
-            formatter={(value: ValueType) =>
-              typeof value === "number" ? value.toLocaleString() : String(value)
-            }
-          />
-
-          <Legend wrapperStyle={{ color: textColorPrimary }} />
-        </PieChart>
-      </ResponsiveContainer>
+            <div
+              className="w-3 h-3 rounded-sm flex-shrink-0"
+              style={{ backgroundColor: entry.color }}
+            />
+            <span style={{ color: textColorPrimary }}>{entry.category}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

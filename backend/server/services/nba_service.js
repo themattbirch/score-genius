@@ -606,7 +606,8 @@ export async function fetchNbaSnapshotData(gameId) {
       game_date,
       season,
       headline_stats,
-      bar_chart_data, 
+      bar_chart_data,
+      key_metrics_data,
       radar_chart_data,
       pie_chart_data,
       last_updated
@@ -631,19 +632,16 @@ export async function fetchNbaSnapshotData(gameId) {
 
   // 4) runtime shape‐check
   function assertArray(col, name) {
-    // Note: 'col' here will be the actual data (e.g., data.headline_stats), not the column name string
-    // You might want to adjust these checks to 'Array.isArray(data[colName])' if you intend to pass column name strings.
-    // For now, assuming 'col' is the actual data property value.
+    if (col === undefined) return; // Allow properties to be missing from the select
     if (!Array.isArray(col)) {
-      // This 'col' parameter is the *value* of the property.
       const err = new Error(`${name} expected as Array, got ${typeof col}`);
       err.status = 500;
       throw err;
     }
   }
-  // Make sure these calls pass the *data property* itself, not just the string name
   assertArray(data.headline_stats, "headline_stats");
   assertArray(data.bar_chart_data, "bar_chart_data");
+  assertArray(data.key_metrics_data, "key_metrics_data"); // Add check for new property
   assertArray(data.radar_chart_data, "radar_chart_data");
   assertArray(data.pie_chart_data, "pie_chart_data");
 
