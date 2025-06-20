@@ -1,4 +1,4 @@
-// src/types/index.ts
+// frontend/src/types/index.ts
 import type { LucideIcon } from "lucide-react";
 
 export type IconType = LucideIcon;
@@ -13,8 +13,10 @@ export interface BarChartData {
 
 export interface RadarChartData {
   metric: string;
-  home_value: number; // Assuming this structure from your RadarChartComponent
-  away_value: number;
+  home_raw: number | string;
+  away_raw: number | string;
+  home_idx: number;
+  away_idx: number;
 }
 
 export interface PieChartDataItem {
