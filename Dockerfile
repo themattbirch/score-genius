@@ -45,6 +45,8 @@ COPY --from=builder /app/frontend/dist/app-sw.js                   \
      backend/server/static/app-sw.js
 COPY --from=builder /app/frontend/public/favicon.ico                   \
      backend/server/static/public/favicon.ico
+COPY --from=builder /app/frontend/dist/.well-known                   \
+     backend/server/static/.well-known
 
 WORKDIR /app/backend/server
 EXPOSE 10000
