@@ -603,8 +603,8 @@ def main():
         clear_past_schedule_data()
 
         # 2) Injuries logic
-        normalized = process_and_normalize_rapidapi_injuries()
-        update_injuries_table_clear_insert(normalized)
+        #normalized = process_and_normalize_rapidapi_injuries()
+        #update_injuries_table_clear_insert(normalized)
 
         # 3) Previews + odds for today & tomorrow
         previews = build_game_preview(window_days=2)
