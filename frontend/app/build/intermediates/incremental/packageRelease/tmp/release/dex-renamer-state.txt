@@ -1,4 +1,4 @@
-#Sat May 17 18:16:59 EDT 2025
+#Sun Jun 22 02:22:53 EDT 2025
 base.0=/Users/mattb/Desktop/Projects/score-genius/frontend/app/build/intermediates/dex/release/minifyReleaseWithR8/classes.dex
 renamed.0=classes.dex
 path.0=classes.dex

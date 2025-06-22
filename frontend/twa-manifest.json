@@ -1,5 +1,5 @@
 {
-  "packageId": "io.scoregenius.twa",
+  "packageId": "io.scoregenius.app",
   "host": "scoregenius.io",
   "name": "ScoreGenius",
   "launcherName": "ScoreGenius",
@@ -21,8 +21,8 @@
     "path": "/Users/mattb/Desktop/Projects/score-genius/frontend/android.keystore",
     "alias": "score-genius"
   },
-  "appVersionName": "17",
-  "appVersionCode": 17,
+  "appVersionName": "1",
+  "appVersionCode": 1,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://scoregenius.io/manifest.webmanifest",
@@ -41,5 +41,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "protocolHandlers": [],
-  "appVersion": "17"
+  "appVersion": "1"
 }

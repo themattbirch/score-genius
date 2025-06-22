@@ -24,7 +24,9 @@ export default defineConfig(({ mode }) => {
         filename: "app-sw.ts",
         injectRegister: false,
         includeAssets: [
+          "favicon.ico",
           "splash_screen.html",
+          "manifest.webmanifest",
           "images/basketball.svg",
           "icons/*",
         ],
@@ -64,7 +66,8 @@ export default defineConfig(({ mode }) => {
 
         workbox: {
           navigateFallback: "/app/offline.html",
-          navigateFallbackAllowlist: [/^\/app(?:\/.*)?$/],
+          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackAllowlist: [/^\/app(?:\/|$)/],
           globPatterns: ["**/*.{js,css,html,ico,png,svg,json,woff2}"],
           cleanupOutdatedCaches: true,
         },

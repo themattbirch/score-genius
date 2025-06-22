@@ -2766,15 +2766,18 @@ com.google.androidbrowserhelper.trusted.splashscreens.SplashImageTransferTask:
     private static final java.lang.String TAG
 com.google.common.util.concurrent.ListenableFuture:
     public abstract void addListener(java.lang.Runnable,java.util.concurrent.Executor)
-io.scoregenius.twa.R$bool
-io.scoregenius.twa.R$color
-io.scoregenius.twa.R$drawable
-io.scoregenius.twa.R$integer
-io.scoregenius.twa.R$mipmap
-io.scoregenius.twa.R$raw
-io.scoregenius.twa.R$string
-io.scoregenius.twa.R$xml
-io.scoregenius.twa.R
+io.scoregenius.app.R$bool
+io.scoregenius.app.R$color
+io.scoregenius.app.R$drawable
+io.scoregenius.app.R$integer
+io.scoregenius.app.R$mipmap
+io.scoregenius.app.R$raw
+io.scoregenius.app.R$string
+io.scoregenius.app.R$xml
+io.scoregenius.app.R
+io.scoregenius.twa.Application
+io.scoregenius.twa.DelegationService
+io.scoregenius.twa.LauncherActivity
 kotlin.ArrayIntrinsicsKt
 kotlin.BuilderInference
 kotlin.CharCodeJVMKt

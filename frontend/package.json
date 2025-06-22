@@ -1,11 +1,14 @@
 {
-  "name": "scoregenius-frontend",
-  "version": "1.8.0",
+  "name": "scoregenius",
+  "version": "1.0.0",
+  "description": "Offline-capable PWA delivering NBA & MLB predictions, advanced analytics, and zero-tracking stats",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --config vite.config.ts",
     "build": "vite build && node scripts/generate_sitemap.js",
-    "preview": "vite preview --port 4173 --open /app/"
+    "preview": "vite preview --port 4173 --open /app/",
+    "lint": "eslint \"src/**/*.{js,ts,tsx}\" --fix",
+    "check": "npm run lint && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.10",
@@ -40,5 +43,10 @@
     "vite": "^6.1.0",
     "vite-plugin-pwa": "^1.0.0",
     "vite-plugin-static-copy": "^2.3.1"
-  }
+  },
+  "browserslist": [
+    "defaults",
+    "not IE 11",
+    "maintained node versions"
+  ]
 }
