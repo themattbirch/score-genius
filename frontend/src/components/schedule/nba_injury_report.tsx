@@ -67,15 +67,15 @@ const InjuryReport: React.FC<InjuryReportProps> = ({
   return (
     <div className="space-y-4">
       {teamsWithInjuries.map((team) => (
-        <details key={team} className="app-card overflow-hidden group px-4">
-          <summary className="flex cursor-pointer items-center justify-between gap-3 text-slate-800 dark:text-text-primary hover:bg-gray-50 dark:hover:bg-gray-700/50 focus:outline-none focus:ring-2 focus:ring-green-400">
+        <details key={team} className="app-card overflow-hidden group">
+          <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-slate-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400 dark:text-text-primary dark:hover:bg-gray-700/50">
             <span className="min-w-0 flex-1 font-medium">{team}</span>
             <span className="flex-shrink-0 rounded-full border border-green-500 px-2.5 py-1 text-xs font-medium text-green-800 shadow-md dark:text-green-100">
               {injuriesByTeam[team].length} available
             </span>
             <ChevronDown className="h-4 w-4 flex-shrink-0 transition-transform group-open:rotate-180" />
           </summary>
-          <div className="mt-2 py-2">
+          <div className="mt-2 px-4 py-2">
             <ul className="space-y-1">
               {injuriesByTeam[team].map((inj) => (
                 <li
