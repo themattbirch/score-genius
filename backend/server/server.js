@@ -82,6 +82,15 @@ app.use(
   }
 );
 
+// Serve only the .well-known folder and allow dotfiles
+app.use(
+  "/.well-known",
+  express.static(path.join(__dirname, "static/public/.well-known"), {
+    dotfiles: "allow",
+    maxAge: "1h",
+  })
+);
+
 // Static assets
 app.use("/media", express.static(mediaDir, { maxAge: "1d" }));
 app.use("/assets", express.static(assetsDir, { maxAge: "1d" }));
