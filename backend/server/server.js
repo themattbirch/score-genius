@@ -56,6 +56,11 @@ app.use((req, res, next) => {
   next();
 });
 
+// Workbox precache entry: /public/index.html
+app.get("/public/index.html", (_req, res) =>
+  res.sendFile(path.join(staticRoot, "public", "index.html"))
+);
+
 // Serve all marketing HTML (index.html + public/*.html)
 app.use(
   express.static(marketingDir, {

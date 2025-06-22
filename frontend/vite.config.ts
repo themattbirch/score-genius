@@ -26,9 +26,7 @@ export default defineConfig(({ mode }) => {
         includeAssets: [
           "splash_screen.html",
           "images/basketball.svg",
-          "icons/football-icon-192.png",
-          "icons/football-icon-512.png",
-          "icons/football-icon-maskable-512.png",
+          "icons/*",
         ],
         registerType: "autoUpdate",
         manifest: {

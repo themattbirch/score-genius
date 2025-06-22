@@ -37,6 +37,8 @@ COPY --from=builder /app/frontend/dist/assets                      \
      backend/server/static/assets
 COPY --from=builder /app/frontend/dist/media                       \
      backend/server/static/media
+COPY --from=builder /app/frontend/dist/icons                       \
+     backend/server/static/icons
 COPY --from=builder /app/frontend/dist/app-sw.js                   \
      backend/server/static/app-sw.js
 
