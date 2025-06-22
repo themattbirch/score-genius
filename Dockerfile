@@ -37,10 +37,14 @@ COPY --from=builder /app/frontend/dist/assets                      \
      backend/server/static/assets
 COPY --from=builder /app/frontend/dist/media                       \
      backend/server/static/media
+COPY --from=builder /app/frontend/dist/images                       \
+     backend/server/static/images
 COPY --from=builder /app/frontend/dist/icons                       \
      backend/server/static/icons
 COPY --from=builder /app/frontend/dist/app-sw.js                   \
      backend/server/static/app-sw.js
+COPY --from=builder /app/frontend/public/favicon.ico                   \
+     backend/server/static/public/favicon.ico
 
 WORKDIR /app/backend/server
 EXPOSE 10000

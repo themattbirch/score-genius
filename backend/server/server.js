@@ -85,6 +85,10 @@ app.use(
 // Static assets
 app.use("/media", express.static(mediaDir, { maxAge: "1d" }));
 app.use("/assets", express.static(assetsDir, { maxAge: "1d" }));
+app.use(
+  "/images",
+  express.static(path.join(staticRoot, "images"), { maxAge: "7d" })
+);
 
 // root-level app shell (needed by SW precache)
 app.get("/app.html", (_req, res) =>
