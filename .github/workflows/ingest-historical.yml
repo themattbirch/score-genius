@@ -60,15 +60,15 @@ jobs:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python backend/data_pipeline/mlb_team_stats_historical.py
 
-      - name: Run NBA injuries ingest
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
-          RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
-        run: python backend/data_pipeline/nba_injuries.py
+      #- name: Run NBA injuries ingest
+      #env:
+      #SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      #SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      #API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+      #ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      #RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+      #RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
+      #run: python backend/data_pipeline/nba_injuries.py
 
       - name: Run Advanced Splits Population
         env:
