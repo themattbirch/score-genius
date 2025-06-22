@@ -24,11 +24,17 @@ RUN mkdir -p backend/server/static/public
 COPY frontend/public/*.html \
      backend/server/static/public/
 
-# 4) Overlay only the SPA’s index.html into that folder
+# 4) Copy .well-known from your source, so assetlinks.json is included
+RUN mkdir -p backend/server/static/public/.well-known
+COPY frontend/public/.well-known/assetlinks.json       \
+     backend/server/static/public/.well-known/
+
+
+# 5) Overlay only the SPA’s index.html into that folder
 COPY --from=builder /app/frontend/dist/public/index.html \
      backend/server/static/public/index.html
 
-# 5) Copy the rest of the SPA build artifacts
+# 6) Copy the rest of the SPA build artifacts
 COPY --from=builder /app/frontend/dist/app.html                    \
      backend/server/static/app.html
 COPY --from=builder /app/frontend/dist/manifest.webmanifest       \
@@ -45,8 +51,6 @@ COPY --from=builder /app/frontend/dist/app-sw.js                   \
      backend/server/static/app-sw.js
 COPY --from=builder /app/frontend/public/favicon.ico                   \
      backend/server/static/public/favicon.ico
-COPY --from=builder /app/frontend/dist/.well-known                   \
-     backend/server/static/public/.well-known
 
 WORKDIR /app/backend/server
 EXPOSE 10000
