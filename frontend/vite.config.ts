@@ -23,7 +23,13 @@ export default defineConfig(({ mode }) => {
         srcDir: "src",
         filename: "app-sw.ts",
         injectRegister: false,
-        includeAssets: ["splash_screen.html", "images/basketball.svg"],
+        includeAssets: [
+          "splash_screen.html",
+          "images/basketball.svg",
+          "icons/football-icon-192.png",
+          "icons/football-icon-512.png",
+          "icons/football-icon-maskable-512.png",
+        ],
         registerType: "autoUpdate",
         manifest: {
           name: "ScoreGenius",

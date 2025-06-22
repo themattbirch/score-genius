@@ -81,6 +81,11 @@ app.use(
 app.use("/media", express.static(mediaDir, { maxAge: "1d" }));
 app.use("/assets", express.static(assetsDir, { maxAge: "1d" }));
 
+// root-level app shell (needed by SW precache)
+app.get("/app.html", (_req, res) =>
+  res.sendFile(path.join(staticRoot, "app.html"))
+);
+
 // --- PWA assets at the site-root -------------------------------------------
 app.get("/manifest.webmanifest", (_req, res) =>
   res.sendFile(path.join(staticRoot, "manifest.webmanifest"))
