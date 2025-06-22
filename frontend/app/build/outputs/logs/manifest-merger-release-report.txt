@@ -91,7 +91,7 @@ ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/Andr
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:68:17-50
 	android:name
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:67:17-83
-activity#io.scoregenius.twa.LauncherActivity
+activity#io.scoregenius.app.LauncherActivity
 ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:72:9-151:20
 	android:label
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:74:13-49
@@ -245,7 +245,7 @@ ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/Andr
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:165:17-50
 	android:name
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:164:17-67
-service#io.scoregenius.twa.DelegationService
+service#io.scoregenius.app.DelegationService
 ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:168:9-183:19
 	android:enabled
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:170:13-55
@@ -321,7 +321,7 @@ ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transf
 		ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:24:9-44
 	android:name
 		ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:23:9-81
-permission#io.scoregenius.twa.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+permission#io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:22:5-24:47
 	android:protectionLevel
 		ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:24:9-44
@@ -331,7 +331,7 @@ uses-permission#${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:5-97
 	android:name
 		ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:22-94
-uses-permission#io.scoregenius.twa.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+uses-permission#io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:5-97
 	android:name
 		ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:22-94

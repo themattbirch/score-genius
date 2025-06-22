@@ -4,15 +4,15 @@
     "type": "MERGED_MANIFESTS",
     "kind": "Directory"
   },
-  "applicationId": "io.scoregenius.twa",
+  "applicationId": "io.scoregenius.app",
   "variantName": "release",
   "elements": [
     {
       "type": "SINGLE",
       "filters": [],
       "attributes": [],
-      "versionCode": 17,
-      "versionName": "17",
+      "versionCode": 1,
+      "versionName": "1",
       "outputFile": "AndroidManifest.xml"
     }
   ],

@@ -40,7 +40,7 @@
     <!-- Value from default config. -->
     <string name="orientation" translatable="false">portrait</string>
     <!-- Value from default config. -->
-    <string name="providerAuthority" translatable="false">io.scoregenius.twa.fileprovider</string>
+    <string name="providerAuthority" translatable="false">io.scoregenius.app.fileprovider</string>
     <!-- Value from default config. -->
     <string name="webManifestUrl" translatable="false">https://scoregenius.io/manifest.webmanifest</string>
 

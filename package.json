@@ -1,6 +1,6 @@
 {
-  "name": "scoregenius",
-  "version": "1.5.0",
+  "name": "scoregenius-root",
+  "version": "1.0",
   "description": "",
   "main": "index.js",
   "scripts": {

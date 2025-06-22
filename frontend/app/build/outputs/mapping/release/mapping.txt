@@ -3,8 +3,8 @@
 # min_api: 21
 # common_typos_disable
 # {"id":"com.android.tools.r8.mapping","version":"2.2"}
-# pg_map_id: eb83e7c
-# pg_map_hash: SHA-256 eb83e7c53654f6f730a992b6d1a9efecf211da81aff6bf0730184d96c38aad6c
+# pg_map_id: 734277b
+# pg_map_hash: SHA-256 734277b95b48b072eb843c1c9e1322c57b746c1a8782ae68c5e89b0105f3d73b
 android.support.customtabs.ICustomTabsCallback -> a.a:
 # {"id":"sourceFile","fileName":"ICustomTabsCallback.java"}
     java.lang.String DESCRIPTOR -> a
@@ -5138,15 +5138,15 @@ com.google.androidbrowserhelper.trusted.splashscreens.SystemBarColorPredictor$Su
     1:1:void <init>(boolean,boolean,com.google.androidbrowserhelper.trusted.splashscreens.SystemBarColorPredictor$1):144:144 -> <init>
       # {"id":"com.android.tools.r8.residualsignature","signature":"(ZZLp/f$a;)V"}
     2:4:void <init>(boolean,boolean):149:151 -> <init>
-io.scoregenius.twa.Application -> io.scoregenius.twa.Application:
+io.scoregenius.app.Application -> io.scoregenius.app.Application:
 # {"id":"sourceFile","fileName":"Application.java"}
     1:4:void <init>():20:20 -> <init>
     1:4:void onCreate():26:26 -> onCreate
-io.scoregenius.twa.DelegationService -> io.scoregenius.twa.DelegationService:
+io.scoregenius.app.DelegationService -> io.scoregenius.app.DelegationService:
 # {"id":"sourceFile","fileName":"DelegationService.java"}
     1:4:void <init>():5:5 -> <init>
     1:4:void onCreate():9:9 -> onCreate
-io.scoregenius.twa.LauncherActivity -> io.scoregenius.twa.LauncherActivity:
+io.scoregenius.app.LauncherActivity -> io.scoregenius.app.LauncherActivity:
 # {"id":"sourceFile","fileName":"LauncherActivity.java"}
     1:4:void <init>():25:25 -> <init>
     1:5:android.net.Uri getLaunchingUrl():48:48 -> h

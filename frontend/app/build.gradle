@@ -21,7 +21,7 @@ plugins {
 }
 
 def twaManifest = [
-    applicationId: 'io.scoregenius.twa',
+    applicationId: 'io.scoregenius.app',
     hostName: 'scoregenius.io', // The domain being opened in the TWA.
     launchUrl: '/app', // The start path for the TWA. Must be relative to the domain.
     name: 'ScoreGenius', // The application name.
@@ -52,13 +52,13 @@ def twaManifest = [
 
 android {
     compileSdkVersion 36
-    namespace "io.scoregenius.twa"
+    namespace "io.scoregenius.app"
     defaultConfig {
-        applicationId "io.scoregenius.twa"
+        applicationId "io.scoregenius.app"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 17
-        versionName "17"
+        versionCode 1
+        versionName "1"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name

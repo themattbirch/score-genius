@@ -22,9 +22,9 @@
      the abbreviated format.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="io.scoregenius.twa"
-    android:versionCode="17"
-    android:versionName="17" >
+    package="io.scoregenius.app"
+    android:versionCode="1"
+    android:versionName="1" >
 
     <uses-sdk
         android:minSdkVersion="21"
@@ -43,13 +43,13 @@
     </queries>
 
     <permission
-        android:name="io.scoregenius.twa.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:name="io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         android:protectionLevel="signature" />
 
-    <uses-permission android:name="io.scoregenius.twa.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+    <uses-permission android:name="io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
 
     <application
-        android:name="io.scoregenius.twa.Application"
+        android:name="io.scoregenius.app.Application"
         android:allowBackup="true"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
         android:extractNativeLibs="true"
@@ -74,7 +74,7 @@
                 android:value="@string/launchUrl" />
         </activity>
         <activity
-            android:name="io.scoregenius.twa.LauncherActivity"
+            android:name="io.scoregenius.app.LauncherActivity"
             android:alwaysRetainTaskState="true"
             android:exported="true"
             android:label="@string/launcherName" >
@@ -154,7 +154,7 @@
         </provider>
 
         <service
-            android:name="io.scoregenius.twa.DelegationService"
+            android:name="io.scoregenius.app.DelegationService"
             android:enabled="@bool/enableNotification"
             android:exported="@bool/enableNotification" >
             <meta-data
@@ -172,7 +172,7 @@
 
         <provider
             android:name="androidx.startup.InitializationProvider"
-            android:authorities="io.scoregenius.twa.androidx-startup"
+            android:authorities="io.scoregenius.app.androidx-startup"
             android:exported="false" >
             <meta-data
                 android:name="androidx.profileinstaller.ProfileInstallerInitializer"

@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "io.scoregenius.twa.app-mergeReleaseResources-16:/values/values.xml",
+            "outputFile": "io.scoregenius.app-mergeReleaseResources-16:/values/values.xml",
             "map": [
                 {
                     "source": "/Users/mattb/.gradle/caches/8.11.1/transforms/22a8ec787f47654381fd448fc0dedaa1/transformed/lifecycle-viewmodel-2.6.2/res/values/values.xml",

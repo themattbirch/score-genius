@@ -4,7 +4,7 @@
     "type": "BUNDLE",
     "kind": "RegularFile"
   },
-  "applicationId": "io.scoregenius.twa",
+  "applicationId": "io.scoregenius.app",
   "variantName": "release",
   "elements": [
     {
