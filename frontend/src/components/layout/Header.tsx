@@ -98,7 +98,7 @@ const SportToggle: React.FC<SportToggleProps> = ({ active, onChange }) => {
       )}
       data-tour="sport-switch"
     >
-      {(["NBA", "MLB"] as Sport[]).map((s) => {
+      {(["MLB", "NBA"] as Sport[]).map((s) => {
         const isActive = active === s;
         return (
           <button

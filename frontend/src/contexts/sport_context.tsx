@@ -12,7 +12,7 @@ interface SportContextValue {
 const SportContext = createContext<SportContextValue | undefined>(undefined);
 
 export const SportProvider = ({ children }: { children: ReactNode }) => {
-  const [sport, setSport] = useState<Sport>("NBA");
+  const [sport, setSport] = useState<Sport>("MLB");
   return (
     <SportContext.Provider value={{ sport, setSport }}>
       {children}
