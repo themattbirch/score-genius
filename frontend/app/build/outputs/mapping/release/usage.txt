@@ -2775,9 +2775,6 @@ io.scoregenius.app.R$raw
 io.scoregenius.app.R$string
 io.scoregenius.app.R$xml
 io.scoregenius.app.R
-io.scoregenius.twa.Application
-io.scoregenius.twa.DelegationService
-io.scoregenius.twa.LauncherActivity
 kotlin.ArrayIntrinsicsKt
 kotlin.BuilderInference
 kotlin.CharCodeJVMKt
