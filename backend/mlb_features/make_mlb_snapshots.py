@@ -472,12 +472,12 @@ def make_mlb_snapshot(
     # This shows the PROPORTION of the advantage between the two teams.
     pie_payload = [
         {
-            "category": f"Home Offense vs Opp. Hand ({round(home_hand_val, 2)} Runs)", 
+            "category": f"Home Offense vs Starting Pitcher's Hand ({round(home_hand_val, 2)} Runs)", 
             "value": home_hand_val, 
             "color": "#60a5fa" # Blue for Home
         },
         {
-            "category": f"Away Offense vs Opp. Hand ({round(away_hand_val, 2)} Runs)",
+            "category": f"Away Offense vs Starting Pitcher's Hand ({round(away_hand_val, 2)} Runs)",
             "value": away_hand_val, 
             "color": "#4ade80" # Green for Away
         },

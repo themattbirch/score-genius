@@ -1,6 +1,6 @@
 {
   "name": "scoregenius",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Offline-capable PWA delivering NBA & MLB predictions, advanced analytics, and zero-tracking stats",
   "type": "module",
   "scripts": {

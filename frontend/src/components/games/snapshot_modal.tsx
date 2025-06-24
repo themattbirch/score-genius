@@ -62,6 +62,11 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
       ? "Quarter Scoring" // Correct for NBA post-game
       : "Quarter Scoring Average"; // Correct for NBA pre-game
 
+  /* pie title */
+
+  const pieChartTitle =
+    sport === "MLB" ? "Avg Runs Vs LHP / RHP" : "Scoring Distribution";
+
   /* multi-pie? */
   const isMultiPie =
     hasPie &&
@@ -199,7 +204,9 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
                 className="text-lg font-semibold mb-4 text-center"
                 style={{ color: textColor }}
               >
-                Scoring Distribution
+                {/* --- START: Changed Code --- */}
+                {pieChartTitle}
+                {/* --- END: Changed Code --- */}
               </h3>
 
               {isMultiPie ? (

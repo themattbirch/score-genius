@@ -1,109 +1,109 @@
-androidx.core.app.RemoteActionCompatParcelizer
-com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity
-androidx.savedstate.Recreator
-androidx.lifecycle.ReflectiveGenericLifecycleObserver
-android.support.v4.graphics.drawable.IconCompatParcelizer
-androidx.annotation.Keep
-androidx.activity.ComponentActivity$4
-androidx.versionedparcelable.ParcelImpl
-androidx.core.app.RemoteActionCompat
-androidx.startup.InitializationProvider
-androidx.core.content.FileProvider
-androidx.lifecycle.DefaultLifecycleObserverAdapter
-androidx.lifecycle.LegacySavedStateHandleController$tryToAddRecreator$1
-android.support.v4.app.RemoteActionCompatParcelizer
-androidx.lifecycle.SavedStateHandleAttacher
-androidx.activity.OnBackPressedDispatcher$LifecycleOnBackPressedCancellable
-androidx.core.app.CoreComponentFactory
-io.scoregenius.app.Application
-androidx.browser.browseractions.BrowserActionsFallbackMenuView
-androidx.lifecycle.SavedStateHandleController
-androidx.core.graphics.drawable.IconCompatParcelizer
-androidx.lifecycle.SingleGeneratedAdapterObserver
-androidx.profileinstaller.ProfileInstallReceiver
-androidx.activity.ImmLeaksCleaner
-com.google.androidbrowserhelper.trusted.FocusActivity
-com.google.androidbrowserhelper.trusted.WebViewFallbackActivity
-io.scoregenius.app.DelegationService
-androidx.lifecycle.LifecycleCoroutineScopeImpl
-androidx.lifecycle.LiveData$LifecycleBoundObserver
-com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity
-androidx.core.graphics.drawable.IconCompat
-io.scoregenius.app.LauncherActivity
-androidx.lifecycle.CompositeGeneratedAdaptersObserver
 androidx.profileinstaller.ProfileInstallerInitializer
+android.support.v4.app.RemoteActionCompatParcelizer
+androidx.versionedparcelable.ParcelImpl
+androidx.activity.ImmLeaksCleaner
+androidx.lifecycle.LiveData$LifecycleBoundObserver
+androidx.savedstate.Recreator
+androidx.core.app.RemoteActionCompat
+androidx.activity.OnBackPressedDispatcher$LifecycleOnBackPressedCancellable
+androidx.startup.InitializationProvider
+androidx.lifecycle.LifecycleCoroutineScopeImpl
+com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity
+androidx.lifecycle.SingleGeneratedAdapterObserver
+androidx.lifecycle.ReflectiveGenericLifecycleObserver
+androidx.core.app.CoreComponentFactory
+androidx.activity.ComponentActivity$4
 androidx.versionedparcelable.CustomVersionedParcelable
+androidx.core.content.FileProvider
+com.google.androidbrowserhelper.trusted.WebViewFallbackActivity
+androidx.annotation.Keep
+androidx.profileinstaller.ProfileInstallReceiver
+android.support.v4.graphics.drawable.IconCompatParcelizer
+io.scoregenius.app.LauncherActivity
+androidx.lifecycle.DefaultLifecycleObserverAdapter
+com.google.androidbrowserhelper.trusted.FocusActivity
+androidx.core.app.RemoteActionCompatParcelizer
+androidx.core.graphics.drawable.IconCompat
+androidx.lifecycle.LegacySavedStateHandleController$tryToAddRecreator$1
+androidx.lifecycle.CompositeGeneratedAdaptersObserver
+androidx.browser.browseractions.BrowserActionsFallbackMenuView
+io.scoregenius.app.Application
+androidx.lifecycle.SavedStateHandleController
+io.scoregenius.app.DelegationService
+com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity
+androidx.core.graphics.drawable.IconCompatParcelizer
+androidx.lifecycle.SavedStateHandleAttacher
 androidx.concurrent.futures.AbstractResolvableFuture: androidx.concurrent.futures.AbstractResolvableFuture$Listener listeners
 androidx.versionedparcelable.ParcelImpl: android.os.Parcelable$Creator CREATOR
-androidx.concurrent.futures.AbstractResolvableFuture: androidx.concurrent.futures.AbstractResolvableFuture$Waiter waiters
 androidx.concurrent.futures.AbstractResolvableFuture$Waiter: androidx.concurrent.futures.AbstractResolvableFuture$Waiter next
+androidx.concurrent.futures.AbstractResolvableFuture: androidx.concurrent.futures.AbstractResolvableFuture$Waiter waiters
 androidx.concurrent.futures.AbstractResolvableFuture$Waiter: java.lang.Thread thread
 androidx.concurrent.futures.AbstractResolvableFuture: java.lang.Object value
-androidx.core.app.NotificationManagerCompat$Api26Impl: java.util.List getNotificationChannels(android.app.NotificationManager)
-androidx.core.app.NotificationManagerCompat$Api26Impl: void createNotificationChannelGroups(android.app.NotificationManager,java.util.List)
-androidx.core.graphics.drawable.IconCompat$Api28Impl: java.lang.String getResPackage(java.lang.Object)
-android.support.v4.graphics.drawable.IconCompatParcelizer: androidx.core.graphics.drawable.IconCompat read(androidx.versionedparcelable.VersionedParcel)
-androidx.core.content.ContextCompat$Api21Impl: java.io.File getCodeCacheDir(android.content.Context)
-com.google.androidbrowserhelper.trusted.FocusActivity: FocusActivity()
-androidx.browser.browseractions.BrowserActionsFallbackMenuView: BrowserActionsFallbackMenuView(android.content.Context,android.util.AttributeSet)
-androidx.core.graphics.drawable.IconCompatParcelizer: IconCompatParcelizer()
-androidx.profileinstaller.ProfileVerifier$Api33Impl: android.content.pm.PackageInfo getPackageInfo(android.content.pm.PackageManager,android.content.Context)
-androidx.core.content.ContextCompat$Api21Impl: java.io.File getNoBackupFilesDir(android.content.Context)
-androidx.versionedparcelable.CustomVersionedParcelable: CustomVersionedParcelable()
-androidx.core.graphics.drawable.IconCompat$Api23Impl: android.graphics.drawable.Icon toIcon(androidx.core.graphics.drawable.IconCompat,android.content.Context)
-androidx.core.graphics.drawable.IconCompat$Api23Impl: android.graphics.drawable.Drawable loadDrawable(android.graphics.drawable.Icon,android.content.Context)
-androidx.core.content.FileProvider$Api21Impl: java.io.File[] getExternalMediaDirs(android.content.Context)
-androidx.core.graphics.drawable.IconCompat$Api28Impl: int getType(java.lang.Object)
-androidx.core.graphics.drawable.IconCompat$Api28Impl: int getResId(java.lang.Object)
+com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity: ManageDataLauncherActivity()
 androidx.core.app.NotificationManagerCompat$Api26Impl: java.lang.String getId(android.app.NotificationChannelGroup)
+androidx.core.content.FileProvider$Api21Impl: java.io.File[] getExternalMediaDirs(android.content.Context)
+android.support.v4.app.RemoteActionCompatParcelizer: RemoteActionCompatParcelizer()
+androidx.browser.browseractions.BrowserActionsFallbackMenuView: BrowserActionsFallbackMenuView(android.content.Context,android.util.AttributeSet)
 androidx.core.graphics.drawable.IconCompat: IconCompat()
-android.support.v4.graphics.drawable.IconCompatParcelizer: IconCompatParcelizer()
-androidx.core.app.NotificationManagerCompat$Api26Impl: java.util.List getNotificationChannelGroups(android.app.NotificationManager)
-androidx.profileinstaller.FileSectionType: androidx.profileinstaller.FileSectionType valueOf(java.lang.String)
-androidx.core.app.ActivityCompat$Api23Impl: void requestPermissions(android.app.Activity,java.lang.String[],int)
-androidx.core.app.CoreComponentFactory: CoreComponentFactory()
-androidx.core.app.NotificationManagerCompat$Api24Impl: int getImportance(android.app.NotificationManager)
-com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity: NotificationPermissionRequestActivity()
-androidx.profileinstaller.ProfileInstallerInitializer: ProfileInstallerInitializer()
-androidx.startup.InitializationProvider: InitializationProvider()
-io.scoregenius.app.LauncherActivity: LauncherActivity()
-androidx.core.graphics.drawable.DrawableCompat$Api23Impl: boolean setLayoutDirection(android.graphics.drawable.Drawable,int)
-androidx.core.app.NotificationManagerCompat$Api26Impl: android.app.NotificationChannel getNotificationChannel(android.app.NotificationManager,java.lang.String)
-android.support.v4.graphics.drawable.IconCompatParcelizer: void write(androidx.core.graphics.drawable.IconCompat,androidx.versionedparcelable.VersionedParcel)
-androidx.core.app.RemoteActionCompatParcelizer: RemoteActionCompatParcelizer()
-androidx.profileinstaller.ProfileInstallerInitializer$Choreographer16Impl: void postFrameCallback(java.lang.Runnable)
-android.support.v4.app.RemoteActionCompatParcelizer: void write(androidx.core.app.RemoteActionCompat,androidx.versionedparcelable.VersionedParcel)
-androidx.core.graphics.drawable.IconCompat$Api28Impl: android.net.Uri getUri(java.lang.Object)
-androidx.core.app.NotificationManagerCompat$Api26Impl: void deleteNotificationChannel(android.app.NotificationManager,java.lang.String)
-androidx.core.content.ContextCompat$Api23Impl: java.lang.Object getSystemService(android.content.Context,java.lang.Class)
-androidx.core.app.NotificationManagerCompat$Api26Impl: void createNotificationChannelGroup(android.app.NotificationManager,android.app.NotificationChannelGroup)
-androidx.core.graphics.drawable.IconCompat$Api26Impl: android.graphics.drawable.Drawable createAdaptiveIconDrawable(android.graphics.drawable.Drawable,android.graphics.drawable.Drawable)
-androidx.core.app.RemoteActionCompat: RemoteActionCompat()
+androidx.core.graphics.drawable.IconCompat$Api26Impl: android.graphics.drawable.Icon createWithAdaptiveBitmap(android.graphics.Bitmap)
+androidx.core.app.ActivityCompat$Api23Impl: boolean shouldShowRequestPermissionRationale(android.app.Activity,java.lang.String)
 androidx.core.content.ContextCompat$Api23Impl: int getColor(android.content.Context,int)
+android.support.v4.app.RemoteActionCompatParcelizer: void write(androidx.core.app.RemoteActionCompat,androidx.versionedparcelable.VersionedParcel)
+io.scoregenius.app.LauncherActivity: LauncherActivity()
+android.support.v4.graphics.drawable.IconCompatParcelizer: IconCompatParcelizer()
 androidx.core.app.NotificationManagerCompat$Api26Impl: void createNotificationChannel(android.app.NotificationManager,android.app.NotificationChannel)
 androidx.core.app.NotificationManagerCompat$Api26Impl: java.lang.String getId(android.app.NotificationChannel)
-androidx.core.app.ActivityCompat$Api23Impl: void onSharedElementsReady(java.lang.Object)
-com.google.androidbrowserhelper.trusted.WebViewFallbackActivity: WebViewFallbackActivity()
+androidx.core.app.NotificationManagerCompat$Api26Impl: android.app.NotificationChannel getNotificationChannel(android.app.NotificationManager,java.lang.String)
+androidx.core.content.ContextCompat$Api21Impl: java.io.File getCodeCacheDir(android.content.Context)
+androidx.core.app.RemoteActionCompatParcelizer: androidx.core.app.RemoteActionCompat read(androidx.versionedparcelable.VersionedParcel)
+androidx.core.app.NotificationManagerCompat$Api26Impl: void createNotificationChannelGroup(android.app.NotificationManager,android.app.NotificationChannelGroup)
+androidx.core.graphics.drawable.IconCompat$Api28Impl: int getResId(java.lang.Object)
+androidx.core.app.NotificationManagerCompat$Api26Impl: void createNotificationChannelGroups(android.app.NotificationManager,java.util.List)
+androidx.profileinstaller.ProfileInstallerInitializer$Handler28Impl: android.os.Handler createAsync(android.os.Looper)
+androidx.profileinstaller.FileSectionType: androidx.profileinstaller.FileSectionType valueOf(java.lang.String)
+androidx.core.content.ContextCompat$Api21Impl: java.io.File getNoBackupFilesDir(android.content.Context)
+androidx.core.app.NotificationManagerCompat$Api24Impl: int getImportance(android.app.NotificationManager)
+android.support.v4.graphics.drawable.IconCompatParcelizer: androidx.core.graphics.drawable.IconCompat read(androidx.versionedparcelable.VersionedParcel)
+android.support.v4.app.RemoteActionCompatParcelizer: androidx.core.app.RemoteActionCompat read(androidx.versionedparcelable.VersionedParcel)
+androidx.core.graphics.drawable.IconCompat$Api28Impl: java.lang.String getResPackage(java.lang.Object)
+androidx.core.content.ContextCompat$Api23Impl: java.lang.String getSystemServiceName(android.content.Context,java.lang.Class)
+androidx.core.graphics.drawable.IconCompatParcelizer: void write(androidx.core.graphics.drawable.IconCompat,androidx.versionedparcelable.VersionedParcel)
+androidx.core.app.RemoteActionCompat: RemoteActionCompat()
+android.support.v4.graphics.drawable.IconCompatParcelizer: void write(androidx.core.graphics.drawable.IconCompat,androidx.versionedparcelable.VersionedParcel)
+androidx.profileinstaller.ProfileInstallReceiver: ProfileInstallReceiver()
+androidx.core.graphics.drawable.IconCompatParcelizer: androidx.core.graphics.drawable.IconCompat read(androidx.versionedparcelable.VersionedParcel)
+androidx.core.graphics.drawable.IconCompat$Api28Impl: int getType(java.lang.Object)
+androidx.core.graphics.drawable.IconCompat$Api23Impl: android.graphics.drawable.Icon toIcon(androidx.core.graphics.drawable.IconCompat,android.content.Context)
 androidx.profileinstaller.FileSectionType: androidx.profileinstaller.FileSectionType[] values()
 androidx.core.graphics.drawable.DrawableCompat$Api23Impl: int getLayoutDirection(android.graphics.drawable.Drawable)
-androidx.core.app.NotificationManagerCompat$Api26Impl: void deleteNotificationChannelGroup(android.app.NotificationManager,java.lang.String)
+androidx.profileinstaller.ProfileInstallerInitializer$Choreographer16Impl: void postFrameCallback(java.lang.Runnable)
 androidx.core.content.ContextCompat$Api21Impl: android.graphics.drawable.Drawable getDrawable(android.content.Context,int)
+com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity: NotificationPermissionRequestActivity()
+androidx.core.app.ActivityCompat$Api23Impl: void onSharedElementsReady(java.lang.Object)
 androidx.core.app.RemoteActionCompatParcelizer: void write(androidx.core.app.RemoteActionCompat,androidx.versionedparcelable.VersionedParcel)
-io.scoregenius.app.DelegationService: DelegationService()
-androidx.core.app.RemoteActionCompatParcelizer: androidx.core.app.RemoteActionCompat read(androidx.versionedparcelable.VersionedParcel)
-androidx.core.graphics.drawable.IconCompat$Api23Impl: android.net.Uri getUri(java.lang.Object)
-com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity: ManageDataLauncherActivity()
-android.support.v4.app.RemoteActionCompatParcelizer: androidx.core.app.RemoteActionCompat read(androidx.versionedparcelable.VersionedParcel)
-androidx.core.content.FileProvider: FileProvider()
-androidx.profileinstaller.ProfileInstallerInitializer$Handler28Impl: android.os.Handler createAsync(android.os.Looper)
-androidx.core.graphics.drawable.IconCompatParcelizer: androidx.core.graphics.drawable.IconCompat read(androidx.versionedparcelable.VersionedParcel)
+androidx.core.app.CoreComponentFactory: CoreComponentFactory()
 androidx.core.app.NotificationManagerCompat$Api26Impl: void createNotificationChannels(android.app.NotificationManager,java.util.List)
-androidx.core.graphics.drawable.IconCompat$Api26Impl: android.graphics.drawable.Icon createWithAdaptiveBitmap(android.graphics.Bitmap)
-androidx.core.graphics.drawable.IconCompatParcelizer: void write(androidx.core.graphics.drawable.IconCompat,androidx.versionedparcelable.VersionedParcel)
-androidx.core.content.ContextCompat$Api23Impl: java.lang.String getSystemServiceName(android.content.Context,java.lang.Class)
-io.scoregenius.app.Application: Application()
+androidx.core.graphics.drawable.DrawableCompat$Api23Impl: boolean setLayoutDirection(android.graphics.drawable.Drawable,int)
+androidx.core.app.NotificationManagerCompat$Api26Impl: void deleteNotificationChannelGroup(android.app.NotificationManager,java.lang.String)
+androidx.core.content.ContextCompat$Api23Impl: java.lang.Object getSystemService(android.content.Context,java.lang.Class)
+androidx.core.app.ActivityCompat$Api23Impl: void requestPermissions(android.app.Activity,java.lang.String[],int)
+androidx.core.graphics.drawable.IconCompat$Api28Impl: android.net.Uri getUri(java.lang.Object)
+androidx.core.graphics.drawable.IconCompat$Api23Impl: android.graphics.drawable.Drawable loadDrawable(android.graphics.drawable.Icon,android.content.Context)
+io.scoregenius.app.DelegationService: DelegationService()
+androidx.core.app.NotificationManagerCompat$Api26Impl: void deleteNotificationChannel(android.app.NotificationManager,java.lang.String)
+androidx.versionedparcelable.CustomVersionedParcelable: CustomVersionedParcelable()
+androidx.core.content.FileProvider: FileProvider()
+com.google.androidbrowserhelper.trusted.FocusActivity: FocusActivity()
+androidx.core.graphics.drawable.IconCompat$Api26Impl: android.graphics.drawable.Drawable createAdaptiveIconDrawable(android.graphics.drawable.Drawable,android.graphics.drawable.Drawable)
+androidx.core.app.NotificationManagerCompat$Api26Impl: java.util.List getNotificationChannels(android.app.NotificationManager)
+androidx.startup.InitializationProvider: InitializationProvider()
+androidx.profileinstaller.ProfileInstallerInitializer: ProfileInstallerInitializer()
 androidx.core.app.NotificationManagerCompat$Api24Impl: boolean areNotificationsEnabled(android.app.NotificationManager)
-androidx.core.app.ActivityCompat$Api23Impl: boolean shouldShowRequestPermissionRationale(android.app.Activity,java.lang.String)
-androidx.profileinstaller.ProfileInstallReceiver: ProfileInstallReceiver()
-android.support.v4.app.RemoteActionCompatParcelizer: RemoteActionCompatParcelizer()
+androidx.core.app.RemoteActionCompatParcelizer: RemoteActionCompatParcelizer()
 androidx.core.graphics.drawable.IconCompat$Api30Impl: android.graphics.drawable.Icon createWithAdaptiveBitmapContentUri(android.net.Uri)
+androidx.profileinstaller.ProfileVerifier$Api33Impl: android.content.pm.PackageInfo getPackageInfo(android.content.pm.PackageManager,android.content.Context)
+com.google.androidbrowserhelper.trusted.WebViewFallbackActivity: WebViewFallbackActivity()
+androidx.core.graphics.drawable.IconCompatParcelizer: IconCompatParcelizer()
+io.scoregenius.app.Application: Application()
+androidx.core.graphics.drawable.IconCompat$Api23Impl: android.net.Uri getUri(java.lang.Object)
+androidx.core.app.NotificationManagerCompat$Api26Impl: java.util.List getNotificationChannelGroups(android.app.NotificationManager)
