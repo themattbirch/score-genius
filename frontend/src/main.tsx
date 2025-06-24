@@ -21,11 +21,6 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-console.log("🔥 VITE ENVS:", {
-  API_KEY: import.meta.env.VITE_FIREBASE_API_KEY,
-  PROJECT_ID: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-});
-
 const firebaseApp = initializeApp(firebaseConfig);
 const analytics = getAnalytics(firebaseApp);
 // Log an "app_open" each time the PWA bundle initializes:
