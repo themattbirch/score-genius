@@ -1,13 +1,18 @@
-# ─── Stage 1: build frontend ───
+# ─── Stage 1: build frontend ────────────────────────────────────────────────────
 FROM node:18-alpine AS builder
-WORKDIR /app/frontend
 
+# 1) Copy the secret .env (Render mounts it in the repo root)
+WORKDIR /app
+COPY .env .env
+
+# 2) Build the SPA
+WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-# ─── Stage 2: assemble backend + static ───
+# ─── Stage 2: assemble backend + static ─────────────────────────────────────────
 FROM node:18-slim AS runner
 WORKDIR /app
 
@@ -18,40 +23,33 @@ RUN cd backend/server && npm ci --production
 # 2) Copy backend source
 COPY backend/ ./backend/
 
-# 3) Copy all your marketing pages (static HTML) into the image
-#    Use a wildcard so the directory itself need not exist yet in build cache
+# 3) Copy marketing pages & SPA build artifacts into backend’s static folder
 RUN mkdir -p backend/server/static/public
 COPY frontend/public/*.html \
      backend/server/static/public/
-
-# 4) Copy .well-known from your source, so assetlinks.json is included
 RUN mkdir -p backend/server/static/public/.well-known
-COPY frontend/public/.well-known/assetlinks.json       \
+COPY frontend/public/.well-known/assetlinks.json \
      backend/server/static/public/.well-known/
 
-
-# 5) Overlay only the SPA’s index.html into that folder
+# Overlay the SPA
 COPY --from=builder /app/frontend/dist/public/index.html \
      backend/server/static/public/index.html
-
-# 6) Copy the rest of the SPA build artifacts
-COPY --from=builder /app/frontend/dist/app.html                    \
+COPY --from=builder /app/frontend/dist/app.html \
      backend/server/static/app.html
-COPY --from=builder /app/frontend/dist/manifest.webmanifest       \
+COPY --from=builder /app/frontend/dist/manifest.webmanifest \
      backend/server/static/manifest.webmanifest
-COPY --from=builder /app/frontend/dist/assets                      \
+COPY --from=builder /app/frontend/dist/assets \
      backend/server/static/assets
-COPY --from=builder /app/frontend/dist/media                       \
+COPY --from=builder /app/frontend/dist/media \
      backend/server/static/media
-COPY --from=builder /app/frontend/dist/images                       \
+COPY --from=builder /app/frontend/dist/images \
      backend/server/static/images
-COPY --from=builder /app/frontend/dist/icons                       \
+COPY --from=builder /app/frontend/dist/icons \
      backend/server/static/icons
-COPY --from=builder /app/frontend/dist/app-sw.js                   \
+COPY --from=builder /app/frontend/dist/app-sw.js \
      backend/server/static/app-sw.js
-COPY --from=builder /app/frontend/public/favicon.ico                   \
-     backend/server/static/public/favicon.ico
 
+# ─── Final runner setup ──────────────────────────────────────────────────────────
 WORKDIR /app/backend/server
 EXPOSE 10000
 CMD ["node", "server.js"]
