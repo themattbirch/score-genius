@@ -714,16 +714,28 @@ def build_and_upsert_mlb_previews() -> int:
     eastern_now = dt_datetime.now(ET_ZONE)
     today_et = eastern_now.date()
     tomorrow_et = today_et + timedelta(days=1)
+    day_after_tomorrow_et = today_et + timedelta(days=2)
 
     print(f"\nStep 1a: Fetching schedule for {today_et}")
     apibaseball_games_today = get_games_from_apibaseball(today_et)
     time.sleep(REQUEST_DELAY_SECONDS)
+
     print(f"\nStep 1b: Fetching schedule for {tomorrow_et}")
     apibaseball_games_tomorrow = get_games_from_apibaseball(tomorrow_et)
-    apibaseball_games = apibaseball_games_today + apibaseball_games_tomorrow
+    time.sleep(REQUEST_DELAY_SECONDS)
+
+    print(f"\nStep 1c: Fetching schedule for {day_after_tomorrow_et}")
+    apibaseball_games_day_after = get_games_from_apibaseball(day_after_tomorrow_et)
+
+    # Combine all three days into one list
+    apibaseball_games = (
+        apibaseball_games_today
+        + apibaseball_games_tomorrow
+        + apibaseball_games_day_after
+    )
 
     if not apibaseball_games:
-        print(f"No game events found for {today_et} or {tomorrow_et}. Exiting.")
+        print(f"No game events found for {today_et}, {tomorrow_et}, or {day_after_tomorrow_et}. Exiting.")
         return 0
 
     print(f"\nStep 2: Fetching betting odds covering {today_et} & {tomorrow_et}")
