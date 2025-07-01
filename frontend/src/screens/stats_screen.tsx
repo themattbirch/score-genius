@@ -84,10 +84,15 @@ const StatsScreen: React.FC = () => {
 
   const online = useNetworkStatus();
 
-  // --- Season Logic (unmodified) ---
+  // --- Season Logic (updated for Oct 22 [2025-26 NBA season] rollover) ---
   const defaultSeason = useMemo(() => {
     if (sport === "MLB") return date.getUTCFullYear();
-    return date.getUTCMonth() >= 6
+
+    const month = date.getUTCMonth() + 1; // JS months are 0–11 → +1 for 1–12
+    const day = date.getUTCDate();
+
+    // Only roll into the new NBA season on or after Oct 22 UTC
+    return month > 10 || (month === 10 && day >= 22)
       ? date.getUTCFullYear()
       : date.getUTCFullYear() - 1;
   }, [sport, date]);
