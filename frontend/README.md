@@ -1,4 +1,4 @@
-# [ScoreGenius](https://sportsgenius.io)
+# [ScoreGenius](https://scoregenius.io)
 
 ScoreGenius is an AI-driven, live sports analytics Progressive Web App (PWA) that delivers real-time predictive analysis, natural language game recaps, and actionable betting insights for NBA games. Leveraging state-of-the-art machine learning techniques, adaptive ensemble modeling, and robust feature engineering, ScoreGenius dynamically updates in-game predictions as a match unfolds.
 
@@ -68,7 +68,7 @@ The system is designed with modularity and scalability in mind, structured into 
 
 - `React 18` with `TypeScript`
 - `Vite` for rapid development and bundling
-- `PWA` with offline support
+- `PWA`—fast install & load; requires internet for live data
 - Interactive data visualizations (`Recharts`, `Chart.js`)
 
 ### Backend

@@ -64,9 +64,10 @@ const MLBScheduleDisplay: React.FC = () => {
   return (
     <div className="pt-4">
       {!online ? (
-        /* ---- offline ---- */
+        /* ---- offline Message ---- */
         <p className="text-center text-slate-500 dark:text-slate-400">
-          You’re offline. Can’t fetch MLB games for {displayDate}.
+          Live MLB schedule for {displayDate} requires internet. Please
+          reconnect.
         </p>
       ) : isLoading ? (
         /* ---- loading ---- */
