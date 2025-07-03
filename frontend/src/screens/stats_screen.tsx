@@ -209,10 +209,10 @@ const StatsScreen: React.FC = () => {
   const offlineBanner = !online && (
     <section className="p-4 space-y-4">
       <h1 className="text-xl text-slate-800 dark:text-text-primary font-semibold">
-        Offline mode
+        Live Stats Unavailable
       </h1>
       <p className="text-gray-500 dark:text-text-secondary">
-        You appear to be offline. Reconnect to load the latest stats.
+        Live stats require internet. Please reconnect to view the latest data.
       </p>
     </section>
   );

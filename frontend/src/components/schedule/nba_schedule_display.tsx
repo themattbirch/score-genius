@@ -128,7 +128,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
   if (!online)
     return (
       <p className="text-center text-slate-500 dark:text-slate-400">
-        You’re offline. Can’t fetch NBA games for {displayDate}.
+        Live NBA schedule for {displayDate} requires internet. Please reconnect.
       </p>
     );
 
