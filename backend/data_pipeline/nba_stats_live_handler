@@ -1,4 +1,4 @@
-# backend/src/scripts/nba_stats_live_handler.py
+# backend/data_pipeline/nba_stats_live_handler.py
 
 import pandas as pd
 from datetime import datetime, timedelta

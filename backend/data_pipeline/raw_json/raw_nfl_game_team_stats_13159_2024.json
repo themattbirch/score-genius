@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "13159"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 3,
+        "name": "New England Patriots",
+        "logo": "https://media.api-sports.io/american-football/teams/3.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 11,
+          "passing": 5,
+          "rushing": 4,
+          "from_penalties": 2,
+          "third_down_efficiency": "6-15",
+          "fourth_down_efficiency": "0-0"
+        },
+        "plays": {
+          "total": 55
+        },
+        "yards": {
+          "total": 159,
+          "yards_per_play": "11",
+          "total_drives": "2.9"
+        },
+        "passing": {
+          "total": 90,
+          "comp_att": "14-29",
+          "yards_per_pass": "2.8",
+          "interceptions_thrown": 1,
+          "sacks_yards_lost": "3-23"
+        },
+        "rushings": {
+          "total": 69,
+          "attempts": 23,
+          "yards_per_rush": "3.0"
+        },
+        "red_zone": {
+          "made_att": "1-2"
+        },
+        "penalties": {
+          "total": "1-5"
+        },
+        "turnovers": {
+          "total": 2,
+          "lost_fumbles": 1,
+          "interceptions": 1
+        },
+        "posession": {
+          "total": "25:24"
+        },
+        "interceptions": {
+          "total": 0
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 5
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 14
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 12,
+        "name": "Philadelphia Eagles",
+        "logo": "https://media.api-sports.io/american-football/teams/12.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 16,
+          "passing": 12,
+          "rushing": 4,
+          "from_penalties": 0,
+          "third_down_efficiency": "5-16",
+          "fourth_down_efficiency": "0-3"
+        },
+        "plays": {
+          "total": 67
+        },
+        "yards": {
+          "total": 283,
+          "yards_per_play": "12",
+          "total_drives": "4.2"
+        },
+        "passing": {
+          "total": 210,
+          "comp_att": "29-37",
+          "yards_per_pass": "5.0",
+          "interceptions_thrown": 0,
+          "sacks_yards_lost": "5-32"
+        },
+        "rushings": {
+          "total": 73,
+          "attempts": 25,
+          "yards_per_rush": "2.9"
+        },
+        "red_zone": {
+          "made_att": "1-2"
+        },
+        "penalties": {
+          "total": "4-40"
+        },
+        "turnovers": {
+          "total": 0,
+          "lost_fumbles": 0,
+          "interceptions": 0
+        },
+        "posession": {
+          "total": "34:36"
+        },
+        "interceptions": {
+          "total": 1
+        },
+        "fumbles_recovered": {
+          "total": 1
+        },
+        "sacks": {
+          "total": 3
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 13
+        }
+      }
+    }
+  ]
+}

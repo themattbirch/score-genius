@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "13167"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 25,
+        "name": "Miami Dolphins",
+        "logo": "https://media.api-sports.io/american-football/teams/25.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 12,
+          "passing": 7,
+          "rushing": 3,
+          "from_penalties": 2,
+          "third_down_efficiency": "4-15",
+          "fourth_down_efficiency": "2-2"
+        },
+        "plays": {
+          "total": 62
+        },
+        "yards": {
+          "total": 288,
+          "yards_per_play": "13",
+          "total_drives": "4.6"
+        },
+        "passing": {
+          "total": 202,
+          "comp_att": "24-40",
+          "yards_per_pass": "4.6",
+          "interceptions_thrown": 0,
+          "sacks_yards_lost": "4-26"
+        },
+        "rushings": {
+          "total": 86,
+          "attempts": 18,
+          "yards_per_rush": "4.8"
+        },
+        "red_zone": {
+          "made_att": "1-3"
+        },
+        "penalties": {
+          "total": "6-55"
+        },
+        "turnovers": {
+          "total": 2,
+          "lost_fumbles": 2,
+          "interceptions": 0
+        },
+        "posession": {
+          "total": "28:26"
+        },
+        "interceptions": {
+          "total": 1
+        },
+        "fumbles_recovered": {
+          "total": 1
+        },
+        "sacks": {
+          "total": 4
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 6
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 18,
+        "name": "Washington Commanders",
+        "logo": "https://media.api-sports.io/american-football/teams/18.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 17,
+          "passing": 11,
+          "rushing": 5,
+          "from_penalties": 1,
+          "third_down_efficiency": "5-18",
+          "fourth_down_efficiency": "1-2"
+        },
+        "plays": {
+          "total": 74
+        },
+        "yards": {
+          "total": 340,
+          "yards_per_play": "13",
+          "total_drives": "4.6"
+        },
+        "passing": {
+          "total": 229,
+          "comp_att": "32-48",
+          "yards_per_pass": "4.4",
+          "interceptions_thrown": 1,
+          "sacks_yards_lost": "4-24"
+        },
+        "rushings": {
+          "total": 111,
+          "attempts": 22,
+          "yards_per_rush": "5.0"
+        },
+        "red_zone": {
+          "made_att": "0-2"
+        },
+        "penalties": {
+          "total": "7-64"
+        },
+        "turnovers": {
+          "total": 2,
+          "lost_fumbles": 1,
+          "interceptions": 1
+        },
+        "posession": {
+          "total": "31:34"
+        },
+        "interceptions": {
+          "total": 0
+        },
+        "fumbles_recovered": {
+          "total": 2
+        },
+        "sacks": {
+          "total": 4
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 13
+        }
+      }
+    }
+  ]
+}

@@ -21,8 +21,8 @@
     "path": "/Users/mattb/Desktop/Projects/score-genius/frontend/android.keystore",
     "alias": "score-genius"
   },
-  "appVersionName": "6",
-  "appVersionCode": 6,
+  "appVersionName": "8",
+  "appVersionCode": 8,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://scoregenius.io/manifest.webmanifest",
@@ -41,5 +41,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "protocolHandlers": [],
-  "appVersion": "6"
+  "appVersion": "8"
 }

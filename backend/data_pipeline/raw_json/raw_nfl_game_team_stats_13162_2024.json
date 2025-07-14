@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "13162"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 16,
+        "name": "Chicago Bears",
+        "logo": "https://media.api-sports.io/american-football/teams/16.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 15,
+          "passing": 8,
+          "rushing": 6,
+          "from_penalties": 1,
+          "third_down_efficiency": "2-10",
+          "fourth_down_efficiency": "1-1"
+        },
+        "plays": {
+          "total": 50
+        },
+        "yards": {
+          "total": 299,
+          "yards_per_play": "10",
+          "total_drives": "6.0"
+        },
+        "passing": {
+          "total": 209,
+          "comp_att": "16-25",
+          "yards_per_pass": "8.0",
+          "interceptions_thrown": 0,
+          "sacks_yards_lost": "1-6"
+        },
+        "rushings": {
+          "total": 90,
+          "attempts": 24,
+          "yards_per_rush": "3.8"
+        },
+        "red_zone": {
+          "made_att": "2-4"
+        },
+        "penalties": {
+          "total": "4-38"
+        },
+        "turnovers": {
+          "total": 0,
+          "lost_fumbles": 0,
+          "interceptions": 0
+        },
+        "posession": {
+          "total": "26:29"
+        },
+        "interceptions": {
+          "total": 2
+        },
+        "fumbles_recovered": {
+          "total": 1
+        },
+        "sacks": {
+          "total": 2
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 3
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 10,
+        "name": "Cincinnati Bengals",
+        "logo": "https://media.api-sports.io/american-football/teams/10.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 15,
+          "passing": 12,
+          "rushing": 2,
+          "from_penalties": 1,
+          "third_down_efficiency": "7-15",
+          "fourth_down_efficiency": "1-1"
+        },
+        "plays": {
+          "total": 60
+        },
+        "yards": {
+          "total": 226,
+          "yards_per_play": "10",
+          "total_drives": "3.8"
+        },
+        "passing": {
+          "total": 144,
+          "comp_att": "21-33",
+          "yards_per_pass": "4.1",
+          "interceptions_thrown": 2,
+          "sacks_yards_lost": "2-21"
+        },
+        "rushings": {
+          "total": 82,
+          "attempts": 25,
+          "yards_per_rush": "3.3"
+        },
+        "red_zone": {
+          "made_att": "0-0"
+        },
+        "penalties": {
+          "total": "11-123"
+        },
+        "turnovers": {
+          "total": 3,
+          "lost_fumbles": 1,
+          "interceptions": 2
+        },
+        "posession": {
+          "total": "33:31"
+        },
+        "interceptions": {
+          "total": 0
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 1
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 27
+        }
+      }
+    }
+  ]
+}

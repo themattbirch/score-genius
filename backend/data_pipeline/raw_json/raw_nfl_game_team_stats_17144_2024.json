@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "17144"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 19,
+        "name": "Carolina Panthers",
+        "logo": "https://media.api-sports.io/american-football/teams/19.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 12,
+          "passing": 4,
+          "rushing": 6,
+          "from_penalties": 2,
+          "third_down_efficiency": "3-11",
+          "fourth_down_efficiency": "0-0"
+        },
+        "plays": {
+          "total": 47
+        },
+        "yards": {
+          "total": 156,
+          "yards_per_play": "10",
+          "total_drives": "3.3"
+        },
+        "passing": {
+          "total": 56,
+          "comp_att": "13-20",
+          "yards_per_pass": "2.7",
+          "interceptions_thrown": 0,
+          "sacks_yards_lost": "1-5"
+        },
+        "rushings": {
+          "total": 100,
+          "attempts": 26,
+          "yards_per_rush": "3.8"
+        },
+        "red_zone": {
+          "made_att": "1-3"
+        },
+        "penalties": {
+          "total": "10-84"
+        },
+        "turnovers": {
+          "total": 0,
+          "lost_fumbles": 0,
+          "interceptions": 0
+        },
+        "posession": {
+          "total": "28:02"
+        },
+        "interceptions": {
+          "total": 1
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 1
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 15
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 13,
+        "name": "New York Jets",
+        "logo": "https://media.api-sports.io/american-football/teams/13.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 14,
+          "passing": 4,
+          "rushing": 7,
+          "from_penalties": 3,
+          "third_down_efficiency": "4-14",
+          "fourth_down_efficiency": "1-2"
+        },
+        "plays": {
+          "total": 57
+        },
+        "yards": {
+          "total": 202,
+          "yards_per_play": "9",
+          "total_drives": "3.5"
+        },
+        "passing": {
+          "total": 85,
+          "comp_att": "14-28",
+          "yards_per_pass": "2.9",
+          "interceptions_thrown": 1,
+          "sacks_yards_lost": "1-15"
+        },
+        "rushings": {
+          "total": 117,
+          "attempts": 28,
+          "yards_per_rush": "4.2"
+        },
+        "red_zone": {
+          "made_att": "0-2"
+        },
+        "penalties": {
+          "total": "7-70"
+        },
+        "turnovers": {
+          "total": 1,
+          "lost_fumbles": 0,
+          "interceptions": 1
+        },
+        "posession": {
+          "total": "31:58"
+        },
+        "interceptions": {
+          "total": 0
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 1
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 12
+        }
+      }
+    }
+  ]
+}

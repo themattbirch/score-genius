@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "13165"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 30,
+        "name": "Los Angeles Chargers",
+        "logo": "https://media.api-sports.io/american-football/teams/30.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 15,
+          "passing": 6,
+          "rushing": 6,
+          "from_penalties": 3,
+          "third_down_efficiency": "6-15",
+          "fourth_down_efficiency": "0-1"
+        },
+        "plays": {
+          "total": 62
+        },
+        "yards": {
+          "total": 259,
+          "yards_per_play": "11",
+          "total_drives": "4.2"
+        },
+        "passing": {
+          "total": 160,
+          "comp_att": "21-33",
+          "yards_per_pass": "4.6",
+          "interceptions_thrown": 1,
+          "sacks_yards_lost": "2-3"
+        },
+        "rushings": {
+          "total": 99,
+          "attempts": 27,
+          "yards_per_rush": "3.7"
+        },
+        "red_zone": {
+          "made_att": "0-3"
+        },
+        "penalties": {
+          "total": "7-66"
+        },
+        "turnovers": {
+          "total": 3,
+          "lost_fumbles": 2,
+          "interceptions": 1
+        },
+        "posession": {
+          "total": "32:08"
+        },
+        "interceptions": {
+          "total": 1
+        },
+        "fumbles_recovered": {
+          "total": 1
+        },
+        "sacks": {
+          "total": 1
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 13
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 31,
+        "name": "Los Angeles Rams",
+        "logo": "https://media.api-sports.io/american-football/teams/31.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 16,
+          "passing": 10,
+          "rushing": 4,
+          "from_penalties": 2,
+          "third_down_efficiency": "7-15",
+          "fourth_down_efficiency": "0-2"
+        },
+        "plays": {
+          "total": 62
+        },
+        "yards": {
+          "total": 338,
+          "yards_per_play": "11",
+          "total_drives": "5.5"
+        },
+        "passing": {
+          "total": 213,
+          "comp_att": "17-31",
+          "yards_per_pass": "6.7",
+          "interceptions_thrown": 1,
+          "sacks_yards_lost": "1-0"
+        },
+        "rushings": {
+          "total": 125,
+          "attempts": 30,
+          "yards_per_rush": "4.2"
+        },
+        "red_zone": {
+          "made_att": "0-1"
+        },
+        "penalties": {
+          "total": "5-30"
+        },
+        "turnovers": {
+          "total": 2,
+          "lost_fumbles": 1,
+          "interceptions": 1
+        },
+        "posession": {
+          "total": "27:52"
+        },
+        "interceptions": {
+          "total": 1
+        },
+        "fumbles_recovered": {
+          "total": 2
+        },
+        "sacks": {
+          "total": 2
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 9
+        }
+      }
+    }
+  ]
+}

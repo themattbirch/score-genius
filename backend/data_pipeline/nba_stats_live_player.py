@@ -1,4 +1,4 @@
-# File: backend/src/scripts/nba_stats_live_player.py
+# File: backend/data_pipeline/nba_stats_live_player.py
 
 import json
 import requests

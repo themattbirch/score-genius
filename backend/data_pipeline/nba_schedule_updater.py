@@ -1,4 +1,4 @@
-# backend/src/scripts/nba_schedule_updater.py
+# backend/data_pipeline/nba_schedule_updater.py
 
 import json
 import requests

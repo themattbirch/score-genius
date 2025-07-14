@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "13157"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 21,
+        "name": "Indianapolis Colts",
+        "logo": "https://media.api-sports.io/american-football/teams/21.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 17,
+          "passing": 11,
+          "rushing": 5,
+          "from_penalties": 1,
+          "third_down_efficiency": "4-10",
+          "fourth_down_efficiency": "1-1"
+        },
+        "plays": {
+          "total": 51
+        },
+        "yards": {
+          "total": 283,
+          "yards_per_play": "11",
+          "total_drives": "5.5"
+        },
+        "passing": {
+          "total": 219,
+          "comp_att": "17-26",
+          "yards_per_pass": "7.8",
+          "interceptions_thrown": 1,
+          "sacks_yards_lost": "2-4"
+        },
+        "rushings": {
+          "total": 64,
+          "attempts": 23,
+          "yards_per_rush": "2.8"
+        },
+        "red_zone": {
+          "made_att": "3-5"
+        },
+        "penalties": {
+          "total": "7-79"
+        },
+        "turnovers": {
+          "total": 2,
+          "lost_fumbles": 1,
+          "interceptions": 1
+        },
+        "posession": {
+          "total": "21:58"
+        },
+        "interceptions": {
+          "total": 1
+        },
+        "fumbles_recovered": {
+          "total": 2
+        },
+        "sacks": {
+          "total": 0
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 1
+        },
+        "points_against": {
+          "total": 34
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 28,
+        "name": "Denver Broncos",
+        "logo": "https://media.api-sports.io/american-football/teams/28.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 32,
+          "passing": 16,
+          "rushing": 11,
+          "from_penalties": 5,
+          "third_down_efficiency": "7-13",
+          "fourth_down_efficiency": "2-2"
+        },
+        "plays": {
+          "total": 79
+        },
+        "yards": {
+          "total": 410,
+          "yards_per_play": "12",
+          "total_drives": "5.2"
+        },
+        "passing": {
+          "total": 279,
+          "comp_att": "29-41",
+          "yards_per_pass": "6.8",
+          "interceptions_thrown": 1,
+          "sacks_yards_lost": "0-0"
+        },
+        "rushings": {
+          "total": 131,
+          "attempts": 38,
+          "yards_per_rush": "3.4"
+        },
+        "red_zone": {
+          "made_att": "4-6"
+        },
+        "penalties": {
+          "total": "6-60"
+        },
+        "turnovers": {
+          "total": 3,
+          "lost_fumbles": 2,
+          "interceptions": 1
+        },
+        "posession": {
+          "total": "38:02"
+        },
+        "interceptions": {
+          "total": 1
+        },
+        "fumbles_recovered": {
+          "total": 1
+        },
+        "sacks": {
+          "total": 2
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 30
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "13166"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 9,
+        "name": "Cleveland Browns",
+        "logo": "https://media.api-sports.io/american-football/teams/9.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 17,
+          "passing": 11,
+          "rushing": 4,
+          "from_penalties": 2,
+          "third_down_efficiency": "5-14",
+          "fourth_down_efficiency": "2-2"
+        },
+        "plays": {
+          "total": 63
+        },
+        "yards": {
+          "total": 288,
+          "yards_per_play": "11",
+          "total_drives": "4.6"
+        },
+        "passing": {
+          "total": 232,
+          "comp_att": "27-37",
+          "yards_per_pass": "5.8",
+          "interceptions_thrown": 3,
+          "sacks_yards_lost": "3-29"
+        },
+        "rushings": {
+          "total": 56,
+          "attempts": 23,
+          "yards_per_rush": "2.4"
+        },
+        "red_zone": {
+          "made_att": "1-3"
+        },
+        "penalties": {
+          "total": "4-40"
+        },
+        "turnovers": {
+          "total": 3,
+          "lost_fumbles": 0,
+          "interceptions": 3
+        },
+        "posession": {
+          "total": "33:30"
+        },
+        "interceptions": {
+          "total": 0
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 5
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 27
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 32,
+        "name": "Minnesota Vikings",
+        "logo": "https://media.api-sports.io/american-football/teams/32.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 16,
+          "passing": 10,
+          "rushing": 5,
+          "from_penalties": 1,
+          "third_down_efficiency": "6-13",
+          "fourth_down_efficiency": "0-0"
+        },
+        "plays": {
+          "total": 58
+        },
+        "yards": {
+          "total": 303,
+          "yards_per_play": "12",
+          "total_drives": "5.2"
+        },
+        "passing": {
+          "total": 190,
+          "comp_att": "15-26",
+          "yards_per_pass": "6.1",
+          "interceptions_thrown": 0,
+          "sacks_yards_lost": "5-32"
+        },
+        "rushings": {
+          "total": 113,
+          "attempts": 27,
+          "yards_per_rush": "4.2"
+        },
+        "red_zone": {
+          "made_att": "2-3"
+        },
+        "penalties": {
+          "total": "6-53"
+        },
+        "turnovers": {
+          "total": 0,
+          "lost_fumbles": 0,
+          "interceptions": 0
+        },
+        "posession": {
+          "total": "26:30"
+        },
+        "interceptions": {
+          "total": 3
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 3
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 12
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# backend/src/scripts/nba_schedule_fetcher.py
+# backend/data_pipeline/nba_schedule_fetcher.py
 
 import requests
 import time
