@@ -639,7 +639,6 @@ export async function fetchNbaGameMetadata(gameId) {
       `
       game_id,
       game_date,
-      status_state,
       home_team,
       away_team
     `
