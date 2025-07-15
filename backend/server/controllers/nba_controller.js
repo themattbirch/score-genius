@@ -339,7 +339,8 @@ export async function getNbaSnapshot(req, res, next) {
           `Snapshot for game ${gameId} not found. Triggering generation via: python3 ${pythonScriptPath} ${gameId}`
         );
 
-        const result = spawnSync("python3", [pythonScriptPath, gameId], {
+        const pythonBin = process.env.PYTHON_BIN || "python3";
+        const result = spawnSync(pythonBin, [pythonScriptPath, gameId], {
           encoding: "utf-8",
           cwd: process.cwd(),
         });

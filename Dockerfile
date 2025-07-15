@@ -1,7 +1,7 @@
-# ─── Stage 1: build frontend ────────────────────────────────────────────────────
+# ─── Stage 1: build frontend ────────────────────────────────────────────────
 FROM node:18-alpine AS builder
 
-# 1) Declare build args (Render will inject your env vars here)
+# 1) Build‑time env vars (Render injects these)
 ARG VITE_FIREBASE_API_KEY
 ARG VITE_FIREBASE_AUTH_DOMAIN
 ARG VITE_FIREBASE_PROJECT_ID
@@ -10,7 +10,7 @@ ARG VITE_FIREBASE_MESSAGING_SENDER_ID
 ARG VITE_FIREBASE_APP_ID
 ARG VITE_FIREBASE_MEASUREMENT_ID
 
-# 2) Export them into the env so Vite can see them
+# 2) Expose them to Vite
 ENV VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
 ENV VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
 ENV VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
@@ -19,16 +19,23 @@ ENV VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID}
 ENV VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
 ENV VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
 
-# 3) Build the SPA
+# 3) Build SPA
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-# ─── Stage 2: assemble backend + static ─────────────────────────────────────────
+# ─── Stage 2: assemble backend + static ─────────────────────────────────────
 FROM node:18-slim AS runner
 WORKDIR /app
+
+# --- Install Python 3 so snapshot scripts can run ---
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 && \
+    ln -s /usr/bin/python3 /usr/local/bin/python && \
+    rm -rf /var/lib/apt/lists/*
+# ----------------------------------------------------
 
 # Install backend deps
 COPY backend/server/package*.json ./backend/server/
