@@ -119,6 +119,14 @@
       "longitude": -93.278,
       "orientation": 119
     },
+    "National League": {
+      "stadium": "Truist Park",
+      "city": "Atlanta",
+      "latitude": 33.8907,
+      "longitude": -84.4677,
+      "orientation": 143
+    },
+
     "New York Mets": {
       "stadium": "Citi Field",
       "city": "Queens",

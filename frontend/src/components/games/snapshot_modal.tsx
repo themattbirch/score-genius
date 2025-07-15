@@ -1,7 +1,7 @@
 // frontend/src/components/games/snapshot_modal.tsx
 
 /* ------------------------------------------------------------------
- * Snapshot Modal  |  shows per-game snapshot for MLB / NBA
+ * Snapshot Modal  |  shows per‑game snapshot for MLB / NBA
  * ------------------------------------------------------------------*/
 import React, { useRef, useEffect, Suspense, lazy } from "react";
 import { use_snapshot } from "@/hooks/use_snapshot";
@@ -10,7 +10,7 @@ import SkeletonLoader from "../ui/skeleton_loader";
 import { useTheme } from "@/contexts/theme_context";
 import { Sport, SnapshotData, PieChartDataItem } from "@/types";
 
-/* Lazy-loaded charts */
+/* Lazy‑loaded charts */
 const BarChartComponent = lazy(() => import("./charts/bar_chart_component"));
 const RadarChartComponent = lazy(
   () => import("./charts/radar_chart_component")
@@ -24,6 +24,13 @@ interface SnapshotModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+/* Allow backend to return a simple exhibition message */
+interface ExhibitionResponse {
+  message: string;
+}
+
+type SnapshotResponse = SnapshotData | ExhibitionResponse;
 
 const SnapshotModal: React.FC<SnapshotModalProps> = ({
   gameId,
@@ -39,39 +46,28 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
     error,
     refetch,
   } = use_snapshot(gameId, sport) as {
-    data: SnapshotData | undefined;
+    data: SnapshotResponse | undefined;
     isLoading: boolean;
     isError: boolean;
     error: Error | null;
     refetch: () => void;
   };
 
-  console.log("Full snapshotData object received in modal:", snapshotData);
+  /* guards & helpers */
+  const isExhibition = !!(snapshotData && "message" in snapshotData);
+  const sd = !isExhibition ? (snapshotData as SnapshotData) : undefined;
 
-  /* guards */
-  const hasPie = (snapshotData?.pie_chart_data?.length ?? 0) > 0;
-  const hasKeyMetrics = (snapshotData?.key_metrics_data?.length ?? 0) > 0;
+  const hasPie = (sd?.pie_chart_data?.length ?? 0) > 0;
+  const hasKeyMetrics = (sd?.key_metrics_data?.length ?? 0) > 0;
 
-  /* bar title */
   const barChartTitle =
-    sport === "MLB"
-      ? snapshotData?.is_historical
-        ? "Scoring Averages" // Correct for MLB post-game
-        : "Scoring Averages" // Correct for MLB pre-game
-      : snapshotData?.is_historical
-      ? "Quarter Scoring" // Correct for NBA post-game
-      : "Quarter Scoring Average"; // Correct for NBA pre-game
-
-  /* pie title */
-
+    sport === "MLB" ? "Scoring Averages" : "Quarter Scoring";
   const pieChartTitle =
     sport === "MLB" ? "Avg Runs Vs LHP / RHP" : "Scoring Distribution";
-
-  /* multi-pie? */
   const isMultiPie =
     hasPie &&
-    Array.isArray(snapshotData?.pie_chart_data) &&
-    (snapshotData!.pie_chart_data as any[])[0]?.data !== undefined;
+    Array.isArray(sd?.pie_chart_data) &&
+    (sd!.pie_chart_data as any[])[0]?.data !== undefined;
 
   /* theme helpers */
   const { theme } = useTheme();
@@ -150,112 +146,120 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
           {isLoading ? "Loading Snapshot…" : `${sport} Game Snapshot`}
         </h2>
 
-        {/* Headlines */}
-        <section className="mb-6 px-8">
-          <h3
-            className="text-lg font-semibold mb-2 text-center"
-            style={{ color: textColor }}
-          >
-            Key Insights
-          </h3>
-          <HeadlineGrid
-            headlines={snapshotData?.headline_stats || []}
-            isLoading={isLoading}
-          />
-        </section>
-
-        {/* All charts inside one Suspense */}
-        <Suspense
-          fallback={
-            <SkeletonLoader count={1} type="rect" className="h-48 my-4" />
-          }
-        >
-          {/* Quarter / Inning Bar */}
-          <section className="mb-6">
-            <h3
-              className="text-lg font-semibold mb-2 text-center"
-              style={{ color: textColor }}
-            >
-              {isLoading ? "Loading…" : barChartTitle}
-            </h3>
-            <BarChartComponent
-              data={snapshotData?.bar_chart_data}
-              sport={sport}
-            />
-          </section>
-
-          {/* Radar */}
-          <section className="mb-6">
-            <h3
-              className="text-lg font-semibold mb-2 text-center"
-              style={{ color: textColor }}
-            >
-              Team Strengths
-            </h3>
-            <div className="-mx-4">
-              <RadarChartComponent data={snapshotData?.radar_chart_data} />
-            </div>
-          </section>
-
-          {/* Pie */}
-          {hasPie && (
-            <section className="mb-6 px-4">
+        {/* Exhibition message override */}
+        {isExhibition && !isLoading ? (
+          <div className="px-8 pb-12 text-center space-y-4">
+            <p className="text-lg font-semibold" style={{ color: textColor }}>
+              Exhibition Game Detected
+            </p>
+            <p className="text-muted-foreground">
+              {(snapshotData as ExhibitionResponse).message}
+            </p>
+          </div>
+        ) : (
+          /* Regular snapshot content */
+          <>
+            {/* Headlines */}
+            <section className="mb-6 px-8">
               <h3
-                className="text-lg font-semibold mb-4 text-center"
+                className="text-lg font-semibold mb-2 text-center"
                 style={{ color: textColor }}
               >
-                {/* --- START: Changed Code --- */}
-                {pieChartTitle}
-                {/* --- END: Changed Code --- */}
+                Key Insights
               </h3>
+              <HeadlineGrid
+                headlines={sd?.headline_stats || []}
+                isLoading={isLoading}
+              />
+            </section>
 
-              {isMultiPie ? (
-                <div className="flex flex-wrap justify-center items-center gap-4 py-4">
-                  {(snapshotData!.pie_chart_data as any[]).map((p, i) => (
-                    <div key={i} className="flex flex-col items-center">
-                      <h4
-                        // --- Change mb-1 to mb-2 ---
-                        className="mb-2 text-sm font-medium"
-                        style={{ color: textColor }}
-                      >
-                        {p.title}
-                      </h4>
+            {/* All charts inside one Suspense */}
+            <Suspense
+              fallback={
+                <SkeletonLoader count={1} type="rect" className="h-48 my-4" />
+              }
+            >
+              {/* Bar Chart */}
+              <section className="mb-6">
+                <h3
+                  className="text-lg font-semibold mb-2 text-center"
+                  style={{ color: textColor }}
+                >
+                  {isLoading ? "Loading…" : barChartTitle}
+                </h3>
+                <BarChartComponent data={sd?.bar_chart_data} sport={sport} />
+              </section>
+
+              {/* Radar */}
+              <section className="mb-6">
+                <h3
+                  className="text-lg font-semibold mb-2 text-center"
+                  style={{ color: textColor }}
+                >
+                  Team Strengths
+                </h3>
+                <div className="-mx-4">
+                  <RadarChartComponent data={sd?.radar_chart_data} />
+                </div>
+              </section>
+
+              {/* Pie */}
+              {hasPie && (
+                <section className="mb-6 px-4">
+                  <h3
+                    className="text-lg font-semibold mb-4 text-center"
+                    style={{ color: textColor }}
+                  >
+                    {pieChartTitle}
+                  </h3>
+
+                  {isMultiPie ? (
+                    <div className="flex flex-wrap justify-center items-center gap-4 py-4">
+                      {(sd!.pie_chart_data as any[]).map((p, i) => (
+                        <div key={i} className="flex flex-col items-center">
+                          <h4
+                            className="mb-2 text-sm font-medium"
+                            style={{ color: textColor }}
+                          >
+                            {p.title}
+                          </h4>
+                          <PieChartComponent
+                            data={p.data as PieChartDataItem[]}
+                            sport={sport}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex justify-center py-4">
                       <PieChartComponent
-                        data={p.data as PieChartDataItem[]}
+                        data={sd!.pie_chart_data as PieChartDataItem[]}
                         sport={sport}
                       />
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex justify-center py-4">
-                  <PieChartComponent
-                    data={snapshotData!.pie_chart_data as PieChartDataItem[]}
+                  )}
+                </section>
+              )}
+
+              {/* Key Metrics */}
+              {hasKeyMetrics && (
+                <section className="mb-8 px-4">
+                  <h3
+                    className="text-lg font-semibold mb-3 text-center"
+                    style={{ color: textColor }}
+                  >
+                    Key Offensive Metrics (Per Game)
+                  </h3>
+                  <BarChartComponent
+                    key={`${gameId}-keymetrics`}
+                    data={sd!.key_metrics_data!}
                     sport={sport}
                   />
-                </div>
+                </section>
               )}
-            </section>
-          )}
-
-          {/* Key Metrics */}
-          {hasKeyMetrics && (
-            <section className="mb-8 px-4">
-              <h3
-                className="text-lg font-semibold mb-3 text-center"
-                style={{ color: textColor }}
-              >
-                Key Offensive Metrics (Per Game)
-              </h3>
-              {/* Make ABSOLUTELY sure the 'data' prop uses key_metrics_data here */}
-              <BarChartComponent
-                key={`${gameId}-keymetrics`}
-                data={snapshotData!.key_metrics_data!}
-                sport={sport}
-              />
-            </section>
-          )}
-        </Suspense>
+            </Suspense>
+          </>
+        )}
 
         <div className="h-8" />
       </div>
