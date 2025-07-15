@@ -403,37 +403,3 @@ export async function getNbaSnapshots(req, res, next) {
     next(err); // Pass errors to the error handling middleware
   }
 }
-export async function fetchNbaGameMetadata(gameId) {
-  const { data, error, status } = await supabase
-    .from("nba_game_schedule")
-    .select(
-      `
-      game_id,
-      game_date_et,
-      status_state,
-      home_team,
-      away_team
-    `
-    )
-    .eq("game_id", gameId)
-    .maybeSingle();
-
-  if (error) {
-    const err = new Error(error.message || "Error fetching game metadata");
-    err.status = status ?? 503;
-    throw err;
-  }
-  if (!data) {
-    const err = new Error(`Game ${gameId} not found`);
-    err.status = 404;
-    throw err;
-  }
-
-  // NBA All‑Star Weekend: home & away are both “All‑Star” in your feed
-  let gameType = "RegularSeason";
-  if (/all.?star/i.test(data.home_team) && /all.?star/i.test(data.away_team)) {
-    gameType = "AllStar";
-  }
-
-  return { ...data, gameType };
-}
