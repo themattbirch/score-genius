@@ -1,0 +1,148 @@
+{
+  "get": "games/statistics/teams",
+  "parameters": {
+    "id": "13156"
+  },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "team": {
+        "id": 2,
+        "name": "Jacksonville Jaguars",
+        "logo": "https://media.api-sports.io/american-football/teams/2.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 18,
+          "passing": 13,
+          "rushing": 5,
+          "from_penalties": 0,
+          "third_down_efficiency": "3-11",
+          "fourth_down_efficiency": "1-2"
+        },
+        "plays": {
+          "total": 56
+        },
+        "yards": {
+          "total": 348,
+          "yards_per_play": "10",
+          "total_drives": "6.2"
+        },
+        "passing": {
+          "total": 246,
+          "comp_att": "19-29",
+          "yards_per_pass": "7.9",
+          "interceptions_thrown": 0,
+          "sacks_yards_lost": "2-19"
+        },
+        "rushings": {
+          "total": 102,
+          "attempts": 25,
+          "yards_per_rush": "4.1"
+        },
+        "red_zone": {
+          "made_att": "1-2"
+        },
+        "penalties": {
+          "total": "3-29"
+        },
+        "turnovers": {
+          "total": 0,
+          "lost_fumbles": 0,
+          "interceptions": 0
+        },
+        "posession": {
+          "total": "27:05"
+        },
+        "interceptions": {
+          "total": 0
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 5
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 13
+        }
+      }
+    },
+    {
+      "team": {
+        "id": 17,
+        "name": "Kansas City Chiefs",
+        "logo": "https://media.api-sports.io/american-football/teams/17.png"
+      },
+      "statistics": {
+        "first_downs": {
+          "total": 16,
+          "passing": 9,
+          "rushing": 5,
+          "from_penalties": 2,
+          "third_down_efficiency": "2-13",
+          "fourth_down_efficiency": "3-4"
+        },
+        "plays": {
+          "total": 59
+        },
+        "yards": {
+          "total": 264,
+          "yards_per_play": "9",
+          "total_drives": "4.5"
+        },
+        "passing": {
+          "total": 158,
+          "comp_att": "22-27",
+          "yards_per_pass": "4.9",
+          "interceptions_thrown": 0,
+          "sacks_yards_lost": "5-26"
+        },
+        "rushings": {
+          "total": 106,
+          "attempts": 27,
+          "yards_per_rush": "3.9"
+        },
+        "red_zone": {
+          "made_att": "1-2"
+        },
+        "penalties": {
+          "total": "6-30"
+        },
+        "turnovers": {
+          "total": 0,
+          "lost_fumbles": 0,
+          "interceptions": 0
+        },
+        "posession": {
+          "total": "32:55"
+        },
+        "interceptions": {
+          "total": 0
+        },
+        "fumbles_recovered": {
+          "total": 0
+        },
+        "sacks": {
+          "total": 2
+        },
+        "safeties": {
+          "total": 0
+        },
+        "int_touchdowns": {
+          "total": 0
+        },
+        "points_against": {
+          "total": 26
+        }
+      }
+    }
+  ]
+}

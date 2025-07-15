@@ -1,3 +1,5 @@
+# backend/data_pipeline/nfl_game_stats_historical.py
+
 """
 Fetch and upsert historical NFL game stats from API‑Sports to Supabase.
 Crawls by calendar date (one `/games?date=YYYY‑MM‑DD` request per day) for
@@ -44,7 +46,7 @@ HEADERS           = {
 }
 NFL_LEAGUE_ID     = 1
 SUPABASE_TABLE    = "nfl_historical_game_stats"
-REQUEST_DELAY_SEC = 2   # reduced to 5 seconds per request
+REQUEST_DELAY_SEC = 5   # reduced to 5 seconds per request
 
 # Season → (start_date, end_date)
 SEASON_RANGE: Dict[int, tuple[str, str]] = {
