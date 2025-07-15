@@ -638,7 +638,7 @@ export async function fetchNbaGameMetadata(gameId) {
     .select(
       `
       game_id,
-      game_date,     // ← use game_date here
+      game_date,
       status_state,
       home_team,
       away_team
