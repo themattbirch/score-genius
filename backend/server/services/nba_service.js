@@ -638,7 +638,7 @@ export async function fetchNbaGameMetadata(gameId) {
     .select(
       `
       game_id,
-      game_date_et,
+      game_date,     // ← use game_date here
       status_state,
       home_team,
       away_team
@@ -658,7 +658,6 @@ export async function fetchNbaGameMetadata(gameId) {
     throw err;
   }
 
-  // NBA All‑Star Weekend: home & away are both “All‑Star” in your feed
   let gameType = "RegularSeason";
   if (/all.?star/i.test(data.home_team) && /all.?star/i.test(data.away_team)) {
     gameType = "AllStar";
