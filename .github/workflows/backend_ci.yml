@@ -71,11 +71,20 @@ jobs:
         with:
           version: "1.60.0"
 
-      # 👇 add this step – it gives start exactly what it needs
       - name: Bootstrap minimal Supabase config
         run: |
           mkdir -p supabase
-          echo 'project_id = "ci-local"' > supabase/config.toml
+          cat > supabase/config.toml <<'TOML'
+          project_id = "ci-local"
+
+          [api]
+          port = 54321          # any free port
+
+          [db]
+          major_version = 15    # matches CLI default
+          port = 54322          # Postgres port
+          password = "postgres" # local‑only
+          TOML
 
       - name: Start Supabase (Postgres only)
         run: |
