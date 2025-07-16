@@ -69,10 +69,10 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: "1.60.0"
+          version: "1.59.4"
 
-      - name: Start Supabase DB
-        run: supabase db start # starts Postgres only
+      - name: Start Supabase
+        run: supabase start
 
       - name: Wait for Postgres
         run: |
@@ -85,11 +85,11 @@ jobs:
         run: PGSSLMODE=disable supabase db reset
 
       - name: Verify running services
-        run: supabase status # should list just the DB
+        run: supabase status
 
-      - name: Stop Supabase DB
+      - name: Stop Supabase
         if: always()
-        run: supabase db stop # matches the db‑start container
+        run: supabase db stop --no-backup
 
   # 3) Python lint – diff-only
   python-lint-diff:
