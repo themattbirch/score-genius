@@ -71,11 +71,10 @@ jobs:
         with:
           version: "1.60.0"
 
-      - name: Export Supabase CLI path
-        run: echo "$HOME/.supabase/bin" >> $GITHUB_PATH
-
-      - name: Start Supabase DB
-        run: supabase db start
+      - name: Start Supabase (DB only)
+        run: |
+          supabase start \
+            --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector
 
       - name: Wait for Postgres
         run: |
@@ -86,14 +85,6 @@ jobs:
 
       - name: Reset & apply migrations
         run: PGSSLMODE=disable supabase db reset
-
-      - name: Verify running services
-        run: supabase status
-
-      - name: Stop Supabase
-        if: always()
-        run: supabase db stop
-
   # 3) Python lint – diff-only
   python-lint-diff:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
