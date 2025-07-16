@@ -32,8 +32,10 @@ WORKDIR /app
 
 # --- Install Python 3 so snapshot scripts can run ---
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 && \
+    apt-get install -y --no-install-recommends python3 python3-pip && \
     ln -s /usr/bin/python3 /usr/local/bin/python && \
+    # install your snapshot generator requirements
+    pip3 install --no-cache-dir pandas numpy python-dateutil supabase && \
     rm -rf /var/lib/apt/lists/*
 # ----------------------------------------------------
 
