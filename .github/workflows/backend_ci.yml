@@ -71,6 +71,10 @@ jobs:
         with:
           version: "1.60.0"
 
+      - name: Initialize Supabase project
+        run: |
+          supabase init --no-telemetry   # -> creates supabase/config.toml & docker-compose.yml
+
       - name: Start Supabase (DB only)
         run: |
           supabase start \
