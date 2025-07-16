@@ -71,8 +71,8 @@ jobs:
         with:
           version: "1.60.0"
 
-      - name: Start Supabase (DB only)
-        run: supabase start --db-only
+      - name: Start Supabase DB
+        run: supabase db start # starts Postgres only
 
       - name: Wait for Postgres
         run: |
@@ -85,14 +85,11 @@ jobs:
         run: PGSSLMODE=disable supabase db reset
 
       - name: Verify running services
-        run: supabase status
+        run: supabase status # should list just the DB
 
       - name: Stop Supabase DB
         if: always()
-        run: supabase db stop
-
-      - name: Confirm shutdown
-        run: supabase status
+        run: supabase db stop # matches the db‑start container
 
   # 3) Python lint – diff-only
   python-lint-diff:
