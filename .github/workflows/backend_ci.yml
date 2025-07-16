@@ -84,9 +84,15 @@ jobs:
       - name: Reset & apply migrations
         run: PGSSLMODE=disable supabase db reset
 
-      - name: Stop Supabase
+      - name: Verify running services
+        run: supabase status
+
+      - name: Stop Supabase DB
         if: always()
-        run: supabase stop
+        run: supabase db stop
+
+      - name: Confirm shutdown
+        run: supabase status
 
   # 3) Python lint – diff-only
   python-lint-diff:
