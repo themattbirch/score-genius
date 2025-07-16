@@ -69,16 +69,16 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: "1.60.0"
 
-      - name: Start Supabase
-        run: supabase start
+      - name: Start Supabase (DB only)
+        run: supabase start --db-only
 
       - name: Wait for Postgres
         run: |
-          for _ in {1..10}; do
+          for i in {1..15}; do
             pg_isready -h 127.0.0.1 -p 54322 -U postgres && break
-            sleep 3
+            sleep 2
           done
 
       - name: Reset & apply migrations
