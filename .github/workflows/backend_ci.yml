@@ -86,7 +86,7 @@ jobs:
 
       - name: Stop Supabase
         if: always()
-        run: supabase stop --no-backup
+        run: supabase stop
 
   # 3) Python lint – diff-only
   python-lint-diff:
