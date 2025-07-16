@@ -71,11 +71,13 @@ jobs:
         with:
           version: "1.60.0"
 
-      - name: Initialize Supabase project
+      # 👇 add this step – it gives start exactly what it needs
+      - name: Bootstrap minimal Supabase config
         run: |
-          supabase init --no-telemetry   # -> creates supabase/config.toml & docker-compose.yml
+          mkdir -p supabase
+          echo 'project_id = "ci-local"' > supabase/config.toml
 
-      - name: Start Supabase (DB only)
+      - name: Start Supabase (Postgres only)
         run: |
           supabase start \
             --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector
