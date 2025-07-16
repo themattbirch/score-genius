@@ -491,17 +491,6 @@ export const fetchNbaAdvancedStatsBySeason = async (seasonYear) => {
   return results;
 };
 
-/* ── Runtime guard: ensure columns are arrays ── */
-function assertArray(col, name) {
-  // Allow undefined if the column wasn’t selected
-  if (col === undefined) return;
-  if (!Array.isArray(col)) {
-    const err = new Error(`${name} expected Array, got ${typeof col}`);
-    err.status = 500;
-    throw err;
-  }
-}
-
 /**
  * Fetches multiple NBA snapshots by game_id from the Supabase table.
  * Includes caching for already generated snapshots.
@@ -509,23 +498,33 @@ function assertArray(col, name) {
  * @param {string[]} gameIds - An array of NBA game_ids.
  * @returns {Promise<object[]>} - A promise resolving to an array of snapshot data objects.
  */
-/* ------------------------------------------------------------------
- *  Batch fetch – GET many /snapshots?gameIds=...
- * ------------------------------------------------------------------*/
-export async function fetchNbaSnapshotsByIds(gameIds = []) {
-  if (!gameIds.length) return [];
-
-  const fetched = [];
-  const toQuery = [];
-
-  // 1) hit the in‑memory cache first
-  for (const id of gameIds) {
-    if (cache.has(id)) fetched.push(cache.get(id));
-    else toQuery.push(id);
+export async function fetchNbaSnapshotsByIds(gameIds) {
+  if (!gameIds || gameIds.length === 0) {
+    return [];
   }
 
-  // 2) pull any remaining IDs from Supabase
-  if (toQuery.length) {
+  const fetchedSnapshots = [];
+  const unfetchedGameIds = [];
+
+  // Check cache for each gameId first
+  for (const gameId of gameIds) {
+    if (cache.has(gameId)) {
+      fetchedSnapshots.push(cache.get(gameId));
+    } else {
+      unfetchedGameIds.push(gameId);
+    }
+  }
+
+  if (unfetchedGameIds.length > 0) {
+    console.log(
+      `Service: Fetching ${
+        unfetchedGameIds.length
+      } NBA snapshots from DB for IDs: ${unfetchedGameIds.join(", ")}`
+    );
+
+    // Fetch from Supabase. Select all columns Python upserts.
+    // Ensure column names here match what Python upserts (headline_stats, bar_chart_data etc.)
+    // And don't use the old aliases (bar_data, radar_data, pie_data)
     const { data, error, status } = await supabase
       .from(NBA_SNAPSHOT_TABLE)
       .select(
@@ -535,46 +534,70 @@ export async function fetchNbaSnapshotsByIds(gameIds = []) {
         season,
         headline_stats,
         bar_chart_data,
-        key_metrics_data,
         radar_chart_data,
         pie_chart_data,
         last_updated
-      `
+        `
       )
-      .in("game_id", toQuery);
+      .in("game_id", unfetchedGameIds);
 
     if (error) {
+      console.error(
+        `Service: Supabase error fetching NBA snapshots by IDs: ${error.message}`
+      );
       const dbErr = new Error(
         error.message || "Failed fetching NBA snapshot data by IDs"
       );
-      dbErr.status = status ?? 503;
+      dbErr.status = status || 503;
       throw dbErr;
     }
 
-    if (Array.isArray(data)) {
-      for (const snap of data) {
-        // shape‑check critical array columns
-        assertArray(snap.headline_stats, "headline_stats");
-        assertArray(snap.bar_chart_data, "bar_chart_data");
-        assertArray(snap.key_metrics_data, "key_metrics_data");
-        assertArray(snap.radar_chart_data, "radar_chart_data");
-        assertArray(snap.pie_chart_data, "pie_chart_data");
+    if (data && data.length > 0) {
+      for (const snapshot of data) {
+        // Cache newly fetched snapshots
+        cache.set(snapshot.game_id, snapshot);
 
-        cache.set(snap.game_id, snap);
-        fetched.push(snap);
+        // Perform runtime shape-check for the fetched data
+        function assertArray(col, name) {
+          if (!Array.isArray(snapshot[col])) {
+            console.warn(
+              `Snapshot for game_id ${
+                snapshot.game_id
+              }: ${name} expected as Array, got ${typeof snapshot[col]}.`
+            );
+            // Optionally throw or replace with empty array if critical
+            snapshot[col] = [];
+          }
+        }
+        assertArray("headline_stats", "headline_stats");
+        assertArray("bar_chart_data", "bar_chart_data");
+        assertArray("radar_chart_data", "radar_chart_data");
+        assertArray("pie_chart_data", "pie_chart_data");
+
+        fetchedSnapshots.push(snapshot);
       }
+    } else {
+      console.log(
+        `Service: No snapshots found in DB for IDs: ${unfetchedGameIds.join(
+          ", "
+        )}`
+      );
     }
   }
 
-  return fetched;
+  return fetchedSnapshots;
 }
 
-/* ------------------------------------------------------------------
- *  Single fetch – GET /snapshots/:gameId
- * ------------------------------------------------------------------*/
+/**
+ * Fetches a single NBA snapshot by game_id from the Supabase table.
+ * @param {string} gameId - The NBA game_id.
+ * @returns {Promise<object>} - A promise resolving to a single snapshot data object.
+ */
 export async function fetchNbaSnapshotData(gameId) {
-  if (cache.has(gameId)) return cache.get(gameId);
-
+  if (cache.has(gameId)) {
+    return cache.get(gameId);
+  }
+  // 1) fetch + alias columns so the JS property names match your Python payload
   const { data, error, status } = await supabase
     .from(NBA_SNAPSHOT_TABLE)
     .select(
@@ -593,58 +616,35 @@ export async function fetchNbaSnapshotData(gameId) {
     .eq("game_id", gameId)
     .maybeSingle();
 
+  // 2) supabase error → 5xx
   if (error) {
     const err = new Error(error.message || "Failed fetching NBA snapshot data");
-    err.status = status ?? 503;
+    err.status = status || 503;
     throw err;
   }
 
+  // 3) no row → 404
   if (!data) {
     const err = new Error(`Snapshot for game ${gameId} not found`);
     err.status = 404;
     throw err;
   }
 
-  // runtime shape check
+  // 4) runtime shape‐check
+  function assertArray(col, name) {
+    if (col === undefined) return; // Allow properties to be missing from the select
+    if (!Array.isArray(col)) {
+      const err = new Error(`${name} expected as Array, got ${typeof col}`);
+      err.status = 500;
+      throw err;
+    }
+  }
   assertArray(data.headline_stats, "headline_stats");
   assertArray(data.bar_chart_data, "bar_chart_data");
-  assertArray(data.key_metrics_data, "key_metrics_data");
+  assertArray(data.key_metrics_data, "key_metrics_data"); // Add check for new property
   assertArray(data.radar_chart_data, "radar_chart_data");
   assertArray(data.pie_chart_data, "pie_chart_data");
 
   cache.set(gameId, data);
   return data;
-}
-
-export async function fetchNbaGameMetadata(gameId) {
-  const { data, error, status } = await supabase
-    .from("nba_game_schedule")
-    .select(
-      `
-      game_id,
-      game_date,
-      home_team,
-      away_team
-    `
-    )
-    .eq("game_id", gameId)
-    .maybeSingle();
-
-  if (error) {
-    const err = new Error(error.message || "Error fetching game metadata");
-    err.status = status ?? 503;
-    throw err;
-  }
-  if (!data) {
-    const err = new Error(`Game ${gameId} not found`);
-    err.status = 404;
-    throw err;
-  }
-
-  let gameType = "RegularSeason";
-  if (/all.?star/i.test(data.home_team) && /all.?star/i.test(data.away_team)) {
-    gameType = "AllStar";
-  }
-
-  return { ...data, gameType };
 }

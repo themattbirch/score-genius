@@ -488,8 +488,8 @@ def make_nba_snapshot(
     bar_chart_data = []
     if is_historical_game and pd.notna(row.get(input_home_score_col)):
         for q in range(1, 5):
-            home_pts = int(df_game.at[0, f"home_q{q}"] or 0)
-            away_pts = int(df_game.at[0, f"away_q{q}"] or 0)
+            home_pts = int(row.get(f'home_q{q}', 0) or 0)
+            away_pts = int(row.get(f'away_q{q}', 0) or 0)
             bar_chart_data.append({
                 'category': f'Q{q}',
                 'Home': home_pts,
@@ -660,9 +660,9 @@ def make_nba_snapshot(
 
     if is_historical_game and pd.notna(row.get(input_home_score_col)):
         # ---------- POST-GAME : show HOME scoring mix (2P vs FT) ----------
-        home_fgm = float(df_game.at[0, "home_fg_made"] or 0)
-        home_3pm = float(df_game.at[0, "home_3pm"]     or 0)
-        home_ftm = float(df_game.at[0, "home_ft_made"] or 0)
+        home_fgm = float(row.get("home_fg_made", 0) or 0)
+        home_3pm = float(row.get("home_3pm",     0) or 0)
+        home_ftm = float(row.get("home_ft_made", 0) or 0)
 
         twop_made = max(0, home_fgm - home_3pm)
 

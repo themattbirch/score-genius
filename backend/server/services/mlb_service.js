@@ -599,38 +599,3 @@ export async function fetchMlbSnapshotsByIds(gameIds) {
   // Return all snapshots (cached + newly fetched)
   return fetchedSnapshots;
 }
-export async function fetchGameMetadata(gameId) {
-  const { data, error, status } = await supabase
-    .from("mlb_game_schedule")
-    .select(
-      `
-      game_id,
-      game_date_et,
-      status_state,
-      home_team_name,
-      away_team_name
-    `
-    )
-    .eq("game_id", gameId)
-    .maybeSingle();
-
-  if (error) {
-    const err = new Error(error.message || "Error fetching game metadata");
-    err.status = status || 503;
-    throw err;
-  }
-  if (!data) {
-    const err = new Error(`Game ${gameId} not found`);
-    err.status = 404;
-    throw err;
-  }
-
-  // ── Derive gameType ─────────────────────────────────────────
-  let gameType = "RegularSeason";
-  const alNl = new Set(["National League", "American League"]);
-  if (alNl.has(data.home_team_name) && alNl.has(data.away_team_name)) {
-    gameType = "AllStar";
-  }
-
-  return { ...data, gameType };
-}

@@ -4,15 +4,9 @@ import {
   getSchedule,
   fetchNbaSnapshotData,
   fetchNbaSnapshotsByIds,
-  fetchNbaGameMetadata,
 } from "../services/nba_service.js";
 
 import { spawnSync } from "child_process";
-import { fileURLToPath } from "url";
-import path from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Controller to handle GET /api/v1/nba/schedule
 export const getNbaSchedule = async (req, res, next) => {
@@ -321,87 +315,77 @@ export async function getNbaSnapshot(req, res, next) {
   const { gameId } = req.params;
 
   try {
-    /* ──────────────────────────────────────────────────────────────
-     * 0) Exhibition‑game guard  ➜  return early with message
-     * ----------------------------------------------------------------*/
-    const meta = await fetchNbaGameMetadata(gameId);
-    if (meta.gameType !== "RegularSeason") {
-      return res.status(200).json({
-        message:
-          "No NBA snapshot data is generated for exhibition games (e.g., All‑Star).",
-      });
-    }
-
-    /* ──────────────────────────────────────────────────────────────
-     * 1) Fast path  ➜  fetch existing snapshot from Supabase/cache
-     * ----------------------------------------------------------------*/
-    const t0 = Date.now();
-    const snap = await fetchNbaSnapshotData(gameId);
-    console.log(`getNbaSnapshot(${gameId}) → ${Date.now() - t0} ms (cache/DB)`);
-    return res.json(snap);
+    const start = Date.now();
+    const snapshot = await fetchNbaSnapshotData(gameId);
+    console.log(`getNbaSnapshot(${gameId}) → ${Date.now() - start}ms`);
+    return res.json(snapshot); // 🚩 send it back immediately
   } catch (err) {
-    /* ──────────────────────────────────────────────────────────────
-     * 2) Snapshot missing (404)  ➜  generate on‑demand via Python,
-     *    then re‑fetch and return.
-     * ----------------------------------------------------------------*/
+    // only regenerate on a 404 “not found”
     if (err.status === 404) {
       try {
-        const pythonScript = path.join(
-          __dirname,
-          "../../nba_features/make_nba_snapshots.py"
-        );
-        const pythonBin = process.env.PYTHON_BIN || "python3";
-
+        // Correct path to the Python script assuming Node.js server runs from project root
+        const pythonScriptPath = "backend/nba_features/make_nba_snapshots.py";
         console.warn(
-          `Snapshot ${gameId} not found. Generating with: ${pythonBin} ${pythonScript} ${gameId}`
+          `Snapshot for game ${gameId} not found. Triggering generation via: python3 ${pythonScriptPath} ${gameId}`
         );
 
-        const result = spawnSync(pythonBin, [pythonScript, gameId], {
-          encoding: "utf-8",
-          cwd: process.cwd(),
-        });
+        // Use the top-level imported spawnSync (no `require` needed here now)
+        const result = spawnSync(
+          "python3",
+          [pythonScriptPath, gameId],
+          { encoding: "utf-8", cwd: process.cwd() } // Set cwd to project root for robust path
+        );
 
-        if (result.error || result.status !== 0) {
+        if (result.error) {
           console.error(
-            "Snapshot generation failed:",
-            result.error ?? `exit code ${result.status}`
+            "Snapshot generation failed (spawnSync error):",
+            result.error
           );
-          console.error("stderr:", result.stderr);
-          console.error("stdout:", result.stdout);
+          console.error("Python stderr:", result.stderr);
+          console.error("Python stdout:", result.stdout); // Log stdout too, for potential Python prints
           return res.status(500).json({
             message: "Failed to generate NBA snapshot",
-            details: result.stderr || result.error?.message,
+            details: result.stderr || result.error.message,
           });
         }
 
-        // Re‑fetch the freshly generated snapshot
-        const snap = await fetchNbaSnapshotData(gameId);
-        if (!snap) {
+        if (result.status !== 0) {
+          // Non-zero exit code indicates Python script failure
           console.error(
-            `Python completed but no snapshot row found for ${gameId}.`
+            `Python script exited with code ${result.status} for game ${gameId}`
+          );
+          console.error("Python stderr:", result.stderr);
+          console.error("Python stdout:", result.stdout);
+          return res.status(500).json({
+            message: "Python script failed to generate snapshot",
+            details: result.stderr || "Unknown Python error",
+          });
+        }
+
+        // re-fetch after generating
+        const newSnap = await fetchNbaSnapshotData(gameId);
+        if (!newSnap) {
+          // If regeneration failed for some reason (e.g. Python ran but didn't upsert)
+          console.error(
+            `Snapshot regeneration for ${gameId} completed, but re-fetch found no data.`
           );
           return res
             .status(500)
-            .json({ message: "Snapshot regeneration produced no data." });
+            .json({ message: "Snapshot regeneration failed to produce data." });
         }
-
-        return res.json(snap);
-      } catch (regenErr) {
+        return res.json(newSnap);
+      } catch (genErr) {
         console.error(
-          `Error during snapshot regeneration for ${gameId}:`,
-          regenErr
+          `Error during snapshot regeneration for game ${gameId}:`,
+          genErr
         );
-        return next(regenErr);
+        next(genErr); // Pass errors to the error handling middleware
       }
+    } else {
+      next(err);
     }
-
-    /* ──────────────────────────────────────────────────────────────
-     * 3) Any other error  ➜  pass to error middleware
-     * ----------------------------------------------------------------*/
-    return next(err);
   }
 }
-
 export async function getNbaSnapshots(req, res, next) {
   try {
     const ids = (req.query.gameIds || "").split(",").filter((id) => id); // Split by comma and filter out empty strings

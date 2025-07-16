@@ -369,16 +369,13 @@ def make_mlb_snapshot(
         else:
             h["value"] = round(h["value"], 2)
 
-    # 9) Build bar chart data
-    if is_historical_game and (bar_rpc := sb_client.rpc("get_mlb_game_bar_data", {"p_game_id": game_id_str}).execute().data):
-        bar_chart_data = bar_rpc[0].get("bar_chart_data", [])
-    else:
+        # 9) Build bar chart data — always just Avg Runs For / Against
         hf = home_adv_rpc_data.get("runs_for_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_for", 0.0))
         af = away_adv_rpc_data.get("runs_for_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_for", 0.0))
         ha = home_adv_rpc_data.get("runs_against_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_against", 0.0))
         aa = away_adv_rpc_data.get("runs_against_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_against", 0.0))
         bar_chart_data = [
-            {"category": "Avg Runs For", "Home": round(float(hf), 2), "Away": round(float(af), 2)},
+            {"category": "Avg Runs For",     "Home": round(float(hf), 2), "Away": round(float(af), 2)},
             {"category": "Avg Runs Against", "Home": round(float(ha), 2), "Away": round(float(aa), 2)},
         ]
 
