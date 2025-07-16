@@ -51,55 +51,44 @@ jobs:
           echo "$files" | sed 's/^/  • /'
           sqlfluff lint $files
 
-  # 2) Smoke-test migrations & materialized view
+  # 2) Smoke‑test migrations & materialized view
   test-migrations:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: lint-sql
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
-
-      - name: Exclude Supabase remote_schema migration
-        run: rm -f supabase/migrations/*remote_schema*.sql
 
       - name: Install Postgres client
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - uses: supabase/setup-cli@v1
-        with:
-          version: "1.60.0"
-
-      - name: Bootstrap minimal Supabase config
+      - name: Apply Supabase migrations
+        env:
+          PGPASSWORD: postgres
         run: |
-          mkdir -p supabase
-          cat > supabase/config.toml <<'TOML'
-          project_id = "ci-local"
-
-          [api]
-          port = 54321          # any free port
-
-          [db]
-          major_version = 15    # matches CLI default
-          port = 54322          # Postgres port
-          password = "postgres" # local‑only
-          TOML
-
-      - name: Start Supabase (Postgres only)
-        run: |
-          supabase start \
-            --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector
-
-      - name: Wait for Postgres
-        run: |
-          for i in {1..15}; do
-            pg_isready -h 127.0.0.1 -p 54322 -U postgres && break
-            sleep 2
+          files=$(find supabase/migrations -maxdepth 1 -type f \
+            -regextype posix-extended \
+            -regex '.*/[0-9]{3}_.*\.sql' | sort)
+          for f in $files; do
+            echo "⤷ applying $f"
+            psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d postgres -f "$f"
           done
 
-      - name: Reset & apply migrations
-        run: PGSSLMODE=disable supabase db reset
   # 3) Python lint – diff-only
   python-lint-diff:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
