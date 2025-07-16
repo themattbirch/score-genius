@@ -533,7 +533,7 @@ export async function fetchNbaSnapshotsByIds(gameIds) {
       .select(
         `
           game_id,
-          game_date_et,
+          game_date,
           season,
           headline_stats,
           bar_chart_data,
@@ -591,7 +591,7 @@ export async function fetchNbaSnapshotData(gameId) {
     .select(
       `
         game_id,
-        game_date_et,
+        game_date,
         season,
         headline_stats,
         bar_chart_data,

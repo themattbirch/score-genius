@@ -8,6 +8,11 @@ import {
 } from "../services/nba_service.js";
 
 import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
+import path from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Controller to handle GET /api/v1/nba/schedule
 export const getNbaSchedule = async (req, res, next) => {
@@ -334,11 +339,15 @@ export async function getNbaSnapshot(req, res, next) {
     /* 3. On‑demand regeneration for true 404s */
     if (err.status === 404) {
       try {
-        const pythonScriptPath = "backend/nba_features/make_nba_snapshots.py";
-        console.warn(
-          `Snapshot for game ${gameId} not found. Triggering generation via: python3 ${pythonScriptPath} ${gameId}`
+        const pythonScriptPath = path.join(
+          __dirname,
+          "../../nba_features/make_nba_snapshots.py"
         );
-
+        console.warn(
+          `Snapshot for game ${gameId} not found. Triggering generation via: ${
+            process.env.PYTHON_BIN || "python3"
+          } ${pythonScriptPath} ${gameId}`
+        );
         const pythonBin = process.env.PYTHON_BIN || "python3";
         const result = spawnSync(pythonBin, [pythonScriptPath, gameId], {
           encoding: "utf-8",
