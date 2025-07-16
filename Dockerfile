@@ -30,14 +30,20 @@ RUN npm run build
 FROM node:18-slim AS runner
 WORKDIR /app
 
-# --- Install Python 3 so snapshot scripts can run ---
+# --- Install Python 3 and create a venv for snapshot scripts ---------
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip && \
-    ln -s /usr/bin/python3 /usr/local/bin/python && \
-    # install your snapshot generator requirements
-    pip3 install --no-cache-dir pandas numpy python-dateutil supabase && \
+    apt-get install -y --no-install-recommends python3 python3-venv python3-distutils build-essential && \
     rm -rf /var/lib/apt/lists/*
-# ----------------------------------------------------
+
+# Create a virtualenv and install Python dependencies there
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir \
+      pandas \
+      numpy \
+      python-dateutil \
+      supabase
+# --------------------------------------------------------------------
 
 # Install backend deps
 COPY backend/server/package*.json ./backend/server/
