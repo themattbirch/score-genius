@@ -492,15 +492,14 @@ export const fetchNbaAdvancedStatsBySeason = async (seasonYear) => {
 };
 
 /* ── Runtime guard: ensure columns are arrays ── */
-function assertArray(val, colName) {
-  if (val === undefined) return []; // treat missing as empty
-  if (!Array.isArray(val)) {
-    console.warn(
-      `NBA snapshot: ${colName} expected array, got ${typeof val}. Defaulting to [].`
-    );
-    return [];
+function assertArray(col, name) {
+  // Allow undefined if the column wasn’t selected
+  if (col === undefined) return;
+  if (!Array.isArray(col)) {
+    const err = new Error(`${name} expected Array, got ${typeof col}`);
+    err.status = 500;
+    throw err;
   }
-  return val;
 }
 
 /**
@@ -510,86 +509,27 @@ function assertArray(val, colName) {
  * @param {string[]} gameIds - An array of NBA game_ids.
  * @returns {Promise<object[]>} - A promise resolving to an array of snapshot data objects.
  */
-export async function fetchNbaSnapshotsByIds(gameIds) {
-  if (!gameIds?.length) return [];
+/* ------------------------------------------------------------------
+ *  Batch fetch – GET many /snapshots?gameIds=...
+ * ------------------------------------------------------------------*/
+export async function fetchNbaSnapshotsByIds(gameIds = []) {
+  if (!gameIds.length) return [];
 
   const fetched = [];
-  const missing = [];
+  const toQuery = [];
 
+  // 1) hit the in‑memory cache first
   for (const id of gameIds) {
     if (cache.has(id)) fetched.push(cache.get(id));
-    else missing.push(id);
+    else toQuery.push(id);
   }
 
-  if (missing.length) {
-    console.log(
-      `Service: Fetching ${
-        missing.length
-      } NBA snapshots from DB → ${missing.join(", ")}`
-    );
-
+  // 2) pull any remaining IDs from Supabase
+  if (toQuery.length) {
     const { data, error, status } = await supabase
       .from(NBA_SNAPSHOT_TABLE)
       .select(
         `
-          game_id,
-          game_date,
-          season,
-          headline_stats,
-          bar_chart_data,
-          radar_chart_data,
-          pie_chart_data,
-          last_updated
-        `
-      )
-      .in("game_id", missing);
-
-    if (error) {
-      const dbErr = new Error(
-        error.message || "Failed fetching NBA snapshot data by IDs"
-      );
-      dbErr.status = status ?? 503;
-      throw dbErr;
-    }
-
-    if (data?.length) {
-      for (const snap of data) {
-        snap.headline_stats = assertArray(
-          snap.headline_stats,
-          "headline_stats"
-        );
-        snap.bar_chart_data = assertArray(
-          snap.bar_chart_data,
-          "bar_chart_data"
-        );
-        snap.radar_chart_data = assertArray(
-          snap.radar_chart_data,
-          "radar_chart_data"
-        );
-        snap.pie_chart_data = assertArray(
-          snap.pie_chart_data,
-          "pie_chart_data"
-        );
-
-        cache.set(snap.game_id, snap, CACHE_TTL);
-        fetched.push(snap);
-      }
-    }
-  }
-
-  return fetched;
-}
-
-/* ──────────────────────────────────────────────────────────────
- * Single fetch
- * ──────────────────────────────────────────────────────────────*/
-export async function fetchNbaSnapshotData(gameId) {
-  if (cache.has(gameId)) return cache.get(gameId);
-
-  const { data, error, status } = await supabase
-    .from(NBA_SNAPSHOT_TABLE)
-    .select(
-      `
         game_id,
         game_date,
         season,
@@ -600,6 +540,55 @@ export async function fetchNbaSnapshotData(gameId) {
         pie_chart_data,
         last_updated
       `
+      )
+      .in("game_id", toQuery);
+
+    if (error) {
+      const dbErr = new Error(
+        error.message || "Failed fetching NBA snapshot data by IDs"
+      );
+      dbErr.status = status ?? 503;
+      throw dbErr;
+    }
+
+    if (Array.isArray(data)) {
+      for (const snap of data) {
+        // shape‑check critical array columns
+        assertArray(snap.headline_stats, "headline_stats");
+        assertArray(snap.bar_chart_data, "bar_chart_data");
+        assertArray(snap.key_metrics_data, "key_metrics_data");
+        assertArray(snap.radar_chart_data, "radar_chart_data");
+        assertArray(snap.pie_chart_data, "pie_chart_data");
+
+        cache.set(snap.game_id, snap);
+        fetched.push(snap);
+      }
+    }
+  }
+
+  return fetched;
+}
+
+/* ------------------------------------------------------------------
+ *  Single fetch – GET /snapshots/:gameId
+ * ------------------------------------------------------------------*/
+export async function fetchNbaSnapshotData(gameId) {
+  if (cache.has(gameId)) return cache.get(gameId);
+
+  const { data, error, status } = await supabase
+    .from(NBA_SNAPSHOT_TABLE)
+    .select(
+      `
+      game_id,
+      game_date,
+      season,
+      headline_stats,
+      bar_chart_data,
+      key_metrics_data,
+      radar_chart_data,
+      pie_chart_data,
+      last_updated
+    `
     )
     .eq("game_id", gameId)
     .maybeSingle();
@@ -616,17 +605,12 @@ export async function fetchNbaSnapshotData(gameId) {
     throw err;
   }
 
-  data.headline_stats = assertArray(data.headline_stats, "headline_stats");
-  data.bar_chart_data = assertArray(data.bar_chart_data, "bar_chart_data");
-  data.key_metrics_data = assertArray(
-    data.key_metrics_data,
-    "key_metrics_data"
-  );
-  data.radar_chart_data = assertArray(
-    data.radar_chart_data,
-    "radar_chart_data"
-  );
-  data.pie_chart_data = assertArray(data.pie_chart_data, "pie_chart_data");
+  // runtime shape check
+  assertArray(data.headline_stats, "headline_stats");
+  assertArray(data.bar_chart_data, "bar_chart_data");
+  assertArray(data.key_metrics_data, "key_metrics_data");
+  assertArray(data.radar_chart_data, "radar_chart_data");
+  assertArray(data.pie_chart_data, "pie_chart_data");
 
   cache.set(gameId, data);
   return data;

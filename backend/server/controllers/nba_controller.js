@@ -321,7 +321,9 @@ export async function getNbaSnapshot(req, res, next) {
   const { gameId } = req.params;
 
   try {
-    /* ── 1. Exhibition guard ─────────────────────────────── */
+    /* ──────────────────────────────────────────────────────────────
+     * 0) Exhibition‑game guard  ➜  return early with message
+     * ----------------------------------------------------------------*/
     const meta = await fetchNbaGameMetadata(gameId);
     if (meta.gameType !== "RegularSeason") {
       return res.status(200).json({
@@ -330,26 +332,31 @@ export async function getNbaSnapshot(req, res, next) {
       });
     }
 
-    /* ── 2. Regular‑season flow ──────────────────────────── */
-    const start = Date.now();
-    const snapshot = await fetchNbaSnapshotData(gameId);
-    console.log(`getNbaSnapshot(${gameId}) → ${Date.now() - start}ms`);
-    return res.json(snapshot);
+    /* ──────────────────────────────────────────────────────────────
+     * 1) Fast path  ➜  fetch existing snapshot from Supabase/cache
+     * ----------------------------------------------------------------*/
+    const t0 = Date.now();
+    const snap = await fetchNbaSnapshotData(gameId);
+    console.log(`getNbaSnapshot(${gameId}) → ${Date.now() - t0} ms (cache/DB)`);
+    return res.json(snap);
   } catch (err) {
-    /* 3. On‑demand regeneration for true 404s */
+    /* ──────────────────────────────────────────────────────────────
+     * 2) Snapshot missing (404)  ➜  generate on‑demand via Python,
+     *    then re‑fetch and return.
+     * ----------------------------------------------------------------*/
     if (err.status === 404) {
       try {
-        const pythonScriptPath = path.join(
+        const pythonScript = path.join(
           __dirname,
           "../../nba_features/make_nba_snapshots.py"
         );
-        console.warn(
-          `Snapshot for game ${gameId} not found. Triggering generation via: ${
-            process.env.PYTHON_BIN || "python3"
-          } ${pythonScriptPath} ${gameId}`
-        );
         const pythonBin = process.env.PYTHON_BIN || "python3";
-        const result = spawnSync(pythonBin, [pythonScriptPath, gameId], {
+
+        console.warn(
+          `Snapshot ${gameId} not found. Generating with: ${pythonBin} ${pythonScript} ${gameId}`
+        );
+
+        const result = spawnSync(pythonBin, [pythonScript, gameId], {
           encoding: "utf-8",
           cwd: process.cwd(),
         });
@@ -357,7 +364,7 @@ export async function getNbaSnapshot(req, res, next) {
         if (result.error || result.status !== 0) {
           console.error(
             "Snapshot generation failed:",
-            result.error || `exit code ${result.status}`
+            result.error ?? `exit code ${result.status}`
           );
           console.error("stderr:", result.stderr);
           console.error("stdout:", result.stdout);
@@ -367,29 +374,34 @@ export async function getNbaSnapshot(req, res, next) {
           });
         }
 
-        /* re‑fetch after generating */
-        const newSnap = await fetchNbaSnapshotData(gameId);
-        if (!newSnap) {
+        // Re‑fetch the freshly generated snapshot
+        const snap = await fetchNbaSnapshotData(gameId);
+        if (!snap) {
           console.error(
-            `Python ran OK but no data for ${gameId} upon re‑fetch.`
+            `Python completed but no snapshot row found for ${gameId}.`
           );
-          return res.status(500).json({
-            message: "Snapshot regeneration produced no data.",
-          });
+          return res
+            .status(500)
+            .json({ message: "Snapshot regeneration produced no data." });
         }
-        return res.json(newSnap);
-      } catch (genErr) {
+
+        return res.json(snap);
+      } catch (regenErr) {
         console.error(
           `Error during snapshot regeneration for ${gameId}:`,
-          genErr
+          regenErr
         );
-        next(genErr);
+        return next(regenErr);
       }
-    } else {
-      next(err);
     }
+
+    /* ──────────────────────────────────────────────────────────────
+     * 3) Any other error  ➜  pass to error middleware
+     * ----------------------------------------------------------------*/
+    return next(err);
   }
 }
+
 export async function getNbaSnapshots(req, res, next) {
   try {
     const ids = (req.query.gameIds || "").split(",").filter((id) => id); // Split by comma and filter out empty strings
