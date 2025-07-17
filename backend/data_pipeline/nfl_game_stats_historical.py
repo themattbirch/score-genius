@@ -11,6 +11,7 @@ seasons 2021‑2024 and inserts/upserts into `nfl_historical_game_stats`.
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -46,7 +47,7 @@ HEADERS           = {
 }
 NFL_LEAGUE_ID     = 1
 SUPABASE_TABLE    = "nfl_historical_game_stats"
-REQUEST_DELAY_SEC = 5   # reduced to 5 seconds per request
+REQUEST_DELAY_SEC = 2   # reduced to 5 seconds per request
 
 # Season → (start_date, end_date)
 SEASON_RANGE: Dict[int, tuple[str, str]] = {
@@ -92,18 +93,14 @@ def fetch_games_by_date(d: str) -> List[Dict[str, Any]]:
 
 
 def transform(g: Dict[str, Any]) -> Dict[str, Any]:
-    core = g.get("game") or g.get("fixture") or g
+    core   = g.get("game")    or g.get("fixture") or g
     league = g.get("league", {})
     season_val = league.get("season") or league.get("year")
-    venue = core.get("venue") or g.get("venue", {})
-    status = core.get("status") or g.get("status", {})
-    teams  = g.get("teams", {})
-    scores = g.get("scores", {})
 
-    # Parse date/time
+    # ── parse date/time ───────────────────────────────────────
     raw_date = core.get("date")
     game_date = game_time = None
-    epoch_ts = None
+    epoch_ts  = None
     if isinstance(raw_date, dict):
         game_date = raw_date.get("date")
         game_time = raw_date.get("time")
@@ -117,22 +114,62 @@ def transform(g: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # ── normalize week ────────────────────────────────────────
+    raw_week = core.get("week")
+    if isinstance(raw_week, int):
+        week_val: Optional[int] = raw_week
+    elif isinstance(raw_week, str):
+        m = re.search(r"\d+", raw_week)
+        week_val = int(m.group()) if m else None
+    else:
+        week_val = None
+
+    # ── robust venue lookup ───────────────────────────────────
+    venue_candidates = []
+
+    # top‑level “venue”
+    if isinstance(g.get("venue"), dict):
+        venue_candidates.append(g["venue"])
+    # inside core
+    if isinstance(core.get("venue"), dict):
+        venue_candidates.append(core["venue"])
+    # inside fixture sub‑object
+    if isinstance(g.get("fixture"), dict) and isinstance(g["fixture"].get("venue"), dict):
+        venue_candidates.append(g["fixture"]["venue"])
+    # inside game sub‑object
+    if isinstance(g.get("game"), dict) and isinstance(g["game"].get("venue"), dict):
+        venue_candidates.append(g["game"]["venue"])
+
+    venue_name = None
+    venue_city = None
+    for v in venue_candidates:
+        if not venue_name and v.get("name"):
+            venue_name = v.get("name")
+        if not venue_city and v.get("city"):
+            venue_city = v.get("city")
+        if venue_name and venue_city:
+            break
+
+    if venue_name is None:
+        log.warning(f"Game {core.get('id')} missing venue info; candidates: {venue_candidates}")
+
+    teams  = g.get("teams", {})
+    scores = g.get("scores", {})
+
     return {
         "game_id":        core.get("id"),
         "season":         season_val,
         "stage":          core.get("stage") or core.get("round", {}).get("name"),
-        "week":           core.get("week"),
+        "week":           week_val,
         "game_date":      game_date,
         "game_time":      game_time,
         "game_timestamp": epoch_ts,
-        "venue_name":     venue.get("name"),
-        "venue_city":     venue.get("city"),
-        # new team names
+        "venue_name":     venue_name,
+        "venue_city":     venue_city,
         "home_team_id":   teams.get("home", {}).get("id"),
         "home_team_name": teams.get("home", {}).get("name"),
         "away_team_id":   teams.get("away", {}).get("id"),
         "away_team_name": teams.get("away", {}).get("name"),
-        # scores by quarter + OT
         "home_q1":        scores.get("home", {}).get("quarter_1"),
         "home_q2":        scores.get("home", {}).get("quarter_2"),
         "home_q3":        scores.get("home", {}).get("quarter_3"),
@@ -143,7 +180,6 @@ def transform(g: Dict[str, Any]) -> Dict[str, Any]:
         "away_q3":        scores.get("away", {}).get("quarter_3"),
         "away_q4":        scores.get("away", {}).get("quarter_4"),
         "away_ot":        scores.get("away", {}).get("overtime"),
-        # final scores
         "home_score":     scores.get("home", {}).get("total"),
         "away_score":     scores.get("away", {}).get("total"),
     }

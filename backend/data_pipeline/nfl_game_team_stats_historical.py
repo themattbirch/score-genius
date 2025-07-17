@@ -19,7 +19,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Generator, List, Optional
 
 import requests
@@ -212,6 +212,7 @@ def upsert_game_team_stats(stats_json: dict, game_id: int, season: int, teams: d
                 att = 0
             record[made_col] = made
             record[att_col] = att
+            record["updated_at"] = datetime.now(timezone.utc).isoformat()
             if pct_col:
                 record[pct_col] = round(made/att, 3) if att else None
 
@@ -220,7 +221,7 @@ def upsert_game_team_stats(stats_json: dict, game_id: int, season: int, teams: d
                 del record[k]
 
         try:
-            supabase.table(SUPABASE_TABLE).upsert(record, on_conflict="game_id,team_id").execute()
+            supabase.table(SUPABASE_TABLE).upsert(record, on_conflict="game_id,team_id").execute()            
             log.info(f"✔ Upserted game {game_id}, team {team.get('id')}" )
         except Exception as e:
             log.error(f"DB upsert error game {game_id}, team {team.get('id')}: {e}")
