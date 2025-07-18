@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start:server": "node backend/server/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -22,10 +22,18 @@
     "firebase": "^11.9.1",
     "html2canvas": "^1.4.1",
     "http-proxy-middleware": "^3.0.5",
+    "js-yaml": "^4.1.0",
     "lru-cache": "^11.1.0",
     "luxon": "^3.4.4",
     "react-day-picker": "^9.6.7",
     "recharts": "^2.15.3",
-    "sitemap": "^8.0.0"
+    "sitemap": "^8.0.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.28.0",
+    "babel-jest": "^30.0.4",
+    "jest": "^30.0.4",
+    "supertest": "^7.1.3"
   }
 }
