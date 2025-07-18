@@ -24,12 +24,17 @@ export default defineConfig(({ mode }) => {
         filename: "app-sw.ts",
         injectRegister: false,
         includeAssets: [
-          "favicon.ico",
           "splash_screen.html",
           "manifest.webmanifest",
           "images/basketball.svg",
           "icons/*",
         ],
+        // Control what Workbox scans & injects when using `injectManifest`
+        injectManifest: {
+          // drop the `.ico` extension so it's never injected
+          globPatterns: ["**/*.{js,css,html,png,svg,json,woff2}"],
+          globIgnores: ["**/favicon.ico"],
+        },
         registerType: "autoUpdate",
         manifest: {
           name: "ScoreGenius",
