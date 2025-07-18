@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
             "**/favicon.ico",
             "**/basketball_header_logo.png",
             "**/orange_football_header_logo.png",
+            "**/data/**",
           ],
         },
         registerType: "autoUpdate",
