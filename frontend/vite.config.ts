@@ -32,8 +32,12 @@ export default defineConfig(({ mode }) => {
         // Control what Workbox scans & injects when using `injectManifest`
         injectManifest: {
           // drop the `.ico` extension so it's never injected
-          globPatterns: ["**/*.{js,css,html,png,svg,json,woff2}"],
-          globIgnores: ["**/favicon.ico"],
+          globPatterns: ["**/*.{js,css,html,svg,json,woff2}"],
+          globIgnores: [
+            "**/favicon.ico",
+            "**/basketball_header_logo.png",
+            "**/orange_football_header_logo.png",
+          ],
         },
         registerType: "autoUpdate",
         manifest: {
