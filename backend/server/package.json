@@ -1,6 +1,6 @@
 {
   "name": "scoregenius-backend-server",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -18,10 +18,12 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "http-proxy-middleware": "^3.0.5",
+    "js-yaml": "^4.1.0",
     "lru-cache": "^11.1.0",
     "luxon": "^3.4.4",
     "morgan": "^1.10.0",
-    "node-cache": "^5.1.2"
+    "node-cache": "^5.1.2",
+    "swagger-ui-express": "^5.0.1"
   },
   "description": ""
 }
