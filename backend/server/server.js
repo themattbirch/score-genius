@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { setupSwagger } from "./docs/swagger.js";
 
 // --- Load environment variables -------------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
@@ -24,6 +25,7 @@ import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 import nbaRoutes from "./routes/nba_routes.js";
+import nflRoutes from "./routes/nfl_routes.js";
 import mlbRoutes from "./routes/mlb_routes.js";
 import weatherRoutes from "./routes/weather_routes.js";
 
@@ -170,7 +172,14 @@ app.get(/^\/app(\/.*)?$/, (_req, res) =>
 // -------------------------------------------------------------------------------
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
+app.use("/api/v1/nfl", nflRoutes);
 app.use("/api/weather", weatherRoutes);
+
+// Serve API docs
+setupSwagger(app);
+
+// alias /docs → /api-docs
+app.get("/docs", (_req, res) => res.redirect("/api-docs"));
 
 // -------------------------------------------------------------------------------
 // Health check
