@@ -147,33 +147,41 @@ def make_nfl_snapshot(game_id: str):
 
     # ────────────────────────── 2) Bulk dataframe pulls ──────────────────────
     df_games_all   = fetch_data_from_table("nfl_historical_game_stats")
-    df_team_games  = fetch_data_from_table("nfl_historical_game_team_stats")
+    df_team_games  = fetch_data_from_table("nfl_historical_game_team_stats")   # ← no limit here
     df_season_team = fetch_data_from_table("nfl_historical_team_stats")
     df_srs         = fetch_data_from_table("v_nfl_team_srs_lite")
     df_sos         = fetch_data_from_table("v_nfl_team_sos")
 
-    # ────────────────────────── 3) Season scoping helpers ────────────────────
-    season_game_ids = (
-        df_games_all.loc[df_games_all["season"] == season_year, "game_id"]
-        .astype(int)
-        .unique()
+    # **NEW**: grab only this season’s rows in a single query (no 1 000‑row cap)
+    team_games_q = (
+        sb_client.table("nfl_historical_game_team_stats")
+        .select("*")
+        .eq("season", season_year)
+        .execute()
     )
-    df_team_games_season = df_team_games[
-        df_team_games["game_id"].astype(int).isin(season_game_ids)
-    ]
+    df_team_games_season = pd.DataFrame(team_games_q.data or [])
+    logger.info(
+        "direct Supabase query → %d team‑by‑game rows for %d",
+        len(df_team_games_season),
+        season_year
+    )
+
+    # Fallback if direct query somehow returns empty
     if df_team_games_season.empty:
         logger.warning(
-            "No team‑by‑game rows for season %s – using all data (metrics noisy)",
+            "Direct query returned 0 rows for season %s – falling back to local filter",
             season_year,
         )
-        df_team_games_season = df_team_games.copy()
+        df_team_games_season = df_team_games[
+            df_team_games["season"] == season_year
+        ]
 
-    # Make sure the YPP + turnover columns exist
+    # Downstream safety columns
     if "yards_per_play" not in df_team_games_season.columns:
         df_team_games_season["yards_per_play"] = 0.0
     if "turnovers_total" not in df_team_games_season.columns:
         df_team_games_season["turnovers_total"] = 0
-
+        
     # ────────────────────────── 4) Quick utility lambdas ─────────────────────
     pct = lambda num, den: num / den if den else 0.0
 
@@ -310,11 +318,59 @@ def make_nfl_snapshot(game_id: str):
         "team_id == @away_id_i and season == @season_year"
     ).head(1)
 
+    # ── dump the full rows for both teams ─────────────────────────────────────
+    if not home_row.empty:
+        logger.info("Home season row: %s", home_row.iloc[0].to_dict())
+    else:
+        logger.info("Home season row: <NONE>")
+
+    if not away_row.empty:
+        logger.info("Away season row: %s", away_row.iloc[0].to_dict())
+    else:
+        logger.info("Away season row: <NONE>")
+
+    # ── now your existing split log ──────────────────────────────────────────
+    logger.info("Home record_home → %s", home_row.iloc[0].get("record_home"))
+    logger.info("Away record_road → %s", away_row.iloc[0].get("record_road"))
+
+    # ── compute the pct and diff ─────────────────────────────────────────────
     home_pct = _venue_win_pct(home_row.iloc[0] if not home_row.empty else None, home_id, "home")
     away_pct = _venue_win_pct(away_row.iloc[0] if not away_row.empty else None, away_id, "road")
+    venue_win_pct_diff = home_pct - away_pct
+
+    logger.info(
+        "Venue win%% check → home_pct=%.3f  away_pct=%.3f  diff=%.3f",
+        home_pct, away_pct, venue_win_pct_diff
+    )
+
 
     venue_win_pct_diff = home_pct - away_pct
-    logger.debug("Venue Win%% — home: %.3f  away: %.3f  diff: %.3f", home_pct, away_pct, venue_win_pct_diff)
+    logger.info("Home record_home → %s", home_row.iloc[0]["record_home"])
+    logger.info("Away record_road → %s", away_row.iloc[0]["record_road"])
+
+    # If the split diff is 0, fall back to overall record
+    if venue_win_pct_diff == 0:
+        # Pull overall wins/games from df_season_team
+        row_home = home_row.iloc[0] if not home_row.empty else None
+        row_away = away_row.iloc[0] if not away_row.empty else None
+
+        def _overall_pct(row):
+            if row is None: return 0.0
+            wins = row.get("won", 0)
+            losses = row.get("lost", 0)
+            ties = row.get("ties", 0)
+            gp = wins + losses + ties
+            return (wins + 0.5 * ties) / gp if gp else 0.0
+
+        overall_home = _overall_pct(row_home)
+        overall_away = _overall_pct(row_away)
+        venue_win_pct_diff = overall_home - overall_away
+
+        logger.info(
+            "Home/Road tied – falling back to overall pct → home=%.3f away=%.3f diff=%.3f",
+            overall_home, overall_away, venue_win_pct_diff
+        )
+
 
     # ────────────────────────── 9) Red‑zone TD % differential ───────────────
     rz_att_col, rz_made_col = "red_zone_att", "red_zone_made"
@@ -343,14 +399,22 @@ def make_nfl_snapshot(game_id: str):
     rz_td_diff = _rz_pct(home_id, offense=True) - _rz_pct(away_id, offense=False)
 
     # ────────────────────────── 10) Assemble headline payload ────────────────
+    delta_pct = (home_pct - away_pct) * 100
+
     headlines = [
         {"label": "Rest Advantage (Home)",        "value": int(rest_advantage)},
         {"label": "Turnover Margin Difference",   "value": sanitize_float(round(
                                                     team_metrics[home_id]["turnover_diff_pg"] -
                                                     team_metrics[away_id]["turnover_diff_pg"], 2))},
-        {"label": "Home/Road Win % Differential", "value": sanitize_float(round(venue_win_pct_diff, 2))},
-        {"label": "Red Zone TD% Difference",      "value": sanitize_float(round(rz_td_diff, 3))},
-    ]
+    {
+        "label": "Home Win % vs Road Win %",
+        "value": f"{home_pct:.1%} / {away_pct:.1%}  (Δ {(home_pct - away_pct):+.1%})"
+    },
+    {
+        "label": "Red Zone TD% Difference",
+        "value": sanitize_float(round(rz_td_diff, 3))
+    },
+            ]
 
     # ────────────────────────── 11) Quarter‑average bar chart ────────────────
     def q_avg(team: str) -> dict[str, float]:
@@ -441,7 +505,6 @@ def make_nfl_snapshot(game_id: str):
     ]
 
     # --- Key Metrics Bar Chart (Yards Per Attempt) ----------------------------
-    logger.info("--- Calculating Key Metrics (Y/A) ---")
 
     def extract_attempts(series: pd.Series) -> pd.Series:
         """
@@ -467,15 +530,6 @@ def make_nfl_snapshot(game_id: str):
     h_total_pass_attempts = extract_attempts(home_team_games["passing_comp_att"]).sum()
     h_pass_ypa            = (h_total_pass_yards / h_total_pass_attempts) if h_total_pass_attempts else 0.0
 
-    logger.info(
-        f"HOME ({home_id}): Pass Yds={h_total_pass_yards}, "
-        f"Pass Att={h_total_pass_attempts}, Pass YPA={h_pass_ypa:.2f}"
-    )
-    logger.info(
-        f"HOME ({home_id}): Rush Yds={h_total_rush_yards}, "
-        f"Rush Att={h_total_rush_attempts}, Rush YPA={h_rush_ypa:.2f}"
-    )
-
     # ─── Away calculations ────────────────────────────────────────────────────
     away_team_games = df_team_games_season[df_team_games_season["team_id"] == int(away_id)]
 
@@ -486,15 +540,6 @@ def make_nfl_snapshot(game_id: str):
     a_total_pass_yards    = away_team_games["passing_total"].sum()
     a_total_pass_attempts = extract_attempts(away_team_games["passing_comp_att"]).sum()
     a_pass_ypa            = (a_total_pass_yards / a_total_pass_attempts) if a_total_pass_attempts else 0.0
-
-    logger.info(
-        f"AWAY ({away_id}): Pass Yds={a_total_pass_yards}, "
-        f"Pass Att={a_total_pass_attempts}, Pass YPA={a_pass_ypa:.2f}"
-    )
-    logger.info(
-        f"AWAY ({away_id}): Rush Yds={a_total_rush_yards}, "
-        f"Rush Att={a_total_rush_attempts}, Rush YPA={a_rush_ypa:.2f}"
-    )
 
     # ─── Assemble payload ─────────────────────────────────────────────────────
     key_metrics_data = [
