@@ -1,5 +1,5 @@
 // frontend/src/screens/more_screen.tsx
-import React from "react";
+import React, { useState } from "react";
 import {
   ExternalLink,
   Twitter,
@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import type { IconType } from "@/types";
+import { useWeather } from "@/hooks/use_weather";
+import WeatherBadge from "@/components/games/weather_badge";
+import WeatherModal from "@/components/games/weather_modal";
 
 const cardBase =
   "flex items-center justify-between rounded-lg border px-4 py-3 text-sm transition-colors group";
@@ -48,6 +51,53 @@ const LinkItem: React.FC<LinkProps> = ({ href, label, Icon }) => (
     />
   </a>
 );
+
+// Dev helper for Buffalo Bills (outdoor)
+const BillsTest: React.FC = () => {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading, isError } = useWeather("NFL", "Buffalo Bills");
+
+  return (
+    <>
+      <WeatherBadge
+        isLoading={isLoading}
+        isError={isError}
+        data={data}
+        onClick={() => setOpen(true)}
+      />
+      <WeatherModal
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        weatherData={data}
+        isIndoor={data?.isIndoor}
+      />
+    </>
+  );
+};
+
+// Dev helper for Detroit Lions (indoor)
+const LionsTest: React.FC = () => {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading, isError } = useWeather("NFL", "Detroit Lions");
+
+  return (
+    <>
+      <WeatherBadge
+        isLoading={isLoading}
+        isError={isError}
+        data={data}
+        isIndoor={data?.isIndoor}
+        onClick={() => setOpen(true)}
+      />
+      <WeatherModal
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        weatherData={data}
+        isIndoor={data?.isIndoor}
+      />
+    </>
+  );
+};
 
 const MoreScreen: React.FC = () => (
   <section className="mx-auto w-full max-w-2xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-6">
@@ -120,6 +170,17 @@ const MoreScreen: React.FC = () => (
         data-tour="theme-toggle"
         className={`${cardBase} ${cardLight} ${cardDark} w-full !justify-center`}
       />
+    </div>
+
+    {/* ─────────────────── Dev: NFL Weather Tests ─────────────────── */}
+    <div className="space-y-3">
+      <h2 className="mb-2 sm:mb-3 text-base sm:text-lg font-semibold text-slate-800 dark:text-text-primary">
+        Dev: NFL Weather Tests
+      </h2>
+      <div className="flex items-center space-x-4">
+        <BillsTest />
+        <LionsTest />
+      </div>
     </div>
   </section>
 );

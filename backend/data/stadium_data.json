@@ -225,224 +225,256 @@
       "city": "Glendale",
       "latitude": 33.5276,
       "longitude": -112.2626,
-      "orientation": 310
+      "orientation": 310,
+      "is_indoor": true
     },
     "Atlanta Falcons": {
       "stadium": "Mercedes-Benz Stadium",
       "city": "Atlanta",
       "latitude": 33.7554,
       "longitude": -84.4005,
-      "orientation": 90
+      "orientation": 90,
+      "is_indoor": true
     },
     "Baltimore Ravens": {
       "stadium": "M&T Bank Stadium",
       "city": "Baltimore",
       "latitude": 39.278,
       "longitude": -76.6227,
-      "orientation": 0
+      "orientation": 315,
+      "is_indoor": false
     },
     "Buffalo Bills": {
       "stadium": "Highmark Stadium",
       "city": "Orchard Park",
       "latitude": 42.7738,
       "longitude": -78.7869,
-      "orientation": 325
+      "orientation": 325,
+      "is_indoor": false
     },
     "Carolina Panthers": {
       "stadium": "Bank of America Stadium",
       "city": "Charlotte",
       "latitude": 35.2259,
       "longitude": -80.8529,
-      "orientation": 0
+      "orientation": 315,
+      "is_indoor": false
     },
     "Chicago Bears": {
       "stadium": "Soldier Field",
       "city": "Chicago",
       "latitude": 41.8623,
       "longitude": -87.6167,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": false
     },
     "Cincinnati Bengals": {
       "stadium": "Paycor Stadium",
       "city": "Cincinnati",
       "latitude": 39.0954,
       "longitude": -84.516,
-      "orientation": 345
+      "orientation": 345,
+      "is_indoor": false
     },
     "Cleveland Browns": {
       "stadium": "Cleveland Browns Stadium",
       "city": "Cleveland",
       "latitude": 41.5061,
       "longitude": -81.6995,
-      "orientation": 310
+      "orientation": 45,
+      "is_indoor": false
     },
     "Dallas Cowboys": {
       "stadium": "AT&T Stadium",
       "city": "Arlington",
       "latitude": 32.7478,
       "longitude": -97.0929,
-      "orientation": 90
+      "orientation": 90,
+      "is_indoor": true
     },
     "Denver Broncos": {
       "stadium": "Empower Field at Mile High",
       "city": "Denver",
       "latitude": 39.7439,
       "longitude": -105.0201,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": false
     },
     "Detroit Lions": {
       "stadium": "Ford Field",
       "city": "Detroit",
       "latitude": 42.34,
       "longitude": -83.0456,
-      "orientation": 125
+      "orientation": 90,
+      "is_indoor": true
     },
     "Green Bay Packers": {
       "stadium": "Lambeau Field",
       "city": "Green Bay",
       "latitude": 44.5013,
       "longitude": -88.0622,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": false
     },
     "Houston Texans": {
       "stadium": "NRG Stadium",
       "city": "Houston",
       "latitude": 29.6847,
       "longitude": -95.4107,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": true
     },
     "Indianapolis Colts": {
       "stadium": "Lucas Oil Stadium",
       "city": "Indianapolis",
       "latitude": 39.7601,
       "longitude": -86.1639,
-      "orientation": 340
+      "orientation": 340,
+      "is_indoor": true
     },
     "Jacksonville Jaguars": {
       "stadium": "EverBank Stadium",
       "city": "Jacksonville",
       "latitude": 30.3239,
       "longitude": -81.6373,
-      "orientation": 0
+      "orientation": 45,
+      "is_indoor": false
     },
     "Kansas City Chiefs": {
       "stadium": "Arrowhead Stadium",
       "city": "Kansas City",
       "latitude": 39.0489,
       "longitude": -94.4839,
-      "orientation": 0
+      "orientation": 315,
+      "is_indoor": false
     },
     "Las Vegas Raiders": {
       "stadium": "Allegiant Stadium",
       "city": "Las Vegas",
       "latitude": 36.0908,
       "longitude": -115.1837,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": true
     },
     "Los Angeles Chargers": {
       "stadium": "SoFi Stadium",
       "city": "Inglewood",
       "latitude": 33.9535,
       "longitude": -118.3392,
-      "orientation": 340
+      "orientation": 340,
+      "is_indoor": true
     },
     "Los Angeles Rams": {
       "stadium": "SoFi Stadium",
       "city": "Inglewood",
       "latitude": 33.9535,
       "longitude": -118.3392,
-      "orientation": 340
+      "orientation": 340,
+      "is_indoor": true
     },
     "Miami Dolphins": {
       "stadium": "Hard Rock Stadium",
       "city": "Miami Gardens",
       "latitude": 25.958,
       "longitude": -80.2389,
-      "orientation": 340
+      "orientation": 340,
+      "is_indoor": false
     },
     "Minnesota Vikings": {
       "stadium": "U.S. Bank Stadium",
       "city": "Minneapolis",
       "latitude": 44.9736,
       "longitude": -93.2577,
-      "orientation": 125
+      "orientation": 315,
+      "is_indoor": true
     },
     "New England Patriots": {
       "stadium": "Gillette Stadium",
       "city": "Foxborough",
       "latitude": 42.0909,
       "longitude": -71.2643,
-      "orientation": 345
+      "orientation": 345,
+      "is_indoor": false
     },
     "New Orleans Saints": {
       "stadium": "Caesars Superdome",
       "city": "New Orleans",
       "latitude": 29.9508,
       "longitude": -90.0812,
-      "orientation": 90
+      "orientation": 90,
+      "is_indoor": true
     },
     "New York Giants": {
       "stadium": "MetLife Stadium",
       "city": "East Rutherford",
       "latitude": 40.8135,
       "longitude": -74.0745,
-      "orientation": 20
+      "orientation": 20,
+      "is_indoor": false
     },
     "New York Jets": {
       "stadium": "MetLife Stadium",
       "city": "East Rutherford",
       "latitude": 40.8135,
       "longitude": -74.0745,
-      "orientation": 20
+      "orientation": 20,
+      "is_indoor": false
     },
     "Philadelphia Eagles": {
       "stadium": "Lincoln Financial Field",
       "city": "Philadelphia",
       "latitude": 39.9008,
       "longitude": -75.1675,
-      "orientation": 350
+      "orientation": 350,
+      "is_indoor": false
     },
     "Pittsburgh Steelers": {
       "stadium": "Acrisure Stadium",
       "city": "Pittsburgh",
       "latitude": 40.4467,
       "longitude": -80.0158,
-      "orientation": 180
+      "orientation": 315,
+      "is_indoor": false
     },
     "San Francisco 49ers": {
       "stadium": "Levi's Stadium",
       "city": "Santa Clara",
       "latitude": 37.4033,
       "longitude": -121.9697,
-      "orientation": 345
+      "orientation": 345,
+      "is_indoor": false
     },
     "Seattle Seahawks": {
       "stadium": "Lumen Field",
       "city": "Seattle",
       "latitude": 47.5952,
       "longitude": -122.3316,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": false
     },
     "Tampa Bay Buccaneers": {
       "stadium": "Raymond James Stadium",
       "city": "Tampa",
       "latitude": 27.9759,
       "longitude": -82.5033,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": false
     },
     "Tennessee Titans": {
       "stadium": "Nissan Stadium",
       "city": "Nashville",
       "latitude": 36.1665,
       "longitude": -86.7713,
-      "orientation": 315
+      "orientation": 315,
+      "is_indoor": false
     },
     "Washington Commanders": {
       "stadium": "FedExField",
       "city": "Landover",
       "latitude": 38.9077,
       "longitude": -76.8645,
-      "orientation": 0
+      "orientation": 0,
+      "is_indoor": false
     }
   }
 }

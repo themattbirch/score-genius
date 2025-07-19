@@ -2,7 +2,7 @@
 import type { LucideIcon } from "lucide-react";
 
 export type IconType = LucideIcon;
-export type Sport = "NBA" | "MLB";
+export type Sport = "NBA" | "MLB" | "NFL";
 
 // Define interfaces for chart data structures, if not already present
 export interface BarChartData {
@@ -179,6 +179,7 @@ export interface WeatherData {
   city: string;
   ballparkWindText: string;
   ballparkWindAngle: number;
+  isIndoor?: boolean;
 }
 
 /**

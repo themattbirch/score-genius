@@ -1,5 +1,3 @@
-// backend/server/services/weather_service.js
-
 import fs from "fs";
 import path from "path";
 import axios from "axios";
@@ -8,41 +6,39 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/* ------------------------------------------------------------------ */
+/*  In‑memory cache of venue JSON                                      */
+/* ------------------------------------------------------------------ */
+
 let stadiumDataCache = null;
 
-function normalizeTeamKey(teamName) {
-  // Fix “St.Louis” → “St. Louis”
-  if (/^St\.\S/.test(teamName)) {
-    return teamName.replace(/^St\.(?=\S)/, "St. ");
-  }
-  // Alias “Oakland Athletics” → “Athletics”
-  if (teamName === "Oakland Athletics") {
-    return "Athletics";
-  }
-  return teamName;
-}
-
 function getStadiumData() {
-  if (stadiumDataCache) {
-    return stadiumDataCache;
-  }
+  if (stadiumDataCache) return stadiumDataCache;
+
   try {
     const dataPath = path.join(__dirname, "../../data/stadium_data.json");
-    const rawData = fs.readFileSync(dataPath, "utf8");
-    stadiumDataCache = JSON.parse(rawData);
-    console.log("Stadium data loaded and cached successfully.");
+    stadiumDataCache = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+    console.log("Stadium data loaded and cached.");
     return stadiumDataCache;
-  } catch (error) {
-    console.error("FATAL: Could not read or parse stadium_data.json", error);
+  } catch (err) {
+    console.error("FATAL: cannot read stadium_data.json", err);
     process.exit(1);
   }
 }
 
-getStadiumData();
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
 
-function getWindDirection(degrees) {
-  if (degrees === undefined) return "N/A";
-  const directions = [
+function normalizeTeamKey(teamName) {
+  if (/^St\.\S/.test(teamName)) return teamName.replace(/^St\.(?=\S)/, "St. ");
+  if (teamName === "Oakland Athletics") return "Athletics";
+  return teamName;
+}
+
+function getWindDirection(deg) {
+  if (deg == null) return "N/A";
+  const dirs = [
     "N",
     "NNE",
     "NE",
@@ -60,25 +56,15 @@ function getWindDirection(degrees) {
     "NW",
     "NNW",
   ];
-  const index = Math.round(degrees / 22.5) % 16;
-  return directions[index];
+  return dirs[Math.round(deg / 22.5) % 16];
 }
 
-function getRelativeWindInfo(windDegrees, stadiumOrientation) {
-  // Basic guards
-  if (windDegrees == null || stadiumOrientation == null) {
-    return { text: "N/A", angle: 0 };
-  }
-  if (stadiumOrientation === 0) {
-    // domes / indoor
-    return { text: "Indoor/N/A", angle: 0 };
-  }
+function getRelativeWindInfo(windDeg, orientation, isIndoor) {
+  if (isIndoor) return { text: "Indoor/N/A", angle: 0 };
+  if (windDeg == null || orientation == null) return { text: "N/A", angle: 0 };
 
-  // Convert “from” ➜ “to”
-  const windTo = (windDegrees + 180) % 360;
-
-  // Δ between wind-to vector and the home-to-CF line
-  const delta = (windTo - stadiumOrientation + 360) % 360;
+  const windTo = (windDeg + 180) % 360;
+  const delta = (windTo - orientation + 360) % 360;
 
   let text;
   if (delta < 22.5 || delta >= 337.5) text = "Blowing Out";
@@ -93,34 +79,72 @@ function getRelativeWindInfo(windDegrees, stadiumOrientation) {
   return { text, angle: delta };
 }
 
-async function getWeatherDataForTeam(sport, teamName) {
-  const { WEATHER_API_KEY } = process.env;
-  if (!WEATHER_API_KEY) {
-    throw new Error("Weather API key is not defined in the environment.");
-  }
+/* ------------------------------------------------------------------ */
+/*  Public helpers                                                     */
+/* ------------------------------------------------------------------ */
 
-  const leagueData = getStadiumData()[sport];
-  if (!leagueData) {
-    throw new Error(`Invalid sport specified: ${sport}.`);
-  }
+/**
+ * Look up and return the raw venue JSON entry for a team.
+ * @param {string} sport   - "mlb" | "nfl" | ...
+ * @param {string} team    - Team name as passed by the client.
+ */
+function getVenueInfo(sport, team) {
+  const leagueData = getStadiumData()[sport.toUpperCase()];
+  if (!leagueData) throw new Error(`Invalid sport: ${sport}`);
 
-  const lookupKey = normalizeTeamKey(teamName);
-  const teamInfo = leagueData[lookupKey];
+  const lookupKey = normalizeTeamKey(team);
+  const venue = leagueData[lookupKey];
 
-  if (!teamInfo) {
+  if (!venue)
     throw new Error(
-      `Could not find stadium information for team: ${teamName} (normalized to ${lookupKey}) in ${sport}.`
+      `No venue info for team "${team}" (normalized "${lookupKey}") in ${sport}`
     );
+
+  return venue; // { latitude, longitude, orientation, is_indoor?, ... }
+}
+
+/**
+ * Fetch (or skip) weather for the given team.
+ */
+async function getWeatherDataForTeam(sport, team) {
+  const venue = getVenueInfo(sport, team);
+
+  // Skip live API call for indoor venues
+  if (venue.is_indoor) {
+    return {
+      temperature: null,
+      feels_like: null,
+      humidity: null,
+      description: "Indoor venue",
+      icon: null,
+      city: venue.city,
+      stadium: venue.stadium,
+      description: "Indoor venue",
+      windSpeed: 0,
+      windDirection: "N/A",
+      ballparkWindText: "Indoor/N/A",
+      ballparkWindAngle: 0,
+    };
   }
 
-  const { latitude, longitude, orientation } = teamInfo;
-  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=imperial&appid=${WEATHER_API_KEY}`;
+  /* -------- outdoor: call OpenWeather ------- */
+  const { WEATHER_API_KEY } = process.env;
+  if (!WEATHER_API_KEY)
+    throw new Error("WEATHER_API_KEY missing from environment");
+
+  const url =
+    `https://api.openweathermap.org/data/2.5/weather` +
+    `?lat=${venue.latitude}&lon=${venue.longitude}` +
+    `&units=imperial&appid=${WEATHER_API_KEY}`;
 
   try {
-    const response = await axios.get(url);
-    const { data } = response;
+    const { data } = await axios.get(url);
 
-    const relativeWind = getRelativeWindInfo(data.wind.deg, orientation);
+    const relWind = getRelativeWindInfo(
+      data.wind.deg,
+      venue.orientation,
+      false
+    );
 
     return {
       temperature: Math.round(data.main.temp),
@@ -128,19 +152,16 @@ async function getWeatherDataForTeam(sport, teamName) {
       humidity: data.main.humidity,
       description: data.weather[0].description,
       icon: data.weather[0].icon,
-      city: teamInfo.city,
+      city: venue.city,
       windSpeed: Math.round(data.wind.speed),
       windDirection: getWindDirection(data.wind.deg),
-      ballparkWindText: relativeWind.text,
-      ballparkWindAngle: relativeWind.angle,
+      ballparkWindText: relWind.text,
+      ballparkWindAngle: relWind.angle,
     };
-  } catch (error) {
-    console.error(
-      "Error fetching data from OpenWeatherMap:",
-      error.response?.data || error.message
-    );
+  } catch (err) {
+    console.error("OpenWeather error:", err.response?.data || err.message);
     throw new Error("Failed to retrieve weather data from external API.");
   }
 }
 
-export { getWeatherDataForTeam };
+export { getWeatherDataForTeam, getVenueInfo };

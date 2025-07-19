@@ -267,15 +267,24 @@ export async function fetchNflSnapshotsByIds(ids) {
 
   let fetched = [];
   if (misses.length) {
+    // attempt to fetch from snapshots table, but if it doesn't exist, just return []
     const { data, error, status } = await supabase
       .from(SNAPSHOT_TABLE)
       .select("*")
       .in("game_id", misses);
+
     if (error) {
+      // if the table truly doesn't exist, swallow and return empty
+      if (
+        error.message.includes(`relation "${SNAPSHOT_TABLE}" does not exist`)
+      ) {
+        return [...hits];
+      }
       const e = new Error(error.message);
       e.status = status;
       throw e;
     }
+
     fetched = Array.isArray(data) ? data : [];
     fetched.forEach((snap) => cache.set(snap.game_id, snap));
   }

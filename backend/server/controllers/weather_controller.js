@@ -1,17 +1,18 @@
 // backend/server/controllers/weather_controller.js
 
-import { getWeatherDataForTeam } from "../services/weather_service.js";
+import {
+  getWeatherDataForTeam,
+  getVenueInfo, // ⬅️  new helper that returns the venue JSON entry
+} from "../services/weather_service.js";
 
 /**
- * Handles the API request to fetch weather for a specific team.
+ * Handles the API request to fetch weather (and venue meta) for a specific team.
  * @param {object} req - The Express request object.
  * @param {object} res - The Express response object.
  */
 async function fetchWeatherForTeam(req, res) {
-  // Extract query parameters from the URL
   const { sport, teamName } = req.query;
 
-  // 1. Validate the input
   if (!sport || !teamName) {
     return res.status(400).json({
       message:
@@ -20,24 +21,27 @@ async function fetchWeatherForTeam(req, res) {
   }
 
   try {
-    // 2. Call the service to do the actual work
-    const weatherData = await getWeatherDataForTeam(sport, teamName);
+    // Fetch weather data and venue metadata in parallel
+    const [weatherData, venue] = await Promise.all([
+      getWeatherDataForTeam(sport, teamName),
+      getVenueInfo(sport, teamName), // returns { is_indoor: true/false, ... }
+    ]);
 
-    // 3. Send the successful response
-    res.status(200).json(weatherData);
+    const responsePayload = {
+      ...weatherData,
+      isIndoor: venue?.is_indoor ?? null, // expose the flag to the client
+    };
+
+    res.status(200).json(responsePayload);
   } catch (error) {
-    // 4. Handle any errors that occurred during the process
     console.error(
-      `Error in weather controller for ${sport} - ${teamName}:`,
+      `Weather controller error for ${sport} - ${teamName}:`,
       error.message
     );
-
-    // Send a generic error message to the client
     res
       .status(500)
       .json({ message: "An error occurred while fetching weather data." });
   }
 }
 
-// Export the function so the route can use it
 export { fetchWeatherForTeam };
