@@ -1,13 +1,13 @@
 // frontend/src/components/games/weather_badge.tsx
 
 import React from "react";
-import { WeatherData } from "@/types";
-import RelativeWindIcon from "./relative_wind_icon";
+import type { WeatherData } from "@/types";
 
-interface WeatherBadgeProps {
+export interface WeatherBadgeProps {
   isLoading: boolean;
   isError: boolean;
   data: WeatherData | undefined;
+  isIndoor?: boolean;
   onClick: () => void;
 }
 
@@ -15,45 +15,58 @@ const WeatherBadge: React.FC<WeatherBadgeProps> = ({
   isLoading,
   isError,
   data,
+  isIndoor,
   onClick,
 }) => {
-  const renderContent = () => {
-    if (isLoading) {
-      return <span className="animate-pulse">Loading...</span>;
-    }
-    if (isError || !data) {
-      return <span>--°F / --mph</span>;
-    }
+  /* ─── indoor venue ─────────────────────────────────────────────── */
+  if (isIndoor) {
     return (
-      <span>
-        {data.temperature}°F / {data.windSpeed}mph
-      </span>
+      <button
+        onClick={onClick}
+        className="rounded-full bg-amber-600/90 hover:bg-amber-700 px-4 py-2 text-sm font-semibold text-white"
+      >
+        Indoor Game
+      </button>
     );
-  };
+  }
 
-  const tooltipText = data
-    ? `${data.city}: ${data.description}, ${data.temperature}°F, Wind: ${data.windSpeed}mph (${data.ballparkWindText})`
-    : "Click to view ballpark weather";
+  /* ─── loading / error states ───────────────────────────────────── */
+  if (isLoading)
+    return (
+      <button
+        disabled
+        className="rounded-full bg-slate-400 px-4 py-2 text-sm text-white"
+      >
+        Loading…
+      </button>
+    );
 
+  if (isError || !data)
+    return (
+      <button
+        disabled
+        className="rounded-full bg-red-500/80 px-4 py-2 text-sm text-white"
+      >
+        N/A
+      </button>
+    );
+
+  /* ─── outdoor: render temp / wind ───────────────────────────────── */
   return (
     <button
       onClick={onClick}
-      title={tooltipText}
-      aria-label={tooltipText}
-      className={`
-        rounded-full bg-badge-weather text-white text-xs font-semibold
-        px-3 py-1 inline-flex items-center
-        min-w-[120px] h-8 transition-all duration-200 ease-in-out
-        hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-offset-2 
-        focus:ring-sky-500 focus:ring-offset-gray-800
-      `}
+      className="rounded-full bg-green-700 hover:bg-green-800 px-4 py-2 flex items-center space-x-1 text-sm font-semibold text-white"
     >
-      {/* UPDATED: The container div for the icon now has more margin */}
-      <div className="flex-shrink-0 flex items-center justify-center w-4 h-4 mr-2 bg-gray-700 rounded-full">
-        <RelativeWindIcon rotation={data?.ballparkWindAngle ?? 0} />
-      </div>
-
-      <span className="truncate">{renderContent()}</span>
+      {/* arrow icon */}
+      <span
+        className="inline-block rotate-[-45deg]"
+        style={{ transform: `rotate(${data.ballparkWindAngle}deg)` }}
+      >
+        ↑
+      </span>
+      <span>
+        {data.temperature}°F / {data.windSpeed}mph
+      </span>
     </button>
   );
 };
