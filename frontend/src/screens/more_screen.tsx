@@ -132,7 +132,6 @@ const MoreScreen: React.FC = () => (
         Icon={FileText}
       />
     </div>
-
     {/* ─────────────────── Connect with Us ─────────────────── */}
     <div className="space-y-3">
       <h2 className="mb-2 sm:mb-3 text-center sm:text-left text-base sm:text-lg font-semibold text-slate-800 dark:text-text-primary">
@@ -159,7 +158,6 @@ const MoreScreen: React.FC = () => (
         Icon={PlayCircle}
       />
     </div>
-
     {/* ─────────────────── Display Options ─────────────────── */}
     <div className="space-y-3">
       <h2 className="mb-2 sm:mb-3 text-center sm:text-left text-base sm:text-lg font-semibold text-slate-800 dark:text-text-primary">
@@ -171,8 +169,8 @@ const MoreScreen: React.FC = () => (
         className={`${cardBase} ${cardLight} ${cardDark} w-full !justify-center`}
       />
     </div>
-
-    {/* ─────────────────── Dev: NFL Weather Tests ─────────────────── */}
+    {/*
+    ─────────────────── Dev: NFL Weather Tests ───────────────────
     <div className="space-y-3">
       <h2 className="mb-2 sm:mb-3 text-base sm:text-lg font-semibold text-slate-800 dark:text-text-primary">
         Dev: NFL Weather Tests
@@ -182,6 +180,7 @@ const MoreScreen: React.FC = () => (
         <LionsTest />
       </div>
     </div>
+*/}
   </section>
 );
 
