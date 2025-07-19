@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode } from "react";
 
-export type Sport = "NBA" | "MLB";
+export type Sport = "NBA" | "MLB" | "NFL";
 
 interface SportContextValue {
   sport: Sport;
