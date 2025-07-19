@@ -91,7 +91,7 @@ const HowToUseScreen: React.FC = () => {
       <SnapshotModal
         isOpen={isSnapshotOpen}
         onClose={() => setIsSnapshotOpen(false)}
-        gameId="13406"
+        gameId="13466"
         sport="NFL"
       />
     </>
