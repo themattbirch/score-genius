@@ -75,7 +75,23 @@ const steps: Step[] = [
     disableBeacon: true,
     placement: "bottom",
   },
-  // Step 5: Stats Tab (index 4)
+  // --- NEW STEP 5: Advanced Stats (index 4) ---
+  {
+    target: '[data-tour="snapshot-button"]:first-of-type',
+    content:
+      "Click 'Advanced Stats' to see a detailed statistical snapshot and analysis for the matchup.",
+    disableBeacon: true,
+    placement: "right",
+  },
+  // --- NEW STEP 6: Weather Badge (index 5) ---
+  {
+    target: '[data-tour="weather-badge"]:first-of-type',
+    content:
+      "For outdoor games, we provide real-time weather, including wind speed and direction, which can impact gameplay.",
+    disableBeacon: true,
+    placement: "left",
+  },
+  // Step 7: Stats Tab (index 6)
   {
     target: '[data-tour="tab-stats"]',
     content:
@@ -83,23 +99,22 @@ const steps: Step[] = [
     disableBeacon: true,
     placement: "top",
   },
-
-  // --- STEP 6: Sub-tabs (index 5) ---
+  // Step 8: Sub-tabs (index 7)
   {
-    target: '[data-tour="stats-subtab-advanced"]', // <<< UPDATE target attribute
+    target: '[data-tour="stats-subtab-advanced"]',
     content:
-      "Click sub-tabs like 'Advanced' or 'Players' (NBA only) to view different stat categories.", // Adjusted content
+      "Click sub-tabs like 'Advanced' or 'Players' (NBA only) to view different stat categories.",
     placement: "bottom",
     disableBeacon: true,
   },
-  // --- Step 7: Stats Column (index 6) ---
+  // Step 9: Stats Column (index 8)
   {
     target: '[data-tour="stats-column-winpct"]',
     content: "Click any column header like this one to sort teams and players.",
     placement: "bottom",
     disableBeacon: true,
   },
-  // --- STEP 8: More Tab (index 7) ---
+  // Step 10: More Tab (index 9)
   {
     target: '[data-tour="tab-more"]',
     content:
@@ -107,11 +122,11 @@ const steps: Step[] = [
     placement: "top",
     disableBeacon: true,
   },
-  // --- Step 9: Theme Toggle (index 8) ---
+  // Step 11: Theme Toggle (index 10)
   {
     target: '[data-tour="theme-toggle"]',
     content: "Light or dark? Flip the theme anytime using this toggle.",
-    placement: "top", // Or 'bottom'/'auto' depending on layout
+    placement: "top",
     disableBeacon: true,
   },
 ];
