@@ -1,294 +1,104 @@
 {
   "nfl_historical_game_stats": [
-    {
-      "column_name": "id"
-    },
-    {
-      "column_name": "game_id"
-    },
-    {
-      "column_name": "season"
-    },
-    {
-      "column_name": "away_q3"
-    },
-    {
-      "column_name": "away_q4"
-    },
-    {
-      "column_name": "away_ot"
-    },
-    {
-      "column_name": "home_score"
-    },
-    {
-      "column_name": "away_score"
-    },
-    {
-      "column_name": "week"
-    },
-    {
-      "column_name": "game_date"
-    },
-    {
-      "column_name": "game_time"
-    },
-    {
-      "column_name": "game_timestamp"
-    },
-    {
-      "column_name": "home_team_id"
-    },
-    {
-      "column_name": "away_team_id"
-    },
-    {
-      "column_name": "home_q1"
-    },
-    {
-      "column_name": "home_q2"
-    },
-    {
-      "column_name": "home_q3"
-    },
-    {
-      "column_name": "home_q4"
-    },
-    {
-      "column_name": "home_ot"
-    },
-    {
-      "column_name": "away_q1"
-    },
-    {
-      "column_name": "away_q2"
-    },
-    {
-      "column_name": "stage"
-    },
-    {
-      "column_name": "venue_name"
-    },
-    {
-      "column_name": "venue_city"
-    },
-    {
-      "column_name": "away_team_name"
-    },
-    {
-      "column_name": "home_team_name"
-    }
+    "id",
+    "game_id",
+    "season",
+    "away_q3",
+    "away_q4",
+    "away_ot",
+    "home_score",
+    "away_score",
+    "week",
+    "game_date",
+    "game_time",
+    "game_timestamp",
+    "home_team_id",
+    "away_team_id",
+    "home_q1",
+    "home_q2",
+    "home_q3",
+    "home_q4",
+    "home_ot",
+    "away_q1",
+    "away_q2",
+    "stage",
+    "venue_name",
+    "venue_city",
+    "away_team_name",
+    "home_team_name"
   ],
   "nfl_historical_game_team_stats": [
-    {
-      "column_name": "red_zone_made"
-    },
-    {
-      "column_name": "game_id"
-    },
-    {
-      "column_name": "team_id"
-    },
-    {
-      "column_name": "first_downs_total"
-    },
-    {
-      "column_name": "first_downs_passing"
-    },
-    {
-      "column_name": "first_downs_rushing"
-    },
-    {
-      "column_name": "first_downs_penalty"
-    },
-    {
-      "column_name": "plays_total"
-    },
-    {
-      "column_name": "yards_total"
-    },
-    {
-      "column_name": "yards_per_play"
-    },
-    {
-      "column_name": "total_drives"
-    },
-    {
-      "column_name": "passing_yards_per_pass"
-    },
-    {
-      "column_name": "passing_interceptions"
-    },
-    {
-      "column_name": "turnovers_total"
-    },
-    {
-      "column_name": "red_zone_pct"
-    },
-    {
-      "column_name": "third_down_pct"
-    },
-    {
-      "column_name": "fourth_down_pct"
-    },
-    {
-      "column_name": "home_team_id"
-    },
-    {
-      "column_name": "away_team_id"
-    },
-    {
-      "column_name": "sacks_total"
-    },
-    {
-      "column_name": "updated_at"
-    },
-    {
-      "column_name": "raw_api_response"
-    },
-    {
-      "column_name": "season"
-    },
-    {
-      "column_name": "fumbles_recovered"
-    },
-    {
-      "column_name": "penalties"
-    },
-    {
-      "column_name": "interceptions_total"
-    },
-    {
-      "column_name": "passing_total"
-    },
-    {
-      "column_name": "rushings_total"
-    },
-    {
-      "column_name": "rushings_attempts"
-    },
-    {
-      "column_name": "rushings_yards_per_rush"
-    },
-    {
-      "column_name": "turnovers_lost_fumbles"
-    },
-    {
-      "column_name": "turnovers_interceptions"
-    },
-    {
-      "column_name": "safeties_total"
-    },
-    {
-      "column_name": "int_touchdowns_total"
-    },
-    {
-      "column_name": "points_against_total"
-    },
-    {
-      "column_name": "third_down_made"
-    },
-    {
-      "column_name": "third_down_attempts"
-    },
-    {
-      "column_name": "fourth_down_made"
-    },
-    {
-      "column_name": "fourth_down_attempts"
-    },
-    {
-      "column_name": "penalty_yards"
-    },
-    {
-      "column_name": "id"
-    },
-    {
-      "column_name": "red_zone_att"
-    },
-    {
-      "column_name": "possession_time"
-    },
-    {
-      "column_name": "passing_sacks_yards_lost"
-    },
-    {
-      "column_name": "away_team_name"
-    },
-    {
-      "column_name": "passing_comp_att"
-    },
-    {
-      "column_name": "home_team_name"
-    }
+    "red_zone_made",
+    "game_id",
+    "team_id",
+    "first_downs_total",
+    "first_downs_passing",
+    "first_downs_rushing",
+    "first_downs_penalty",
+    "plays_total",
+    "yards_total",
+    "yards_per_play",
+    "total_drives",
+    "passing_yards_per_pass",
+    "passing_interceptions",
+    "turnovers_total",
+    "red_zone_pct",
+    "third_down_pct",
+    "fourth_down_pct",
+    "home_team_id",
+    "away_team_id",
+    "sacks_total",
+    "updated_at",
+    "raw_api_response",
+    "season",
+    "fumbles_recovered",
+    "penalties",
+    "interceptions_total",
+    "passing_total",
+    "rushings_total",
+    "rushings_attempts",
+    "rushings_yards_per_rush",
+    "turnovers_lost_fumbles",
+    "turnovers_interceptions",
+    "safeties_total",
+    "int_touchdowns_total",
+    "points_against_total",
+    "third_down_made",
+    "third_down_attempts",
+    "fourth_down_made",
+    "fourth_down_attempts",
+    "penalty_yards",
+    "id",
+    "red_zone_att",
+    "possession_time",
+    "passing_sacks_yards_lost",
+    "away_team_name",
+    "passing_comp_att",
+    "home_team_name"
   ],
   "nfl_historical_team_stats": [
-    {
-      "column_name": "srs_lite"
-    },
-    {
-      "column_name": "team_id"
-    },
-    {
-      "column_name": "position"
-    },
-    {
-      "column_name": "won"
-    },
-    {
-      "column_name": "lost"
-    },
-    {
-      "column_name": "ties"
-    },
-    {
-      "column_name": "points_for"
-    },
-    {
-      "column_name": "points_against"
-    },
-    {
-      "column_name": "points_difference"
-    },
-    {
-      "column_name": "updated_at"
-    },
-    {
-      "column_name": "id"
-    },
-    {
-      "column_name": "season"
-    },
-    {
-      "column_name": "league_id"
-    },
-    {
-      "column_name": "team_name"
-    },
-    {
-      "column_name": "team_logo"
-    },
-    {
-      "column_name": "record_road"
-    },
-    {
-      "column_name": "record_conference"
-    },
-    {
-      "column_name": "conference"
-    },
-    {
-      "column_name": "division"
-    },
-    {
-      "column_name": "record_division"
-    },
-    {
-      "column_name": "streak"
-    },
-    {
-      "column_name": "record_home"
-    }
+    "srs_lite",
+    "team_id",
+    "position",
+    "won",
+    "lost",
+    "ties",
+    "points_for",
+    "points_against",
+    "points_difference",
+    "updated_at",
+    "id",
+    "season",
+    "league_id",
+    "team_name",
+    "team_logo",
+    "record_road",
+    "record_conference",
+    "conference",
+    "division",
+    "record_division",
+    "streak",
+    "record_home"
   ],
   "nfl_historical_player_stats": [
     "id",

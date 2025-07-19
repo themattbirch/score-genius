@@ -20,8 +20,8 @@ const CustomPieTooltip: React.FC<
     theme === "dark" ? "rgba(51, 65, 85, 0.6)" : "#e2e8f0";
 
   if (active && payload && payload.length) {
-    const dataName = payload[0].name; // e.g., "Home Offense vs Opp. Hand..."
-    const dataValue = payload[0].value; // e.g., 4.1
+    const dataName = payload[0].name; // e.g., "Home (23.6)"
+    const dataValue = payload[0].value; // e.g., 23.6471
 
     return (
       <div
@@ -36,10 +36,10 @@ const CustomPieTooltip: React.FC<
           color: textColorPrimary,
         }}
       >
-        {/* For MLB, we only show the name because the value is already in it */}
-        {sport === "MLB" && <p>{dataName}</p>}
+        {/* For MLB and NFL, show the full category text (which already includes the rounded value) */}
+        {(sport === "MLB" || sport === "NFL") && <p>{dataName}</p>}
 
-        {/* For NBA, we show both the name (e.g., "Home") and the value */}
+        {/* For NBA, show both the name and the numeric value */}
         {sport === "NBA" && (
           <p>
             {dataName}: {Number(dataValue).toLocaleString()}

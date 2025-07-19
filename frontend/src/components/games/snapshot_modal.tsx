@@ -62,8 +62,10 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
 
   const barChartTitle =
     sport === "MLB" ? "Scoring Averages" : "Quarter Scoring";
+  sport === "NFL" ? "Quarter Averages" : "Quarter Scoring";
   const pieChartTitle =
     sport === "MLB" ? "Avg Runs Vs LHP / RHP" : "Scoring Distribution";
+  sport === "NFL" ? "Scoring Averages" : "Scoring Distribution";
   const isMultiPie =
     hasPie &&
     Array.isArray(sd?.pie_chart_data) &&
