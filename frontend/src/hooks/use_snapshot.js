@@ -6,7 +6,7 @@ import { apiFetch } from "@/api/client";
 /**
  * Custom hook to fetch game snapshot data.
  * @param {string} gameId - The ID of the game.
- * @param {'NBA' | 'MLB'} sport - The sport ('NBA' or 'MLB').
+ * @param {'NBA' | 'MLB' | 'NFL'} sport - The sport ('NBA', 'NFL' or 'MLB').
  * @returns {object} Query result object with data, error, isFetching, refetch, etc.
  */
 export const use_snapshot = (gameId, sport) => {
