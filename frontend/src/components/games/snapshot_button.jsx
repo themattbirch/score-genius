@@ -17,6 +17,7 @@ const SnapshotButton = ({
     <button
       onClick={onClick}
       disabled={isDisabled}
+      data-tour="snapshot-button"
       className={`
         rounded-full // FR-GC-1, UX/UI
         bg-btn-snapshot // UX/UI custom color

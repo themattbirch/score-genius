@@ -75,15 +75,6 @@ const HowToUseScreen: React.FC = () => {
             <Play size={16} strokeWidth={2} />
             Start Interactive Tour
           </button>
-
-          {/* --- Temporary Test Button --- */}
-          <button
-            onClick={() => setIsSnapshotOpen(true)}
-            className="flex w-full max-w-xs items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-700"
-          >
-            <BarChart4 size={16} strokeWidth={2} />
-            Test NFL Snapshot (Game 13406)
-          </button>
         </div>
       </section>
 
