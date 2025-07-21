@@ -110,6 +110,10 @@ Thumbs.db
 /reports/
 /reports
 
+# docs
+
+/frontend/docs/
+
 # Database dumps
 remote_dump.sql
 remote_full.sql
