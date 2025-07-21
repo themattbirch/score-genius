@@ -1,138 +1,128 @@
-# backend/mlb_features/form.py
+# backend/nfl_features/form.py
+
+"""Win-loss *form* and current streak features for NFL teams.
+
+The goal is to quantify recent momentum without leaking future information.
+We work from a **historical* games DataFrame (all past results) and attach
+rolling win-percentage and streak metrics to an *upcoming* games DataFrame.
+"""
 
 from __future__ import annotations
-import logging
-from typing import Optional, Dict, Any
 
-import pandas as pd
+import logging
+from typing import Optional
+
 import numpy as np
+import pandas as pd
+
+from .utils import DEFAULTS, normalize_team_name, prefix_columns
 
 logger = logging.getLogger(__name__)
-
-try:
-    from .utils import DEFAULTS as MLB_DEFAULTS
-except ImportError:
-    logger.warning("Could not import DEFAULTS; using local fallbacks in form.py")
-    MLB_DEFAULTS: Dict[str, Any] = {}
+logger.addHandler(logging.NullHandler())
 
 __all__ = ["transform"]
 
-def _calculate_form_metrics(
-    team_games: pd.DataFrame, team_norm: str, num_form_games: int
-) -> dict:
-    # Drop rows missing scores
-    team_games = team_games.dropna(subset=["home_score", "away_score"])
-    if team_games.empty:
-        return {
-            "current_form": "N/A",
-            "form_win_pct": MLB_DEFAULTS.get("form_win_pct", 0.5),
-            "current_streak": MLB_DEFAULTS.get("current_streak", 0.0),
-        }
 
-    recent = (
-        team_games
-        .sort_values("game_date_et", ascending=False)
-        .head(num_form_games)
-        .copy()
+def _prepare_long_format(historical: pd.DataFrame) -> pd.DataFrame:
+    """Return a long-form DataFrame with one row per **team-game**."""
+    hist = historical.copy()
+    hist["game_date"] = pd.to_datetime(hist["game_date"])
+
+    hist["home_team_norm"] = hist["home_team_norm"].apply(normalize_team_name)
+    hist["away_team_norm"] = hist["away_team_norm"].apply(normalize_team_name)
+
+    home_games = hist.rename(columns={"home_team_norm": "team", "away_team_norm": "opponent", "home_score": "team_score", "away_score": "opp_score"})
+    away_games = hist.rename(columns={"away_team_norm": "team", "home_team_norm": "opponent", "away_score": "team_score", "home_score": "opp_score"})
+    
+    long_df = pd.concat([home_games, away_games], ignore_index=True)
+    return long_df.sort_values(["team", "game_date"])
+
+
+def _compute_outcomes(long_df: pd.DataFrame) -> pd.DataFrame:
+    """Add outcome (+1 win, -1 loss, 0 tie) and streak columns."""
+    df = long_df.copy()
+    df["outcome"] = np.select(
+        [df["team_score"] > df["opp_score"], df["team_score"] < df["opp_score"]],
+        [1, -1],
+        default=0,
     )
 
-    # Build W/L/T vectorised
-    is_home = recent["home_team_norm"] == team_norm
-    recent["outcome"] = np.select(
-        [
-            (is_home) & (recent["home_score"] > recent["away_score"]),
-            (~is_home) & (recent["away_score"] > recent["home_score"]),
-            recent["home_score"] == recent["away_score"],
-        ],
-        ["W", "W", "T"],
-        default="L",
+    # Continuous streak counter within same outcome blocks
+    streak_len = df.groupby("team")["outcome"].apply(
+        lambda s: s.groupby((s != s.shift()).cumsum()).cumcount() + 1
     )
+    df["streak_value"] = streak_len * df["outcome"]
+    return df
 
-    # Chronological form string
-    form_string = "".join(reversed(recent["outcome"].tolist()))
-
-    # Compute win % on decisive games
-    win_sample = recent[recent["outcome"].isin(["W", "L"])]
-    win_pct = 0.5 if win_sample.empty else (win_sample["outcome"] == "W").mean()
-
-    # Compute streak
-    streak_base = win_sample["outcome"].iloc[::-1]  # newest → oldest
-    if streak_base.empty:
-        streak_val = 0.0
-    else:
-        last_res = streak_base.iloc[0]
-        streak_len = (streak_base == last_res).cummin().sum()
-        streak_val = streak_len if last_res == "W" else -streak_len
-
-    return {
-        "current_form": form_string,
-        "form_win_pct": float(win_pct),
-        "current_streak": float(streak_val),
-    }
 
 def transform(
-    df: pd.DataFrame,
+    games: pd.DataFrame,
     *,
-    historical_df: Optional[pd.DataFrame] = None,
-    num_form_games: int = 5,
-    debug: bool = False,
+    historical_df: Optional[pd.DataFrame],
+    lookback_window: int = 5,
+    flag_imputations: bool = True,
 ) -> pd.DataFrame:
-    if debug:
-        logger.setLevel(logging.DEBUG)
-    logger.info(f"form: starting transform – input shape {df.shape}")
-
-    result = df.copy()
+    """Attach leakage-free *form* features to ``games``."""
     if historical_df is None or historical_df.empty:
-        logger.warning("form: No historical data provided. Skipping form calculations.")
-        # ... (unchanged fallback) ...
-        return result
+        logger.warning("form: No historical data – defaulting all form features.")
+        base = games[["game_id"]].copy()
+        for side in ("home", "away"):
+            base[f"{side}_form_win_pct_{lookback_window}"] = DEFAULTS["form_win_pct"]
+            base[f"{side}_current_streak"] = DEFAULTS["current_streak"]
+            if flag_imputations:
+                base[f"{side}_form_imputed"] = 1
+                base[f"{side}_streak_imputed"] = 1
+        base[f"form_win_pct_{lookback_window}_diff"] = 0.0
+        base["current_streak_diff"] = 0.0
+        return base
 
-    # --- Make a safe working copy of history & clean it ---------------
-    hist = historical_df.copy()
-    # Ensure numeric scores
-    for col in ['home_score', 'away_score']:
-        if col in hist.columns:
-            hist[col] = pd.to_numeric(hist[col], errors='coerce')
-    # Drop any rows missing date or scores
-    hist = hist.dropna(subset=['game_date_et', 'home_score', 'away_score'])
-    # Reset index so boolean masks align
-    hist = hist.reset_index(drop=True)
+    long_df = _compute_outcomes(_prepare_long_format(historical_df))
+    grouped = long_df.groupby("team")
 
-    all_form_metrics = []
-    for _, game_row in result.iterrows():
-        game_date = game_row["game_date_et"]
-        home_team = game_row["home_team_norm"]
-        away_team = game_row["away_team_norm"]
+    # --- Feature Calculation (with leakage protection) ---
+    # Rolling win% (exclude current game via shift)
+    long_df[f"form_win_pct_{lookback_window}"] = grouped["outcome"].shift(1).rolling(
+        window=lookback_window, min_periods=1
+    ).apply(lambda x: (x > 0).mean(), raw=True)
 
-        # Use .loc and our cleaned `hist` copy
-        home_hist = hist.loc[
-            ((hist["home_team_norm"] == home_team) |
-             (hist["away_team_norm"] == home_team))
-            & (hist["game_date_et"] < game_date)
-        ]
-        away_hist = hist.loc[
-            ((hist["home_team_norm"] == away_team) |
-             (hist["away_team_norm"] == away_team))
-            & (hist["game_date_et"] < game_date)
-        ]
+    # Streak (exclude current game via shift)
+    long_df["current_streak"] = grouped["streak_value"].shift(1)
+    
+    # --- Merging Logic ---
+    feat_cols = ["team", "game_date", f"form_win_pct_{lookback_window}", "current_streak"]
+    features_long = long_df[feat_cols].copy()
 
-        home_metrics = _calculate_form_metrics(home_hist, home_team, num_form_games)
-        away_metrics = _calculate_form_metrics(away_hist, away_team, num_form_games)
+    upcoming = games.copy()
+    upcoming["game_date"] = pd.to_datetime(upcoming["game_date"])
+    upcoming.sort_values("game_date", inplace=True)
 
-        all_form_metrics.append({
-            "game_id": game_row["game_id"],
-            "home_current_form": home_metrics["current_form"],
-            "home_form_win_pct": home_metrics["form_win_pct"],
-            "home_current_streak": home_metrics["current_streak"],
-            "away_current_form": away_metrics["current_form"],
-            "away_form_win_pct": away_metrics["form_win_pct"],
-            "away_current_streak": away_metrics["current_streak"],
-        })
+    merged = {}
+    for side, team_col in (("home", "home_team_norm"), ("away", "away_team_norm")):
+        tmp = pd.merge_asof(
+            upcoming,
+            features_long.rename(columns={"team": team_col}),
+            on="game_date", by=team_col, direction="backward",
+        )
+        merged[side] = prefix_columns(
+            tmp[["game_id", f"form_win_pct_{lookback_window}", "current_streak"]],
+            f"{side}", exclude=["game_id"],
+        )
 
-    form_df = pd.DataFrame(all_form_metrics)
-    result = result.merge(form_df, on="game_id", how="left")
-    result["form_win_pct_diff"] = result["home_form_win_pct"] - result["away_form_win_pct"]
+    result = merged["home"].merge(merged["away"], on="game_id")
+    
+    # --- Fill Defaults & Add Diffs ---
+    fills = {
+        f"home_form_win_pct_{lookback_window}": DEFAULTS["form_win_pct"],
+        f"away_form_win_pct_{lookback_window}": DEFAULTS["form_win_pct"],
+        "home_current_streak": DEFAULTS["current_streak"],
+        "away_current_streak": DEFAULTS["current_streak"],
+    }
+    for col, dval in fills.items():
+        if flag_imputations:
+            result[f"{col}_imputed"] = result[col].isna().astype(int)
+        result[col] = result[col].fillna(dval)
+
+    result[f"form_win_pct_{lookback_window}_diff"] = result[f"home_form_win_pct_{lookback_window}"] - result[f"away_form_win_pct_{lookback_window}"]
     result["current_streak_diff"] = result["home_current_streak"] - result["away_current_streak"]
 
-    logger.info(f"form: transform complete – output shape {result.shape}")
     return result
