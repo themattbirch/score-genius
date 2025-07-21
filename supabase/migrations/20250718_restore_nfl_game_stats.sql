@@ -1,4 +1,4 @@
--- supabase/migrations/XXX_restore_nfl_game_stats.sql
+-- 20250718_restore_nfl_game_stats.sql
 -- Restore + harden nfl_historical_game_stats schema
 -- Includes: table create (if missing), column type enforcement, unique(game_id),
 --           DB-managed updated_at (default + trigger), helpful indexes.
