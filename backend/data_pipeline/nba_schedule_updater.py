@@ -124,10 +124,10 @@ def normalize_team_name(name: str) -> str:
         if name.lower() == original.lower():
             return replacement
     
-    # General normalization
-    # Strip whitespace, convert to title case
-    normalized = ' '.join(name.strip().split()).title()
-    return normalized
+    # General normalization: strip & collapse whitespace
+    # If it still isn’t in our replacements map, return exactly the original spelling    key = ' '.join(name.strip().split())
+    key = ' '.join(name.strip().split())
+    return key
 
 def create_schedule_table():
     """

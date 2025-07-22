@@ -143,15 +143,44 @@ def determine_season(game_date: pd.Timestamp) -> int:
     # If a game is played before March, it belongs to the previous calendar year's season.
     return game_date.year if game_date.month >= 3 else game_date.year - 1
 
+def prefix_columns(
+    df: pd.DataFrame,
+    prefix: str,
+    exclude: list[str] | None = None
+) -> pd.DataFrame:
+    """
+    Rename all columns in `df` by prepending `prefix + '_'`,
+    except for any columns listed in `exclude`.
+    """
+    exclude_set = set(exclude) if exclude is not None else set()
+    mapping = {
+        col: (col if col in exclude_set else f"{prefix}_{col}")
+        for col in df.columns
+    }
+    return df.rename(columns=mapping)
 
-def safe_divide(numerator: pd.Series, denominator: pd.Series, default_val: float = 0.0) -> pd.Series:
-    """Safely divide two series, handling zeros and NaNs."""
-    num = pd.to_numeric(numerator, errors='coerce')
-    den = pd.to_numeric(denominator, errors='coerce').replace(0, np.nan)
-    result = num / den
-    result.replace([np.inf, -np.inf], np.nan, inplace=True)
-    return result.fillna(default_val)
 
+def safe_divide(
+    numerators: pd.Series,
+    denominators: pd.Series,
+    fill: float = 0.0,
+    default_val: float | None = None
+) -> pd.Series:
+    """
+    Safely divide two Series element‑wise.
+    - ±inf → NaN
+    - NaN → fill value
+    - 'default_val' is an alias for 'fill' (tests call default_val).
+    """
+    # if default_val provided, it wins
+    fill_value = default_val if default_val is not None else fill
+
+    result = numerators / denominators
+    result = result.replace([np.inf, -np.inf], np.nan)
+    return result.fillna(fill_value)
+
+# keep the alias for rate computations
+compute_rate = safe_divide
 
 def profile_time(func=None, *, enabled: bool = True):
     """Decorator to log the execution time of a function."""
