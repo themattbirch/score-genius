@@ -89,13 +89,19 @@ export default defineConfig(({ mode }) => {
     resolve: { alias: { "@": resolve(__dirname, "src") } },
 
     server: {
-      open: "/app", // still auto-opens the SPA
-      // Use the API_BASE_URL defined above for Vite's local dev proxy
-      proxy: {
-        "/api/v1": API_BASE_URL, // <--- Use API_BASE_URL here for local proxy
-      },
-      strictPort: true,
+      open: "/app",
       port: 5173,
+      strictPort: true,
+
+      proxy: {
+        // send every /api request in dev to localhost:10000
+        "/api": {
+          target: "http://localhost:10000",
+          changeOrigin: true,
+          secure: false,
+          rewrite: (p) => p, // keep the path unchanged
+        },
+      },
     },
 
     build: {
