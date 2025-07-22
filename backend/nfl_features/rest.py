@@ -28,40 +28,38 @@ __all__ = ["transform"]
 # Helpers                                                                     #
 # --------------------------------------------------------------------------- #
 def _timeline(historical: pd.DataFrame, upcoming: pd.DataFrame) -> pd.DataFrame:
-    """Return long DataFrame: one row = team‑game, historical+upcoming."""
+    """Return long DataFrame: one row = team-game, historical+upcoming."""
     hist = historical.copy()
     hist["game_date"] = pd.to_datetime(hist["game_date"])
+    hist["_is_upcoming"] = False  # <-- Set is_upcoming flag here
 
     upc = upcoming.copy()
     upc["game_date"] = pd.to_datetime(upc["game_date"])
-    upc["_is_upcoming"] = True  # marker for extraction later
+    upc["_is_upcoming"] = True
 
     # Canonical team keys for grouping
     for col in ("home_team_norm", "away_team_norm"):
         hist[col] = hist[col].apply(normalize_team_name)
         upc[col] = upc[col].apply(normalize_team_name)
 
-    home = pd.concat(
-        [
-            hist.rename(columns={"home_team_norm": "team"}),
-            upc.rename(columns={"home_team_norm": "team"}),
-        ],
-        ignore_index=True,
-    )
-    away = pd.concat(
-        [
-            hist.rename(columns={"away_team_norm": "team"}),
-            upc.rename(columns={"away_team_norm": "team"}),
-        ],
-        ignore_index=True,
-    )
+    # Combine hist and upcoming into a single source
+    combined = pd.concat([hist, upc], ignore_index=True)
+
+    # Unpivot into long format
+    home = combined.rename(columns={"home_team_norm": "team"})
+    away = combined.rename(columns={"away_team_norm": "team"})
+
     long_df = pd.concat([home, away], ignore_index=True, sort=False)
-    return long_df.sort_values(["team", "game_date"])
+    
+    # Select a consistent set of columns
+    final_cols = ["game_id", "game_date", "team", "_is_upcoming"]
+    return long_df[final_cols].sort_values(["team", "game_date"]).reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------- #
 # Public API                                                                  #
 # --------------------------------------------------------------------------- #
+
 def transform(
     games: pd.DataFrame,
     *,
@@ -69,21 +67,12 @@ def transform(
     flag_imputations: bool = True,
 ) -> pd.DataFrame:
     """
-    Attach rest‑day & schedule features to ``games``.
-
-    Parameters
-    ----------
-    games : DataFrame
-        Upcoming schedule (game_id / game_date / *_team_norm).
-    historical_df : DataFrame | None
-        Past results for rest‑day lookup.
-    flag_imputations : bool, default True
-        Adds *_imputed flags when defaults are injected.
-
-    Returns
-    -------
-    DataFrame with home_/away_ rest columns and rest_advantage diff.
+    Attach rest‑day & schedule‑spacing features to `games`.
     """
+    # ── 0 Early exits ──────────────────────────────────────────────────────────
+    if games.empty:
+        return pd.DataFrame()
+
     if historical_df is None or historical_df.empty:
         logger.warning("rest: no historical data – defaulting to 7‑day rest.")
         base = games[["game_id"]].copy()
@@ -94,30 +83,36 @@ def transform(
             if flag_imputations:
                 base[f"{side}_rest_days_imputed"] = 1
         base["rest_advantage"] = 0.0
-        return games.merge(base, on="game_id")
+        return base
 
-    long_df = _timeline(historical_df, games)
+    # ── 1 Normalise upcoming teams & build timeline ───────────────────────────
+    games_norm = games.copy()
+    games_norm["game_date"] = pd.to_datetime(games_norm["game_date"])
+    for col in ("home_team_norm", "away_team_norm"):
+        games_norm[col] = games_norm[col].apply(normalize_team_name)
 
-    grp = long_df.groupby("team")
+    long_df = _timeline(historical_df, games_norm)
+
+    # previous kickoff for each team
+    grp = long_df.groupby("team", sort=False)
     long_df["prev_game_date"] = grp["game_date"].shift(1)
 
-    # Full rest days between prior kickoff and current kickoff
-    long_df["rest_days"] = (long_df["game_date"] - long_df["prev_game_date"]).dt.days - 1
-    # First game for a team: rest_days will be NaN
+    # full rest‑days (exclude both kickoff days ⇒ minus 1)
+    long_df["rest_days"] = (
+        (long_df["game_date"] - long_df["prev_game_date"]).dt.days - 1
+    )
 
-    # Flags
     long_df["is_on_short_week"] = (long_df["rest_days"] <= 3).astype(int)
     long_df["is_off_bye"] = (long_df["rest_days"] >= 13).astype(int)
 
-    # Upcoming slice
-    feats = long_df[long_df["_is_upcoming"]].loc[
-        :,
-        ["game_id", "team", "rest_days", "is_on_short_week", "is_off_bye"],
-    ]
+    feats = long_df.loc[long_df["_is_upcoming"], [
+        "game_id", "team", "rest_days", "is_on_short_week", "is_off_bye"
+    ]]
 
+    # ── 2 Merge per side ──────────────────────────────────────────────────────
     merged = {}
     for side, team_col in (("home", "home_team_norm"), ("away", "away_team_norm")):
-        df_side = games.merge(
+        df_side = games_norm.merge(
             feats.rename(columns={"team": team_col}),
             on=["game_id", team_col],
             how="left",
@@ -130,18 +125,15 @@ def transform(
 
     out = merged["home"].merge(merged["away"], on="game_id")
 
-    # Defaults & flags
+    # ── 3 Fill defaults & optional imputation flags ───────────────────────────
     default_rd = DEFAULTS["days_since_last_game"]
     for side in ("home", "away"):
         rd_col = f"{side}_rest_days"
         if flag_imputations:
             out[f"{rd_col}_imputed"] = out[rd_col].isna().astype(int)
         out[rd_col] = out[rd_col].fillna(default_rd)
-        # bool flags default to 0
         for flag_col in (f"{side}_is_on_short_week", f"{side}_is_off_bye"):
             out[flag_col] = out[flag_col].fillna(0).astype(int)
 
-    # Differential
     out["rest_advantage"] = out["home_rest_days"] - out["away_rest_days"]
-
     return out

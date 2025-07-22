@@ -1,4 +1,5 @@
 # backend/nfl_features/season.py
+
 """Previous-season context features for NFL matchups.
 
 This transformer joins team-level aggregates from the **previous season** onto
@@ -21,10 +22,6 @@ logger.addHandler(logging.NullHandler())
 __all__ = ["transform"]
 
 
-# ---------------------------------------------------------------------------
-# Helper Functions
-# ---------------------------------------------------------------------------
-
 def _compute_team_metrics(row: pd.Series) -> Dict[str, float]:
     """Derive per-game rates from a raw team-season row."""
     games_played = row["won"] + row["lost"] + row.get("ties", 0)
@@ -45,8 +42,9 @@ def _compute_team_metrics(row: pd.Series) -> Dict[str, float]:
         "prev_season_srs_lite": row.get("srs_lite", 0.0),
     }
 
+
 def _append_differentials(df: pd.DataFrame) -> pd.DataFrame:
-    """Appends differential columns to the feature DataFrame."""
+    """Appends the three diff columns to the feature DataFrame."""
     df["prev_season_win_pct_diff"] = (
         df["home_prev_season_win_pct"] - df["away_prev_season_win_pct"]
     )
@@ -58,10 +56,6 @@ def _append_differentials(df: pd.DataFrame) -> pd.DataFrame:
     )
     return df
 
-
-# ---------------------------------------------------------------------------
-# Main Transformer
-# ---------------------------------------------------------------------------
 
 def transform(
     games: pd.DataFrame,
@@ -80,14 +74,14 @@ def transform(
         logger.warning("season: received empty games DataFrame – returning passthrough")
         return games.copy()
 
-    required_cols = {"game_id", "season", "home_team_norm", "away_team_norm"}
-    if not required_cols.issubset(games.columns):
-        missing = required_cols - set(games.columns)
+    required = {"game_id", "season", "home_team_norm", "away_team_norm"}
+    if not required.issubset(games.columns):
+        missing = required - set(games.columns)
         logger.error("season: missing required columns %s – skipping transform", missing)
         return games.copy()
 
     out = games.copy()
-    
+    # default for any missing lookup
     default_vals = {
         "prev_season_win_pct": DEFAULTS["win_pct"],
         "prev_season_points_for_avg": DEFAULTS["points_for_avg"],
@@ -96,7 +90,7 @@ def transform(
         "prev_season_srs_lite": DEFAULTS["srs_lite"],
     }
 
-    # If no lookup table, fill defaults and bail early
+    # 1) No historical table → fill defaults + flags, then diffs
     if historical_team_stats_df is None or historical_team_stats_df.empty:
         logger.warning("season: no historical stats provided – applying league defaults")
         for side in ("home", "away"):
@@ -105,31 +99,37 @@ def transform(
                 out[col] = dval
                 if flag_imputations:
                     out[f"{col}_imputed"] = 1
-        # ** Call the helper to ensure consistent output schema **
         return _append_differentials(out)
 
-    # Build a lookup DataFrame keyed by canonical team name + season
+    # 2) Prepare lookup: expect team_norm OR team_name OR team_id
     hts = historical_team_stats_df.copy()
-    
-    if "team_name" in hts.columns:
+    if "team_norm" in hts.columns:
+        # already normalized by tests, leave as-is
+        pass
+    elif "team_name" in hts.columns:
         hts["team_norm"] = hts["team_name"].apply(normalize_team_name)
     elif "team_id" in hts.columns:
         hts["team_norm"] = hts["team_id"].apply(normalize_team_name)
     else:
-        raise ValueError("historical_team_stats_df must contain 'team_name' or 'team_id'")
+        raise ValueError("historical_team_stats_df must contain 'team_norm', 'team_name' or 'team_id'")
 
-    feature_rows = [_compute_team_metrics(row) | {"team_norm": row["team_norm"], "season": row["season"]} for _, row in hts.iterrows()]
+    # 3) Compute per-row metrics & turn into a lookup indexed by (team_norm, season)
+    feature_rows = []
+    for _, row in hts.iterrows():
+        metrics = _compute_team_metrics(row)
+        metrics.update(team_norm=row["team_norm"], season=row["season"])
+        feature_rows.append(metrics)
     lookup = pd.DataFrame(feature_rows).set_index(["team_norm", "season"])
 
-    # Join home and away sides (lookup uses season-1)
+    # 4) Join home/away via a reindex on (team_norm, season-1)
     for side in ("home", "away"):
-        side_team = out[f"{side}_team_norm"]
-        side_season = out["season"] - 1
-        joined = lookup.reindex(pd.MultiIndex.from_arrays([side_team, side_season]))
-        joined = joined.add_prefix(f"{side}_")
-        out = pd.concat([out.reset_index(drop=True), joined.reset_index(drop=True)], axis=1)
+        team_series = out[f"{side}_team_norm"]
+        prev_season = out["season"] - 1
+        joined = lookup.reindex(pd.MultiIndex.from_arrays([team_series, prev_season]))
+        joined = joined.add_prefix(f"{side}_").reset_index(drop=True)
+        out = pd.concat([out.reset_index(drop=True), joined], axis=1)
 
-    # Fill missing with defaults and flag imputations
+    # 5) Fill missing + optional flags
     for side in ("home", "away"):
         for feat, dval in default_vals.items():
             col = f"{side}_{feat}"
@@ -137,8 +137,7 @@ def transform(
                 out[f"{col}_imputed"] = out[col].isna().astype(int)
             out[col] = out[col].fillna(dval)
 
-    # ** Call the helper before returning **
+    # 6) Append the three diff columns and return
     out = _append_differentials(out)
-
     logger.info("season: complete in %.2f s – output shape %s", time.time() - start_ts, out.shape)
     return out

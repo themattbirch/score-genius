@@ -21,7 +21,7 @@ DEFAULTS: Mapping[str, Any] = {
     'point_differential_avg': 0.0, 'srs_lite': 0.0, 'elo': 1500.0,
     # Offensive Rate Stats
     'yards_per_play_avg': 5.4, 'passing_yards_per_pass_avg': 6.8, 'rushings_yards_per_rush_avg': 4.2,
-    'turnovers_per_game_avg': 1.5, 'third_down_pct': 0.40, 'fourth_down_pct': 0.50, 'red_zone_pct': 0.55,
+    'turnovers_per_game_avg': 1.5, 'turnover_differential_avg': 0.0, 'third_down_pct': 0.40, 'fourth_down_pct': 0.50, 'red_zone_pct': 0.55,
     # Defensive Rate Stats
     'sacks_per_game_avg': 2.5, 'takeaways_per_game_avg': 1.5,
     # Standard Deviations

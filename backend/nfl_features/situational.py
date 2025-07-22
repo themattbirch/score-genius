@@ -1,21 +1,7 @@
 # backend/nfl_features/situational.py
-
 from __future__ import annotations
-
-"""Situational / game‑context feature generation for NFL games.
-
-This module produces Boolean or categorical indicators that describe the *setting*
-of a matchup rather than the quality of the teams themselves.  Features here are
-cheap to compute (pure pandas) and do **not** require pulling additional box‑score
-data.
-
-The output is a *wide* DataFrame keyed by ``game_id`` so it can be merged
-straight into the master feature table assembled in ``engine.py``.
-"""
-
-from typing import Mapping, List
 import logging
-
+from typing import Mapping
 import pandas as pd
 
 from . import utils
@@ -23,9 +9,7 @@ from . import utils
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-# ---------------------------------------------------------------------------
-# Divisional alignment map  ▸  canonical_team_name  →  division string
-# ---------------------------------------------------------------------------
+# Divisional alignment map
 TEAM_DIVISIONS: Mapping[str, str] = {
     # NFC East
     "cowboys": "NFC East", "giants": "NFC East", "eagles": "NFC East", "commanders": "NFC East",
@@ -45,68 +29,76 @@ TEAM_DIVISIONS: Mapping[str, str] = {
     "broncos": "AFC West", "chiefs": "AFC West", "raiders": "AFC West", "chargers": "AFC West",
 }
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
-def compute_situational_features(games_df: pd.DataFrame) -> pd.DataFrame:  # noqa: C901
-    """Derive situational (context) features for each game.
+def compute_situational_features(games_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Derive situational (context) features for each game.
 
-    **Required columns** (case‑sensitive):
-        - ``game_id`` : int
-        - ``home_team_name`` / ``away_team_name`` : str  … raw names as stored
-        - Either ``game_timestamp`` (UTC) **or** ``game_date`` *and* ``game_time``
-        - ``stage`` : str  … "REG" | "PST" | "PRE"
-
-    The function is deliberately *pure* (no DB access), making it safe to call
-    inside parallel feature pipelines.
+    Output columns:
+      - game_id
+      - is_primetime
+      - is_weekend
+      - is_regular_season
+      - is_playoffs
+      - is_division_game
+      - is_conference_game
     """
     if games_df.empty:
         return pd.DataFrame()
 
     df = games_df.copy()
 
-    # ------------------------------------------------------------------
-    # 1. Normalise datetime information
-    # ------------------------------------------------------------------
+    # ------------------------------
+    # 1. Build a UTC timestamp series, per-row fallback from game_timestamp -> date+time
+    # ------------------------------
+    # Parse any UTC timestamps (may be NaT)
     if "game_timestamp" in df.columns:
-        # Ensure tz‑aware timestamp and convert to US/Eastern for primetime calc.
-        ts = pd.to_datetime(df["game_timestamp"], utc=True, errors="coerce")
+        ts_ts = pd.to_datetime(df["game_timestamp"], utc=True, errors="coerce")
     else:
-        # Combine separate date + time columns; assume they are already Eastern.
-        ts = pd.to_datetime(
-            df["game_date"].astype(str) + " " + df["game_time"].fillna("00:00:00"),
-            errors="coerce",
-        ).dt.tz_localize("America/New_York", ambiguous="infer", nonexistent="shift_forward")
-        ts = ts.dt.tz_convert("UTC")  # Keep internal rep in UTC
+        ts_ts = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
 
-    df["_ts_eastern"] = ts.dt.tz_convert("America/New_York")
-    df["dow"] = df["_ts_eastern"].dt.dayofweek       # Monday=0 … Sunday=6
-    df["hour"] = df["_ts_eastern"].dt.hour
+    # Parse Eastern date+time
+    dt_combo = df.get("game_date", pd.Series(dtype=str)).astype(str) + " " + df.get("game_time", pd.Series()).fillna("00:00:00")
+    ts_dt = (
+        pd.to_datetime(dt_combo, errors="coerce")
+        .dt.tz_localize("America/New_York", ambiguous="infer", nonexistent="shift_forward")
+        .dt.tz_convert("UTC")
+    )
 
-    # Primetime heuristic: MNF (Mon), TNF (Thu), SNF (Sun after 19 ET)
+    # Combine per-row: prefer ts_ts when present, else ts_dt
+    ts = ts_ts.fillna(ts_dt)
+
+    # Convert to Eastern for dow/hour
+    ts_east = ts.dt.tz_convert("America/New_York")
+    df["dow"] = ts_east.dt.dayofweek   # Mon=0 … Sun=6
+    df["hour"] = ts_east.dt.hour
+
+    # Primetime heuristic: Mon (0) or Thu (3), or Sun (6) after 19:00
     df["is_primetime"] = (
         (df["dow"].isin([0, 3])) | ((df["dow"] == 6) & (df["hour"] >= 19))
     ).astype(int)
 
-    # Extra situational flags
+    # Weekend = Sat(5) or Sun(6)
     df["is_weekend"] = df["dow"].isin([5, 6]).astype(int)
 
-    # Stage of season
+    # ------------------------------
+    # 2. Season stage flags (default missing->"")
+    # ------------------------------
+    if "stage" not in df.columns:
+        df["stage"] = ""
     df["stage"] = df["stage"].fillna("").str.upper()
     df["is_regular_season"] = (df["stage"] == "REG").astype(int)
     df["is_playoffs"] = (df["stage"] == "PST").astype(int)
 
-    # ------------------------------------------------------------------
-    # 2. Rivalry indicators (division / conference)
-    # ------------------------------------------------------------------
-    df["home_team_canon"] = df["home_team_name"].apply(utils.normalize_team_name)
-    df["away_team_canon"] = df["away_team_name"].apply(utils.normalize_team_name)
+    # ------------------------------
+    # 3. Rivalry flags via division / conference
+    # ------------------------------
+    df["home_team_canon"] = df["home_team_norm"].apply(utils.normalize_team_name)
+    df["away_team_canon"] = df["away_team_norm"].apply(utils.normalize_team_name)
 
     df["home_div"] = df["home_team_canon"].map(TEAM_DIVISIONS)
     df["away_div"] = df["away_team_canon"].map(TEAM_DIVISIONS)
 
-    # Conference = first token ("AFC"/"NFC")
     df["home_conf"] = df["home_div"].str.split().str[0]
     df["away_conf"] = df["away_div"].str.split().str[0]
 
@@ -115,20 +107,17 @@ def compute_situational_features(games_df: pd.DataFrame) -> pd.DataFrame:  # noq
         (df["home_conf"] == df["away_conf"]) & (df["is_division_game"] == 0)
     ).astype(int)
 
-    # ------------------------------------------------------------------
-    # 3. Select & return final columns
-    # ------------------------------------------------------------------
-    feature_cols: List[str] = [
-        "game_id",
-        "is_primetime",
-        "is_weekend",
-        "is_regular_season",
-        "is_playoffs",
-        "is_division_game",
-        "is_conference_game",
-    ]
-
-    return df[feature_cols]
-
-
-__all__ = ["compute_situational_features"]
+    # ------------------------------
+    # 4. Prune to exactly the 7 test‑expected columns
+    # ------------------------------
+    return df[
+        [
+            "game_id",
+            "is_primetime",
+            "is_weekend",
+            "is_regular_season",
+            "is_playoffs",
+            "is_division_game",
+            "is_conference_game",
+        ]
+    ].copy()

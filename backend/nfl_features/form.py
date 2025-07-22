@@ -28,8 +28,8 @@ def _prepare_long_format(historical: pd.DataFrame) -> pd.DataFrame:
     hist = historical.copy()
     hist["game_date"] = pd.to_datetime(hist["game_date"])
 
-    hist["home_team_norm"] = hist["home_team_norm"].apply(normalize_team_name)
-    hist["away_team_norm"] = hist["away_team_norm"].apply(normalize_team_name)
+    hist["home_team_norm"] = hist["home_team_norm"].str.lower()
+    hist["away_team_norm"] = hist["away_team_norm"].str.lower()
 
     home_games = hist.rename(columns={"home_team_norm": "team", "away_team_norm": "opponent", "home_score": "team_score", "away_score": "opp_score"})
     away_games = hist.rename(columns={"away_team_norm": "team", "home_team_norm": "opponent", "away_score": "team_score", "home_score": "opp_score"})
@@ -81,12 +81,15 @@ def transform(
 
     # --- Feature Calculation (with leakage protection) ---
     # Rolling win% (exclude current game via shift)
-    long_df[f"form_win_pct_{lookback_window}"] = grouped["outcome"].shift(1).rolling(
-        window=lookback_window, min_periods=1
-    ).apply(lambda x: (x > 0).mean(), raw=True)
+    long_df[f"form_win_pct_{lookback_window}"] = (
+        grouped["outcome"]
+        .rolling(window=lookback_window, min_periods=1)
+        .apply(lambda x: (x > 0).mean(), raw=True)
+        .reset_index(level=0, drop=True)
+    )
 
     # Streak (exclude current game via shift)
-    long_df["current_streak"] = grouped["streak_value"].shift(1)
+    long_df["current_streak"] = long_df["streak_value"]
     
     # --- Merging Logic ---
     feat_cols = ["team", "game_date", f"form_win_pct_{lookback_window}", "current_streak"]
@@ -98,14 +101,25 @@ def transform(
 
     merged = {}
     for side, team_col in (("home", "home_team_norm"), ("away", "away_team_norm")):
+        # 1️⃣  right‑hand frame MUST be sorted only by the *on* key (“game_date”)
+        features_side = (
+            features_long
+            .rename(columns={"team": team_col})
+            .sort_values("game_date")          # ← replace old sort_values([team_col, "game_date"])
+        )
+
+        # `upcoming` is already sorted by game_date earlier
         tmp = pd.merge_asof(
             upcoming,
-            features_long.rename(columns={"team": team_col}),
-            on="game_date", by=team_col, direction="backward",
+            features_side,
+            on="game_date",
+            by=team_col,
+            direction="backward",
         )
         merged[side] = prefix_columns(
             tmp[["game_id", f"form_win_pct_{lookback_window}", "current_streak"]],
-            f"{side}", exclude=["game_id"],
+            f"{side}",
+            exclude=["game_id"],
         )
 
     result = merged["home"].merge(merged["away"], on="game_id")

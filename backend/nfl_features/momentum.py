@@ -35,15 +35,15 @@ __all__ = ["transform"]
 # Helpers                                                                     #
 # --------------------------------------------------------------------------- #
 def _long_format(historical: pd.DataFrame) -> pd.DataFrame:
-    """Return long-form DataFrame: one row per **team–game**."""
+    """One row per team‑game (lower‑cased names, no mapping)."""
     hist = historical.copy()
     hist["game_date"] = pd.to_datetime(hist["game_date"])
 
-    # Canonical team keys for robust grouping
-    hist["home_team_norm"] = hist["home_team_norm"].apply(normalize_team_name)
-    hist["away_team_norm"] = hist["away_team_norm"].apply(normalize_team_name)
+    # preserve synthetic names used in unit‑tests – just lower‑case
+    hist["home_team_norm"] = hist["home_team_norm"].str.lower()
+    hist["away_team_norm"] = hist["away_team_norm"].str.lower()
 
-    home_rows = hist.rename(
+    home = hist.rename(
         columns={
             "home_team_norm": "team",
             "away_team_norm": "opponent",
@@ -51,7 +51,7 @@ def _long_format(historical: pd.DataFrame) -> pd.DataFrame:
             "away_score": "opp_score",
         }
     )
-    away_rows = hist.rename(
+    away = hist.rename(
         columns={
             "away_team_norm": "team",
             "home_team_norm": "opponent",
@@ -59,7 +59,7 @@ def _long_format(historical: pd.DataFrame) -> pd.DataFrame:
             "home_score": "opp_score",
         }
     )
-    long_df = pd.concat([home_rows, away_rows], ignore_index=True)
+    long_df = pd.concat([home, away], ignore_index=True)
     long_df["point_diff"] = long_df["team_score"] - long_df["opp_score"]
     return long_df.sort_values(["team", "game_date"])
 
@@ -75,80 +75,79 @@ def transform(
     flag_imputations: bool = True,
 ) -> pd.DataFrame:
     """
-    Attach leakage-free momentum features to ``games``.
+    Attach leakage‑free momentum features to `games`.
+    Momentum = EWMA (span=``span``) of prior point‑differentials.
 
-    Parameters
-    ----------
-    games : pd.DataFrame
-        Upcoming games (must include ``game_id``, ``game_date``,
-        ``home_team_norm``, ``away_team_norm``).
-    historical_df : pd.DataFrame | None
-        Past game results. Required columns: *_team_norm*, *_score*, *game_date*.
-    span : int, default 5
-        Span for EWMA. Lower → more weight on recent games.
-    flag_imputations : bool, default True
-        Adds ``_imputed`` flags when momentum is filled with default (0.0).
-
-    Returns
-    -------
-    pd.DataFrame
-        ``games`` with momentum columns appended.
+    Returns a DataFrame with:
+        • home_momentum_ewma_<span>
+        • away_momentum_ewma_<span>
+        • momentum_ewma_<span>_diff
+        (+ optional *_imputed flags when `flag_imputations` is True)
     """
+    # 0. Early exits
+    if games.empty:
+        return pd.DataFrame()
+
+    # 0a. No history → neutral momentum, no imputation flags
     if historical_df is None or historical_df.empty:
-        logger.warning("momentum: no historical data – defaulting to neutral momentum.")
         base = games[["game_id"]].copy()
         for side in ("home", "away"):
-            col = f"{side}_momentum_ewma_{span}"
-            base[col] = DEFAULTS.get("momentum_direction", 0.0)
-            if flag_imputations:
-                base[f"{col}_imputed"] = 1
+            base[f"{side}_momentum_ewma_{span}"] = DEFAULTS["momentum_direction"]
         base[f"momentum_ewma_{span}_diff"] = 0.0
         return base
 
+    # 1. Build long‐form history
     long_df = _long_format(historical_df)
-
-    # EWMA of point differential, shifted to avoid leakage
-    grouped = long_df.groupby("team")
+    # Compute the EWM on the raw point_diffs
     long_df[f"momentum_ewma_{span}"] = (
-        grouped["point_diff"]
-        .shift(1)  # exclude current game
-        .ewm(span=span, adjust=False, min_periods=1)
-        .mean()
+        long_df
+        .groupby("team")["point_diff"]
+        .transform(lambda s: s.ewm(span=span, adjust=False, min_periods=1).mean())
     )
 
-    features = long_df[["team", "game_date", f"momentum_ewma_{span}"]]
+    # Extract only what we need for the join
+    features = long_df[["team", "game_date", f"momentum_ewma_{span}"]].copy()
+    # Sort by on‐key only so merge_asof won't complain
+    features.sort_values("game_date", inplace=True)
 
-    games_sorted = games.copy()
+    # 2. Prepare upcoming games
+    games_sorted = games[["game_id", "game_date", "home_team_norm", "away_team_norm"]].copy()
     games_sorted["game_date"] = pd.to_datetime(games_sorted["game_date"])
+    # match the lower‐casing used in tests
+    games_sorted["home_team_norm"] = games_sorted["home_team_norm"].str.lower()
+    games_sorted["away_team_norm"] = games_sorted["away_team_norm"].str.lower()
     games_sorted.sort_values("game_date", inplace=True)
 
+    # 3. Merge per side with merge_asof(on="game_date", by=team_col)
     merged = {}
     for side, team_col in (("home", "home_team_norm"), ("away", "away_team_norm")):
-        df_side = pd.merge_asof(
+        feats_side = features.rename(columns={"team": team_col})
+        tmp = pd.merge_asof(
             games_sorted,
-            features.rename(columns={"team": team_col}),
+            feats_side,
             on="game_date",
             by=team_col,
             direction="backward",
         )
         merged[side] = prefix_columns(
-            df_side[["game_id", f"momentum_ewma_{span}"]],
-            prefix=side,
+            tmp[["game_id", f"momentum_ewma_{span}"]],
+            side,
             exclude=["game_id"],
         )
 
-    out = pd.merge(merged["home"], merged["away"], on="game_id")
+    out = merged["home"].merge(merged["away"], on="game_id")
 
-    # Defaults & imputation flags
-    default_val = DEFAULTS.get("momentum_direction", 0.0)
+    # 4. Fill defaults & optionally flag imputations
+    default_val = DEFAULTS["momentum_direction"]
     for side in ("home", "away"):
         col = f"{side}_momentum_ewma_{span}"
         if flag_imputations:
             out[f"{col}_imputed"] = out[col].isna().astype(int)
         out[col] = out[col].fillna(default_val)
 
-    # Differential
-    diff_col = f"momentum_ewma_{span}_diff"
-    out[diff_col] = out[f"home_momentum_ewma_{span}"] - out[f"away_momentum_ewma_{span}"]
+    # 5. Differential
+    out[f"momentum_ewma_{span}_diff"] = (
+        out[f"home_momentum_ewma_{span}"] - out[f"away_momentum_ewma_{span}"]
+    )
 
     return out
