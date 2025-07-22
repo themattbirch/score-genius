@@ -7,10 +7,7 @@ import { resolve } from "path";
 export default defineConfig(({ mode }) => {
   // In dev, use your env var (or fallback localhost).
   // In production, use relative URLs so fetch('/api/...') hits the same origin.
-  const API_BASE_URL =
-    mode === "development"
-      ? process.env.VITE_API_BASE_URL || "http://localhost:10000"
-      : "";
+  console.log("VITE MODE:", mode, "→ proxy /api to http://localhost:10000");
   return {
     //
     plugins: [
@@ -99,7 +96,6 @@ export default defineConfig(({ mode }) => {
           target: "http://localhost:10000",
           changeOrigin: true,
           secure: false,
-          rewrite: (p) => p, // keep the path unchanged
         },
       },
     },
@@ -126,15 +122,6 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-    },
-
-    // Move the 'define' block INSIDE the main configuration object,
-    // before the 'preview' property. This is where it belongs.
-    define: {
-      // This is the crucial part: it replaces `import.meta.env.VITE_API_BASE_URL`
-      // with the actual string value of `API_BASE_URL` at build time.
-      // `JSON.stringify` ensures it's injected as a string literal.
-      "import.meta.env.VITE_API_BASE_URL": JSON.stringify(API_BASE_URL),
     },
 
     preview: {
