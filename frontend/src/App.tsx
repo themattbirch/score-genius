@@ -1,11 +1,9 @@
 // frontend/src/App.tsx
 
 import React, { Suspense, memo } from "react";
-import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 
-// ✂️  Convert each screen to a lazy chunk so it isn't parsed/executed
-//    until the user actually navigates there. This removes them from the
-//    main bundle and trims Script Evaluation time.
+// Lazy‑load each screen for route‑based code splitting
 const GamesScreen = React.lazy(() => import("./screens/game_screen"));
 const GameDetailScreen = React.lazy(
   () => import("./screens/game_detail_screen")
@@ -14,7 +12,7 @@ const StatsScreen = React.lazy(() => import("./screens/stats_screen"));
 const MoreScreen = React.lazy(() => import("./screens/more_screen"));
 const HowToUseScreen = React.lazy(() => import("./screens/how_to_use_screen"));
 
-// ─── Providers & layout helpers ─────────────────────────────────────────────
+// Context & layout imports
 import { TourProvider } from "@/components/ui/joyride_tour";
 import Header from "./components/layout/Header";
 import { SportProvider } from "./contexts/sport_context";
@@ -22,7 +20,7 @@ import { DateProvider } from "@/contexts/date_context";
 import BottomTabBar from "./components/layout/BottomTabBar";
 import { ThemeProvider } from "./contexts/theme_context";
 
-// Memoize Layout so React only re‑renders when its children change
+// Memoized Layout: re‑renders only when outlet changes
 const Layout: React.FC = memo(() => (
   <div className="flex h-screen flex-col">
     <Header />
@@ -34,23 +32,19 @@ const Layout: React.FC = memo(() => (
 ));
 Layout.displayName = "Layout";
 
+// Tiny loader for Suspense fallback
+const Loader: React.FC<{ message?: string }> = ({ message = "Loading…" }) => (
+  <div className="flex h-screen items-center justify-center text-xs text-gray-400">
+    {message}
+  </div>
+);
+
 const App: React.FC = () => (
   <TourProvider>
     <ThemeProvider>
       <SportProvider>
         <DateProvider>
-          {/*
-            Wrap routes in Suspense so each lazy chunk can stream in
-            without blocking the first paint. A super‑light inline loader
-            keeps CLS/TBT near zero.
-          */}
-          <Suspense
-            fallback={
-              <div className="flex h-screen items-center justify-center text-sm text-gray-400">
-                Loading…
-              </div>
-            }
-          >
+          <Suspense fallback={<Loader />}>
             <Routes>
               <Route element={<Layout />}>
                 <Route index element={<Navigate to="/games" replace />} />

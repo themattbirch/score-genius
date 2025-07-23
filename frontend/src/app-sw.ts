@@ -20,12 +20,14 @@ declare let self: ServiceWorkerGlobalScope;
 clientsClaim();
 self.skipWaiting();
 
-// Skip SW for Google Tag Manager
+// Skip SW entirely for GTag.js
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin === "https://www.googletagmanager.com") {
-    // Bypass all SW routing – go straight to network
-    event.respondWith(fetch(event.request));
+    // Prevent any other fetch listener (Workbox) from handling it
+    event.stopImmediatePropagation();
+    // Let the browser handle it natively
+    return;
   }
 });
 
