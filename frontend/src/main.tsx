@@ -1,5 +1,4 @@
 // src/main.tsx
-// src/main.tsx
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
@@ -7,27 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 
-// ─── Firebase Analytics ───────────────────────────────────────────────────────
-import { initializeApp } from "firebase/app";
-import { getAnalytics, logEvent } from "firebase/analytics";
-
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const analytics = getAnalytics(firebaseApp);
-// Log an "app_open" each time the PWA bundle initializes:
-logEvent(analytics, "app_open");
-// ──────────────────────────────────────────────────────────────────────────────
-
-// Create *one* client with your defaults
+// ─── React‑Query Client ──────────────────────────────────────────────────────
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -37,10 +16,11 @@ const queryClient = new QueryClient({
   },
 });
 
+// ─── Mount Point Guard ───────────────────────────────────────────────────────
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-// 1) Attempt SW registration immediately
+// ─── Service‑Worker Registration (eager) ─────────────────────────────────────
 const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "/app-sw.js";
 console.log("📦 attempting SW registration at", swUrl);
 
@@ -67,6 +47,45 @@ if ("serviceWorker" in navigator) {
     .catch((err) => console.error("❌ SW registration failed:", err));
 }
 
+// ─── Lazy Firebase Analytics (post‑LCP / idle) ───────────────────────────────
+function initAnalytics() {
+  // Skip entirely if measurement ID absent (e.g. local dev)
+  if (!import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) return;
+
+  const idleCb: typeof requestIdleCallback =
+    "requestIdleCallback" in window
+      ? (window as any).requestIdleCallback
+      : (cb) => setTimeout(cb, 0);
+
+  idleCb(async () => {
+    try {
+      const [{ initializeApp }, { getAnalytics, logEvent }] = await Promise.all(
+        [import("firebase/app"), import("firebase/analytics")]
+      );
+
+      const firebaseConfig = {
+        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+        appId: import.meta.env.VITE_FIREBASE_APP_ID,
+        measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+      } as const;
+
+      const firebaseApp = initializeApp(firebaseConfig);
+      const analytics = getAnalytics(firebaseApp);
+      logEvent(analytics, "app_open");
+      console.log("📊 Firebase Analytics initialized lazily");
+    } catch (err) {
+      console.error("⚠️  Failed to init Firebase Analytics", err);
+    }
+  });
+}
+
+initAnalytics();
+
+// ─── Render App ──────────────────────────────────────────────────────────────
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
