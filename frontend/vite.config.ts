@@ -2,21 +2,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
-import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { resolve } from "path";
 
 export default defineConfig(({ mode }) => {
+  // In dev, use your env var (or fallback localhost).
+  // In production, use relative URLs so fetch('/api/...') hits the same origin.
   console.log("VITE MODE:", mode, "→ proxy /api to http://localhost:10000");
-
   return {
+    //
     plugins: [
-      // 1) Polyfill Node core modules in the browser
-      nodePolyfills(),
-
-      // 2) React support
       react(),
 
-      // 3) PWA support
+      // ---------- PWA (scoped to /app) ----------
       VitePWA({
         devOptions: { enabled: true, type: "module" },
         strategies: "injectManifest",
@@ -29,7 +26,9 @@ export default defineConfig(({ mode }) => {
           "images/basketball.svg",
           "icons/*",
         ],
+        // Control what Workbox scans & injects when using `injectManifest`
         injectManifest: {
+          // drop the `.ico` extension so it's never injected
           globPatterns: ["**/*.{js,css,html,svg,json,woff2}"],
           globIgnores: [
             "**/favicon.ico",
@@ -51,7 +50,7 @@ export default defineConfig(({ mode }) => {
           display: "standalone",
           display_override: ["fullscreen", "standalone", "minimal-ui"],
           orientation: "portrait",
-          //splash_pages: ["splash_screen.html"],
+          splash_pages: ["splash_screen.html"],
           icons: [
             {
               src: "/icons/football-icon-192.png",
@@ -70,7 +69,8 @@ export default defineConfig(({ mode }) => {
               purpose: "maskable",
             },
           ],
-        },
+        } as any,
+
         workbox: {
           navigateFallback: "/app/offline.html",
           navigateFallbackDenylist: [/^\/api\//],
@@ -82,20 +82,16 @@ export default defineConfig(({ mode }) => {
       }),
     ],
 
-    // static assets
     publicDir: "public",
-
-    resolve: {
-      alias: {
-        "@": resolve(__dirname, "src"),
-      },
-    },
+    resolve: { alias: { "@": resolve(__dirname, "src") } },
 
     server: {
       open: "/app",
       port: 5173,
       strictPort: true,
+
       proxy: {
+        // send every /api request in dev to localhost:10000
         "/api": {
           target: "http://localhost:10000",
           changeOrigin: true,
@@ -108,19 +104,20 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       target: "es2022",
       rollupOptions: {
-        external: ["fs", "path", "stream", "util", "crypto"],
         input: {
           index: resolve(__dirname, "public/index.html"),
           app: resolve(__dirname, "app.html"),
         },
         output: {
           entryFileNames: "assets/[name].[hash].js",
-          chunkFileNames: "assets/[name].[name].[hash].js",
+          chunkFileNames: "assets/[name].[name].[hash].js", // Often useful to include [name] for better chunk naming
           assetFileNames: "assets/[name].[hash].[ext]",
+          // ← manualChunks splits each npm package into its own chunk
           manualChunks(id: string) {
             if (id.includes("node_modules")) {
-              const pkg = id.split("node_modules/")[1].split("/")[0];
-              return `vendor-${pkg.replace("@", "")}`;
+              // Ensure consistent chunk names, e.g., 'vendor-react', 'vendor-recharts'
+              const parts = id.split("node_modules/")[1].split("/");
+              return `vendor-${parts[0].replace("@", "")}`; // Handles scoped packages like @tanstack
             }
           },
         },
@@ -129,6 +126,7 @@ export default defineConfig(({ mode }) => {
 
     preview: {
       port: 3000,
+      // (optional) if you still want the history fallback, add the middleware here
     },
   };
 });
