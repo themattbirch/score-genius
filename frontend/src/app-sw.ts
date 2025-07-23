@@ -24,7 +24,8 @@ self.skipWaiting();
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin === "https://www.googletagmanager.com") {
-    return;
+    // Bypass all SW routing – go straight to network
+    event.respondWith(fetch(event.request));
   }
 });
 
