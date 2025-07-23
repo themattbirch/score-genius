@@ -56,10 +56,12 @@ ReactDOM.createRoot(container).render(
 );
 
 // ─── Analytics on First Interaction ─────────────────────────────────────────
-// Load Firebase Analytics and gtag.js only after user interacts
+// Load Firebase Analytics after any user interaction or fallback timeout
 function initAnalytics() {
-  // Prevent duplicate
-  window.removeEventListener("pointerdown", initAnalytics, true);
+  // Remove all listeners to prevent duplicate loads
+  ["pointerdown", "click", "touchstart"].forEach((evt) =>
+    window.removeEventListener(evt, initAnalytics, true)
+  );
   import("firebase/app").then(({ initializeApp }) => {
     import("firebase/analytics").then(({ getAnalytics, logEvent }) => {
       const firebaseConfig = {
@@ -74,14 +76,22 @@ function initAnalytics() {
       const app = initializeApp(firebaseConfig);
       const analytics = getAnalytics(app);
       logEvent(analytics, "app_open");
-      console.log("📊 Firebase Analytics initialized on interaction");
+      console.log("📊 Firebase Analytics initialized");
     });
   });
 }
 
 if (import.meta.env.PROD) {
-  window.addEventListener("pointerdown", initAnalytics, {
-    once: true,
-    capture: true,
-  });
+  // Fallback: initialize after 5s if no interaction
+  const timeoutId = window.setTimeout(initAnalytics, 5000);
+  ["pointerdown", "click", "touchstart"].forEach((evt) =>
+    window.addEventListener(
+      evt,
+      () => {
+        clearTimeout(timeoutId);
+        initAnalytics();
+      },
+      { once: true, capture: true }
+    )
+  );
 }
