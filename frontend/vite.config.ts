@@ -104,6 +104,7 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       target: "es2022",
       rollupOptions: {
+        external: ["react-window", "react-virtualized-auto-sizer"],
         input: {
           index: resolve(__dirname, "public/index.html"),
           app: resolve(__dirname, "app.html"),
