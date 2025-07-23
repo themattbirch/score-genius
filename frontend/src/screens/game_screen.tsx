@@ -2,6 +2,8 @@
 
 import React from "react";
 import { FixedSizeList as List, ListChildComponentProps } from "react-window";
+// @ts-ignore react-virtualized-auto-sizer has no type declarations
+import AutoSizer from "react-virtualized-auto-sizer";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -21,6 +23,7 @@ import type { UnifiedGame } from "@/types";
 // Height per card (match your Tailwind h‑class)
 const CARD_HEIGHT = 128;
 
+// Virtualized row renderer
 const Row = ({
   index,
   style,
@@ -48,12 +51,8 @@ const GamesScreen: React.FC = () => {
   const { data: games = [], isLoading } =
     sport === "NBA" ? useNBASchedule(apiDate) : useMLBSchedule(apiDate);
 
-  // Available height for the list (minus header + tab bar)
-  const listHeight =
-    typeof window !== "undefined" ? window.innerHeight - 160 : 600;
-
   return (
-    <main className="pt-6 px-6 md:px-8 lg:px-12">
+    <main className="flex flex-col flex-1 pt-6 px-6 md:px-8 lg:px-12">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-lg font-semibold dark:text-text-primary">
@@ -86,26 +85,32 @@ const GamesScreen: React.FC = () => {
         </Popover>
       </div>
 
-      {/* Schedule */}
-      {isLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
-      ) : games.length === 0 ? (
-        sport === "NBA" ? (
-          <NBAScheduleDisplay key="nba-fallback" />
+      {/* Content area */}
+      <div className="flex-1">
+        {isLoading ? (
+          <p className="text-sm text-gray-400">Loading…</p>
+        ) : games.length === 0 ? (
+          sport === "NBA" ? (
+            <NBAScheduleDisplay key="nba-fallback" />
+          ) : (
+            <MLBScheduleDisplay key="mlb-fallback" />
+          )
         ) : (
-          <MLBScheduleDisplay key="mlb-fallback" />
-        )
-      ) : (
-        <List
-          height={listHeight}
-          itemCount={games.length}
-          itemSize={CARD_HEIGHT}
-          width="100%"
-          itemData={games}
-        >
-          {Row}
-        </List>
-      )}
+          <AutoSizer>
+            {({ height, width }: { height: number; width: number }) => (
+              <List
+                height={height}
+                width={width}
+                itemCount={games.length}
+                itemSize={CARD_HEIGHT}
+                itemData={games}
+              >
+                {Row}
+              </List>
+            )}
+          </AutoSizer>
+        )}
+      </div>
     </main>
   );
 };
