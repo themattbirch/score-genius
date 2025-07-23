@@ -1,4 +1,5 @@
 // src/main.tsx
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
@@ -16,11 +17,11 @@ const queryClient = new QueryClient({
   },
 });
 
-// ─── Mount Point Guard ───────────────────────────────────────────────────────
+// ─── Root Element & SW Registration ─────────────────────────────────────────
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-// ─── Service‑Worker Registration (eager) ─────────────────────────────────────
+// Attempt SW registration immediately (same logic as before)
 const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "/app-sw.js";
 console.log("📦 attempting SW registration at", swUrl);
 
@@ -47,45 +48,7 @@ if ("serviceWorker" in navigator) {
     .catch((err) => console.error("❌ SW registration failed:", err));
 }
 
-// ─── Lazy Firebase Analytics (post‑LCP / idle) ───────────────────────────────
-function initAnalytics() {
-  // Skip entirely if measurement ID absent (e.g. local dev)
-  if (!import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) return;
-
-  const idleCb: typeof requestIdleCallback =
-    "requestIdleCallback" in window
-      ? (window as any).requestIdleCallback
-      : (cb) => setTimeout(cb, 0);
-
-  idleCb(async () => {
-    try {
-      const [{ initializeApp }, { getAnalytics, logEvent }] = await Promise.all(
-        [import("firebase/app"), import("firebase/analytics")]
-      );
-
-      const firebaseConfig = {
-        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-        appId: import.meta.env.VITE_FIREBASE_APP_ID,
-        measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-      } as const;
-
-      const firebaseApp = initializeApp(firebaseConfig);
-      const analytics = getAnalytics(firebaseApp);
-      logEvent(analytics, "app_open");
-      console.log("📊 Firebase Analytics initialized lazily");
-    } catch (err) {
-      console.error("⚠️  Failed to init Firebase Analytics", err);
-    }
-  });
-}
-
-initAnalytics();
-
-// ─── Render App ──────────────────────────────────────────────────────────────
+// ─── Render App ─────────────────────────────────────────────────────────────
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
@@ -95,3 +58,41 @@ ReactDOM.createRoot(container).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+// ─── Deferred Firebase Analytics (requestIdleCallback) ──────────────────────
+// Loading analytics after the main thread is idle keeps gtag.js out of the
+// initial network waterfall and eliminates its long timer task from TBT.
+function loadFirebaseAnalytics() {
+  import("firebase/app").then(({ initializeApp }) => {
+    Promise.all([import("firebase/analytics")]).then(
+      ([{ getAnalytics, logEvent }]) => {
+        const firebaseConfig = {
+          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+          storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+          messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+          appId: import.meta.env.VITE_FIREBASE_APP_ID,
+          measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+        } as const;
+
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        logEvent(analytics, "app_open");
+        console.log("📊 Firebase Analytics loaded (deferred)");
+      }
+    );
+  });
+}
+
+if (import.meta.env.PROD) {
+  if ("requestIdleCallback" in window) {
+    // Modern browsers – wait until the main thread is idle
+    (window as any).requestIdleCallback(loadFirebaseAnalytics);
+  } else {
+    // Fallback: wait until window 'load' event
+    (window as any).addEventListener("load", loadFirebaseAnalytics, {
+      once: true,
+    });
+  }
+}
