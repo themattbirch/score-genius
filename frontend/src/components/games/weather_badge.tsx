@@ -59,7 +59,7 @@ const WeatherBadge: React.FC<WeatherBadgeProps> = ({
     <button
       onClick={onClick}
       data-tour="weather-badge"
-      className="rounded-full bg-green-700 hover:bg-green-800 px-4 py-2 flex items-center space-x-1 text-sm font-semibold text-white"
+      className="rounded-full bg-green-700 hover:bg-green-800 px-4 py-2 flex items-center space-x-1 text-xs font-semibold text-white"
     >
       {/* arrow icon */}
       <span
