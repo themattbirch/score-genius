@@ -20,7 +20,7 @@ import NBAScheduleDisplay from "@/components/schedule/nba_schedule_display";
 import MLBScheduleDisplay from "@/components/schedule/mlb_schedule_display";
 import type { UnifiedGame } from "@/types";
 
-// Height per card (match your Tailwind h‑class)
+// Height per card (match Tailwind h‑class)
 const CARD_HEIGHT = 128;
 
 // Virtualized row renderer
