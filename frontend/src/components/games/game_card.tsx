@@ -71,9 +71,9 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
   /* ––––––––––––– render ––––––––––––– */
   return (
     <div className="app-card flex flex-col gap-5" data-tour="game-card">
-      <div className="flex items-start md:items-center justify-between gap-6">
+      <div className="flex items-center justify-between gap-4">
         {/* left column */}
-        <div className="min-w-0 flex-1 max-w-md flex flex-col gap-1.5">
+        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
           <p className="font-semibold text-sm sm:text-base leading-tight break-words">
             {awayTeamName}
           </p>
