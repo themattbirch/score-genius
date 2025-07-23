@@ -108,6 +108,7 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       target: "es2022",
       rollupOptions: {
+        external: ["fs", "path", "stream", "util", "crypto"],
         input: {
           index: resolve(__dirname, "public/index.html"),
           app: resolve(__dirname, "app.html"),
