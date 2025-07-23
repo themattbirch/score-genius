@@ -24,7 +24,7 @@ import { ThemeProvider } from "./contexts/theme_context";
 const Layout: React.FC = memo(() => (
   <div className="flex h-screen flex-col">
     <Header />
-    <main className="flex-1 overflow-auto pb-14 lg:pb-0">
+    <main className="flex flex-col flex-1 overflow-auto pb-14 lg:pb-0">
       <Outlet />
     </main>
     <BottomTabBar />

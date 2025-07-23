@@ -16,7 +16,6 @@ interface GameCardProps {
 
 const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const { sport: contextSport } = useSport();
-
   const {
     id: gameId,
     homeTeamName,
@@ -38,17 +37,12 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
     homePitcherHand,
   } = game;
 
-  /* ------------------------------------------------------------------ */
-  /*  Modal state                                                       */
-  /* ------------------------------------------------------------------ */
-  const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
+  /* ––––––––––––– local state ––––––––––––– */
+  const [isSnapshotModalOpen, setSnapshotModalOpen] = useState(false);
   const [isWeatherModalOpen, setWeatherModalOpen] = useState(false);
 
-  /* ------------------------------------------------------------------ */
-  /*  Weather hook (MLB + NFL only)                                     */
-  /* ------------------------------------------------------------------ */
+  /* ––––––––––––– weather hook ––––––––––––– */
   const supportsWeather = sport === "MLB" || sport === "NFL";
-
   const {
     data: weatherData,
     isLoading: isWeatherLoading,
@@ -57,54 +51,54 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
     supportsWeather ? sport : undefined,
     supportsWeather ? homeTeamName : undefined
   );
-
   const isIndoor = weatherData?.isIndoor === true;
 
-  /* ------------------------------------------------------------------ */
-  /*  Render                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ––––––––––––– helpers ––––––––––––– */
+  const formattedTime = gameTimeUTC
+    ? new Date(gameTimeUTC).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : game_date;
+  const statusSuffix =
+    statusState &&
+    !["final", "sched", "pre"].some((s) =>
+      statusState.toLowerCase().includes(s)
+    )
+      ? ` (${statusState})`
+      : "";
+
+  /* ––––––––––––– render ––––––––––––– */
   return (
-    <div className="app-card flex flex-col gap-4" data-tour="game-card">
-      <div className="flex items-start justify-between gap-4">
-        {/* ----- Teams & snapshot button -------------------------------- */}
-        <div className="min-w-0 flex-1 max-w-md flex flex-col space-y-2">
-          <p className="font-semibold text-sm sm:text-base leading-tight">
+    <div className="app-card flex flex-col gap-5" data-tour="game-card">
+      <div className="flex items-start md:items-center justify-between gap-6">
+        {/* left column */}
+        <div className="min-w-0 flex-1 max-w-md flex flex-col gap-1.5">
+          <p className="font-semibold text-sm sm:text-base leading-tight break-words">
             {awayTeamName}
           </p>
-          <p className="font-semibold text-sm sm:text-base leading-tight">
+          <p className="font-semibold text-sm sm:text-base leading-tight break-words">
             @ {homeTeamName}
           </p>
-          <p className="text-xs text-text-secondary pt-1">
-            {gameTimeUTC
-              ? new Date(gameTimeUTC).toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })
-              : game_date}
-            {statusState &&
-              !["final", "sched", "pre"].some((s) =>
-                statusState.toLowerCase().includes(s)
-              ) &&
-              ` (${statusState})`}
-          </p>
-          <div className="mb-1">
-            <SnapshotButton onClick={() => setIsSnapshotModalOpen(true)} />
-          </div>
+          <SnapshotButton
+            className="mt-2"
+            onClick={() => setSnapshotModalOpen(true)}
+          />
         </div>
 
-        {/* ----- Score / predictions / weather badge -------------------- */}
-        <div className="w-36 md:w-auto text-right text-sm">
+        {/* right column */}
+        <div className="w-44 flex flex-col items-end gap-2 text-sm">
+          {/* score / predictions */}
           {dataType === "historical" ? (
-            <p className="font-semibold text-lg w-full">
+            <p className="font-semibold text-lg whitespace-nowrap">
               {away_final_score ?? "-"} – {home_final_score ?? "-"}
               <span className="block text-xs font-normal text-text-secondary">
                 (Final)
               </span>
             </p>
           ) : dataType === "schedule" ? (
-            /* ---- NBA predicted points -------------------------------- */
             contextSport === "NBA" ? (
-              <p className="font-medium text-green-600 dark:text-green-500">
+              <p className="font-medium text-green-600 dark:text-green-500 whitespace-nowrap text-right">
                 {predictionAway?.toFixed(1) ?? "-"} –{" "}
                 {predictionHome?.toFixed(1) ?? "-"}
                 <span className="block text-xs font-normal text-text-secondary">
@@ -112,65 +106,62 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
                 </span>
               </p>
             ) : (
-              /* ---- MLB or NFL section -------------------------------- */
-              <div>
-                {/* MLB predicted runs */}
+              <>
                 {sport === "MLB" &&
-                predicted_home_runs != null &&
-                predicted_away_runs != null ? (
-                  <p className="font-medium text-green-600 dark:text-green-500">
-                    {predicted_away_runs.toFixed(1)} –{" "}
-                    {predicted_home_runs.toFixed(1)}
-                    <span className="block text-xs font-normal text-text-secondary">
-                      (Predicted Score)
-                    </span>
-                  </p>
-                ) : (
-                  <p className="font-medium text-text-secondary">-</p>
-                )}
-
-                {/* Pitchers (MLB only) */}
+                  predicted_away_runs != null &&
+                  predicted_home_runs != null && (
+                    <p className="font-medium text-green-600 dark:text-green-500 whitespace-nowrap text-right">
+                      {predicted_away_runs.toFixed(1)} –{" "}
+                      {predicted_home_runs.toFixed(1)}
+                      <span className="block text-xs font-normal text-text-secondary">
+                        (Predicted Score)
+                      </span>
+                    </p>
+                  )}
                 {sport === "MLB" && (
-                  <div className="mt-1">
-                    <p className="text-xs font-normal text-text-secondary">
+                  <div className="space-y-0.5 text-xs text-text-secondary text-right leading-tight">
+                    <p>
                       {awayPitcher ?? "TBD"}{" "}
                       {awayPitcherHand && `(${awayPitcherHand})`}
                     </p>
-                    <p className="text-xs font-normal text-text-secondary">
+                    <p>
                       {homePitcher ?? "TBD"}{" "}
                       {homePitcherHand && `(${homePitcherHand})`}
                     </p>
                   </div>
                 )}
-
-                {/* Weather badge / indoor button */}
-                {supportsWeather && (
-                  <div className="mt-2 flex justify-end">
-                    <WeatherBadge
-                      isLoading={isWeatherLoading}
-                      isError={isWeatherError}
-                      data={weatherData}
-                      isIndoor={isIndoor}
-                      onClick={() => setWeatherModalOpen(true)}
-                    />
-                  </div>
-                )}
-              </div>
+              </>
             )
           ) : (
-            <p className="font-medium w-full">—</p>
+            <p className="font-medium">—</p>
+          )}
+
+          {/* game time */}
+          <p className="text-xs text-text-secondary whitespace-nowrap">
+            {formattedTime}
+            {statusSuffix}
+          </p>
+
+          {/* weather badge */}
+          {supportsWeather && (
+            <WeatherBadge
+              isLoading={isWeatherLoading}
+              isError={isWeatherError}
+              data={weatherData}
+              isIndoor={isIndoor}
+              onClick={() => setWeatherModalOpen(true)}
+            />
           )}
         </div>
       </div>
 
-      {/* ------------------ Modals ------------------------------------- */}
+      {/* modals */}
       <SnapshotModal
         gameId={gameId}
         sport={sport as Sport}
         isOpen={isSnapshotModalOpen}
-        onClose={() => setIsSnapshotModalOpen(false)}
+        onClose={() => setSnapshotModalOpen(false)}
       />
-
       <WeatherModal
         isOpen={isWeatherModalOpen}
         onClose={() => setWeatherModalOpen(false)}
