@@ -78,7 +78,11 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
             {awayTeamName}
           </p>
           <p className="font-semibold text-sm sm:text-base leading-tight break-words">
-            @ {homeTeamName}
+            {homeTeamName}
+          </p>
+          <p className="text-xs text-text-secondary">
+            {formattedTime}
+            {statusSuffix}
           </p>
           <SnapshotButton
             className="mt-2"
@@ -87,7 +91,7 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
         </div>
 
         {/* right column */}
-        <div className="w-44 flex flex-col items-end gap-2 text-sm">
+        <div className="w-44 flex flex-col items-end gap-4 text-sm">
           {/* score / predictions */}
           {dataType === "historical" ? (
             <p className="font-semibold text-lg whitespace-nowrap">
@@ -135,12 +139,6 @@ const GameCard: React.FC<GameCardProps> = ({ game }) => {
           ) : (
             <p className="font-medium">—</p>
           )}
-
-          {/* game time */}
-          <p className="text-xs text-text-secondary whitespace-nowrap">
-            {formattedTime}
-            {statusSuffix}
-          </p>
 
           {/* weather badge */}
           {supportsWeather && (
