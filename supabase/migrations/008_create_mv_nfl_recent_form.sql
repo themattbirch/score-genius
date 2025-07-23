@@ -1,4 +1,4 @@
--- supabase/migrations/007_create_mv_nfl_recent_form.sql
+-- supabase/migrations/008_create_mv_nfl_recent_form.sql
 
 DROP MATERIALIZED VIEW IF EXISTS public.mv_nfl_recent_form;
 

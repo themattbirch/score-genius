@@ -1,4 +1,4 @@
--- supabase/migrations/006_create_mv_nfl_season_stats.sql
+-- supabase/migrations/007_create_mv_nfl_season_stats.sql
 BEGIN;
 
 -- Remove any old version
