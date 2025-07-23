@@ -5,7 +5,7 @@ DROP MATERIALIZED VIEW IF EXISTS public.mv_nfl_recent_form;
 CREATE MATERIALIZED VIEW public.mv_nfl_recent_form AS
 WITH long_format AS (
   /* Explode each game into two team‑centric rows */
-  
+
   -- Home side
   SELECT
     g.game_date,
@@ -21,7 +21,7 @@ WITH long_format AS (
       - (COALESCE(hgs.turnovers_lost_fumbles, 0) + COALESCE(hgs.turnovers_interceptions, 0))
     ) AS turnover_diff
   FROM public.nfl_historical_game_stats AS g
-  JOIN public.nfl_historical_game_team_stats AS hgs
+  INNER JOIN public.nfl_historical_game_team_stats AS hgs
     ON g.game_id = hgs.game_id
    AND g.home_team_id = hgs.team_id
 
@@ -41,7 +41,7 @@ WITH long_format AS (
       - (COALESCE(ags.turnovers_lost_fumbles, 0) + COALESCE(ags.turnovers_interceptions, 0))
     ) AS turnover_diff
   FROM public.nfl_historical_game_stats AS g
-  JOIN public.nfl_historical_game_team_stats AS ags
+  INNER JOIN public.nfl_historical_game_team_stats AS ags
     ON g.game_id = ags.game_id
    AND g.away_team_id = ags.team_id
 ),
@@ -51,13 +51,12 @@ rolling_stats AS (
   SELECT
     team_id,
     game_date,
-    AVG(points_for)     OVER w AS rolling_points_for_avg,
-    AVG(points_against) OVER w AS rolling_points_against_avg,
+    AVG(points_for)     OVER w  AS rolling_points_for_avg,
+    AVG(points_against) OVER w  AS rolling_points_against_avg,
     CASE
       WHEN SUM(plays_total) OVER w > 0
       THEN SUM(yards_total) OVER w::float / SUM(plays_total) OVER w
-      ELSE NULL
-    END                    AS rolling_yards_per_play_avg,
+    END                         AS rolling_yards_per_play_avg,
     AVG(turnover_diff)    OVER w AS rolling_turnover_differential_avg
   FROM long_format
   WINDOW w AS (
@@ -75,8 +74,7 @@ SELECT DISTINCT ON (team_id)
   rolling_yards_per_play_avg,
   rolling_turnover_differential_avg
 FROM rolling_stats
-ORDER BY team_id, game_date DESC;
-
+ORDER BY team_id ASC, game_date DESC;
 
 -- Index to accelerate lookups by team
 CREATE INDEX idx_mv_nfl_recent_form_team
