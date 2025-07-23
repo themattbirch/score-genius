@@ -24,7 +24,7 @@ const SnapshotButton = ({
       className={`
         inline-flex w-fit items-center justify-center
         rounded-full bg-btn-snapshot text-white text-xs font-semibold
-        px-4 py-1.5
+        px-4 py-2
         hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-offset-2
         focus:ring-sky-500 focus:ring-offset-gray-800
         transition-opacity duration-200
@@ -36,7 +36,7 @@ const SnapshotButton = ({
         ${className}
         `}
     >
-      Advanced Stats
+      H2H Stats
     </button>
   );
 };
