@@ -19,6 +19,15 @@ declare let self: ServiceWorkerGlobalScope;
 /* ---------- precache core ---------- */
 clientsClaim();
 self.skipWaiting();
+
+// Skip SW for Google Tag Manager
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin === "https://www.googletagmanager.com") {
+    return;
+  }
+});
+
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
