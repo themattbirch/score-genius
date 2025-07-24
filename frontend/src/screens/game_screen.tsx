@@ -18,6 +18,7 @@ import { useMLBSchedule } from "@/api/use_mlb_schedule";
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import NBAScheduleDisplay from "@/components/schedule/nba_schedule_display";
 import MLBScheduleDisplay from "@/components/schedule/mlb_schedule_display";
+import { getLocalYYYYMMDD } from "@/utils/date";
 import type { UnifiedGame } from "@/types";
 
 /* -------------------------------------------------------------------------- */
@@ -43,7 +44,7 @@ const GamesScreen: React.FC = () => {
   const { date, setDate } = useDate();
 
   /* -------------------------- fetch the schedule -------------------------- */
-  const apiDate = date.toISOString().split("T")[0];
+  const apiDate = getLocalYYYYMMDD(date);
   const { data: games = [], isLoading } =
     sport === "NBA" ? useNBASchedule(apiDate) : useMLBSchedule(apiDate);
 

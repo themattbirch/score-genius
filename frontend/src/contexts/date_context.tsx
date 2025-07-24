@@ -1,8 +1,12 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+// frontend/src/contexts/date_context.tsx
+
+import React, { createContext, useContext, useState, ReactNode } from "react";
+import { getLocalYYYYMMDD } from "@/utils/date";
 
 // ── Context value interface ─────────────────────────────────
 interface DateCtx {
-  date: Date;                    // always a valid Date instance
+  date: Date; // always a valid Date instance
+  dateStringET: string; // “YYYY‑MM‑DD” in Eastern Time
   setDate: (d: Date) => void;
 }
 
@@ -11,11 +15,28 @@ const DateContext = createContext<DateCtx | undefined>(undefined);
 
 // ── Provider component ───────────────────────────────────────
 export function DateProvider({ children }: { children: ReactNode }) {
-  // Initialize with current date so 'date' is never null
+  // 1) Track the Date object
   const [date, setDate] = useState<Date>(new Date());
 
+  // 2) Track the ET‑formatted string
+  const [dateStringET, setDateStringET] = useState<string>(
+    getLocalYYYYMMDD(date)
+  );
+
+  // Wrap setDate to also update the ET string
+  function handleSetDate(d: Date) {
+    setDate(d);
+    setDateStringET(getLocalYYYYMMDD(d));
+  }
+
   return (
-    <DateContext.Provider value={{ date, setDate }}>
+    <DateContext.Provider
+      value={{
+        date,
+        dateStringET,
+        setDate: handleSetDate,
+      }}
+    >
       {children}
     </DateContext.Provider>
   );
@@ -25,7 +46,7 @@ export function DateProvider({ children }: { children: ReactNode }) {
 export function useDate(): DateCtx {
   const ctx = useContext(DateContext);
   if (!ctx) {
-    throw new Error('useDate must be used within a DateProvider');
+    throw new Error("useDate must be used within a DateProvider");
   }
   return ctx;
 }
