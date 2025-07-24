@@ -6,8 +6,6 @@ import { useParams } from "react-router-dom";
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import { useInjuries } from "@/api/use_injuries";
 import type { UnifiedGame } from "@/types";
-// REMOVED: import SnapshotModal from '@/components/games/snapshot_modal';
-// REMOVED: import SnapshotButton from '@/components/games/snapshot_button';
 
 import SkeletonBox from "@/components/ui/skeleton_box";
 
@@ -15,12 +13,6 @@ const GameDetailScreen: React.FC = () => {
   const { gameId = "" } = useParams<{ gameId?: string }>();
   console.log("🏷️ GameDetailScreen mounted with gameId:", gameId);
   const isoDate = new Date().toISOString().slice(0, 10);
-
-  // REMOVED: Modal state and handlers
-  // const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
-  // const currentSport: 'NBA' | 'MLB' = 'NBA'; 
-  // const handleOpenSnapshot = () => { setIsSnapshotModalOpen(true); };
-  // const handleCloseSnapshot = () => { setIsSnapshotModalOpen(false); };
 
   /* ── Fetch schedule row ─────────────────────────────────────── */
   const {
@@ -62,8 +54,10 @@ const GameDetailScreen: React.FC = () => {
       <div className="app-card p-4">
         {/* Reverted title to original if it wasn't 'Game Snapshot' */}
         <h3 className="mb-2 font-semibold">Game Details</h3>
-        
-        <div className="flex items-start justify-between gap-4"> {/* Reverted layout to original if it was just `div` */}
+
+        <div className="flex items-start justify-between gap-4">
+          {" "}
+          {/* Reverted layout to original if it was just `div` */}
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-semibold">
               {thisGame.awayTeamName} @ {thisGame.homeTeamName}
@@ -81,7 +75,6 @@ const GameDetailScreen: React.FC = () => {
               )}
             </p>
           </div>
-
           <div className="flex-none text-right text-sm">
             {thisGame.home_final_score != null &&
             thisGame.away_final_score != null ? (
@@ -111,8 +104,6 @@ const GameDetailScreen: React.FC = () => {
             )}
           </div>
         </div>
-        {/* REMOVED: Snapshot Button */}
-        {/* REMOVED: Snapshot Modal */}
       </div>
 
       {/* ── Injury report ── */}
