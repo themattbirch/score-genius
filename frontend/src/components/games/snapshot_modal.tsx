@@ -125,7 +125,7 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
       ref={scrollRef}
       role="dialog"
       aria-modal="true"
-      aria-label={`${sport} Game Snapshot`}
+      aria-label={`${sport} Head-To-Head Breakdown`}
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto flex items-start justify-center py-4"
     >
       <div
@@ -145,7 +145,7 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
           className="text-xl font-bold mb-4 text-center"
           style={{ color: textColor }}
         >
-          {isLoading ? "Loading Snapshot…" : `${sport} Game Snapshot`}
+          {isLoading ? "Loading Snapshot…" : `${sport} Head-To-Head Breakdown`}
         </h2>
 
         {/* Exhibition message override */}
