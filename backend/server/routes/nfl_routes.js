@@ -20,7 +20,9 @@ import {
   getNflSrs,
   getNflCronHealth,
   getNflValidation,
+  getNflAdvancedStats,
 } from "../controllers/nfl_controller.js";
+import { getNflGameById } from "../controllers/nfl_controller.js";
 
 const router = express.Router();
 
@@ -31,11 +33,14 @@ router.get("/teams/:season/regonly", getNflTeamSeasonRegOnly);
 
 // Schedule endpoint (past vs future)
 router.get("/schedule", getNflSchedule);
+router.get("/games/:id", getNflGameById);
 
 // SRS + SoS endpoints
-
 router.get("/teams/:season/sos", getNflSos);
 router.get("/teams/:season/srs", getNflSrs);
+
+// Advanced team stats (from materialized view)
+router.get("/team-stats/advanced", getNflAdvancedStats);
 
 // dashboard route
 router.get("/teams/:season/dashboard", getNflDashboard);

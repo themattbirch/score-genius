@@ -1,4 +1,28 @@
 {
+  "nfl_game_schedule": [
+    "id",
+    "game_id",
+    "game_date",
+    "home_team",
+    "away_team",
+    "scheduled_time",
+    "venue",
+    "status",
+    "updated_at",
+    "spread",
+    "moneyline",
+    "total",
+    "moneyline_clean",
+    "spread_clean",
+    "total_clean",
+    "predicted_home_score",
+    "predicted_away_score",
+    "season",
+    "week",
+    "stage",
+    "home_team_id",
+    "away_team_id"
+  ],
   "nfl_historical_game_stats": [
     "id",
     "game_id",

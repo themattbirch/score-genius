@@ -3,6 +3,7 @@
 import supabase from "../utils/supabase_client.js";
 import cache from "../utils/cache.js";
 import { DateTime } from "luxon";
+import { mapScheduleRow } from "./nfl_service.js";
 
 const SCHEDULE_TABLE = "nfl_game_schedule";
 const HIST_STATS_TABLE = "nfl_historical_game_stats";
@@ -13,6 +14,7 @@ const CACHE_TTL = Number(process.env.NFL_TEAM_CACHE_TTL || 43200);
 
 const NFL_SOS_VIEW = "v_nfl_team_sos";
 const NFL_SRS_VIEW = "v_nfl_team_srs_lite";
+const ADVANCED_STATS_VIEW = "mv_nfl_advanced_team_stats";
 const DEFAULT_CACHE_TTL = Number(process.env.NFL_VIEW_CACHE_TTL || 3600);
 
 function buildViewKey(view, { season, teamIds, conference, division }) {
@@ -240,8 +242,7 @@ export async function fetchNflScheduleData(date) {
   const table = isPast ? HIST_STATS_TABLE : SCHEDULE_TABLE;
   const cols = isPast
     ? "game_id, game_date, home_team_id, away_team_id, home_q1,home_q2,home_q3,home_q4,home_ot,away_q1,away_q2,away_q3,away_q4,away_ot,home_score,away_score,status"
-    : "game_id, game_date, scheduled_time, home_team_id, away_team_id, status, spread_clean, total_clean, predicted_home_score,predicted_away_score";
-
+    : "game_id, game_date, scheduled_time, home_team_id, away_team_id, status, spread_clean, total_clean, predicted_home_score, predicted_away_score, prediction_utc";
   const { data, error, status } = await supabase
     .from(table)
     .select(cols)
@@ -389,6 +390,71 @@ export async function fetchNflSrs({ season, teamIds, conference, division }) {
   const { data, error, status } = await q;
   if (error) {
     const e = new Error(error.message || "Error fetching SRS");
+    e.status = status;
+    throw e;
+  }
+
+  const result = Array.isArray(data) ? data : [];
+  cache.set(cacheKey, result, DEFAULT_CACHE_TTL);
+  return result;
+}
+export async function fetchNflGameById(gameId) {
+  // Determine if this game is historical or upcoming based on today
+  const nowEt = DateTime.now().setZone("America/New_York");
+  // We'll fetch from the schedule table; for past games, you may want to join the historical table instead
+  const cols = [
+    "game_id",
+    "game_date",
+    "scheduled_time",
+    "home_team_id",
+    "away_team_id",
+    "status",
+    "spread_clean",
+    "total_clean",
+    "predicted_home_score",
+    "predicted_away_score",
+    "prediction_utc",
+  ].join(", ");
+
+  const { data, error, status } = await supabase
+    .from(SCHEDULE_TABLE)
+    .select(cols)
+    .eq("game_id", gameId)
+    .maybeSingle();
+
+  if (error) {
+    const e = new Error(error.message || `Error fetching game ${gameId}`);
+    e.status = status || 503;
+    throw e;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  // Map raw row to your controller shape
+  // We pass `false` for `isPast` so mapScheduleRow knows to look for scheduled_time, predictions
+  return mapScheduleRow(data, false);
+}
+
+/**
+ * Fetches advanced team stats (SRS, SOS, etc.) from the materialized view.
+ */
+export async function fetchNflAdvancedStats({ season }) {
+  const cacheKey = `nfl-advanced-stats:${season}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const { data, error, status } = await supabase
+    .from(ADVANCED_STATS_VIEW)
+    .select("*")
+    .eq("season", season)
+    .order("team_name", { ascending: true });
+
+  if (error) {
+    const e = new Error(error.message || "Error fetching advanced stats");
     e.status = status;
     throw e;
   }

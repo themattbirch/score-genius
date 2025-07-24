@@ -64,6 +64,10 @@ export interface UnifiedGame {
   predicted_home_runs?: number | null;
   predicted_away_runs?: number | null;
 
+  //  NFL Predictions
+  predicted_home_score?: number | null;
+  predicted_away_score?: number | null;
+
   spread?: number | null; // NBA specific schedule (duplicate?) -> Consolidate in backend mapping
   total?: number | null; // NBA specific schedule (duplicate?) -> Consolidate in backend mapping
   tipoff?: string | null; // NBA specific schedule (duplicate?) -> Use gameTimeUTC
@@ -154,18 +158,32 @@ export interface NbaAdvancedTeamStats {
   /* allow extension */
   [key: string]: string | number | undefined | null;
 }
+
+export interface NflAdvancedTeamStats {
+  team_name: string;
+  games_played: number;
+  srs: number; // Simple Rating System
+  sos: number; // Strength of Schedule
+  point_differential: number;
+  turnover_differential: number;
+  pythagorean_wins: number;
+  luck: number; // Actual Wins - Pythagorean Wins
+
+  /* allow extension */
+  [key: string]: string | number | undefined | null;
+}
 interface SnapshotModalProps {
   gameId: string;
-  sport: Sport; // Use the Sport type here
+  sport: Sport;
   isOpen: boolean;
   onClose: () => void;
 }
 export interface SnapshotData {
-  headline_stats?: HeadlineStat[]; // Optional, as it might be loading
+  headline_stats?: HeadlineStat[];
   bar_chart_data?: BarChartData[];
   radar_chart_data?: RadarChartData[];
   key_metrics_data?: BarChartData[];
-  pie_chart_data?: PieChartDataItem[] | NbaPreGameOffenseDataItem[]; // Can be either
+  pie_chart_data?: PieChartDataItem[] | NbaPreGameOffenseDataItem[];
   is_historical?: boolean;
 }
 export interface WeatherData {

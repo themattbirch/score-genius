@@ -12,6 +12,7 @@ import {
   fetchNflSrs,
   checkCronHealth,
   validateTeamAgg,
+  fetchNflAdvancedStats,
 } from "../services/nfl_service.js";
 import {
   NFL_ALLOWED_CONFERENCES,
@@ -105,7 +106,16 @@ export async function getNflSchedule(req, res, next) {
         .json({ message: "Invalid or missing date (YYYY-MM-DD)." });
     }
 
-    const data = await fetchNflScheduleData(date);
+    const rows = await fetchNflScheduleData(date);
+
+    // Ensure predicted fields (and timestamp) are always present
+    const data = rows.map((g) => ({
+      ...g,
+      predictedHomeScore: g.predictedHomeScore ?? null,
+      predictedAwayScore: g.predictedAwayScore ?? null,
+      predictionUtc: g.predictionUtc ?? g.prediction_utc ?? null, // handle snake/camel just in case
+    }));
+
     res.set(buildCacheHeader());
     return res.status(200).json({
       message: `NFL schedule for ${date}`,
@@ -242,6 +252,54 @@ export async function getNflValidation(req, res, next) {
     res.set(buildCacheHeader());
     return res.status(200).json(result);
   } catch (err) {
+    next(err);
+  }
+}
+// GET /api/v1/nfl/games/:id
+export async function getNflGameById(req, res, next) {
+  try {
+    const gameId = Number.parseInt(req.params.id, 10);
+    if (Number.isNaN(gameId)) return badParam(res, "Invalid game id.");
+
+    const game = await fetchNflGameById(gameId); // implement in nfl_service.js
+
+    if (!game) return res.status(404).json({ message: "Game not found." });
+
+    const payload = {
+      ...game,
+      predictedHomeScore: game.predictedHomeScore ?? null,
+      predictedAwayScore: game.predictedAwayScore ?? null,
+      predictionUtc: game.predictionUtc ?? game.prediction_utc ?? null,
+    };
+
+    res.set(buildCacheHeader());
+    return res.status(200).json(payload);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/nfl/team-stats/advanced?season=YYYY
+export async function getNflAdvancedStats(req, res, next) {
+  try {
+    // 1. Validate the season from the query parameter
+    const season = parseSeasonParam(req.query.season);
+    if (season == null) {
+      return badParam(res, "Invalid or missing season parameter; use YYYY.");
+    }
+
+    // 2. Call the service layer to fetch the data
+    const data = await fetchNflAdvancedStats({ season });
+
+    // 3. Set cache headers and send the successful response
+    res.set(buildCacheHeader());
+    return res.status(200).json({
+      season,
+      retrieved: data.length,
+      data,
+    });
+  } catch (err) {
+    // 4. Pass any errors to the error-handling middleware
     next(err);
   }
 }

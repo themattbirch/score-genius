@@ -1,242 +1,261 @@
-# backend/mlb_score_prediction/data.py
+# backend/nfl_score_prediction/data.py
+"""
+data.py - NFL Data Fetching Module
 
-import pandas as pd
-import numpy as np
+Fetches historical games, team game stats, and upcoming schedules from Supabase
+for the NFL score prediction pipeline.
+"""
+
+from __future__ import annotations
+
+import logging
 import traceback
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Any, List, Optional, Sequence
 
-# -------------------- Data Fetching Class --------------------
-class SupabaseDataFetcher:
-    """ Handles data fetching from Supabase for MLB prediction models. """
+import pandas as pd
 
-    def __init__(self, supabase_client: Any, debug: bool = False):
-        """
-        Initialize with a configured Supabase client instance.
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
-        Args:
-            supabase_client: The Supabase client instance.
-            debug: If True, print debug messages during execution.
-        """
+
+class NFLDataFetcher:
+    """Handles data fetching from Supabase for NFL prediction models."""
+
+    def __init__(self, supabase_client: Any):
         if supabase_client is None:
-             raise ValueError("Supabase client must be provided to SupabaseDataFetcher.")
-        self.supabase = supabase_client # Use the passed client
-        self.debug = debug
+            raise ValueError("A valid Supabase client must be provided.")
+        self.supabase = supabase_client
+        logger.info("NFLDataFetcher initialized.")
 
-    def _print_debug(self, message: str):
-        """ Prints debug messages if debug mode is enabled. """
-        if self.debug:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [{type(self).__name__}] {message}")
+    # ------------------------------------------------------------------ #
+    # Internal utils
+    # ------------------------------------------------------------------ #
 
-    def fetch_historical_games(self, days_lookback: int = 365) -> pd.DataFrame:
+    def _execute_paginated_query(
+        self,
+        table: str,
+        columns: Sequence[str],
+        date_column: str,
+        start_date: str,
+        *,
+        page_size: int = 1000,
+    ) -> pd.DataFrame:
         """
-        Fetches historical game stats from the 'mlb_historical_game_stats' table
-        for the specified lookback period using efficient pagination.
-
-        Args:
-            days_lookback: Number of days back from today to fetch data for.
-
-        Returns:
-            pd.DataFrame: Contains historical game data, sorted by game_date.
-                          Columns are explicitly selected and numeric types are cleaned.
-                          Returns an empty DataFrame on error or if no data is found.
+        Generic paginated select with >= start_date filter on `date_column`.
         """
-        threshold_date = (datetime.now() - timedelta(days=days_lookback)).strftime('%Y-%m-%d')
-        self._print_debug(f"Fetching historical game data since {threshold_date}")
+        if date_column not in columns:
+            logger.warning(
+                "'%s' not in selected columns for %s; filtering may be ineffective.",
+                date_column,
+                table,
+            )
 
-        # Explicitly list all required columns from the mlb_historical_game_stats table
-        required_columns = [
-            'id', 'game_id', 'home_team', 'away_team', 'game_date',
-            'home_score', 'away_score', 'home_q1', 'home_q2', 'home_q3', 'home_q4', 'home_ot',
-            'away_q1', 'away_q2', 'away_q3', 'away_q4', 'away_ot',
-            'home_assists', 'home_steals', 'home_blocks', 'home_turnovers', 'home_fouls',
-            'away_assists', 'away_steals', 'away_blocks', 'away_turnovers', 'away_fouls',
-            'home_off_reb', 'home_def_reb', 'home_total_reb',
-            'away_off_reb', 'away_def_reb', 'away_total_reb',
-            'home_3pm', 'home_3pa', 'away_3pm', 'away_3pa',
-            'home_fg_made', 'home_fg_attempted', 'away_fg_made', 'away_fg_attempted',
-            'home_ft_made', 'home_ft_attempted', 'away_ft_made', 'away_ft_attempted'
-        ]
-        # Columns that need conversion to numeric (excluding IDs treated as objects/strings)
-        numeric_cols = [col for col in required_columns if col not in
-                        ['id', 'game_id', 'home_team', 'away_team', 'game_date']]
+        select_str = ", ".join(columns)
+        all_rows: List[dict] = []
+        start = 0
 
-        all_data = []
-        page_size = 1000 
-        start_index = 0
         try:
             while True:
-                response = self.supabase.table("mlb_historical_game_stats") \
-                    .select(", ".join(required_columns)) \
-                    .gte("game_date", threshold_date) \
-                    .order('game_date') \
-                    .range(start_index, start_index + page_size - 1) \
+                resp = (
+                    self.supabase.table(table)
+                    .select(select_str)
+                    .gte(date_column, start_date)
+                    .order(date_column, desc=False)
+                    .range(start, start + page_size - 1)
                     .execute()
+                )
 
-                # Handle potential API errors if response structure is unexpected
-                if not hasattr(response, 'data'):
-                     raise ValueError(f"Supabase response missing 'data' attribute. Response: {response}")
+                if not hasattr(resp, "data"):
+                    raise ValueError(f"Supabase response from '{table}' missing 'data'.")
 
-                batch_data = response.data
-                batch_size = len(batch_data)
-                all_data.extend(batch_data)
-                self._print_debug(f"Retrieved batch of {batch_size} records, total: {len(all_data)}")
+                batch = resp.data or []
+                all_rows.extend(batch)
+                if len(batch) < page_size:
+                    break
+                start += page_size
 
-                if batch_size < page_size:
-                    break 
-                start_index += page_size
+            df = pd.DataFrame(all_rows)
+            return df if not df.empty else pd.DataFrame()
 
-            if not all_data:
-                self._print_debug(f"No historical game data found since {threshold_date}.")
-                return pd.DataFrame() 
-
-            df = pd.DataFrame(all_data)
-
-            # --- Data Cleaning ---
-            # Convert date column
-            df['game_date'] = pd.to_datetime(df['game_date'], errors='coerce')
-            df = df.dropna(subset=['game_date']) # Drop rows where date conversion failed
-
-            # Convert all expected numeric columns, coercing errors and filling NaNs with 0
-            for col in numeric_cols:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                else:
-                    self._print_debug(f"Warning: Expected numeric column '{col}' missing. Adding with zeros.")
-                    df[col] = 0
-
-            return df.sort_values('game_date').reset_index(drop=True)
-
-        except Exception as e:
-            self._print_debug(f"Error fetching or processing historical games: {e}")
-            traceback.print_exc()
-            return pd.DataFrame() 
-
-    def fetch_team_stats(self) -> pd.DataFrame:
-        """
-        Fetches team performance stats from the mlb_historical_team_stats' table.
-
-        Returns:
-            pd.DataFrame: Contains team season stats.
-                          Returns an empty DataFrame on error or if no data is found.
-        """
-        self._print_debug("Fetching team stats...")
-
-        # Explicitly define expected columns based on schema provided earlier
-        required_columns = [
-             'id', 'team_id', 'team_name', 'season', 'league_id',
-             'games_played_home', 'games_played_away', 'games_played_all',
-             'wins_home_total', 'wins_home_percentage', 'wins_away_total', 'wins_away_percentage',
-             'wins_all_total', 'wins_all_percentage', 'losses_home_total', 'losses_home_percentage',
-             'losses_away_total', 'losses_away_percentage', 'losses_all_total', 'losses_all_percentage',
-             'points_for_total_home', 'points_for_total_away', 'points_for_total_all',
-             'points_for_avg_home', 'points_for_avg_away', 'points_for_avg_all',
-             'points_against_total_home', 'points_against_total_away', 'points_against_total_all',
-             'points_against_avg_home', 'points_against_avg_away', 'points_against_avg_all',
-             'updated_at', 'current_form'
-        ]
-
-        try:
-            response = self.supabase.table("mlb_historical_team_stats") \
-                .select(", ".join(required_columns)) \
-                .execute()
-
-            if not hasattr(response, 'data'):
-                 raise ValueError(f"Supabase response missing 'data' attribute. Response: {response}")
-
-            data = response.data
-            if data:
-                self._print_debug(f"Fetched {len(data)} team stat records")
-                # Basic conversion - can add more specific numeric conversions if needed
-                df = pd.DataFrame(data)
-                # Example numeric conversions (adjust list as needed)
-                numeric_team_cols = [
-                    'wins_all_percentage', 'points_for_avg_all', 'points_against_avg_all'
-                    # Add other relevant numeric columns from the list above
-                ]
-                for col in numeric_team_cols:
-                     if col in df.columns:
-                         df[col] = pd.to_numeric(df[col], errors='coerce')
-                return df
-            else:
-                self._print_debug("No team stats found")
-                return pd.DataFrame()
-        except Exception as e:
-            self._print_debug(f"Error fetching team stats: {e}")
-            traceback.print_exc()
+        except Exception:
+            logger.error(
+                "Paginated query failed for '%s'.\n%s", table, traceback.format_exc()
+            )
             return pd.DataFrame()
 
-    def fetch_upcoming_games(self, days_ahead: int = 7) -> pd.DataFrame:
-        """
-        Fetches upcoming games within the specified timeframe from the
-        'mlb_game_schedule' table, including related team names.
+    @staticmethod
+    def _cast_ids(df: pd.DataFrame, cols: Sequence[str]) -> None:
+        """In-place cast of ID columns to pandas' Int64 (nullable int)."""
+        for c in cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
 
-        Args:
-            days_ahead: Number of days into the future to fetch games for.
-
-        Returns:
-            pd.DataFrame: Contains upcoming game schedules with 'game_id', 'game_date',
-                          'home_team', 'away_team'.
-                          Returns an empty DataFrame on error or if no games are found.
+    @staticmethod
+    def _parse_possession_time(val: Optional[str]) -> float:
         """
-        self._print_debug(f"Fetching upcoming games for next {days_ahead} days...")
+        Convert 'MM:SS' or 'H:MM:SS' strings to minutes (float).
+        """
+        if not val or not isinstance(val, str):
+            return 0.0
+        parts = val.split(":")
         try:
-            today = datetime.now().strftime('%Y-%m-%d')
-            future_date = (datetime.now() + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+            if len(parts) == 2:
+                m, s = map(int, parts)
+                return m + s / 60.0
+            if len(parts) == 3:
+                h, m, s = map(int, parts)
+                return 60 * h + m + s / 60.0
+        except (ValueError, TypeError):
+            pass
+        return 0.0
 
-            select_query = "game_id, game_date, home_team:home_team_id(team_name), away_team:away_team_id(team_name)"
+    # ------------------------------------------------------------------ #
+    # Public fetch methods
+    # ------------------------------------------------------------------ #
 
-            response = self.supabase.table("mlb_game_schedule") \
-                .select(select_query) \
-                .gte("game_date", today) \
-                .lte("game_date", future_date) \
-                .order('game_date') \
+    def fetch_historical_games(self, days_lookback: int = 1825) -> pd.DataFrame:
+        """
+        Historical outcomes from 'nfl_historical_game_stats'.
+        """
+        now = datetime.now()
+        start_date = (now - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
+        logger.info("Fetching historical games since %s...", start_date)
+
+        req_cols = [
+            "game_id",
+            "season",
+            "week",
+            "game_date",
+            "home_team_id",
+            "away_team_id",
+            "home_score",
+            "away_score",
+        ]
+        num_cols = ["season", "week", "home_score", "away_score"]
+
+        df = self._execute_paginated_query(
+            "nfl_historical_game_stats", req_cols, "game_date", start_date
+        )
+        if df.empty:
+            logger.warning("No historical game data found.")
+            return df
+
+        df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
+        df = df.dropna(subset=["game_date"])
+
+        for c in num_cols:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+
+        self._cast_ids(df, ["game_id", "home_team_id", "away_team_id"])
+        df = df.sort_values("game_date").reset_index(drop=True)
+        logger.info("Fetched %d historical game rows.", len(df))
+        return df
+
+    def fetch_historical_team_game_stats(self, days_lookback: int = 1825) -> pd.DataFrame:
+        """
+        Team-level boxscore stats per game from 'nfl_historical_game_team_stats'.
+        Uses 'updated_at' as proxy for recency unless a dedicated date exists.
+        """
+        now = datetime.now()
+        start_date = (now - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
+        logger.info("Fetching team-game stats since %s...", start_date)
+
+        req_cols = [
+            "game_id",
+            "team_id",
+            "turnovers_total",
+            "yards_total",
+            "possession_time",
+            "passing_yards_per_pass",
+            "passing_interceptions",
+            "third_down_pct",
+            "fourth_down_pct",
+            "red_zone_pct",
+            "sacks_total",
+            "penalty_yards",
+            "rushings_yards_per_rush",
+            "updated_at",
+        ]
+        num_cols = [c for c in req_cols if c not in ("game_id", "team_id", "possession_time", "updated_at")]
+
+        df = self._execute_paginated_query(
+            "nfl_historical_game_team_stats", req_cols, "updated_at", start_date
+        )
+        if df.empty:
+            logger.warning("No team-game stat data found.")
+            return df
+
+        # Possession time to minutes
+        df["possession_time"] = df["possession_time"].apply(self._parse_possession_time)
+
+        for c in num_cols:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+
+        self._cast_ids(df, ["game_id", "team_id"])
+        df = df.drop(columns=["updated_at"]).reset_index(drop=True)
+        logger.info("Fetched %d team-game stat rows.", len(df))
+        return df
+
+    def fetch_upcoming_games(self, days_ahead: int = 14) -> pd.DataFrame:
+        """
+        Upcoming schedule from 'nfl_game_schedule' with team names via FK columns.
+        """
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        future = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        logger.info("Fetching upcoming games [%s → %s]...", today, future)
+
+        select_str = (
+            "game_id, game_date, "
+            "home_team:home_team_id(id, team_name), "
+            "away_team:away_team_id(id, team_name)"
+        )
+
+        try:
+            resp = (
+                self.supabase.table("nfl_game_schedule")
+                .select(select_str)
+                .gte("game_date", today)
+                .lte("game_date", future)
+                .order("game_date", desc=False)
                 .execute()
+            )
+            if not hasattr(resp, "data"):
+                raise ValueError("Response from 'nfl_game_schedule' missing 'data'.")
 
-            if not hasattr(response, 'data'):
-                 raise ValueError(f"Supabase response missing 'data' attribute. Response: {response}")
+            df = pd.DataFrame(resp.data or [])
+            if df.empty:
+                logger.info("No upcoming games in the specified range.")
+                return df
 
-            data = response.data
-            if data:
-                self._print_debug(f"Fetched {len(data)} upcoming games")
-                df = pd.DataFrame(data)
+            # Flatten nested team objects
+            df["home_team_id"] = df["home_team"].apply(lambda x: x.get("id") if isinstance(x, dict) else None)
+            df["away_team_id"] = df["away_team"].apply(lambda x: x.get("id") if isinstance(x, dict) else None)
+            df["home_team_name"] = df["home_team"].apply(lambda x: x.get("team_name") if isinstance(x, dict) else None)
+            df["away_team_name"] = df["away_team"].apply(lambda x: x.get("team_name") if isinstance(x, dict) else None)
 
-                # --- Flatten nested team data more robustly ---
-                # Handle home team
-                if 'home_team' in df.columns:
-                    df['home_team_name_extracted'] = df['home_team'].apply(
-                        lambda x: x.get('team_name', 'Unknown') if isinstance(x, dict) else 'Unknown'
-                    )
-                else:
-                     df['home_team_name_extracted'] = 'Unknown'
+            df = df.drop(columns=["home_team", "away_team"])
+            df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
 
-                # Handle away team
-                if 'away_team' in df.columns:
-                     df['away_team_name_extracted'] = df['away_team'].apply(
-                         lambda x: x.get('team_name', 'Unknown') if isinstance(x, dict) else 'Unknown'
-                     )
-                else:
-                     df['away_team_name_extracted'] = 'Unknown'
+            self._cast_ids(df, ["game_id", "home_team_id", "away_team_id"])
+            final_cols = [
+                "game_id",
+                "game_date",
+                "home_team_id",
+                "away_team_id",
+                "home_team_name",
+                "away_team_name",
+            ]
+            df = df[final_cols].sort_values("game_date").reset_index(drop=True)
+            logger.info("Fetched %d upcoming games.", len(df))
+            return df
 
-                # Drop original nested columns if they exist
-                df = df.drop(columns=['home_team', 'away_team'], errors='ignore')
-
-                # Rename columns to match expected 'home_team', 'away_team' format
-                df = df.rename(columns={'home_team_name_extracted': 'home_team',
-                                        'away_team_name_extracted': 'away_team'})
-
-                # Select and order final columns
-                final_cols = ['game_id', 'game_date', 'home_team', 'away_team']
-                df = df[final_cols]
-
-                df['game_date'] = pd.to_datetime(df['game_date'], errors='coerce')
-                df = df.dropna(subset=['game_date']) # Drop games with invalid dates
-
-                return df.sort_values('game_date').reset_index(drop=True)
-            else:
-                self._print_debug("No upcoming games found")
-                return pd.DataFrame()
-        except Exception as e:
-            self._print_debug(f"Error fetching upcoming games: {e}")
-            traceback.print_exc()
+        except Exception:
+            logger.error("Failed to fetch upcoming games.\n%s", traceback.format_exc())
             return pd.DataFrame()
