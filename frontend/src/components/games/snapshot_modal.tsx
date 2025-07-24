@@ -1,7 +1,7 @@
 // frontend/src/components/games/snapshot_modal.tsx
 
 /* ------------------------------------------------------------------
- * Snapshot Modal  |  shows per‑game snapshot for MLB / NBA
+ * Snapshot Modal  |  shows per‑game snapshot for MLB, NBA and NFL
  * ------------------------------------------------------------------*/
 import React, { useRef, useEffect, Suspense, lazy } from "react";
 import { use_snapshot } from "@/hooks/use_snapshot";
