@@ -3,7 +3,6 @@
 import supabase from "../utils/supabase_client.js";
 import cache from "../utils/cache.js";
 import { DateTime } from "luxon";
-import { mapScheduleRow } from "./nfl_service.js";
 
 const SCHEDULE_TABLE = "nfl_game_schedule";
 const HIST_STATS_TABLE = "nfl_historical_game_stats";
