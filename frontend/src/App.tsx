@@ -40,9 +40,9 @@ const Loader: React.FC<{ message?: string }> = ({ message = "Loading…" }) => (
 );
 
 const App: React.FC = () => (
-  <TourProvider>
-    <ThemeProvider>
-      <SportProvider>
+  <ThemeProvider>
+    <SportProvider>
+      <TourProvider>
         <DateProvider>
           <Suspense fallback={<Loader />}>
             <Routes>
@@ -58,9 +58,9 @@ const App: React.FC = () => (
             </Routes>
           </Suspense>
         </DateProvider>
-      </SportProvider>
-    </ThemeProvider>
-  </TourProvider>
+      </TourProvider>
+    </SportProvider>
+  </ThemeProvider>
 );
 
 export default App;

@@ -455,6 +455,11 @@ const StatsScreen: React.FC = () => {
               {teamHeaders.map(({ label, key }, idx) => (
                 <HeaderCell
                   key={key as string}
+                  data-tour={
+                    key === "wins_all_percentage"
+                      ? "stats-column-winpct"
+                      : undefined
+                  }
                   label={label}
                   active={teamSort.key === key}
                   dir={teamSort.dir}
@@ -707,20 +712,25 @@ const StatsScreen: React.FC = () => {
           {(sport === "NBA"
             ? (["teams", "players", "advanced"] as const)
             : (["teams", "advanced"] as const)
-          ).map((t) => (
-            <button
-              key={t}
-              aria-pressed={tab === t}
-              onClick={() => setTab(t)}
-              className={`rounded-md px-4 py-2 transition-colors ${
-                tab === t
-                  ? "bg-green-600 text-white shadow-sm"
-                  : "text-gray-700 dark:text-text-secondary hover:bg-gray-300 dark:hover:bg-gray-700/50"
-              }`}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
+          ).map((t) => {
+            const tourAttr =
+              t === "advanced" ? { "data-tour": "stats-subtab-advanced" } : {};
+            return (
+              <button
+                key={t}
+                aria-pressed={tab === t}
+                onClick={() => setTab(t)}
+                className={`rounded-md px-4 py-2 transition-colors ${
+                  tab === t
+                    ? "bg-green-600 text-white shadow-sm"
+                    : "text-gray-700 dark:text-text-secondary hover:bg-gray-300 dark:hover:bg-gray-700/50"
+                }`}
+                {...tourAttr}
+              >
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            );
+          })}
         </div>
 
         {/* Season picker */}

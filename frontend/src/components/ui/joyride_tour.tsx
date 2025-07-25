@@ -6,6 +6,7 @@ import React, {
   ReactNode,
   useEffect,
   SetStateAction,
+  useMemo,
 } from "react";
 import Joyride, {
   Step,
@@ -15,6 +16,8 @@ import Joyride, {
   EVENTS,
   LIFECYCLE,
 } from "react-joyride";
+import { useSport } from "@/contexts/sport_context";
+
 // --- Ensure this import is correct ---
 import { CustomJoyrideTooltip } from "./custom_joyride_tooltip"; // Import from separate file
 
@@ -44,7 +47,7 @@ export const useTour = (): TourCtx => {
 /* ------------------------------------------------------------------ */
 /* 2. Steps Definition                                                */
 /* ------------------------------------------------------------------ */
-const steps: Step[] = [
+const baseSteps: Step[] = [
   // Step 1: Sport Switch (index 0)
   {
     target: '[data-tour="sport-switch"]',
@@ -85,7 +88,7 @@ const steps: Step[] = [
   },
   // --- NEW STEP 6: Weather Badge (index 5) ---
   {
-    target: '[data-tour="weather-badge"]:first-of-type',
+    target: '[data-tour="weather-badge"]',
     content:
       "For outdoor games, we provide real-time weather, including wind speed and direction, which can impact gameplay.",
     disableBeacon: true,
@@ -134,21 +137,28 @@ const steps: Step[] = [
 /* 3. Provider component                                              */
 /* ------------------------------------------------------------------ */
 export const TourProvider = ({ children }: { children: ReactNode }) => {
+  // --- State and Context ---
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
+  const { sport } = useSport();
 
-  useEffect(() => {
-    console.log(`TourProvider state: run=${run}, stepIndex=${stepIndex}`);
-  }, [run, stepIndex]);
+  // --- Dynamic Steps Logic ---
+  const tourSteps = useMemo(() => {
+    if (sport === "NBA") {
+      return baseSteps.filter(
+        (step) => step.target !== '[data-tour="weather-badge"]:first-of-type'
+      );
+    }
+    return baseSteps; // For MLB/NFL, return all steps
+  }, [sport]);
 
+  // --- Functions ---
   const start = () => {
     console.log("--- TourProvider: start function called ---");
     setStepIndex(0);
     setRun(true);
   };
 
-  // --- MINIMAL handleJoyride - Only handles tour end/error events ---
-  // It no longer needs to handle button actions like NEXT/PREV
   const handleJoyride = (data: CallBackProps) => {
     const { status, type, lifecycle, step, action, index } = data;
 
@@ -157,7 +167,6 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
       step?.target
     );
 
-    // Only stop the tour on final states or errors reported by Joyride
     if (
       status === STATUS.FINISHED ||
       status === STATUS.SKIPPED ||
@@ -167,10 +176,9 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
       if (status === STATUS.ERROR) {
         console.error("Joyride Error:", data);
       }
-      // Check run state before setting to prevent infinite loops if error occurs rapidly
       if (run) {
         setRun(false);
-        setStepIndex(0); // Reset index too
+        setStepIndex(0);
       }
     } else if (type === EVENTS.TOUR_END) {
       console.log("Tour ended via TOUR_END event");
@@ -179,10 +187,14 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
         setStepIndex(0);
       }
     }
-    // We ignore STEP_AFTER, TARGET_NOT_FOUND etc. for state changes now
   };
 
-  // --- Provide setters and index in context value ---
+  // --- Side Effects ---
+  useEffect(() => {
+    console.log(`TourProvider state: run=${run}, stepIndex=${stepIndex}`);
+  }, [run, stepIndex]);
+
+  // --- Context Value ---
   const contextValue = {
     start,
     setStepIndex,
@@ -190,25 +202,19 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
     currentStepIndex: stepIndex,
   };
 
+  // --- Render ---
   return (
     <TourContext.Provider value={contextValue}>
-      {" "}
-      {/* Provide extended value */}
       {children}
       <Joyride
-        steps={steps}
+        steps={tourSteps}
         run={run}
         stepIndex={stepIndex}
-        callback={handleJoyride} // Minimal callback
-        tooltipComponent={CustomJoyrideTooltip} // Custom tooltip handles buttons
-        // --- REMOVE showSkipButton prop - button logic is now fully custom ---
-        // showSkipButton
+        callback={handleJoyride}
+        tooltipComponent={CustomJoyrideTooltip}
         scrollToFirstStep
-        // debug
         styles={{ options: { zIndex: 9999 } }}
       />
     </TourContext.Provider>
   );
 };
-
-// export default TourProvider;

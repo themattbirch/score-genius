@@ -96,16 +96,20 @@ const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     homePitcherHand,
   } = game;
 
-  const supportsWeather = sport === "MLB" || sport === "NFL";
-  const locationParam: string | undefined =
-    supportsWeather && homeTeamName ? homeTeamName : undefined;
+  // 1. Differentiate between sports that need a weather API call vs. just UI
+  const shouldFetchWeather = sport === "MLB" || sport === "NFL";
+  const isNBA = sport === "NBA";
+  const showWeatherUI = shouldFetchWeather || isNBA;
 
   const {
     data: weatherData,
     isLoading: isWeatherLoading,
     isError: isWeatherError,
-  } = useWeather(supportsWeather ? sport : undefined, locationParam);
-  const isIndoor = weatherData?.isIndoor === true;
+  } = useWeather(
+    shouldFetchWeather ? sport : undefined,
+    shouldFetchWeather ? homeTeamName : undefined
+  );
+  const isEffectivelyIndoor = isNBA || weatherData?.isIndoor === true;
 
   const timeLine = useMemo(() => {
     const t = formatTime(gameTimeUTC ?? undefined, game_date ?? undefined);
@@ -148,9 +152,10 @@ const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
 
   return (
     <article
+      data-tour="game-card"
       className={`app-card ripple
-${compactDefault ? "app-card--compact" : ""}
-${expanded && !isDesktop ? "md:col-span-2" : ""}`}
+      ${compactDefault ? "app-card--compact" : ""}
+      ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
       aria-expanded={expanded}
       onClick={handleCardClick}
     >
@@ -249,13 +254,15 @@ ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
                     setSnapshotOpen(true);
                   }}
                 />
-                {supportsWeather && (
+                {showWeatherUI && (
                   <WeatherBadge
                     data-action
-                    isLoading={isWeatherLoading}
-                    isError={isWeatherError}
+                    data-tour="weather-badge"
+                    // The following props were made conditional for NBA
+                    isIndoor={isEffectivelyIndoor}
+                    isLoading={!isNBA && isWeatherLoading}
+                    isError={!isNBA && isWeatherError}
                     data={weatherData}
-                    isIndoor={isIndoor}
                     onClick={(e) => {
                       e.stopPropagation();
                       setWeatherOpen(true);
@@ -278,7 +285,8 @@ ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
         isOpen={weatherOpen}
         onClose={() => setWeatherOpen(false)}
         weatherData={weatherData}
-        isIndoor={isIndoor}
+        // And use the new variable here as well
+        isIndoor={isEffectivelyIndoor}
       />
     </article>
   );
