@@ -56,42 +56,54 @@ ReactDOM.createRoot(container).render(
 );
 
 // ─── Analytics on First Interaction ─────────────────────────────────────────
-// Load Firebase Analytics after any user interaction or fallback timeout
+// 1) Define initAnalytics first
 function initAnalytics() {
-  // Remove all listeners to prevent duplicate loads
+  // Remove listeners to avoid duplicates
   ["pointerdown", "click", "touchstart"].forEach((evt) =>
     window.removeEventListener(evt, initAnalytics, true)
   );
-  import("firebase/app").then(({ initializeApp }) => {
-    import("firebase/analytics").then(({ getAnalytics, logEvent }) => {
-      const firebaseConfig = {
-        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-        appId: import.meta.env.VITE_FIREBASE_APP_ID,
-        measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-      } as const;
-      const app = initializeApp(firebaseConfig);
-      const analytics = getAnalytics(app);
-      logEvent(analytics, "app_open");
-      console.log("📊 Firebase Analytics initialized");
-    });
-  });
+
+  import("firebase/app")
+    .then(({ initializeApp }) =>
+      import("firebase/analytics").then(({ getAnalytics, logEvent }) => {
+        const firebaseConfig = {
+          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+          storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+          messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+          appId: import.meta.env.VITE_FIREBASE_APP_ID,
+          measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+        } as const;
+
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        logEvent(analytics, "app_open");
+        console.log("📊 Firebase Analytics initialized");
+      })
+    )
+    .catch((err) => console.error("Analytics load failed:", err));
 }
 
-if (import.meta.env.PROD) {
-  // Fallback: initialize after 5s if no interaction
-  const timeoutId = window.setTimeout(initAnalytics, 5000);
-  ["pointerdown", "click", "touchstart"].forEach((evt) =>
-    window.addEventListener(
-      evt,
-      () => {
-        clearTimeout(timeoutId);
-        initAnalytics();
-      },
-      { once: true, capture: true }
-    )
-  );
+// 2) Schedule it on idle or after timeout
+function scheduleAnalyticsInit() {
+  if ("requestIdleCallback" in window) {
+    (window as any).requestIdleCallback(initAnalytics, { timeout: 10_000 });
+  } else {
+    setTimeout(initAnalytics, 5_000);
+  }
 }
+
+// 3) Wire up first‐interaction trigger
+["pointerdown", "click", "touchstart"].forEach((evt) =>
+  window.addEventListener(
+    evt,
+    () => {
+      scheduleAnalyticsInit();
+    },
+    { once: true, capture: true }
+  )
+);
+
+// 4) Also kick off on idle even if no interaction
+scheduleAnalyticsInit();
