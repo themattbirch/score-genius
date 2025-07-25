@@ -3,6 +3,7 @@
 import supabase from "../utils/supabase_client.js";
 import { DateTime } from "luxon";
 import cache from "../utils/cache.js";
+import { fetch } from "undici";
 
 const MLB_SCHEDULE_TABLE = "mlb_game_schedule";
 const MLB_HISTORICAL_GAMES_TABLE = "mlb_historical_game_stats";
@@ -326,7 +327,7 @@ export const getMlbScheduleByDate = async (date) => {
       `[mlb_service getMlbScheduleByDate] Error processing date ${date}:`,
       err
     );
-    throw err; // Re-throw error
+    return [];
   }
 };
 // Returns **all** teams’ season stats for a given year

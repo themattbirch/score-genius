@@ -156,7 +156,7 @@ ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
     >
       {/* Header */}
       <header
-        className="flex items-start gap-4 cursor-pointer"
+        className="flex items-start justify-between gap-4 cursor-pointer"
         role={compactDefault ? "button" : undefined}
         tabIndex={compactDefault ? 0 : -1}
         onKeyDown={
@@ -181,7 +181,7 @@ ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
           <p className="text-xs text-text-secondary mt-1">{timeLine}</p>
         </div>
 
-        <div className="flex flex-col items-end text-right gap-1 ml-auto">
+        <div className="flex flex-col items-end text-right gap-1">
           {isFinal ? (
             <p className="font-semibold text-lg whitespace-nowrap leading-tight">
               {away_final_score} – {home_final_score}
@@ -195,73 +195,77 @@ ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
             <span className="text-sm text-text-secondary">—</span>
           )}
 
+          {/* Centered chevron row (mobile only) */}
           {compactDefault && (
-            <span
-              className={`mt-0.5 inline-block text-text-secondary transition-transform ${
-                expanded ? "rotate-180" : ""
-              }`}
-            >
-              ▾
-            </span>
+            <div className="mt-2 flex w-full justify-center">
+              <span
+                className={`card-chevron transition-transform ${
+                  expanded ? "rotate-180" : ""
+                }`}
+              >
+                ▾
+              </span>
+            </div>
           )}
         </div>
       </header>
 
       {/* Expanded Content */}
-      {expanded && (
-        <div className="mt-4 flex items-center justify-between">
-          {/* Pitchers */}
-          {sport === "MLB" && (
-            <div className="flex flex-col justify-center text-xs text-text-secondary leading-tight">
-              <p>
-                {awayPitcher ?? "TBD"}{" "}
-                {awayPitcherHand && `(${awayPitcherHand})`}
-              </p>
-              <p>
-                {homePitcher ?? "TBD"}{" "}
-                {homePitcherHand && `(${homePitcherHand})`}
-              </p>
+      {expanded &&
+        (() => {
+          const hasPitchers =
+            sport === "MLB" &&
+            ((awayPitcher && awayPitcher.trim() !== "") ||
+              (homePitcher && homePitcher.trim() !== ""));
+
+          return (
+            <div
+              className={`mt-4 flex items-center gap-2 ${
+                hasPitchers ? "justify-between" : "justify-start"
+              }`}
+            >
+              {/* Pitchers — render only when at least one name exists */}
+              {hasPitchers && (
+                <div className="flex flex-col justify-center text-xs text-text-secondary leading-tight">
+                  {awayPitcher && (
+                    <p>
+                      {awayPitcher} {awayPitcherHand && `(${awayPitcherHand})`}
+                    </p>
+                  )}
+                  {homePitcher && (
+                    <p>
+                      {homePitcher} {homePitcherHand && `(${homePitcherHand})`}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Action Chips */}
+              <div className="flex flex-col gap-2">
+                <SnapshotButton
+                  data-action
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSnapshotOpen(true);
+                  }}
+                />
+                {supportsWeather && (
+                  <WeatherBadge
+                    data-action
+                    isLoading={isWeatherLoading}
+                    isError={isWeatherError}
+                    data={weatherData}
+                    isIndoor={isIndoor}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWeatherOpen(true);
+                    }}
+                  />
+                )}
+              </div>
             </div>
-          )}
-
-          {/* Action Chips */}
-          <div className="flex flex-col gap-2">
-            <SnapshotButton
-              data-action
-              onMouseDown={(e) => {
-                console.log("▶️ Snapshot onMouseDown");
-                e.stopPropagation();
-              }}
-              onClick={(e) => {
-                console.log("✅ Snapshot onClick");
-                e.preventDefault();
-                e.stopPropagation();
-                setSnapshotOpen(true);
-              }}
-            />
-
-            {supportsWeather && (
-              <WeatherBadge
-                data-action
-                isLoading={isWeatherLoading}
-                isError={isWeatherError}
-                data={weatherData}
-                isIndoor={isIndoor}
-                onMouseDown={(e) => {
-                  console.log("▶️ Weather onMouseDown");
-                  e.stopPropagation();
-                }}
-                onClick={(e) => {
-                  console.log("✅ Weather onClick");
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setWeatherOpen(true);
-                }}
-              />
-            )}
-          </div>
-        </div>
-      )}
+          );
+        })()}
 
       <SnapshotModal
         gameId={gameId}
