@@ -22,13 +22,36 @@ module.exports = {
         "text-secondary": "#9CA3AF",
         "btn-snapshot": "var(--color-btn-snapshot, #00B140)", // Default to brand-green DEFAULT
         "badge-weather": "var(--color-badge-weather, #FF7F00)", // Default to brand-orange
+        "border-subtle": "var(--color-border-subtle)",
+        "border-strong": "var(--color-border-strong)",
+        muted: "var(--color-text-secondary)",
+        surface: "var(--color-panel)",
+        "surface-hover": "var(--color-surface-hover)",
+        "text-base": "var(--color-text-primary)",
+        "text-muted": "var(--color-text-secondary)",
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        "card-hover": "var(--shadow-card-hover)",
+        focus: "0 0 0 2px rgba(0,177,64,.4)", // accessible green ring
+      },
+      transitionDuration: {
+        120: "120ms",
+        160: "160ms",
+      },
+      screens: {
+        "3xl": "1920px", // optional ultra-wide grid
       },
       fontFamily: {
         sans: ['"Source Sans 3"', ...defaultTheme.fontFamily.sans],
         serif: ['"PT Serif"', ...defaultTheme.fontFamily.serif],
       },
       container: { center: true, padding: "1rem" },
-      borderRadius: { xl: "1rem" },
+      borderRadius: {
+        xl: "1rem",
+        // Compact radius for mobile cards
+        lg: "0.75rem",
+      },
     },
   },
   plugins: [
@@ -38,6 +61,10 @@ module.exports = {
           ({ className }) => `.dark .${e(`dark${separator}${className}`)}`
         );
       });
+      // ARIA state variants
+      addVariant("aria-selected", '&[aria-selected="true"]');
+      addVariant("aria-expanded", '&[aria-expanded="true"]');
+      addVariant("aria-current", '&[aria-current="true"]');
     }),
     forms,
     typography,

@@ -4,6 +4,7 @@
  * Snapshot Modal  |  shows per‑game snapshot for MLB, NBA and NFL
  * ------------------------------------------------------------------*/
 import React, { useRef, useEffect, Suspense, lazy } from "react";
+import { createPortal } from "react-dom";
 import { use_snapshot } from "@/hooks/use_snapshot";
 import HeadlineGrid from "./headline_grid";
 import SkeletonLoader from "../ui/skeleton_loader";
@@ -80,7 +81,10 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isOpen) refetch();
+    if (isOpen) {
+      console.log("SnapshotModal: isOpen true, triggering refetch");
+      refetch();
+    }
   }, [isOpen, refetch]);
 
   useEffect(() => {
@@ -91,7 +95,12 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === "Escape" && isOpen && onClose();
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        console.log("SnapshotModal: Escape key pressed, closing");
+        onClose();
+      }
+    };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [isOpen, onClose]);
@@ -107,7 +116,10 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
           <p>There was an error fetching the game data. Please try again.</p>
           {error && <p className="text-sm mt-2">{error.message}</p>}
           <button
-            onClick={onClose}
+            onClick={() => {
+              console.log("SnapshotModal: Close error modal");
+              onClose();
+            }}
             className="mt-4 px-4 py-2 bg-red-600 rounded-full text-sm font-semibold hover:bg-red-700"
           >
             Close
@@ -120,7 +132,7 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
   /* ------------------------------------------------------------------
    * RENDER
    * ------------------------------------------------------------------*/
-  return (
+  return createPortal(
     <div
       ref={scrollRef}
       role="dialog"
@@ -134,7 +146,10 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
       >
         {/* close btn */}
         <button
-          onClick={onClose}
+          onClick={() => {
+            console.log("SnapshotModal: Close button clicked");
+            onClose();
+          }}
           aria-label="Close snapshot"
           className="absolute top-4 right-4 text-text-secondary hover:text-text-primary z-10 focus-ring"
         >
@@ -265,7 +280,8 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
 
         <div className="h-8" />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
