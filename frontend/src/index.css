@@ -201,6 +201,28 @@ body {
   color: var(--color-text-secondary);
 }
 
+/* Chevron with a subtle shadow-ring */
+.card-chevron {
+  /*
+    - Re-added size/shape for the ring effect.
+    - Used a box-shadow to create a faint 1px border that doesn't affect layout.
+    - Kept the larger, non-bold text for the arrow icon.
+  */
+  @apply inline-flex items-center justify-center w-7 h-7 rounded-full text-xl leading-none;
+  color: var(--color-text-secondary);
+  opacity: 0.7; /* Slightly increased default opacity */
+  transition: all 150ms ease-in-out;
+
+  /* The subtle ring effect */
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.15);
+}
+
+.card-chevron:hover {
+  opacity: 1;
+  /* Make the ring slightly more prominent on hover */
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.3);
+}
+
 /* Pill badge (status chips, sport selector) */
 .pill {
   @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold;
