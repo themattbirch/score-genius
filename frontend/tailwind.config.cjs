@@ -29,6 +29,14 @@ module.exports = {
         "surface-hover": "var(--color-surface-hover)",
         "text-base": "var(--color-text-primary)",
         "text-muted": "var(--color-text-secondary)",
+        "accent-neutral": "var(--color-accent-neutral)",
+        "surface-hover": "var(--color-surface-hover)",
+        "border-subtle": "var(--color-border-subtle)",
+        "border-strong": "var(--color-border-strong)",
+        "pred-badge": "var(--color-pred-badge)",
+        boxShadow: {
+          "howto-glow": "0 0 0 3px rgba(148,163,184,.28)",
+        },
       },
       boxShadow: {
         card: "var(--shadow-card)",

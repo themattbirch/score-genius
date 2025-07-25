@@ -20,6 +20,7 @@
   /* Surfaces */
   --color-bg: #ffffff;
   --color-panel: #f8fafc;
+  --color-accent-neutral: #64748b;
 
   /* Text */
   --color-text-primary: #0d1117;
@@ -65,6 +66,7 @@
   ); /* Using lighter brand green for better contrast in dark mode */
   --color-badge-weather: rgba(34, 197, 94, 0.5);
   --color-border-subtle: rgba(51, 65, 85, 0.6);
+  --color-accent-neutral: #94a3b8;
 
   --color-pred-badge: #00a530;
 
@@ -212,15 +214,26 @@ body {
   color: var(--color-text-secondary);
   opacity: 0.7; /* Slightly increased default opacity */
   transition: all 150ms ease-in-out;
+}
 
-  /* The subtle ring effect */
-  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.15);
+/* Final Chevron Icon */
+.card-chevron {
+  @apply inline-flex items-center justify-center text-xl leading-none;
+  color: #96a69d; /* Muted grey-green for light mode */
+  opacity: 0.8;
+  transition: opacity 150ms ease-in-out;
 }
 
 .card-chevron:hover {
   opacity: 1;
-  /* Make the ring slightly more prominent on hover */
-  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.3);
+}
+
+/*
+  Applies a darker, more subtle green when a parent element
+  has the .dark class.
+*/
+.dark .card-chevron {
+  color: #5e7368; /* Desaturated green for dark mode */
 }
 
 /* Pill badge (status chips, sport selector) */
@@ -248,6 +261,49 @@ body {
   display: inline-block;
   height: 32px; /* pick your mobile navbar height */
   width: auto;
+}
+
+/* ---------- How To Use timeline ---------- */
+.howto-steps {
+  @apply relative space-y-10 pl-10;
+}
+.howto-steps::before {
+  content: "";
+  @apply absolute top-0 bottom-0 left-6 w-px bg-slate-300 dark:bg-slate-600/60;
+}
+
+.howto-step {
+  @apply relative flex gap-4;
+}
+.howto-step-num {
+  @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full
+         bg-brand-green text-white text-sm font-semibold;
+  line-height: 1; /* prevent vertical mis-align */
+  margin-left: -2.5rem; /* pulls number over the vertical line */
+}
+
+.howto-step-body h2 {
+  @apply text-lg font-semibold text-brand-green;
+}
+.howto-step-body p {
+  @apply mt-1 text-sm leading-relaxed text-slate-600 dark:text-text-secondary;
+}
+
+/* Chevron pill */
+.howto-chevron {
+  @apply inline-flex h-7 w-7 items-center justify-center rounded-full
+         border border-slate-300 dark:border-slate-600/60
+         text-slate-600 dark:text-text-secondary text-base;
+  line-height: 1; /* keep glyph centered vertically */
+}
+
+/* Demo chip/button */
+.howto-chip-demo {
+  @apply inline-flex items-center gap-1 rounded-lg border
+         border-slate-300 dark:border-slate-600/60
+         bg-[var(--color-panel)] px-3 py-1.5 text-sm font-medium
+         text-slate-700 dark:text-text-primary hover:bg-slate-100
+         dark:hover:bg-slate-700/30 transition-colors focus-ring;
 }
 
 /* Focus ring for interactive elements */
