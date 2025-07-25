@@ -1,13 +1,21 @@
 // frontend/src/components/games/game_card.tsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  lazy,
+  Suspense,
+  memo,
+} from "react";
 import { UnifiedGame, Sport } from "@/types";
 import { useSport } from "@/contexts/sport_context";
 
 import { useWeather } from "@/hooks/use_weather";
 import WeatherBadge from "./weather_badge";
-import WeatherModal from "./weather_modal";
+const WeatherModal = lazy(() => import("./weather_modal"));
 import SnapshotButton from "./snapshot_button";
-import SnapshotModal from "./snapshot_modal";
+const SnapshotModal = lazy(() => import("./snapshot_modal"));
 
 /* ------------------------------------------------------------ */
 /* Helpers                                                      */
@@ -54,7 +62,7 @@ interface GameCardProps {
   forceCompact?: boolean;
 }
 
-const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
+const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const { sport: contextSport } = useSport();
   const isDesktop = useIsDesktop();
   const compactDefault = forceCompact ?? !isDesktop;
@@ -62,14 +70,6 @@ const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const [expanded, setExpanded] = useState<boolean>(!compactDefault);
   const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
-
-  // Log when modal states change
-  useEffect(() => {
-    console.log("snapshotOpen state:", snapshotOpen);
-  }, [snapshotOpen]);
-  useEffect(() => {
-    console.log("weatherOpen state:", weatherOpen);
-  }, [weatherOpen]);
 
   useEffect(() => {
     setExpanded(!compactDefault);
@@ -97,7 +97,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   } = game;
 
   // 1. Differentiate between sports that need a weather API call vs. just UI
-  const shouldFetchWeather = sport === "MLB" || sport === "NFL";
+  const shouldFetchWeather = sport === "MLB" || (sport === "NFL" && expanded);
   const isNBA = sport === "NBA";
   const showWeatherUI = shouldFetchWeather || isNBA;
 
@@ -133,27 +133,26 @@ const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const hasPrediction =
     dataType === "schedule" && predAway != null && predHome != null;
 
-  const toggleExpanded = () => {
-    console.log("toggleExpanded fired, previous expanded:", expanded);
+  const toggleExpanded = useCallback(() => {
     setExpanded((prev) => !prev);
-  };
+  }, []);
 
   // Ignore clicks that originate inside elements marked data-action
-  const handleCardClick = (e: React.MouseEvent<HTMLElement>) => {
-    console.log("CARD click", { compactDefault, target: e.target });
-    if (!compactDefault) return; // desktop: do nothing
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-action]")) {
-      console.log("CARD click ignored due to data-action");
-      return; // let the chip handle it
-    }
-    toggleExpanded();
-  };
-
+  const handleCardClick = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      if (!compactDefault) return; // desktop: do nothing
+      const target = e.target as HTMLElement;
+      if (target.closest("[data-action]")) {
+        return; // let the chip handle it
+      }
+      toggleExpanded();
+    },
+    [compactDefault, toggleExpanded]
+  );
   return (
     <article
       data-tour="game-card"
-      className={`app-card ripple
+      className={`app-card ripple contain-layout
       ${compactDefault ? "app-card--compact" : ""}
       ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
       aria-expanded={expanded}
@@ -166,9 +165,8 @@ const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
         tabIndex={compactDefault ? 0 : -1}
         onKeyDown={
           compactDefault
-            ? (e) => {
+            ? (e: React.KeyboardEvent<HTMLElement>) => {
                 if (e.key === "Enter" || e.key === " ") {
-                  console.log("HEADER key press toggled expanded");
                   e.preventDefault();
                   toggleExpanded();
                 }
@@ -273,23 +271,24 @@ const GameCard: React.FC<GameCardProps> = ({ game, forceCompact }) => {
             </div>
           );
         })()}
+      <Suspense fallback={null}>
+        <SnapshotModal
+          gameId={gameId}
+          sport={sport as Sport}
+          isOpen={snapshotOpen}
+          onClose={() => setSnapshotOpen(false)}
+        />
 
-      <SnapshotModal
-        gameId={gameId}
-        sport={sport as Sport}
-        isOpen={snapshotOpen}
-        onClose={() => setSnapshotOpen(false)}
-      />
-
-      <WeatherModal
-        isOpen={weatherOpen}
-        onClose={() => setWeatherOpen(false)}
-        weatherData={weatherData}
-        // And use the new variable here as well
-        isIndoor={isEffectivelyIndoor}
-      />
+        <WeatherModal
+          isOpen={weatherOpen}
+          onClose={() => setWeatherOpen(false)}
+          weatherData={weatherData}
+          // And use the new variable here as well
+          isIndoor={isEffectivelyIndoor}
+        />
+      </Suspense>
     </article>
   );
 };
-
+const GameCard = memo(GameCardComponent);
 export default GameCard;

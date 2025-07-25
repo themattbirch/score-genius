@@ -306,6 +306,14 @@ body {
          dark:hover:bg-slate-700/30 transition-colors focus-ring;
 }
 
+.layout-container {
+  contain: layout;
+}
+
+.contain-layout {
+  contain: layout;
+}
+
 /* Focus ring for interactive elements */
 @layer components {
   .focus-ring {

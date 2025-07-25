@@ -12,8 +12,14 @@ const StatsScreen = React.lazy(() => import("./screens/stats_screen"));
 const MoreScreen = React.lazy(() => import("./screens/more_screen"));
 const HowToUseScreen = React.lazy(() => import("./screens/how_to_use_screen"));
 
+// Lazy‑load TourProvider for code splitting
+const LazyTourProvider = React.lazy(() =>
+  import("@/components/ui/joyride_tour").then((mod) => ({
+    default: mod.TourProvider,
+  }))
+);
+
 // Context & layout imports
-import { TourProvider } from "@/components/ui/joyride_tour";
 import Header from "./components/layout/Header";
 import { SportProvider } from "./contexts/sport_context";
 import { DateProvider } from "@/contexts/date_context";
@@ -22,7 +28,7 @@ import { ThemeProvider } from "./contexts/theme_context";
 
 // Memoized Layout: re‑renders only when outlet changes
 const Layout: React.FC = memo(() => (
-  <div className="flex h-screen flex-col">
+  <div className="layout-container flex h-screen flex-col">
     <Header />
     <main className="flex flex-col flex-1 overflow-auto pb-14 lg:pb-0">
       <Outlet />
@@ -42,23 +48,25 @@ const Loader: React.FC<{ message?: string }> = ({ message = "Loading…" }) => (
 const App: React.FC = () => (
   <ThemeProvider>
     <SportProvider>
-      <TourProvider>
-        <DateProvider>
-          <Suspense fallback={<Loader />}>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route index element={<Navigate to="/games" replace />} />
-                <Route path="games" element={<GamesScreen />} />
-                <Route path="games/:gameId" element={<GameDetailScreen />} />
-                <Route path="stats" element={<StatsScreen />} />
-                <Route path="more" element={<MoreScreen />} />
-                <Route path="how-to-use" element={<HowToUseScreen />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/games" replace />} />
-            </Routes>
-          </Suspense>
-        </DateProvider>
-      </TourProvider>
+      <Suspense fallback={<></>}>
+        <LazyTourProvider>
+          <DateProvider>
+            <Suspense fallback={<Loader />}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route index element={<Navigate to="/games" replace />} />
+                  <Route path="games" element={<GamesScreen />} />
+                  <Route path="games/:gameId" element={<GameDetailScreen />} />
+                  <Route path="stats" element={<StatsScreen />} />
+                  <Route path="more" element={<MoreScreen />} />
+                  <Route path="how-to-use" element={<HowToUseScreen />} />
+                </Route>
+                <Route path="*" element={<Navigate to="/games" replace />} />
+              </Routes>
+            </Suspense>
+          </DateProvider>
+        </LazyTourProvider>
+      </Suspense>
     </SportProvider>
   </ThemeProvider>
 );

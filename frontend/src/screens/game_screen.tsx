@@ -35,7 +35,7 @@ const GamesScreen: React.FC = () => {
   return (
     <main className="flex flex-col flex-1 overflow-hidden">
       {/* Sticky filters‑bar */}
-      <div className="filters-bar">
+      <div className="filters-bar contain-layout">
         <h1 className="text-base sm:text-lg font-semibold">
           {sport} Games for {formattedDate}
         </h1>
@@ -55,7 +55,7 @@ const GamesScreen: React.FC = () => {
             side="bottom"
             align="end"
             sideOffset={8}
-            className="p-4 w-[20rem] bg-[var(--color-panel)] rounded-lg shadow-lg"
+            className="p-4 w-[20rem] bg-[var(--color-panel)] rounded-lg shadow-lg contain-layout"
           >
             <Calendar
               selected={date}
@@ -67,7 +67,7 @@ const GamesScreen: React.FC = () => {
       </div>
 
       {/* Content */}
-      <section className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+      <section className="flex-1 overflow-y-auto px-6 py-6 space-y-6 contain-layout">
         {isLoading ? (
           /* skeleton list */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
