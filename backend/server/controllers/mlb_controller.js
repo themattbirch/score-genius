@@ -23,7 +23,7 @@ export const getMlbSchedule = async (req, res /* , next */) => {
 
     /* 3 ▸ Empty vs. populated ------------------------------ */
     if (scheduleData.length === 0) {
-      return res.status(204).json({
+      return res.status(200).json({
         message: `No MLB games scheduled for ${date}`,
         retrieved: 0,
         data: [],

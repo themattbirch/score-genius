@@ -1,89 +1,181 @@
+// frontend/src/screens/how_to_use_screen.tsx
 import React, { useState } from "react";
-import { HelpCircle, Play, BarChart4 } from "lucide-react";
+import { HelpCircle, Play, ArrowRight } from "lucide-react";
 import { useTour } from "@/components/ui/joyride_tour";
-import SnapshotModal from "@/components/games/snapshot_modal"; // Import the modal
+import SnapshotModal from "@/components/games/snapshot_modal";
+
+/**
+ * Simple “ghost” pill button for inline examples
+ */
+const GhostPill: React.FC<
+  React.ButtonHTMLAttributes<HTMLButtonElement> & { children: React.ReactNode }
+> = ({ children, className = "", ...props }) => (
+  <button
+    {...props}
+    className={`
+      inline-flex items-center justify-center rounded-2xl border px-4 py-2 text-sm font-semibold
+      border-slate-300 text-slate-600 bg-white/60 hover:bg-white
+      dark:border-slate-600/60 dark:text-slate-300 dark:bg-slate-800/60 dark:hover:bg-slate-800
+      transition-colors focus-ring
+      ${className}
+    `}
+  >
+    {children}
+  </button>
+);
 
 const HowToUseScreen: React.FC = () => {
   const { start } = useTour();
-  const [isSnapshotOpen, setIsSnapshotOpen] = useState(false); // State for the modal
+  const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
 
   return (
-    // Use a React Fragment to wrap the section and the modal
     <>
-      <section className="mx-auto max-w-lg space-y-8 p-6 text-slate-800 dark:text-text-primary">
+      <section
+        className={`
+          mx-auto max-w-lg p-6 md:px-8 lg:px-10
+          text-slate-800 dark:text-text-primary
+          pb-[env(safe-area-inset-bottom)] space-y-10
+        `}
+      >
         {/* Title */}
         <header className="flex items-center gap-2">
           <HelpCircle
-            size={24}
+            size={26}
             strokeWidth={1.8}
             className="stroke-slate-800 dark:stroke-text-primary"
           />
-          <h1 className="text-xl font-semibold text-slate-800 dark:text-text-primary">
+          <h1 className="text-2xl md:text-3xl font-semibold">
             How to Use ScoreGenius
           </h1>
         </header>
 
-        {/* Step list (no changes here) */}
-        <ol className="space-y-8 border-l-2 border-brand-green dark:border-brand-green-light pl-4">
-          <li>
-            <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
-              1. Pick your sport
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
-              Tap NBA or MLB in the header to switch between basketball and
-              baseball views. See buttons as an example:{" "}
-              <span className="pill pill-green mx-1">NBA</span>
-              <span className="pill pill-green mx-1">MLB</span>
-            </p>
+        <ol
+          className={`
+            relative space-y-12 pl-8 sm:pl-9
+            before:absolute before:top-0 before:bottom-0 before:left-4
+            before:w-px before:bg-slate-200 dark:before:bg-slate-700/60
+          `}
+        >
+          {/* 1 */}
+          <li className="relative flex items-start gap-4">
+            <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold motion-safe:animate-pulse">
+              1
+            </span>
+            <div className="flex-1 space-y-3 leading-relaxed">
+              <h2 className="text-brand-green font-semibold text-xl">
+                Pick your sport
+              </h2>
+              <p className="text-base text-slate-600 dark:text-text-secondary">
+                Tap <span className="pill pill-green mx-1">NBA</span> or{" "}
+                <span className="pill pill-green mx-1">MLB</span> in the header
+                to switch views.
+              </p>
+            </div>
           </li>
-          <li>
-            <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
-              2. Browse today’s games
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
-              The <strong>Games</strong> tab lists scheduled matchups. Tap a
-              game for detailed predictions, betting edges, and injury news.
-            </p>
+
+          {/* 2 */}
+          <li className="relative flex items-start gap-4">
+            <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold">
+              2
+            </span>
+            <div className="flex-1 space-y-3 leading-relaxed">
+              <h2 className="text-brand-green font-semibold text-xl">
+                Browse games &amp; expand
+              </h2>
+              <p className="text-base text-slate-600 dark:text-text-secondary">
+                In the <strong>Games</strong> tab you’ll see today’s matchups.
+                Use the calendar to change dates.
+              </p>
+              <p className="text-base text-slate-600 dark:text-text-secondary">
+                <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                  Click the
+                  <span className="card-chevron ring-1 ring-slate-300/60 dark:ring-slate-600/60 motion-safe:animate-pulse">
+                    ▾
+                  </span>
+                  on any game card to expand it.
+                </span>
+              </p>
+            </div>
           </li>
-          <li>
-            <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
-              3. Compare model vs. market
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
-              Green numbers signal positive value compared to Vegas odds; red
-              means caution. Lines update in real time as odds shift.
-            </p>
+
+          {/* 3 */}
+          <li className="relative flex items-start gap-4">
+            <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold">
+              3
+            </span>
+            <div className="flex-1 space-y-4 leading-relaxed">
+              <h2 className="text-brand-green font-semibold text-xl">
+                H2H Stats &amp; Weather
+              </h2>
+              <p className="text-base text-slate-600 dark:text-text-secondary">
+                After expanding, click{" "}
+                <GhostPill
+                  type="button"
+                  aria-label="H2H Stats example"
+                  onClick={(e) => e.preventDefault()}
+                  className="mx-1"
+                >
+                  H2H Stats
+                </GhostPill>{" "}
+                for head‑to‑head analysis or{" "}
+                <GhostPill
+                  type="button"
+                  aria-label="Weather example"
+                  onClick={(e) => e.preventDefault()}
+                  className="mx-1"
+                >
+                  Weather
+                </GhostPill>{" "}
+                for ballpark forecast.
+              </p>
+              <div>
+                <GhostPill
+                  type="button"
+                  aria-label="Snapshot demo"
+                  onClick={() => setIsSnapshotOpen(true)}
+                  className="mt-2 border-l-2 border-brand-green/70 pl-5 pr-4 py-2 inline-flex gap-2 text-base font-medium"
+                >
+                  View snapshot demo <ArrowRight size={18} strokeWidth={2} />
+                </GhostPill>
+              </div>
+            </div>
           </li>
-          <li>
-            <h2 className="font-semibold text-slate-800 dark:text-brand-green mb-1">
-              4. Deep-dive stats
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">
-              In the <strong>Stats</strong> tab, explore team rankings, advanced
-              metrics, and sort any column header to re-order the table.
-            </p>
+
+          {/* 4 */}
+          <li className="relative flex items-start gap-4">
+            <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold">
+              4
+            </span>
+            <div className="flex-1 space-y-3 leading-relaxed">
+              <h2 className="text-brand-green font-semibold text-xl">
+                Explore advanced stats
+              </h2>
+              <p className="text-base text-slate-600 dark:text-text-secondary">
+                Switch to the <strong>Stats</strong> tab for team and player
+                rankings, plus advanced metrics. Click any column header to
+                sort.
+              </p>
+            </div>
           </li>
         </ol>
 
-        {/* --- Action Buttons Container --- */}
-        <div className="flex flex-col items-center gap-4 pt-4">
-          {/* Launch Joyride Button */}
+        {/* CTA */}
+        <div className="pt-2">
           <button
             onClick={start}
-            className="flex w-full max-w-xs items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-green px-6 py-4 text-base font-semibold text-white shadow-sm hover:bg-brand-green/90 focus-ring transition-colors"
           >
-            <Play size={16} strokeWidth={2} />
+            <Play size={18} strokeWidth={2.2} />
             Start Interactive Tour
           </button>
         </div>
       </section>
 
-      {/* --- Snapshot Modal Component --- */}
       <SnapshotModal
         isOpen={isSnapshotOpen}
         onClose={() => setIsSnapshotOpen(false)}
-        gameId="13466"
-        sport="NFL"
+        gameId="164864"
+        sport="MLB"
       />
     </>
   );
