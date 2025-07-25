@@ -1,6 +1,7 @@
 // frontend/src/components/games/weather_modal.tsx
 
 import React from "react";
+import { createPortal } from "react-dom";
 import type { WeatherData } from "@/types";
 
 export interface WeatherModalProps {
@@ -22,7 +23,7 @@ const WeatherModal: React.FC<WeatherModalProps> = ({
   const city = weatherData?.city ?? "—";
   const stadiumName = (weatherData as any)?.stadium ?? "Indoor Venue";
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-slate-800 text-white rounded-lg w-80 p-6 space-y-4">
         {/* header */}
@@ -95,7 +96,8 @@ const WeatherModal: React.FC<WeatherModalProps> = ({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

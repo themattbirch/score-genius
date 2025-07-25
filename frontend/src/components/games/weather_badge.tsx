@@ -1,75 +1,103 @@
 // frontend/src/components/games/weather_badge.tsx
-
-import React from "react";
+import React, { MouseEventHandler, CSSProperties } from "react";
 import type { WeatherData } from "@/types";
 
-export interface WeatherBadgeProps {
+export interface WeatherBadgeProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading: boolean;
   isError: boolean;
-  data: WeatherData | undefined;
+  data?: WeatherData;
   isIndoor?: boolean;
-  onClick: () => void;
 }
 
 const WeatherBadge: React.FC<WeatherBadgeProps> = ({
+  className,
   isLoading,
   isError,
   data,
   isIndoor,
   onClick,
+  ...rest // <-- 1. Collect other props
 }) => {
-  /* ─── indoor venue ─────────────────────────────────────────────── */
+  // 1) capture-phase guard
+  const handleMouseDown: React.MouseEventHandler<HTMLButtonElement> = (e) => {
+    console.log("▶️ WeatherBadge onMouseDown (capture)");
+    e.stopPropagation();
+  };
+
+  // 2) bubbling-phase click
+  const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
+    console.log("✅ WeatherBadge onClick (bubbling)");
+    onClick?.(e);
+  };
+
+  const base = `quick-action-chip ${className ?? ""}`;
+  const disabledCls = "opacity-60 cursor-not-allowed pointer-events-none";
+
   if (isIndoor) {
     return (
       <button
+        type="button"
         onClick={onClick}
         data-tour="weather-badge"
-        className="rounded-full bg-amber-600/90 hover:bg-amber-700 px-4 py-2 text-sm font-semibold text-white"
+        className={`${base}`}
+        {...rest} // <-- 2. Apply them here
       >
-        Indoor Game
+        🏟️ Indoor
       </button>
     );
   }
 
-  /* ─── loading / error states ───────────────────────────────────── */
-  if (isLoading)
+  if (isLoading) {
     return (
       <button
+        type="button"
         disabled
         data-tour="weather-badge"
-        className="rounded-full bg-slate-400 px-4 py-2 text-sm text-white"
+        className={`${base} ${disabledCls}`}
+        {...rest} // <-- 2. And here
       >
         Loading…
       </button>
     );
+  }
 
-  if (isError || !data)
+  if (isError || !data) {
     return (
       <button
+        type="button"
         disabled
         data-tour="weather-badge"
-        className="rounded-full bg-red-500/80 px-4 py-2 text-sm text-white"
+        className={`${base} ${disabledCls}`}
+        {...rest} // <-- 2. And here
       >
         N/A
       </button>
     );
+  }
 
-  /* ─── outdoor: render temp / wind ───────────────────────────────── */
+  const { temperature, windSpeed, ballparkWindAngle } = data;
+  const angle = typeof ballparkWindAngle === "number" ? ballparkWindAngle : 0;
+  const arrowStyle: CSSProperties = { transform: `rotate(${angle}deg)` };
+
   return (
     <button
-      onClick={onClick}
+      type="button"
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
       data-tour="weather-badge"
-      className="rounded-full bg-green-700 hover:bg-green-800 px-4 py-2 flex items-center space-x-1 text-xs font-semibold text-white"
+      className={base}
+      {...rest} // <-- 2. And finally, here
     >
-      {/* arrow icon */}
       <span
-        className="inline-block rotate-[-45deg]"
-        style={{ transform: `rotate(${data.ballparkWindAngle}deg)` }}
+        className="inline-block leading-none"
+        style={arrowStyle}
+        aria-hidden="true"
       >
         ↑
       </span>
-      <span>
-        {data.temperature}°F / {data.windSpeed}mph
+      <span className="whitespace-nowrap text-xs font-semibold">
+        {temperature}°F / {windSpeed}mph
       </span>
     </button>
   );

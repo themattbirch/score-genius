@@ -1,12 +1,9 @@
 // frontend/src/screens/game_screen.tsx
 
-import React, { useLayoutEffect, useRef, useState, memo } from "react";
-import { FixedSizeList as List, ListChildComponentProps } from "react-window";
-// @ts-ignore – no types published
-import AutoSizer from "react-virtualized-auto-sizer";
+import React, { memo } from "react";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
-import { Calendar as CalendarIcon } from "lucide-react";
 import {
   Popover,
   PopoverTrigger,
@@ -18,75 +15,42 @@ import { useMLBSchedule } from "@/api/use_mlb_schedule";
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import NBAScheduleDisplay from "@/components/schedule/nba_schedule_display";
 import MLBScheduleDisplay from "@/components/schedule/mlb_schedule_display";
+import SkeletonBox from "@/components/ui/skeleton_box";
 import { getLocalYYYYMMDD } from "@/utils/date";
-import type { UnifiedGame } from "@/types";
-
-/* -------------------------------------------------------------------------- */
-/*                               List helpers                                 */
-/* -------------------------------------------------------------------------- */
-
-const Row = ({
-  index,
-  style,
-  data,
-}: ListChildComponentProps<UnifiedGame[]>) => (
-  <div style={style} className="box-border">
-    <GameCard game={data[index]} />
-  </div>
-);
-
-/* -------------------------------------------------------------------------- */
-/*                                 Screen                                      */
-/* -------------------------------------------------------------------------- */
 
 const GamesScreen: React.FC = () => {
   const { sport } = useSport();
   const { date, setDate } = useDate();
 
-  /* -------------------------- fetch the schedule -------------------------- */
   const apiDate = getLocalYYYYMMDD(date);
   const { data: games = [], isLoading } =
     sport === "NBA" ? useNBASchedule(apiDate) : useMLBSchedule(apiDate);
 
-  /* ---------------------- measure card height once ------------------------ */
-  const [rowHeight, setRowHeight] = useState<number | null>(null);
-  const probeRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    if (rowHeight == null && probeRef.current) {
-      const h = probeRef.current.getBoundingClientRect().height;
-      if (h) setRowHeight(Math.ceil(h));
-    }
-  }, [rowHeight, games]);
-
-  /* -------------------------- render helpers ----------------------------- */
   const formattedDate = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });
 
-  /* ---------------------------------------------------------------------- */
-  /*                                JSX                                     */
-  /* ---------------------------------------------------------------------- */
+  /* -------------------------------------------------- render */
   return (
-    <main className="flex flex-col flex-1 h-full overflow-hidden pt-6 px-6 md:px-8 lg:px-12">
-      {/* Toolbar */}
-      <div className="flex-none mb-6 flex items-center justify-between">
-        <h1 className="text-lg font-semibold dark:text-text-primary">
+    <main className="flex flex-col flex-1 overflow-hidden">
+      {/* Sticky filters‑bar */}
+      <div className="filters-bar">
+        <h1 className="text-base sm:text-lg font-semibold">
           {sport} Games for {formattedDate}
         </h1>
+
         <Popover>
           <PopoverTrigger asChild>
             <button
               data-tour="date-picker"
-              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm
-                         border-slate-300 bg-white text-slate-700 hover:bg-gray-50
-                         dark:border-slate-600/60 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              className="pill border text-sm gap-1 bg-surface hover:bg-surface-hover border-border-subtle focus-ring"
             >
               <CalendarIcon size={16} strokeWidth={1.8} />
               {formattedDate}
             </button>
           </PopoverTrigger>
+
           <PopoverContent
             side="bottom"
             align="end"
@@ -103,36 +67,29 @@ const GamesScreen: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-0">
+      <section className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {isLoading ? (
-          <p className="text-sm text-gray-400">Loading…</p>
+          /* skeleton list */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonBox key={i} className="app-card h-32 w-full" />
+            ))}
+          </div>
         ) : games.length === 0 ? (
           sport === "NBA" ? (
             <NBAScheduleDisplay key="nba-fallback" />
           ) : (
             <MLBScheduleDisplay key="mlb-fallback" />
           )
-        ) : rowHeight == null ? (
-          // Render one invisible card to measure actual height
-          <div ref={probeRef} className="opacity-0 pointer-events-none px-4">
-            <GameCard game={games[0]} />
-          </div>
         ) : (
-          <AutoSizer>
-            {({ height, width }: { height: number; width: number }) => (
-              <List
-                height={height}
-                width={width}
-                itemCount={games.length}
-                itemSize={rowHeight}
-                itemData={games}
-              >
-                {Row}
-              </List>
-            )}
-          </AutoSizer>
+          /* responsive grid of cards */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {games.map((g) => (
+              <GameCard key={g.id} game={g} />
+            ))}
+          </div>
         )}
-      </div>
+      </section>
     </main>
   );
 };
