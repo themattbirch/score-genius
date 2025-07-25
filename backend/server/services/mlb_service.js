@@ -3,7 +3,6 @@
 import supabase from "../utils/supabase_client.js";
 import { DateTime } from "luxon";
 import cache from "../utils/cache.js";
-import { fetch } from "undici";
 
 const MLB_SCHEDULE_TABLE = "mlb_game_schedule";
 const MLB_HISTORICAL_GAMES_TABLE = "mlb_historical_game_stats";
