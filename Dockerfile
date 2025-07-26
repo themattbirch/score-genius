@@ -82,7 +82,7 @@ COPY --from=builder /app/frontend/dist/icons \
 # Copy the entire 'app' directory, including the SW and its Workbox dependency
 RUN mkdir -p backend/server/static/app
 # copy offline shell
-COPY --from=builder /app/frontend/dist/offline.html \
+COPY --from=builder /app/frontend/dist/app/offline.html \
      backend/server/static/app/
 
 # copy the generated SW + runtime
