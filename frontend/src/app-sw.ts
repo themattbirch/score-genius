@@ -34,20 +34,16 @@ self.addEventListener("fetch", (event) => {
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
-/* ---------- HTML navigate ---------- */
+/* ---------- HTML navigate (network ↔ cache fallback) ---------- */
 registerRoute(
-  ({ request, url }) =>
-    request.mode === "navigate" && url.pathname.startsWith("/app"),
-  new NetworkOnly({
+  ({ request }) => request.mode === "navigate",
+  new NetworkFirst({
+    cacheName: "pages-cache",
+    networkTimeoutSeconds: 3,
     plugins: [
       {
-        handlerDidError: async () => {
-          // immediately reload all client windows into offline.html
-          const clientsList = await self.clients.matchAll({ type: "window" });
-          clientsList.forEach((win) => win.navigate("/app/offline.html"));
-          // then return the offline page from cache
-          return matchPrecache("/app/offline.html");
-        },
+        // On network failure, serve the precached offline.html
+        handlerDidError: () => matchPrecache("/app/offline.html"),
       },
     ],
   })
