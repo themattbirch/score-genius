@@ -32,16 +32,15 @@ export default defineConfig(({ mode }) => {
         workbox: {
           swDest: "dist/app/app-sw.js",
           globPatterns: ["**/*.{js,css,html,svg,json,woff2}"],
-          // This rule tells the SW what URL to serve when offline.
+
+          // This is the global fallback for any failed navigation.
           navigateFallback: "/app/offline.html",
 
-          // ✅ THE FINAL FIX: This adds the offline page to the precache list
-          // using the exact URL key that navigateFallback needs to find it.
+          // This ensures the offline page is in the precache so navigateFallback can find it.
           additionalManifestEntries: [
             { url: "/app/offline.html", revision: null },
           ],
 
-          // Your runtimeCaching rules remain the same.
           runtimeCaching: [
             {
               urlPattern: ({ request }) =>
@@ -58,6 +57,18 @@ export default defineConfig(({ mode }) => {
               options: {
                 cacheName: "img-cache",
                 expiration: { maxEntries: 60, maxAgeSeconds: 2592000 },
+              },
+            },
+            // ✅ This makes your app pages load instantly from the cache while
+            // updating in the background. If a page isn't in the cache and the
+            // network is down, the navigateFallback above will be used.
+            {
+              urlPattern: ({ request }) =>
+                request.mode === "navigate" && request.url.includes("/app/"),
+              handler: "StaleWhileRevalidate",
+              options: {
+                cacheName: "app-pages",
+                // ⛔️ REMOVED: The complex plugin with the syntax error is gone.
               },
             },
           ],
