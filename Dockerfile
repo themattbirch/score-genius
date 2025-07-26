@@ -82,15 +82,15 @@ COPY --from=builder /app/frontend/dist/icons \
 # ─── Copy generated PWA assets ─────────────────────────────────────────────
 RUN mkdir -p backend/server/static/app
 
-# 1) offline.html  
-COPY --from=builder /app/frontend/dist/offline.html \
+# 1) offline.html lives under dist/app/
+COPY --from=builder /app/frontend/dist/app/offline.html \
      backend/server/static/app/offline.html
 
-# 2) the service worker itself  
-COPY --from=builder /app/frontend/dist/sw.js \
+# 2) the service worker (named app‑sw.js at the dist root)
+COPY --from=builder /app/frontend/dist/app-sw.js \
      backend/server/static/app/app-sw.js
 
-# 3) the Workbox runtime that generateSW emitted  
+# 3) the Workbox runtime that generateSW emitted at the dist root
 COPY --from=builder /app/frontend/dist/workbox-*.js \
      backend/server/static/app/
 
