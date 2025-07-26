@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       strategies: "injectManifest",
       registerType: "autoUpdate",
+      filename: "app-sw.js",
       injectRegister: false,
       workbox: {
         skipWaiting: true,
