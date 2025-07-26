@@ -13,7 +13,7 @@ export default defineConfig({
       srcDir: "src",
       filename: "app-sw.js",
       injectManifest: {
-        swSrc: "src/app-sw.ts",
+        swSrc: "app-sw.ts",
       },
       injectRegister: false,
       includeAssets: ["app/offline.html"],
