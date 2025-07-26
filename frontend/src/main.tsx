@@ -24,24 +24,47 @@ if (!container) throw new Error("Root element not found");
 // Only register the service worker for production builds
 // ─── Service Worker Registration ─────────────────────────────────────────────
 if ("serviceWorker" in navigator && !import.meta.env.DEV) {
-  const updateSW = registerSW({
-    immediate: true,
-    onOfflineReady() {
-      console.log("✅ App ready to work offline");
-    },
-    onNeedRefresh() {
-      if (confirm("A new version is available. Reload now?")) {
-        updateSW?.();
-      }
-    },
-  });
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register(
+        "/app/app‑sw.js",
+        { scope: "/app/" }
+      );
 
-  // reload once the new SW takes control
-  let refreshing = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (refreshing) return;
-    window.location.reload();
-    refreshing = true;
+      // when a new SW is found...
+      registration.addEventListener("updatefound", () => {
+        const newSW = registration.installing;
+        if (newSW) {
+          newSW.addEventListener("statechange", () => {
+            if (
+              newSW.state === "installed" &&
+              navigator.serviceWorker.controller
+            ) {
+              // an update is ready
+              if (confirm("🔄 New version available—reload now?")) {
+                window.location.reload();
+              }
+            }
+          });
+        }
+      });
+
+      // force page reload once the SW takes control
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!refreshing) {
+          window.location.reload();
+          refreshing = true;
+        }
+      });
+
+      console.log(
+        "✅ Service worker registered with scope:",
+        registration.scope
+      );
+    } catch (err) {
+      console.error("⚠️ SW registration failed:", err);
+    }
   });
 }
 
