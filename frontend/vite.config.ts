@@ -11,7 +11,6 @@ export default defineConfig({
     VitePWA({
       strategies: "injectManifest",
       srcDir: "src",
-      filename: "app-sw.js",
       injectManifest: {
         swSrc: "src/app-sw.ts",
       },
