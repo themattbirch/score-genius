@@ -20,12 +20,11 @@ const queryClient = new QueryClient({
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "app-sw.js";
+const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "/app-sw.js";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker
-    .register(swUrl)
+    .register(swUrl, { scope: "/app/" })
     .then((reg) => {
-      // On new SW waiting, skip waiting right away
       if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
       reg.addEventListener("updatefound", () => {
         const w = reg.installing;
@@ -36,7 +35,6 @@ if ("serviceWorker" in navigator) {
           }
         });
       });
-      // Reload when the new worker takes over
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         location.reload();
       });
