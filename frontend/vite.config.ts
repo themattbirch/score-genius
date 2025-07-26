@@ -25,30 +25,44 @@ export default defineConfig(({ mode }) => {
 
       // ---------- PWA (scoped to /app) ----------
       VitePWA({
-        devOptions: { enabled: true, type: "module" },
-        strategies: "injectManifest",
-        srcDir: "src",
-        filename: "app/app-sw.ts",
-        injectRegister: false,
-        includeAssets: [
-          "app/offline.html",
-          "splash_screen.html",
-          "manifest.webmanifest",
-          "images/basketball.svg",
-          "icons/*",
-        ],
-        // Control what Workbox scans & injects when using `injectManifest`
-        injectManifest: {
-          // drop the `.ico` extension so it's never injected
+        // Use the stable 'generateSW' strategy
+        strategies: "generateSW",
+        // registerType: 'autoUpdate' is fine
+        registerType: "autoUpdate",
+        workbox: {
+          // This MUST be the name of the final file.
+          swDest: "dist/app/app-sw.js",
+          // Define the files to be precached.
           globPatterns: ["**/*.{js,css,html,svg,json,woff2}"],
-          globIgnores: [
-            "**/favicon.ico",
-            "**/basketball_header_logo.png",
-            "**/orange_football_header_logo.png",
-            "**/data/**",
+          // Define the URL for offline fallback. This is the page that will be shown.
+          navigateFallback: "/app/offline.html",
+          // Ensure that your offline page itself is precached.
+          additionalManifestEntries: [
+            { url: "app/offline.html", revision: null },
+          ],
+          // Replicate the caching strategies from your old app-sw.ts file
+          runtimeCaching: [
+            {
+              // For assets like JS, CSS
+              urlPattern: ({ request }) =>
+                ["style", "script", "worker"].includes(request.destination),
+              handler: "StaleWhileRevalidate",
+              options: {
+                cacheName: "assets-cache",
+                expiration: { maxEntries: 50, maxAgeSeconds: 86400 }, // 1 day
+              },
+            },
+            {
+              // For images
+              urlPattern: ({ request }) => request.destination === "image",
+              handler: "CacheFirst",
+              options: {
+                cacheName: "img-cache",
+                expiration: { maxEntries: 60, maxAgeSeconds: 2592000 }, // 30 days
+              },
+            },
           ],
         },
-        registerType: "autoUpdate",
         manifest: {
           name: "ScoreGenius",
           short_name: "ScoreGenius",
