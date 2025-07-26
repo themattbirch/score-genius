@@ -1,5 +1,8 @@
 // src/app-sw.ts
 /// <reference lib="webworker" />
+/// <reference lib="webworker" />
+declare const self: ServiceWorkerGlobalScope;
+
 import {
   precacheAndRoute,
   cleanupOutdatedCaches,
@@ -15,45 +18,52 @@ import { ExpirationPlugin } from "workbox-expiration";
 import { clientsClaim } from "workbox-core";
 import type { HandlerCallbackOptions } from "workbox-core/types.js";
 
-declare let self: ServiceWorkerGlobalScope;
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
+const OFFLINE_URL = "/app/offline.html";
+const PAGE_CACHE = "pages-cache-v1";
+const ASSET_CACHE = "assets-cache-v1";
+const IMG_CACHE = "img-cache-v1";
 
-// ✅ CHANGED: Removed leading slash to match the precache manifest key
-const OFFLINE_URL = "app/offline.html";
-
-/* ---------- core ---------- */
+// -----------------------------------------------------------------------------
+// Core lifecycle
+// -----------------------------------------------------------------------------
 clientsClaim();
-// ℹ️ self.skipWaiting() at the top is redundant with the message listener below.
+self.skipWaiting();
 
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (url.origin === "https://www.googletagmanager.com") {
-    event.stopImmediatePropagation();
-    return;
-  }
-});
-
-precacheAndRoute(self.__WB_MANIFEST);
+precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
 cleanupOutdatedCaches();
 
-/* ---------- HTML navigations (network-first + robust fallback) ---------- */
+// -----------------------------------------------------------------------------
+// Navigation requests → NetworkFirst with safer fallback
+// -----------------------------------------------------------------------------
 const networkFirstPages = new NetworkFirst({
-  cacheName: "pages-cache",
-  networkTimeoutSeconds: 3,
+  cacheName: PAGE_CACHE,
+  networkTimeoutSeconds: 1.5,
+  plugins: [
+    {
+      cacheWillUpdate: async ({ request, response }) => {
+        if (!response || response.status !== 200) return null;
+        if (new URL(request.url).pathname === OFFLINE_URL) return null;
+        return response;
+      },
+    },
+  ],
 });
 
 registerRoute(
   ({ request }) => request.mode === "navigate",
   async (options: HandlerCallbackOptions): Promise<Response> => {
     try {
-      return await networkFirstPages.handle(options);
+      const resp = await networkFirstPages.handle(options);
+      if (resp) return resp;
+      throw new Error("No response from network");
     } catch {
-      // This will now correctly find the offline page
-      const offlineResponse = await matchPrecache(OFFLINE_URL);
-      if (offlineResponse) {
-        return offlineResponse;
-      }
-      // The final fallback if offline.html is somehow not precached
-      return new Response("You are offline. Please connect to the internet.", {
+      const offlineResp = await matchPrecache(OFFLINE_URL);
+      if (offlineResp) return offlineResp;
+
+      return new Response("You are offline.", {
         status: 503,
         statusText: "Service Unavailable",
         headers: { "Content-Type": "text/html" },
@@ -62,27 +72,33 @@ registerRoute(
   }
 );
 
-/* ---------- assets (css/js/workers) ---------- */
+// -----------------------------------------------------------------------------
+// Assets → StaleWhileRevalidate
+// -----------------------------------------------------------------------------
 registerRoute(
   ({ request }) => ["style", "script", "worker"].includes(request.destination),
   new StaleWhileRevalidate({
-    cacheName: "assets-cache-v1",
+    cacheName: ASSET_CACHE,
     plugins: [new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 86_400 })],
   })
 );
 
-/* ---------- images ---------- */
+// -----------------------------------------------------------------------------
+// Images → CacheFirst
+// -----------------------------------------------------------------------------
 registerRoute(
   ({ request }) => request.destination === "image",
   new CacheFirst({
-    cacheName: "img-cache-v1",
+    cacheName: IMG_CACHE,
     plugins: [
       new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 86_400 }),
     ],
   })
 );
 
-/* ---------- skip-waiting hook ---------- */
+// -----------------------------------------------------------------------------
+// Skip waiting on demand
+// -----------------------------------------------------------------------------
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
