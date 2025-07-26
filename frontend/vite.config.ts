@@ -3,6 +3,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
+import vitePluginImp from "vite-plugin-imp";
+import { visualizer } from "rollup-plugin-visualizer";
 
 export default defineConfig(({ mode }) => {
   // In dev, use your env var (or fallback localhost).
@@ -12,6 +14,23 @@ export default defineConfig(({ mode }) => {
     //
     plugins: [
       react(),
+      vitePluginImp({
+        libList: [
+          {
+            libName: "lodash",
+            libDirectory: "",
+            camel2DashComponentName: false,
+          },
+        ],
+      }),
+
+      // Bundle visualizer
+      visualizer({
+        filename: "dist/stats.html",
+        template: "treemap", // treemap, sunburst, network
+        gzipSize: true, // calculate gzipped sizes
+        brotliSize: true,
+      }),
 
       // ---------- PWA (scoped to /app) ----------
       VitePWA({
@@ -83,7 +102,7 @@ export default defineConfig(({ mode }) => {
     ],
 
     publicDir: "public",
-    resolve: { alias: { "@": resolve(__dirname, "src") } },
+    resolve: { alias: { "@": resolve(__dirname, "src"), lodash: "lodash-es" } },
 
     server: {
       open: "/app",
@@ -108,6 +127,8 @@ export default defineConfig(({ mode }) => {
           index: resolve(__dirname, "public/index.html"),
           app: resolve(__dirname, "app.html"),
         },
+        external: ["date-fns", "@date-fns/tz"],
+
         output: {
           entryFileNames: "assets/[name].[hash].js",
           chunkFileNames: "assets/[name].[name].[hash].js", // Often useful to include [name] for better chunk naming
