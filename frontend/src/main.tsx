@@ -1,47 +1,97 @@
 // src/main.tsx
-import React, { useEffect, lazy, Suspense } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { registerSW } from "virtual:pwa-register";
+import App from "./App";
 import "./index.css";
 
-// lazy‑load the whole app for route‑based splitting
-const App = lazy(() => import("./App"));
-
-// ─── React‑Query setup ────────────────────────────────────────────────────────
+// ─── React‑Query Client ──────────────────────────────────────────────────────
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 120_000, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      staleTime: 120_000,
+      retry: 1,
+    },
+  },
 });
 
-function Bootstrap() {
-  // 1) SW registration on idle
-  useEffect(() => {
-    if ("serviceWorker" in navigator && !import.meta.env.DEV) {
-      window.requestIdleCallback?.(
-        async () => {
-          try {
-            // dynamic import so pwa‑register doesn’t bloat your initial bundle
-            const { registerSW } = await import("virtual:pwa-register");
-            registerSW({ immediate: true });
-          } catch (e) {
-            console.warn("SW registration failed:", e);
-          }
-        },
-        { timeout: 5_000 }
-      );
-    }
-  }, []);
+// ─── Service Worker Registration ─────────────────────────────────────────────
+const container = document.getElementById("root");
+if (!container) throw new Error("Root element not found");
 
-  // 2) Firebase Analytics on idle/interaction
-  useEffect(() => {
-    const initAnalytics = async () => {
-      try {
-        const [{ initializeApp }, { getAnalytics, logEvent }] =
-          await Promise.all([
-            import("firebase/app"),
-            import("firebase/analytics"),
-          ]);
-        const app = initializeApp({
+// Only register the service worker for production builds
+// ─── Service Worker Registration ─────────────────────────────────────────────
+if ("serviceWorker" in navigator && !import.meta.env.DEV) {
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register(
+        "/app/app-sw.js",
+        { scope: "/app/" }
+      );
+
+      // when a new SW is found...
+      registration.addEventListener("updatefound", () => {
+        const newSW = registration.installing;
+        if (newSW) {
+          newSW.addEventListener("statechange", () => {
+            if (
+              newSW.state === "installed" &&
+              navigator.serviceWorker.controller
+            ) {
+              // an update is ready
+              if (confirm("🔄 New version available—reload now?")) {
+                window.location.reload();
+              }
+            }
+          });
+        }
+      });
+
+      // force page reload once the SW takes control
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!refreshing) {
+          window.location.reload();
+          refreshing = true;
+        }
+      });
+
+      console.log(
+        "✅ Service worker registered with scope:",
+        registration.scope
+      );
+    } catch (err) {
+      console.error("⚠️ SW registration failed:", err);
+    }
+  });
+}
+
+// ─── Render App ─────────────────────────────────────────────────────────────
+ReactDOM.createRoot(container).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter basename="/app">
+        <App />
+      </BrowserRouter>
+    </QueryClientProvider>
+  </React.StrictMode>
+);
+
+// ─── Lazy‑load Firebase Analytics on First Interaction ───────────────────────
+
+// 1) Core init that dynamically pulls in the SDK
+function initAnalytics() {
+  // Remove all listeners so we only fire once
+  ["pointerdown", "click", "touchstart"].forEach((evt) =>
+    window.removeEventListener(evt, initAnalytics, true)
+  );
+
+  import("firebase/app")
+    .then(({ initializeApp }) =>
+      Promise.all([
+        initializeApp({
           apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
           authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
           projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -49,43 +99,35 @@ function Bootstrap() {
           messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
           appId: import.meta.env.VITE_FIREBASE_APP_ID,
           measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-        });
-        const analytics = getAnalytics(app);
-        logEvent(analytics, "app_open");
-      } catch (err) {
-        console.error("Analytics load failed:", err);
-      }
-    };
-
-    // only fire once, after first user interaction or idle
-    const schedule = () => {
-      window.requestIdleCallback?.(initAnalytics, { timeout: 10_000 }) ??
-        setTimeout(initAnalytics, 5_000);
-      ["pointerdown", "click", "touchstart"].forEach((evt) =>
-        window.removeEventListener(evt, schedule, true)
-      );
-    };
-    ["pointerdown", "click", "touchstart"].forEach((evt) =>
-      window.addEventListener(evt, schedule, { once: true, capture: true })
-    );
-    schedule(); // fallback if they never interact
-  }, []);
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/app">
-        <Suspense fallback={null}>
-          <App />
-        </Suspense>
-      </BrowserRouter>
-    </QueryClientProvider>
-  );
+        }),
+        import("firebase/analytics"),
+      ])
+    )
+    .then(([app, { getAnalytics, logEvent }]) => {
+      const analytics = getAnalytics(app);
+      logEvent(analytics, "app_open");
+      console.log("📊 Firebase Analytics initialized");
+    })
+    .catch((err) => console.error("Analytics load failed:", err));
 }
 
-const root = document.getElementById("root");
-if (!root) throw new Error("Root element not found");
-ReactDOM.createRoot(root).render(
-  <React.StrictMode>
-    <Bootstrap />
-  </React.StrictMode>
+// 2) Schedule it via idle callback or fallback timeout
+function scheduleAnalyticsInit() {
+  if ("requestIdleCallback" in window) {
+    // @ts-ignore
+    window.requestIdleCallback(initAnalytics, { timeout: 10_000 });
+  } else {
+    setTimeout(initAnalytics, 5_000);
+  }
+}
+
+// 3) Kick off on first user interaction
+["pointerdown", "click", "touchstart"].forEach((evt) =>
+  window.addEventListener(evt, () => scheduleAnalyticsInit(), {
+    once: true,
+    capture: true,
+  })
 );
+
+// 4) Also fire on idle if they never interact
+scheduleAnalyticsInit();
