@@ -37,9 +37,6 @@ export default defineConfig(({ mode }) => {
           // Define the URL for offline fallback. This is the page that will be shown.
           navigateFallback: "/app/offline.html",
           // Ensure that your offline page itself is precached.
-          additionalManifestEntries: [
-            { url: "app/offline.html", revision: null },
-          ],
           // Replicate the caching strategies from your old app-sw.ts file
           runtimeCaching: [
             {
