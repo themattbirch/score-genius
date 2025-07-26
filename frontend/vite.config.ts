@@ -20,11 +20,8 @@ export default defineConfig(({ mode }) => ({
 
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
-      strategies: "injectManifest", // ← force injectManifest mode
-      injectManifest: {
-        swSrc: resolve(__dirname, "src/app-sw.ts"),
-        swDest: "app/app-sw.js", // ← generate dist/app/app-sw.js
-      },
+      strategies: "injectManifest",
+      filename: "app-sw.js", // ← force injectManifest mode
       registerType: "autoUpdate",
       injectRegister: false,
       workbox: {
