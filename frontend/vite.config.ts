@@ -6,7 +6,6 @@ import { resolve } from "path";
 import vitePluginImp from "vite-plugin-imp";
 
 export default defineConfig(({ mode }) => ({
-  base: "/app/",
   plugins: [
     react(),
     vitePluginImp({
