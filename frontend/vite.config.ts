@@ -31,6 +31,7 @@ export default defineConfig(({ mode }) => {
         filename: "app-sw.ts",
         injectRegister: false,
         includeAssets: [
+          "app/offline.html",
           "splash_screen.html",
           "manifest.webmanifest",
           "images/basketball.svg",
