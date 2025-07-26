@@ -13,17 +13,10 @@ export default defineConfig({
     react(),
     VitePWA({
       strategies: "injectManifest",
-      injectRegister: false,
-
-      // source of your TS service worker
-      srcDir: "src/app",
-      filename: "app-sw.ts",
-
-      // DO NOT provide swSrc or swDest here!
-      injectManifest: {
-        globPatterns: ["**/*.{js,css,html,svg,png,json,woff2}"],
-        // nothing else that touches swSrc/swDest
-      },
+      srcDir: "src/app", // where app-sw.ts lives
+      filename: "app-sw.ts", // input TS file -> outputs app-sw.js
+      injectRegister: false, // you register manually
+      includeAssets: ["offline.html", "icons/*"], // just static stuff to copy
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
