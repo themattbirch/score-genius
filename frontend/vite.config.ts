@@ -16,7 +16,7 @@ export default defineConfig({
         swSrc: "app-sw.ts",
       },
       injectRegister: false,
-      includeAssets: ["app/offline.html" /* … */],
+      includeAssets: ["app/offline.html"],
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
