@@ -39,6 +39,9 @@ RUN npm run build \
 
 RUN echo ">>> dist contents <<<" && ls -lR /app/frontend/dist
 
+RUN mv /app/frontend/dist/app-sw.mjs /app/frontend/dist/app-sw.js
+
+
 
 # ─── Stage 2: assemble backend + static ─────────────────────────────────────
 FROM node:18-slim AS runner
