@@ -74,11 +74,9 @@ COPY --from=builder /app/frontend/dist/images \
      backend/server/static/images
 COPY --from=builder /app/frontend/dist/icons \
      backend/server/static/icons
-# Create the 'app' subdirectory in the static assets folder
-RUN mkdir -p backend/server/static/app
-# Copy the service worker from its new source to its new destination
-COPY --from=builder /app/frontend/dist/app/app-sw.js \
-     backend/server/static/app/app-sw.js
+# Copy the entire 'app' directory, including the SW and its Workbox dependency
+COPY --from=builder /app/frontend/dist/app \
+     backend/server/static/app
 
 # Final runner
 WORKDIR /app/backend/server
