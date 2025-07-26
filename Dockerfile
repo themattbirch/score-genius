@@ -81,14 +81,19 @@ COPY --from=builder /app/frontend/dist/icons \
      backend/server/static/icons
 # Copy the entire 'app' directory, including the SW and its Workbox dependency
 RUN mkdir -p backend/server/static/app
+# copy offline shell
+COPY --from=builder /app/frontend/dist/app/offline.html \
+     backend/server/static/app/
 
-# copy the entire /app subfolder into static/app
-COPY --from=builder /app/frontend/dist/app/ \
+# copy the generated SW + runtime
+COPY --from=builder /app/frontend/dist/app-sw.js \
+     backend/server/static/app/app-sw.js
+COPY --from=builder /app/frontend/dist/workbox-*.js \
      backend/server/static/app/
 
 # sanity check
 RUN test -f backend/server/static/app/app-sw.js \
-      || (echo "SW missing!" && ls -lR backend/server/static/app && exit 1)
+    || (echo "SW missing!" && ls -lR backend/server/static/app && exit 1)
 
 # Final runner
 WORKDIR /app/backend/server
