@@ -20,15 +20,14 @@ export default defineConfig(({ mode }) => ({
 
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
-      strategies: "injectManifest",
-      registerType: "autoUpdate",
-      injectRegister: false,
+      // Tell VitePWA to bundle your custom SW source
       injectManifest: {
-        // Path to your custom SW entry
         swSrc: resolve(__dirname, "src/app-sw.ts"),
-        // Where to put the built SW in dist
         swDest: "app/app-sw.js",
       },
+      registerType: "autoUpdate",
+      injectRegister: false,
+
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
