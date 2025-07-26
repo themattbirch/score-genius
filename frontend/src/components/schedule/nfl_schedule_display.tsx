@@ -1,7 +1,6 @@
 // frontend/src/components/schedule/nfl_schedule_display.tsx
 import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
-import { startOfDay } from "date-fns/startOfDay";
-import { isBefore } from "date-fns/isBefore";
+import { startOfDay, isBefore } from "date-fns";
 import { useDate } from "@/contexts/date_context";
 import { useNFLSchedule } from "@/api/use_nfl_schedule";
 import { useNetworkStatus } from "@/hooks/use_network_status";

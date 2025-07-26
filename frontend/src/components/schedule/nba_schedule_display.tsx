@@ -1,7 +1,6 @@
 // frontend/src/components/schedule/nba_schedule_display.tsx
 import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { startOfDay } from "date-fns/startOfDay";
-import { isBefore } from "date-fns/isBefore";
+import { startOfDay, isBefore } from "date-fns";
 import { useDate } from "@/contexts/date_context";
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import { useInjuries, type Injury } from "@/api/use_injuries";
