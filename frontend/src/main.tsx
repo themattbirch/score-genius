@@ -27,7 +27,7 @@ if ("serviceWorker" in navigator && !import.meta.env.DEV) {
   window.addEventListener("load", async () => {
     try {
       const registration = await navigator.serviceWorker.register(
-        "/app/app‑sw.js",
+        "/app/app-sw.js",
         { scope: "/app/" }
       );
 
