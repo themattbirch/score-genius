@@ -10,11 +10,15 @@ export default defineConfig({
     react(),
     VitePWA({
       strategies: "injectManifest",
-      srcDir: "src", // where your source lives
-      filename: "app-sw.js", // name in dist/
+      srcDir: "src",
+      filename: "app-sw.js", // output in dist/
       injectRegister: false,
+      injectManifest: {
+        swSrc: resolve(__dirname, "src/app/app-sw.ts"),
+      },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,png,svg,woff2,json}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,json}"],
+        navigateFallback: "/app/offline.html",
       },
 
       manifest: {
