@@ -30,32 +30,34 @@ export default defineConfig(({ mode }) => {
         // registerType: 'autoUpdate' is fine
         registerType: "autoUpdate",
         workbox: {
-          // This MUST be the name of the final file.
           swDest: "dist/app/app-sw.js",
-          // Define the files to be precached.
           globPatterns: ["**/*.{js,css,html,svg,json,woff2}"],
-          // Define the URL for offline fallback. This is the page that will be shown.
+          // This rule tells the SW what URL to serve when offline.
           navigateFallback: "/app/offline.html",
-          // Ensure that your offline page itself is precached.
-          // Replicate the caching strategies from your old app-sw.ts file
+
+          // ✅ THE FINAL FIX: This adds the offline page to the precache list
+          // using the exact URL key that navigateFallback needs to find it.
+          additionalManifestEntries: [
+            { url: "/app/offline.html", revision: null },
+          ],
+
+          // Your runtimeCaching rules remain the same.
           runtimeCaching: [
             {
-              // For assets like JS, CSS
               urlPattern: ({ request }) =>
                 ["style", "script", "worker"].includes(request.destination),
               handler: "StaleWhileRevalidate",
               options: {
                 cacheName: "assets-cache",
-                expiration: { maxEntries: 50, maxAgeSeconds: 86400 }, // 1 day
+                expiration: { maxEntries: 50, maxAgeSeconds: 86400 },
               },
             },
             {
-              // For images
               urlPattern: ({ request }) => request.destination === "image",
               handler: "CacheFirst",
               options: {
                 cacheName: "img-cache",
-                expiration: { maxEntries: 60, maxAgeSeconds: 2592000 }, // 30 days
+                expiration: { maxEntries: 60, maxAgeSeconds: 2592000 },
               },
             },
           ],
