@@ -26,6 +26,10 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
+# ─── Debug: list out dist/app contents ───────────────────────────────────────
+RUN echo ">>> dist/app contents <<<" && ls -lR /app/frontend/dist/app
+
+
 # ─── Stage 2: assemble backend + static ─────────────────────────────────────
 FROM node:18-slim AS runner
 WORKDIR /app
@@ -79,6 +83,8 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/. \
      backend/server/static/app/
 
+COPY --from=builder /app/frontend/dist/sw.js \
+     backend/server/static/app/app-sw.js
 # Final runner
 WORKDIR /app/backend/server
 EXPOSE 10000
