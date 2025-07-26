@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => {
         devOptions: { enabled: true, type: "module" },
         strategies: "injectManifest",
         srcDir: "src",
-        filename: "app-sw.ts",
+        filename: "app/app-sw.ts",
         injectRegister: false,
         includeAssets: [
           "app/offline.html",
@@ -81,15 +81,6 @@ export default defineConfig(({ mode }) => {
             },
           ],
         } as any,
-
-        workbox: {
-          navigateFallback: "/app/offline.html",
-          navigateFallbackDenylist: [/^\/api\//],
-          navigateFallbackAllowlist: [/^\/app(?:\/|$)/],
-          globPatterns: ["**/*.{js,css,html,png,svg,json,woff2}"],
-          globIgnores: ["**/favicon.ico"],
-          cleanupOutdatedCaches: true,
-        },
       }),
     ],
 
