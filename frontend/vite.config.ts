@@ -4,7 +4,6 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 import vitePluginImp from "vite-plugin-imp";
-import { visualizer } from "rollup-plugin-visualizer";
 
 export default defineConfig(({ mode }) => {
   // In dev, use your env var (or fallback localhost).
@@ -22,14 +21,6 @@ export default defineConfig(({ mode }) => {
             camel2DashComponentName: false,
           },
         ],
-      }),
-
-      // Bundle visualizer
-      visualizer({
-        filename: "dist/stats.html",
-        template: "treemap", // treemap, sunburst, network
-        gzipSize: true, // calculate gzipped sizes
-        brotliSize: true,
       }),
 
       // ---------- PWA (scoped to /app) ----------
