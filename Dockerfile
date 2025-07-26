@@ -86,7 +86,7 @@ COPY --from=builder /app/frontend/dist/offline.html \
      backend/server/static/app/
 
 # copy the generated SW + runtime
-COPY --from=builder /app/frontend/dist/sw.js \
+COPY --from=builder /app/frontend/dist/app-sw.js \
      backend/server/static/app/app-sw.js
 COPY --from=builder /app/frontend/dist/workbox-*.js \
      backend/server/static/app/
