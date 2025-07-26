@@ -52,7 +52,7 @@ registerRoute(
       if (offlineResponse) {
         return offlineResponse;
       }
-      // This is the final fallback if offline.html is somehow not precached
+      // The final fallback if offline.html is somehow not precached
       return new Response("You are offline. Please connect to the internet.", {
         status: 503,
         statusText: "Service Unavailable",
