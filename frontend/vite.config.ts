@@ -9,10 +9,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      strategies: "generateSW", // <-- generate instead of injectManifest
-      filename: "app-sw.js", // <-- your desired output name
+      strategies: "generateSW",
+      filename: "app-sw.js",
       registerType: "autoUpdate",
-      injectRegister: false, // we do it manually in main.tsx
+      injectRegister: false,
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
