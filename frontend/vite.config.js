@@ -10,19 +10,25 @@ export default defineConfig({
     react(),
     VitePWA({
       strategies: "injectManifest",
+      // NO top‑level `filename` here
       injectManifest: {
-        swSrc: "src/app-sw.ts",
-        swDest: "app/app-sw.js",
+        // path to your TS service‑worker source
+        swSrc: resolve(__dirname, "src/app‑sw.ts"),
+        // where to write it in `dist/`
+        swDest: "app/app‑sw.js",
       },
       injectRegister: false,
-      includeAssets: ["app/offline.html"],
+      includeAssets: [
+        // fallback page
+        "app/offline.html",
+      ],
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
         navigateFallback: "/app/offline.html",
         navigateFallbackDenylist: [
-          /^\/app\/app-sw\.js$/,
-          /^\/app\/workbox-.*\.js$/,
+          /^\/app\/app‑sw\.js$/,
+          /^\/app\/workbox‑.*\.js$/,
         ],
       },
       manifest: {
