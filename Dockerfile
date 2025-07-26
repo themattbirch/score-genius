@@ -25,16 +25,8 @@ COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
 RUN npm run build \
-    && echo ">>> dist/app contents <<<" \
-    && ls -lR dist/app \
-    \
-    && npx esbuild src/app‑sw.ts \
-         --bundle \
-         --platform=browser \
-         --outfile=dist/app/app‑sw.js \
-         --target=es2022 \
-    && echo ">>> dist/app after sw compile <<<" \
-    && ls -lR dist/app
+    && echo ">>> dist contents <<<" \
+    && ls -lR dist
 
 RUN echo ">>> dist contents <<<" && ls -lR /app/frontend/dist
 
