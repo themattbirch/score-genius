@@ -22,7 +22,9 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       strategies: "injectManifest",
       injectManifest: {
+        // point at your custom TS service‑worker
         swSrc: resolve(__dirname, "src/app-sw.ts"),
+        // where you want it in the build output:
         swDest: "app/app-sw.js",
       },
       workbox: {
