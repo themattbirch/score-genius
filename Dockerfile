@@ -81,8 +81,10 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/. \
      backend/server/static/app/
 
-COPY --from=builder /app/frontend/dist/app/*.js \
-     backend/server/static/app/
+# copy whole app dir (includes app-sw.js + workbox files)
+COPY --from=builder /app/frontend/dist/app/ backend/server/static/app/
+RUN test -f backend/server/static/app/app-sw.js || (echo "SW missing!" && ls -lR backend/server/static/app && exit 1)
+
 # Final runner
 WORKDIR /app/backend/server
 EXPOSE 10000
