@@ -5,35 +5,20 @@ import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 import vitePluginImp from "vite-plugin-imp";
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
+  base: "/app/",
   plugins: [
     react(),
-    vitePluginImp({
-      libList: [
-        {
-          libName: "lodash",
-          libDirectory: "",
-          camel2DashComponentName: false,
-        },
-      ],
-    }),
-
-    // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
-      base: "/app/",
-      strategies: "injectManifest",
-      injectManifest: {
-        swSrc: resolve(__dirname, "src/app-sw.ts"),
-        swDest: "app/app‑sw.js", // ← this is your output filename + path
-      },
+      strategies: "generateSW", // <-- generate instead of injectManifest
+      filename: "app-sw.js", // <-- your desired output name
+      registerType: "autoUpdate",
+      injectRegister: false, // we do it manually in main.tsx
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
       },
-      // we’re doing manual registration in main.tsx
-      registerType: "autoUpdate",
-      injectRegister: false,
-      includeAssets: ["offline.html"],
+      includeAssets: ["offline.html"], // precache your offline shell
 
       manifest: {
         name: "ScoreGenius",
@@ -116,4 +101,4 @@ export default defineConfig(({ mode }) => ({
   preview: {
     port: 3000,
   },
-}));
+});
