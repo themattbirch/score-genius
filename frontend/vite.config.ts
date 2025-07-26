@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => ({
 
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
-      // Tell VitePWA to bundle your custom SW source
+      // point at your custom service worker
       injectManifest: {
         swSrc: resolve(__dirname, "src/app-sw.ts"),
         swDest: "app/app-sw.js",
@@ -29,9 +29,11 @@ export default defineConfig(({ mode }) => ({
         skipWaiting: true,
         clientsClaim: true,
       },
-
-      registerType: "autoUpdate",
-      injectRegister: false,
+      // automatically update when a new SW is available
+      registerType: "autoUpdate", // :contentReference[oaicite:0]{index=0}
+      // control how the registration script is injected:
+      // 'inline', 'script', 'script-defer', or null for manual
+      injectRegister: "script", // :contentReference[oaicite:1]{index=1}
 
       manifest: {
         name: "ScoreGenius",

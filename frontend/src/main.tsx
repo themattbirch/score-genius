@@ -3,6 +3,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import "./index.css";
 
@@ -21,41 +22,21 @@ const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
 // Only register the service worker for production builds
+// ─── Service Worker Registration ─────────────────────────────────────────────
 if ("serviceWorker" in navigator && !import.meta.env.DEV) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/app/app-sw.js", {
-        // This trailing slash fixes the production error
-        scope: "/app/",
-      })
-      .then((reg) => {
-        console.log(
-          "✅ Service worker registered successfully with scope:",
-          reg.scope
-        );
-
-        // This logic handles the "new version available" prompt
-        reg.onupdatefound = () => {
-          const installingWorker = reg.installing;
-          if (installingWorker) {
-            installingWorker.onstatechange = () => {
-              if (installingWorker.state === "installed") {
-                if (navigator.serviceWorker.controller) {
-                  if (confirm("A new version is available. Reload?")) {
-                    reg.waiting?.postMessage({ type: "SKIP_WAITING" });
-                  }
-                }
-              }
-            };
-          }
-        };
-      })
-      .catch((error) => {
-        console.error("❌ SW registration failed:", error);
-      });
+  const updateSW = registerSW({
+    immediate: true,
+    onOfflineReady() {
+      console.log("✅ App ready to work offline");
+    },
+    onNeedRefresh() {
+      if (confirm("A new version is available. Reload now?")) {
+        updateSW?.();
+      }
+    },
   });
 
-  // This logic reloads the page once the new service worker takes control
+  // reload once the new SW takes control
   let refreshing = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (refreshing) return;
