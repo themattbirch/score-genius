@@ -10,17 +10,16 @@ export default defineConfig({
     react(),
     VitePWA({
       strategies: "injectManifest",
-      srcDir: "src",
-      filename: "app-sw.js", // output in dist/
       injectRegister: false,
       injectManifest: {
         swSrc: resolve(__dirname, "src/app/app-sw.ts"),
       },
+      filename: "app-sw.js",
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,json}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,json,woff2}"],
         navigateFallback: "/app/offline.html",
       },
-
+      includeAssets: ["offline.html"],
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
