@@ -101,7 +101,7 @@ app.get("/health", (_req, res) =>
 
 // 3. ✅ SPA FALLBACK HANDLER (MUST BE LAST for pages)
 // For any request that isn't a static file or an API route, serve the app shell.
-app.get("/app/*", (req, res) => {
+app.get(/^\/app(\/.*)?$/, (req, res) => {
   res.sendFile(path.join(staticRoot, "app.html"));
 });
 
