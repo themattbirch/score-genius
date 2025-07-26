@@ -109,6 +109,10 @@ app.get("/health", (_req, res) =>
 // This specifically catches any route under /app and serves the app shell.
 // It uses a Regular Expression to avoid parsing errors.
 app.get(/^\/app(\/.*)?$/, (req, res) => {
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate"
+  );
   res.sendFile(path.join(staticRoot, "app.html"));
 });
 
