@@ -16,9 +16,13 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
+        // <-- moved here:
+        navigateFallback: "/app/offline.html",
+        navigateFallbackDenylist: [
+          new RegExp("^/app/app-sw\\.js$"),
+          new RegExp("^/app/workbox-.*\\.js$"),
+        ],
       },
-      includeAssets: ["offline.html"], // precache your offline shell
-
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
