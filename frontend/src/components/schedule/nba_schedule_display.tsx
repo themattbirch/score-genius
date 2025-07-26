@@ -45,7 +45,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
   const online = useNetworkStatus();
   const { date } = dateCtx;
 
-  /* ── derived date info ────────────────────────────────── */
+  /* ── derived date info ───────────────────────────────── */
   const isoDate = formatLocalDate(date);
   const displayDate = date?.toLocaleDateString("en-US", {
     month: "long",
