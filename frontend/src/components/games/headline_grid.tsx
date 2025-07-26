@@ -8,7 +8,7 @@ import { HeadlineStat } from "@/types"; // Import HeadlineStat type
 // Define the interface for HeadlineGrid's props
 interface HeadlineGridProps {
   headlines: HeadlineStat[]; // Use the imported HeadlineStat type
-  isLoading?: boolean; // isLoading is optional based on its default usage
+  isLoading?: boolean; // isLoading optional based on its default usage
 }
 
 const HeadlineGrid: React.FC<HeadlineGridProps> = ({
