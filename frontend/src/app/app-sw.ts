@@ -1,6 +1,5 @@
 // src/app-sw.ts
 /// <reference lib="webworker" />
-/// <reference lib="webworker" />
 declare const self: ServiceWorkerGlobalScope;
 
 import {
