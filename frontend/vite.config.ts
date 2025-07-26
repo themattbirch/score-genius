@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => ({
 
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
+      base: "/app/",
       strategies: "injectManifest",
       registerType: "autoUpdate",
       filename: "app-sw.js",
