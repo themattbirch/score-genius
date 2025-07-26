@@ -57,7 +57,7 @@ export default defineConfig({
             purpose: "maskable",
           },
         ],
-      } as any,
+      },
     }),
   ],
 
@@ -94,10 +94,10 @@ export default defineConfig({
         entryFileNames: "assets/[name].[hash].js",
         chunkFileNames: "assets/[name].[name].[hash].js",
         assetFileNames: "assets/[name].[hash].[ext]",
-        manualChunks(id: string) {
+        manualChunks(id) {
           if (id.includes("node_modules")) {
-            const parts = id.split("node_modules/")[1].split("/");
-            return `vendor-${parts[0].replace("@", "")}`;
+            const pkg = id.split("node_modules/")[1].split("/")[0];
+            return `vendor-${pkg.replace("@", "")}`;
           }
         },
       },
