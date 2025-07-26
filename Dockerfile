@@ -94,7 +94,7 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/offline.html \
      backend/server/static/app/offline.html
 
-# 2) the service worker (named app-sw at the dist root)
+# 2) grab the generated SW (app‑sw.js OR app‑sw.mjs) → app‑sw.js
 COPY --from=builder /app/frontend/dist/app-sw.* \
      backend/server/static/app/app-sw.js
 

@@ -1,21 +1,20 @@
-// src/app-sw.ts
+// src/app/app-sw.ts
 /// <reference lib="webworker" />
 declare const self: ServiceWorkerGlobalScope;
 
+import { clientsClaim } from "workbox-core";
 import {
   precacheAndRoute,
   cleanupOutdatedCaches,
   matchPrecache,
 } from "workbox-precaching";
-import { registerRoute } from "workbox-routing";
+import { registerRoute, setCatchHandler } from "workbox-routing";
 import {
   NetworkFirst,
   StaleWhileRevalidate,
   CacheFirst,
 } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
-import { clientsClaim } from "workbox-core";
-import type { HandlerCallbackOptions } from "workbox-core/types.js";
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -26,16 +25,17 @@ const ASSET_CACHE = "assets-cache-v1";
 const IMG_CACHE = "img-cache-v1";
 
 // -----------------------------------------------------------------------------
-// Core lifecycle
+// Lifecycle
 // -----------------------------------------------------------------------------
 clientsClaim();
 self.skipWaiting();
 
 precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
+
 cleanupOutdatedCaches();
 
 // -----------------------------------------------------------------------------
-// Navigation requests → NetworkFirst with safer fallback
+// Navigation: NetworkFirst with fallback
 // -----------------------------------------------------------------------------
 const networkFirstPages = new NetworkFirst({
   cacheName: PAGE_CACHE,
@@ -53,44 +53,45 @@ const networkFirstPages = new NetworkFirst({
 
 registerRoute(
   ({ request }) => request.mode === "navigate",
-  async (options: HandlerCallbackOptions): Promise<Response> => {
+  async ({ request, event }) => {
     try {
-      const resp = await networkFirstPages.handle(options);
+      const resp = await networkFirstPages.handle({ request, event });
       if (resp) return resp;
-      throw new Error("No response from network");
+      throw new Error("no-response");
     } catch {
       const offlineResp = await matchPrecache(OFFLINE_URL);
-      if (offlineResp) return offlineResp;
-
-      return new Response("You are offline.", {
-        status: 503,
-        statusText: "Service Unavailable",
-        headers: { "Content-Type": "text/html" },
-      });
+      return (
+        offlineResp ??
+        new Response("You are offline.", {
+          status: 503,
+          statusText: "Service Unavailable",
+          headers: { "Content-Type": "text/html" },
+        })
+      );
     }
   }
 );
 
 // -----------------------------------------------------------------------------
-// Assets → StaleWhileRevalidate
+// Static assets: Stale-While-Revalidate
 // -----------------------------------------------------------------------------
 registerRoute(
   ({ request }) => ["style", "script", "worker"].includes(request.destination),
   new StaleWhileRevalidate({
     cacheName: ASSET_CACHE,
-    plugins: [new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 86_400 })],
+    plugins: [new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 86400 })],
   })
 );
 
 // -----------------------------------------------------------------------------
-// Images → CacheFirst
+// Images: CacheFirst
 // -----------------------------------------------------------------------------
 registerRoute(
   ({ request }) => request.destination === "image",
   new CacheFirst({
     cacheName: IMG_CACHE,
     plugins: [
-      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 86_400 }),
+      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 86400 }),
     ],
   })
 );
@@ -102,4 +103,14 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+});
+
+// -----------------------------------------------------------------------------
+// Global catch handler for any failures
+// -----------------------------------------------------------------------------
+setCatchHandler(async ({ request }) => {
+  if (request.mode === "navigate") {
+    return (await matchPrecache(OFFLINE_URL))!;
+  }
+  return Response.error();
 });
