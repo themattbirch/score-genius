@@ -81,9 +81,9 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/. \
      backend/server/static/app/
 
-COPY --from=builder /app/frontend/dist/workbox-*.js \
+COPY --from=builder /app/frontend/dist/app/workbox-*.js \
      backend/server/static/app/
-COPY --from=builder /app/frontend/dist/sw.js \
+COPY --from=builder /app/frontend/dist/app/app-sw.js \
      backend/server/static/app/app-sw.js
 # Final runner
 WORKDIR /app/backend/server
