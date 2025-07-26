@@ -27,6 +27,14 @@ COPY frontend/ .
 ARG CACHEBUST=1
 RUN echo ">>> CACHEBUST=$CACHEBUST — src tree below <<<" \
 && ls -lR .
+RUN echo ">>> npm build script is:" \
+    && npm pkg get scripts.build
+
+RUN echo ">>> TOP‑LEVEL /app/frontend <<<" \
+    && ls -la /app/frontend \
+    && echo ">>> /app/frontend/scripts <<<" \
+    && ls -la /app/frontend/scripts
+
 RUN echo ">>>> src tree <<<<" \
     && ls -lR /app/frontend/src
 RUN npm run build \
