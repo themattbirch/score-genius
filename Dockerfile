@@ -79,26 +79,24 @@ COPY --from=builder /app/frontend/dist/images \
      backend/server/static/images
 COPY --from=builder /app/frontend/dist/icons \
      backend/server/static/icons
-# Copy the entire 'app' directory, including the SW and its Workbox dependency
+# ─── Copy generated PWA assets ─────────────────────────────────────────────
 RUN mkdir -p backend/server/static/app
-# copy offline shell
-COPY --from=builder /app/frontend/dist/app/offline.html \
-     backend/server/static/app/
 
-# Copy all your hashed asset bundles
-COPY --from=builder /app/frontend/dist/assets \
-     backend/server/static/assets
+# 1) offline.html  
+COPY --from=builder /app/frontend/dist/offline.html \
+     backend/server/static/app/offline.html
 
-# copy the generated SW + runtime
-COPY --from=builder /app/frontend/dist/app-sw.js \
+# 2) the service worker itself  
+COPY --from=builder /app/frontend/dist/sw.js \
      backend/server/static/app/app-sw.js
+
+# 3) the Workbox runtime that generateSW emitted  
 COPY --from=builder /app/frontend/dist/workbox-*.js \
      backend/server/static/app/
 
-
 # sanity check
 RUN test -f backend/server/static/app/app-sw.js \
-    || (echo "SW missing!" && ls -lR backend/server/static/app && exit 1)
+    || (echo "❌ SW missing!" && ls -lR backend/server/static/app && exit 1)
 
 # Final runner
 WORKDIR /app/backend/server
