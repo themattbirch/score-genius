@@ -23,7 +23,7 @@ if (!container) throw new Error("Root element not found");
 const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "/app-sw.js";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker
-    .register(swUrl, { scope: "/app" }) // ← scope without trailing slash
+    .register(swUrl) // ← scope without trailing slash
     .then((reg) => {
       // Skip waiting on new SW
       if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
