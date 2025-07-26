@@ -81,10 +81,8 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/. \
      backend/server/static/app/
 
-COPY --from=builder /app/frontend/dist/app/workbox-*.js \
+COPY --from=builder /app/frontend/dist/app/*.js \
      backend/server/static/app/
-COPY --from=builder /app/frontend/dist/app/app-sw.js \
-     backend/server/static/app/app-sw.js
 # Final runner
 WORKDIR /app/backend/server
 EXPOSE 10000
