@@ -21,7 +21,6 @@ export default defineConfig(({ mode }) => ({
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
       strategies: "injectManifest",
-      filename: "app-sw.js", // ← force injectManifest mode
       registerType: "autoUpdate",
       injectRegister: false,
       workbox: {
