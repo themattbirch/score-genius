@@ -32,6 +32,14 @@ self.addEventListener("fetch", (event) => {
 });
 
 precacheAndRoute(self.__WB_MANIFEST);
+// DEBUG: log all precached URLs on install
+self.addEventListener("install", () => {
+  console.log(
+    "Precache manifest:",
+    self.__WB_MANIFEST.map((e: any) => e.url)
+  );
+});
+
 cleanupOutdatedCaches();
 
 /* ---------- HTML navigate (network ↔ cache fallback) ---------- */
