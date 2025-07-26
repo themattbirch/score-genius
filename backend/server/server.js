@@ -82,6 +82,27 @@ app.use((req, res, next) => {
 
 // =================== ✨ ADDED NEW SIMPLIFIED ROUTING ===================
 
+// Force fresh fetches for SW and offline HTML
+app.get("/app/app-sw.js", (req, res) => {
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate"
+  );
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.sendFile(path.join(staticRoot, "app", "app-sw.js"));
+});
+
+app.get("/app/offline.html", (req, res) => {
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate"
+  );
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.sendFile(path.join(staticRoot, "app", "offline.html"));
+});
+
 // 1. ✅ SERVE ALL STATIC FILES
 // This single line correctly serves EVERYTHING from your 'static' folder.
 // It will handle /assets/*, /icons/*, and most importantly, /app/app-sw.js.
