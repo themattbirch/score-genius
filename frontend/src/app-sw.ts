@@ -43,7 +43,7 @@ registerRoute(
     plugins: [
       {
         // On network failure, serve the precached offline.html
-        handlerDidError: () => matchPrecache("/app/offline.html"),
+        handlerDidError: () => matchPrecache("app/offline.html"),
       },
     ],
   })
