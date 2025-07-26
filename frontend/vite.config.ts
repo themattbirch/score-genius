@@ -6,6 +6,7 @@ import { resolve } from "path";
 import vitePluginImp from "vite-plugin-imp";
 
 export default defineConfig(({ mode }) => ({
+  base: "/app/",
   plugins: [
     react(),
     vitePluginImp({
@@ -20,13 +21,14 @@ export default defineConfig(({ mode }) => ({
 
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
+      strategies: "generateSW",
+      filename: "app-sw.js",
       registerType: "autoUpdate",
       injectRegister: false, // ← boolean false, not the string "false"
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
       },
-      filename: "app-sw.js", // output file name
 
       manifest: {
         name: "ScoreGenius",
