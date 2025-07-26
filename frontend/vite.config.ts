@@ -21,9 +21,8 @@ export default defineConfig(({ mode }) => ({
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
       strategies: "generateSW",
-      filename: "app-sw.js",
       registerType: "autoUpdate",
-      injectRegister: false, // ← boolean false, not the string "false"
+      injectRegister: false,
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
