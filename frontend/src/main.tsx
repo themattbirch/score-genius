@@ -20,7 +20,7 @@ const queryClient = new QueryClient({
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "/app-sw.js";
+const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "/app/app-sw.js";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker
     .register(swUrl, { scope: "/app/" })
