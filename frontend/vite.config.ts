@@ -52,22 +52,25 @@ export default defineConfig(({ mode }) => {
               },
             },
             {
-              urlPattern: ({ request }) => request.destination === "image",
-              handler: "CacheFirst", // This is fine for images
-              options: {
-                cacheName: "img-cache",
-                expiration: { maxEntries: 60, maxAgeSeconds: 2592000 },
-              },
-            },
-            // ✅ REPLACED StaleWhileRevalidate with a more stable NetworkFirst for pages
-            {
               urlPattern: ({ request }) =>
                 request.mode === "navigate" && request.url.includes("/app/"),
               handler: "NetworkFirst",
               options: {
                 cacheName: "app-pages",
-                // Give mobile networks up to 5 seconds to respond before falling back to cache
                 networkTimeoutSeconds: 5,
+                // ✅ ADDED: This plugin ensures only successful responses are cached.
+                plugins: [
+                  {
+                    cacheWillUpdate: async ({ response }) => {
+                      // If the response is valid (status 200), cache it.
+                      if (response && response.status === 200) {
+                        return response;
+                      }
+                      // Otherwise, return null to prevent it from being cached.
+                      return null;
+                    },
+                  },
+                ],
               },
             },
           ],
