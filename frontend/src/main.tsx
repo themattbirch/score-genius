@@ -25,7 +25,7 @@ if ("serviceWorker" in navigator && !import.meta.env.DEV) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/app/app-sw.js", {
-        // ✅ THE FINAL FIX: Added a trailing slash to the scope
+        // This trailing slash fixes the production error
         scope: "/app/",
       })
       .then((reg) => {
