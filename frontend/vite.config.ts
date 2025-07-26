@@ -22,13 +22,18 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       base: "/app/",
       strategies: "injectManifest",
-      registerType: "autoUpdate",
-      filename: "app-sw.js",
-      injectRegister: false,
+      injectManifest: {
+        swSrc: resolve(__dirname, "src/app-sw.ts"),
+        swDest: "app/app‑sw.js", // ← this is your output filename + path
+      },
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
       },
+      // we’re doing manual registration in main.tsx
+      registerType: "autoUpdate",
+      injectRegister: false,
+      includeAssets: ["offline.html"],
 
       manifest: {
         name: "ScoreGenius",
