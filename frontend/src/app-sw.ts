@@ -1,3 +1,4 @@
+// src/app-sw.ts
 /// <reference lib="webworker" />
 import {
   precacheAndRoute,
@@ -9,7 +10,6 @@ import {
   NetworkFirst,
   StaleWhileRevalidate,
   CacheFirst,
-  NetworkOnly,
 } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { clientsClaim } from "workbox-core";
@@ -17,11 +17,12 @@ import type { HandlerCallbackOptions } from "workbox-core/types.js";
 
 declare let self: ServiceWorkerGlobalScope;
 
-const OFFLINE_URL = "/app/offline.html";
+// ✅ CHANGED: Removed leading slash to match the precache manifest key
+const OFFLINE_URL = "app/offline.html";
 
 /* ---------- core ---------- */
 clientsClaim();
-self.skipWaiting();
+// ℹ️ self.skipWaiting() at the top is redundant with the message listener below.
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
@@ -46,11 +47,13 @@ registerRoute(
     try {
       return await networkFirstPages.handle(options);
     } catch {
+      // This will now correctly find the offline page
       const offlineResponse = await matchPrecache(OFFLINE_URL);
       if (offlineResponse) {
         return offlineResponse;
       }
-      return new Response("Offline", {
+      // This is the final fallback if offline.html is somehow not precached
+      return new Response("You are offline. Please connect to the internet.", {
         status: 503,
         statusText: "Service Unavailable",
         headers: { "Content-Type": "text/html" },
@@ -81,5 +84,7 @@ registerRoute(
 
 /* ---------- skip-waiting hook ---------- */
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });

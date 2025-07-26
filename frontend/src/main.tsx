@@ -5,6 +5,8 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
+// ✅ CHANGED: Using the official helper for registration
+import { registerSW } from "virtual:pwa-register";
 
 // ─── React‑Query Client ──────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -20,31 +22,17 @@ const queryClient = new QueryClient({
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-const swUrl = import.meta.env.DEV ? "/dev-sw.js?dev-sw" : "/app-sw.js";
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker
-    .register(swUrl) // ← scope without trailing slash
-    .then((reg) => {
-      // Skip waiting on new SW
-      if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
-      reg.addEventListener("updatefound", () => {
-        const w = reg.installing;
-        if (!w) return;
-        w.addEventListener("statechange", () => {
-          if (w.state === "installed" && navigator.serviceWorker.controller) {
-            w.postMessage({ type: "SKIP_WAITING" });
-          }
-        });
-      });
-      // Reload when the new worker takes over
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        location.reload();
-      });
-      // Check for updates in background
-      reg.update().catch(() => {});
-    })
-    .catch((err) => console.error("❌ SW registration failed:", err));
-}
+// ✅ CHANGED: Capture the return value of registerSW
+const updateSW = registerSW({
+  onNeedRefresh() {
+    if (confirm("A new version is available. Reload?")) {
+      updateSW?.();
+    }
+  },
+  onOfflineReady() {
+    console.log("App is ready to work offline.");
+  },
+});
 
 // ─── Render App ─────────────────────────────────────────────────────────────
 ReactDOM.createRoot(container).render(
