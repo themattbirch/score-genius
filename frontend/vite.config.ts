@@ -9,18 +9,21 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      strategies: "generateSW",
+      strategies: "injectManifest",
+      srcDir: "src",
       filename: "app-sw.js",
-      registerType: "autoUpdate",
+      injectManifest: {
+        swSrc: "src/app-sw.ts",
+      },
       injectRegister: false,
+      includeAssets: ["app/offline.html" /* … */],
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
-        // <-- moved here:
         navigateFallback: "/app/offline.html",
         navigateFallbackDenylist: [
-          new RegExp("^/app/app-sw\\.js$"),
-          new RegExp("^/app/workbox-.*\\.js$"),
+          /^\/app\/app-sw\.js$/,
+          /^\/app\/workbox-.*\.js$/,
         ],
       },
       manifest: {
