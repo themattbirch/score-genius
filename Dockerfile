@@ -39,10 +39,6 @@ RUN npm run build \
 
 RUN echo ">>> dist contents <<<" && ls -lR /app/frontend/dist
 
-RUN mv /app/frontend/dist/app-sw.mjs /app/frontend/dist/app-sw.js
-
-
-
 # ─── Stage 2: assemble backend + static ─────────────────────────────────────
 FROM node:18-slim AS runner
 WORKDIR /app
@@ -99,7 +95,7 @@ COPY --from=builder /app/frontend/dist/app/offline.html \
      backend/server/static/app/offline.html
 
 # 2) the service worker (named app-sw at the dist root)
-COPY --from=builder /app/frontend/dist/app-sw.js \
+COPY --from=builder /app/frontend/dist/app-sw.* \
      backend/server/static/app/app-sw.js
 
 # 3) the Workbox runtime that generateSW emitted at the dist root
