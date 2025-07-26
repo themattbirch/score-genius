@@ -18,15 +18,6 @@ const MoreScreen = React.lazy(() => import("./screens/more_screen"));
 const HowToUseScreen = React.lazy(() => import("./screens/how_to_use_screen"));
 
 // ——————————————————————————————————————————————————————————————
-// 3️⃣ LAZY‑LOAD your TourProvider (non‑critical bootstrapping)
-// ——————————————————————————————————————————————————————————————
-const LazyTourProvider = React.lazy(() =>
-  import("@/components/ui/joyride_tour").then((mod) => ({
-    default: mod.TourProvider,
-  }))
-);
-
-// ——————————————————————————————————————————————————————————————
 // Layout, Contexts & UI chrome (always eager)
 // ——————————————————————————————————————————————————————————————
 import Header from "./components/layout/Header";
@@ -34,6 +25,7 @@ import BottomTabBar from "./components/layout/BottomTabBar";
 import { SportProvider } from "./contexts/sport_context";
 import { DateProvider } from "@/contexts/date_context";
 import { ThemeProvider } from "./contexts/theme_context";
+import { TourProvider } from "@/components/ui/joyride_tour";
 
 // Memoized wrapper to avoid needless re‑renders
 const Layout: React.FC = memo(() => (
@@ -57,10 +49,9 @@ const Loader: React.FC<{ message?: string }> = ({ message = "Loading…" }) => (
 const App: React.FC = () => (
   <ThemeProvider>
     <SportProvider>
-      {/* TourProvider is non‑critical so we lazy it */}
-      <Suspense fallback={null}>
-        <LazyTourProvider>
-          <DateProvider>
+      <TourProvider>
+        <DateProvider>
+          <Suspense fallback={<Loader />}>
             <Routes>
               <Route element={<Layout />}>
                 {/* redirect root → /games */}
@@ -107,9 +98,9 @@ const App: React.FC = () => (
               {/* catch‑all → back to /games */}
               <Route path="*" element={<Navigate to="/games" replace />} />
             </Routes>
-          </DateProvider>
-        </LazyTourProvider>
-      </Suspense>
+          </Suspense>
+        </DateProvider>
+      </TourProvider>
     </SportProvider>
   </ThemeProvider>
 );
