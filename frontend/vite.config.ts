@@ -20,13 +20,17 @@ export default defineConfig(({ mode }) => ({
 
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
-      // default (generateSW) mode—so Vite builds dist/sw.js
-      registerType: "autoUpdate",
-      injectRegister: false,
+      strategies: "injectManifest", // ← force “injectManifest” mode
+      injectManifest: {
+        swSrc: resolve(__dirname, "src/app-sw.ts"),
+        swDest: "app/app-sw.js",
+      },
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
       },
+      registerType: "autoUpdate",
+      injectRegister: false,
 
       manifest: {
         name: "ScoreGenius",
