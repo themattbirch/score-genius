@@ -10,10 +10,9 @@ export default defineConfig({
     react(),
     VitePWA({
       strategies: "injectManifest",
-      srcDir: "src",
-      filename: "app-sw.js",
       injectManifest: {
-        swSrc: "app-sw.ts",
+        swSrc: "src/app-sw.ts",
+        swDest: "app/app-sw.js",
       },
       injectRegister: false,
       includeAssets: ["app/offline.html"],
