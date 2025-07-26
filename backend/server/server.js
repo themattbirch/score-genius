@@ -87,35 +87,33 @@ app.use((req, res, next) => {
 // It will handle /assets/*, /icons/*, and most importantly, /app/app-sw.js.
 app.use(express.static(staticRoot));
 
-// 2. ✅ SERVE API ROUTES
+// 2. API ROUTES
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 app.use("/api/v1/nfl", nflRoutes);
 app.use("/api/weather", weatherRoutes);
-
 setupSwagger(app);
 app.get("/docs", (_req, res) => res.redirect("/api-docs"));
 app.get("/health", (_req, res) =>
   res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// 3. ✅ SPA FALLBACK HANDLER (MUST BE LAST for pages)
-// For any request that isn't a static file or an API route, serve the app shell.
+// 3. SPA FALLBACK (for the app)
+// This specifically catches any route under /app and serves the app shell.
 app.get(/^\/app(\/.*)?$/, (req, res) => {
   res.sendFile(path.join(staticRoot, "app.html"));
 });
 
-// 4. ✅ MARKETING SITE FALLBACK HANDLER (optional, for root pages)
-// You can add logic here for your marketing pages if needed. For now,
-// we'll focus on the app. A simple 404 is fine for other routes.
+// 4. ✅ HOMEPAGE / MARKETING FALLBACK (for all other routes)
+// This is the new piece that fixes the homepage 404. It must come AFTER
+// the static, API, and specific SPA routes.
+app.get("*", (req, res) => {
+  res.sendFile(path.join(staticRoot, "public", "index.html"));
+});
 
-// =========================================================================
-
-app.use((req, res) => {
-  const file404 = path.join(staticRoot, "public", "404.html");
-  if (fs.existsSync(file404)) {
-    return res.status(404).sendFile(file404);
-  }
+// 5. FINAL 404 & ERROR HANDLERS
+app.use((req, res, _next) => {
+  // This will now only be hit if a non-existent API endpoint is called.
   res.status(404).json({ error: "Not Found" });
 });
 
