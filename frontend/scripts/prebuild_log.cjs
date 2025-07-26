@@ -1,4 +1,4 @@
-// scripts/prebuild_log.js
+// scripts/prebuild_log.cjs
 
 const fs = require("fs");
 const path = require("path");
