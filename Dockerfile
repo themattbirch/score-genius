@@ -24,6 +24,8 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
+RUN echo ">>>> src tree <<<<" \
+    && ls -lR /app/frontend/src
 RUN npm run build \
     && echo ">>> dist contents <<<" \
     && ls -lR dist
