@@ -87,6 +87,13 @@ app.use((req, res, next) => {
 // It will handle /assets/*, /icons/*, and most importantly, /app/app-sw.js.
 app.use(express.static(staticRoot));
 
+app.use(
+  "/.well-known",
+  express.static(path.join(staticRoot, "public", ".well-known"), {
+    dotfiles: "allow",
+  })
+);
+
 // 2. ✅ SERVE API ROUTES
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
