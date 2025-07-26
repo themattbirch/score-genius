@@ -127,7 +127,7 @@ export default defineConfig(({ mode }) => {
           index: resolve(__dirname, "public/index.html"),
           app: resolve(__dirname, "app.html"),
         },
-        external: ["date-fns", "@date-fns/tz"],
+        external: ["date-fns", "date-fns/tz"],
 
         output: {
           entryFileNames: "assets/[name].[hash].js",
