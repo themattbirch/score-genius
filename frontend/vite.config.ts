@@ -25,6 +25,11 @@ export default defineConfig(({ mode }) => ({
         swSrc: resolve(__dirname, "src/app-sw.ts"),
         swDest: "app/app-sw.js",
       },
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+      },
+
       registerType: "autoUpdate",
       injectRegister: false,
 
