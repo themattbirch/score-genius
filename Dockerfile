@@ -25,18 +25,14 @@ COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
 ARG CACHEBUST=1
-RUN echo ">>> CACHEBUST=$CACHEBUST — src tree below <<<" \
-&& ls -lR .
-RUN echo ">>> npm build script is:" \
-    && npm pkg get scripts.build
+RUN test -f src/app/app-sw.ts || (echo "❌ src/app/app-sw.ts missing" && ls -lR src/app && exit 1)
 
-RUN echo ">>> TOP‑LEVEL /app/frontend <<<" \
-    && ls -la /app/frontend \
-    && echo ">>> /app/frontend/scripts <<<" \
-    && ls -la /app/frontend/scripts
 
 RUN echo ">>>> src tree <<<<" \
     && ls -lR /app/frontend/src
+RUN echo ">>> sanity: does src/app/app-sw.ts exist?" \
+ && test -f src/app/app-sw.ts && echo YES || (echo NO && ls -lR src/app && exit 1)
+
 RUN npm run build \
     && echo ">>> dist contents <<<" \
     && ls -lR dist

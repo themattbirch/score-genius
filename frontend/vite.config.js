@@ -4,6 +4,8 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 import vitePluginImp from "vite-plugin-imp";
+console.log("🧪 Using vite.config.ts at", __filename);
+const swSrc = resolve(__dirname, "src/app/app-sw.ts");
 
 export default defineConfig({
   plugins: [
@@ -11,10 +13,11 @@ export default defineConfig({
     VitePWA({
       strategies: "injectManifest",
       injectRegister: false,
+      filename: "app-sw.js", // output
       injectManifest: {
-        swSrc: resolve(__dirname, "src/app/app-sw.ts"),
+        swSrc, // <-- explicit!
+        // swDest is optional; filename handles it
       },
-      filename: "app-sw.js",
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,json,woff2}"],
         navigateFallback: "/app/offline.html",
