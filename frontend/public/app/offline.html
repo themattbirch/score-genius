@@ -2,12 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- 1. tell the browser to use the device width -->
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <title>Offline – Internet Required for Live Data</title>
-
-    <!-- 2. responsive, centered layout -->
+    <title>Offline – Internet Required</title>
     <style>
       :root {
         --bg: #0d1117;
@@ -24,17 +20,17 @@
         margin: 0;
       }
       body {
-        display: flex; /* center horizontally + vertically */
+        display: flex;
         align-items: center;
         justify-content: center;
-        padding: 1.25rem; /* safe padding for very small screens */
+        padding: 1.25rem;
         background: var(--bg);
         color: var(--text);
         font: 16px/1.45 system-ui, sans-serif;
       }
       main {
-        width: 100%; /* full‑width on mobile */
-        max-width: 28rem; /* capped on tablets / desktop */
+        width: 100%;
+        max-width: 28rem;
         background: var(--panel);
         border-radius: 0.75rem;
         padding: 2.5rem 1.5rem;
@@ -49,10 +45,9 @@
       p {
         margin: 0 0 2rem;
       }
-      a {
-        color: var(--link);
-      }
-      button {
+
+      /* ✅ This now styles the link as a button */
+      .button {
         display: inline-block;
         background: #2d333b;
         color: var(--text);
@@ -61,9 +56,10 @@
         border-radius: 0.5rem;
         font-size: 0.95rem;
         cursor: pointer;
+        text-decoration: none; /* Remove link underline */
       }
+
       @media (min-width: 640px) {
-        /* slightly larger text on sm+ */
         h1 {
           font-size: 2rem;
         }
@@ -75,11 +71,10 @@
     <main>
       <h1>Offline – Internet Required</h1>
       <p>
-        Live stats require an internet connection. Please reconnect and retry.
+        Live stats require an internet connection. Please reconnect and try
+        again from the home page.
       </p>
-      <button onclick="location.reload()">Try again</button>
-      &nbsp;·&nbsp;
-      <a href="/app">Back to home</a>
+      <a href="/app" class="button">Back to home</a>
     </main>
   </body>
 </html>
