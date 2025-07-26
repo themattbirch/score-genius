@@ -24,6 +24,9 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
+ARG CACHEBUST=1
+RUN echo ">>> CACHEBUST=$CACHEBUST — src tree below <<<" \
+&& ls -lR .
 RUN echo ">>>> src tree <<<<" \
     && ls -lR /app/frontend/src
 RUN npm run build \
