@@ -85,11 +85,16 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/offline.html \
      backend/server/static/app/
 
+# Copy all your hashed asset bundles
+COPY --from=builder /app/frontend/dist/assets \
+     backend/server/static/assets
+
 # copy the generated SW + runtime
 COPY --from=builder /app/frontend/dist/app-sw.js \
      backend/server/static/app/app-sw.js
 COPY --from=builder /app/frontend/dist/workbox-*.js \
      backend/server/static/app/
+
 
 # sanity check
 RUN test -f backend/server/static/app/app-sw.js \
