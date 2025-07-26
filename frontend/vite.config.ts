@@ -33,10 +33,10 @@ export default defineConfig(({ mode }) => {
           swDest: "dist/app/app-sw.js",
           globPatterns: ["**/*.{js,css,html,svg,json,woff2}"],
 
-          // This is the global fallback for any failed navigation.
+          // This remains our ultimate safety net for uncached pages.
           navigateFallback: "/app/offline.html",
 
-          // This ensures the offline page is in the precache so navigateFallback can find it.
+          // This correctly ensures the offline page is available.
           additionalManifestEntries: [
             { url: "/app/offline.html", revision: null },
           ],
@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => {
             {
               urlPattern: ({ request }) =>
                 ["style", "script", "worker"].includes(request.destination),
-              handler: "StaleWhileRevalidate",
+              handler: "StaleWhileRevalidate", // This is fine for assets
               options: {
                 cacheName: "assets-cache",
                 expiration: { maxEntries: 50, maxAgeSeconds: 86400 },
@@ -53,22 +53,21 @@ export default defineConfig(({ mode }) => {
             },
             {
               urlPattern: ({ request }) => request.destination === "image",
-              handler: "CacheFirst",
+              handler: "CacheFirst", // This is fine for images
               options: {
                 cacheName: "img-cache",
                 expiration: { maxEntries: 60, maxAgeSeconds: 2592000 },
               },
             },
-            // ✅ This makes your app pages load instantly from the cache while
-            // updating in the background. If a page isn't in the cache and the
-            // network is down, the navigateFallback above will be used.
+            // ✅ REPLACED StaleWhileRevalidate with a more stable NetworkFirst for pages
             {
               urlPattern: ({ request }) =>
                 request.mode === "navigate" && request.url.includes("/app/"),
-              handler: "StaleWhileRevalidate",
+              handler: "NetworkFirst",
               options: {
                 cacheName: "app-pages",
-                // ⛔️ REMOVED: The complex plugin with the syntax error is gone.
+                // Give mobile networks up to 5 seconds to respond before falling back to cache
+                networkTimeoutSeconds: 5,
               },
             },
           ],
