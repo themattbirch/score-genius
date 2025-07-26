@@ -75,8 +75,9 @@ COPY --from=builder /app/frontend/dist/images \
 COPY --from=builder /app/frontend/dist/icons \
      backend/server/static/icons
 # Copy the entire 'app' directory, including the SW and its Workbox dependency
-COPY --from=builder /app/frontend/dist/app \
-     backend/server/static/app
+RUN mkdir -p backend/server/static/app
+COPY --from=builder /app/frontend/dist/app/. \
+     backend/server/static/app/
 
 # Final runner
 WORKDIR /app/backend/server
