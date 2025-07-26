@@ -26,7 +26,18 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build \
     && echo ">>> dist/app contents <<<" \
-    && ls -lR /app/frontend/dist/app
+    && ls -lR dist/app \
+    \
+    && npx esbuild src/app‑sw.ts \
+         --bundle \
+         --platform=browser \
+         --outfile=dist/app/app‑sw.js \
+         --target=es2022 \
+    && echo ">>> dist/app after sw compile <<<" \
+    && ls -lR dist/app
+
+RUN echo ">>> dist contents <<<" && ls -lR /app/frontend/dist
+
 
 # ─── Stage 2: assemble backend + static ─────────────────────────────────────
 FROM node:18-slim AS runner
@@ -78,11 +89,9 @@ COPY --from=builder /app/frontend/dist/icons \
      backend/server/static/icons
 # Copy the entire 'app' directory, including the SW and its Workbox dependency
 RUN mkdir -p backend/server/static/app
-COPY --from=builder /app/frontend/dist/app/. \
-     backend/server/static/app/
-
 # copy whole app dir (includes app-sw.js + workbox files)
 COPY --from=builder /app/frontend/dist/app/ backend/server/static/app/
+
 RUN test -f backend/server/static/app/app-sw.js || (echo "SW missing!" && ls -lR backend/server/static/app && exit 1)
 
 # Final runner

@@ -20,22 +20,13 @@ export default defineConfig(({ mode }) => ({
 
     // ─── PWA (scoped to /app) ─────────────────────────────────
     VitePWA({
-      strategies: "injectManifest",
-      injectManifest: {
-        // point at your custom TS service‑worker
-        swSrc: resolve(__dirname, "src/app-sw.ts"),
-        // where you want it in the build output:
-        swDest: "app/app-sw.js",
-      },
+      // default (generateSW) mode—so Vite builds dist/sw.js
+      registerType: "autoUpdate",
+      injectRegister: false,
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
       },
-      // automatically update when a new SW is available
-      registerType: "autoUpdate", // :contentReference[oaicite:0]{index=0}
-      // control how the registration script is injected:
-      // 'inline', 'script', 'script-defer', or null for manual
-      injectRegister: false,
 
       manifest: {
         name: "ScoreGenius",
