@@ -6,6 +6,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import "./index.css";
+import { initializeApp } from "firebase/app";
+import { firebaseConfig } from "./firebaseConfig";
+
+// ─── Firebase App Initialization ────────────────────────────────────────────
+// Eagerly initialize your Firebase app with full config to avoid dynamic fetch fallback
+const app = initializeApp(firebaseConfig);
 
 // ─── React‑Query Client ──────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -21,8 +27,6 @@ const queryClient = new QueryClient({
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");
 
-// Only register the service worker for production builds
-// ─── Service Worker Registration ─────────────────────────────────────────────
 if ("serviceWorker" in navigator && !import.meta.env.DEV) {
   window.addEventListener("load", async () => {
     try {
@@ -31,7 +35,6 @@ if ("serviceWorker" in navigator && !import.meta.env.DEV) {
         { scope: "/app/" }
       );
 
-      // when a new SW is found...
       registration.addEventListener("updatefound", () => {
         const newSW = registration.installing;
         if (newSW) {
@@ -40,7 +43,6 @@ if ("serviceWorker" in navigator && !import.meta.env.DEV) {
               newSW.state === "installed" &&
               navigator.serviceWorker.controller
             ) {
-              // an update is ready
               if (confirm("🔄 New version available—reload now?")) {
                 window.location.reload();
               }
@@ -49,7 +51,6 @@ if ("serviceWorker" in navigator && !import.meta.env.DEV) {
         }
       });
 
-      // force page reload once the SW takes control
       let refreshing = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (!refreshing) {
@@ -80,30 +81,14 @@ ReactDOM.createRoot(container).render(
 );
 
 // ─── Lazy‑load Firebase Analytics on First Interaction ───────────────────────
-
-// 1) Core init that dynamically pulls in the SDK
 function initAnalytics() {
-  // Remove all listeners so we only fire once
+  // Remove listeners so this only fires once
   ["pointerdown", "click", "touchstart"].forEach((evt) =>
     window.removeEventListener(evt, initAnalytics, true)
   );
 
-  import("firebase/app")
-    .then(({ initializeApp }) =>
-      Promise.all([
-        initializeApp({
-          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-          storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-          messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-          appId: import.meta.env.VITE_FIREBASE_APP_ID,
-          measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-        }),
-        import("firebase/analytics"),
-      ])
-    )
-    .then(([app, { getAnalytics, logEvent }]) => {
+  import("firebase/analytics")
+    .then(({ getAnalytics, logEvent }) => {
       const analytics = getAnalytics(app);
       logEvent(analytics, "app_open");
       console.log("📊 Firebase Analytics initialized");
@@ -111,7 +96,6 @@ function initAnalytics() {
     .catch((err) => console.error("Analytics load failed:", err));
 }
 
-// 2) Schedule it via idle callback or fallback timeout
 function scheduleAnalyticsInit() {
   if ("requestIdleCallback" in window) {
     // @ts-ignore
@@ -121,7 +105,7 @@ function scheduleAnalyticsInit() {
   }
 }
 
-// 3) Kick off on first user interaction
+// Kick off analytics on first user interaction
 ["pointerdown", "click", "touchstart"].forEach((evt) =>
   window.addEventListener(evt, () => scheduleAnalyticsInit(), {
     once: true,
@@ -129,5 +113,5 @@ function scheduleAnalyticsInit() {
   })
 );
 
-// 4) Also fire on idle if they never interact
+// Also fire if the user never interacts
 scheduleAnalyticsInit();
