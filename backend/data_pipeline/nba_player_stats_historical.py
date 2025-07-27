@@ -1,7 +1,7 @@
 # backend/data_pipeline/nba_player_stats_historical.py
 
 """
-Fetch and upsert historical NBA player stats from API-Sports into Supabase.
+Fetch and upsert historical NBA player stats from API-Sports right into Supabase.
 """
 
 import json
