@@ -1,6 +1,6 @@
 // frontend/src/components/layout/BottomTabBar.tsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Calendar as GamesIcon,
@@ -27,18 +27,30 @@ const TABS: Tab[] = [
 const BottomTabBar: React.FC = () => {
   const { pathname } = useLocation();
   const [show, setShow] = useState(true);
-  const [lastY, setLastY] = useState(0);
+  const lastY = useRef(0);
 
   useEffect(() => {
+    lastY.current = window.scrollY;
+
     const handleScroll = () => {
       const currentY = window.scrollY;
-      setShow(currentY > lastY);
-      setLastY(currentY);
+      const atBottom =
+        window.innerHeight + currentY >=
+        document.documentElement.scrollHeight - 2;
+
+      // Show if user scrolls up OR reaches bottom, hide on scroll down
+      if (atBottom || lastY.current > currentY) {
+        setShow(true);
+      } else {
+        setShow(false);
+      }
+
+      lastY.current = currentY;
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [lastY]);
+  }, []);
 
   return (
     <nav
