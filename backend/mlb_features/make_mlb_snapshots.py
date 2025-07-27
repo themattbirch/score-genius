@@ -64,13 +64,14 @@ logger = logging.getLogger(__name__)
 sb_client: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # --- Fetch Helpers ---
-def fetch_table(table_name: str, match_criteria: Dict[str, Any], select_cols: str = "*") -> pd.DataFrame:
+def fetch_table(table_name: str, match_criteria: Dict[str, Any] | None = None, select_cols: str = "*") -> pd.DataFrame:
     logger.debug(f"Fetching from table '{table_name}' with criteria: {match_criteria}")
     try:
-        response = sb_client.table(table_name).select(select_cols).match(match_criteria).execute()
-        df = pd.DataFrame(response.data or [])
-        logger.debug(f"Fetched {len(df)} rows from '{table_name}'.")
-        return df
+        qb = sb_client.table(table_name).select(select_cols)
+        if match_criteria:
+            qb = qb.match(match_criteria)
+        response = qb.execute()
+        return pd.DataFrame(response.data or [])
     except Exception as e:
         logger.error(f"Error fetching from table '{table_name}': {e}", exc_info=True)
         return pd.DataFrame()
@@ -179,115 +180,111 @@ def _get_mlb_team_form_string(
 # --- Snapshot Generator ---
 def make_mlb_snapshot(
     game_id: Union[str, int],
-    # Default column names used in this function that access df_game (from schedule/historical)
-    input_game_date_col: str = "game_date_et", # Primary date col in mlb_game_schedule
-    input_game_date_utc_col: str = "game_date_time_utc", # Fallback date col, typically in mlb_historical_game_stats
+    input_game_date_col: str = "game_date_et",
+    input_game_date_utc_col: str = "game_date_time_utc",
     input_home_team_id_col: str = "home_team_id",
     input_away_team_id_col: str = "away_team_id",
-    input_home_pitcher_hand_col: str = "home_starter_pitcher_handedness", # Updated from home_probable_pitcher_handedness
-    input_away_pitcher_hand_col: str = "away_starter_pitcher_handedness", # Updated from away_probable_pitcher_handedness
-    input_home_score_col: str = "home_score", # From mlb_historical_game_stats
+    input_home_pitcher_hand_col: str = "home_starter_pitcher_handedness",
+    input_away_pitcher_hand_col: str = "away_starter_pitcher_handedness",
+    input_home_score_col: str = "home_score",
     input_away_score_col: str = "away_score",
-    ):
+):
     game_id_str = str(game_id)
     logger.info(f"--- Generating MLB Snapshot for game_id: {game_id_str} ---")
 
-    # 1) Load raw game data: Try historical stats (completed games) first
-    # Ensure all columns required by features (like inning scores, pitcher handedness) are selected
-    game_data_cols_select = "*, h_inn_1, h_inn_2, h_inn_3, h_inn_4, h_inn_5, h_inn_6, h_inn_7, h_inn_8, h_inn_9, h_inn_extra, " \
-                            "a_inn_1, a_inn_2, a_inn_3, a_inn_4, a_inn_5, a_inn_6, a_inn_7, a_inn_8, a_inn_9, a_inn_extra, " \
-                            "home_starter_pitcher_handedness, away_starter_pitcher_handedness"
-    df_game = fetch_table("mlb_historical_game_stats", {"game_id": game_id_str}, select_cols=game_data_cols_select)
-    
-    is_historical_game = not df_game.empty 
-    
-    if not is_historical_game:
-        df_game = fetch_table("mlb_game_schedule", {"game_id": game_id_str})
-        if not df_game.empty:
-            logger.debug(f"Found MLB game {game_id_str} in mlb_game_schedule.")
-            # Add placeholder columns for pre-game, to avoid key errors in feature pipeline
-            # These columns are expected by the feature engine and later by the display-only handedness module
-            for col in [
-                input_home_score_col, input_away_score_col, 
-                input_home_pitcher_hand_col, input_away_pitcher_hand_col,
-                'h_inn_1', 'h_inn_2', 'h_inn_3', 'h_inn_4', 'h_inn_5', 'h_inn_6', 'h_inn_7', 'h_inn_8', 'h_inn_9', 'h_inn_extra',
-                'a_inn_1', 'a_inn_2', 'a_inn_3', 'a_inn_4', 'a_inn_5', 'a_inn_6', 'a_inn_7', 'a_inn_8', 'a_inn_9', 'a_inn_extra',
-            ]:
-                if col not in df_game.columns:
-                    df_game[col] = pd.NA # Use pandas NA for nullable integer/float columns
-        else:
+    # 1) Pull rows
+    hist_cols = (
+        "game_id,game_date_time_utc,status_short,"
+        "home_team_id,away_team_id,"
+        "home_score,away_score,"
+        "h_inn_1,h_inn_2,h_inn_3,h_inn_4,h_inn_5,h_inn_6,h_inn_7,h_inn_8,h_inn_9,h_inn_extra,"
+        "a_inn_1,a_inn_2,a_inn_3,a_inn_4,a_inn_5,a_inn_6,a_inn_7,a_inn_8,a_inn_9,a_inn_extra,"
+        "home_starter_pitcher_handedness,away_starter_pitcher_handedness"
+    )
+    df_hist  = fetch_table("mlb_historical_game_stats", {"game_id": game_id_str}, hist_cols)
+    df_sched = fetch_table(    "mlb_game_schedule",
+    {"game_id": game_id_str},
+    "game_id,home_team_id,away_team_id,game_date_et,home_probable_pitcher_handedness,away_probable_pitcher_handedness"
+)
+
+
+    is_historical_game = not df_hist.empty
+
+    # 2) Build df_game
+    if is_historical_game:
+        df_game = df_hist.copy()
+        if not df_sched.empty and "game_date_et" in df_sched.columns:
+            df_game["game_date_et"] = df_sched["game_date_et"].iloc[0]
+    else:
+        if df_sched.empty:
             logger.error(f"No primary data found for game_id={game_id_str}. Cannot generate snapshot.")
             return
+        df_game = df_sched.copy()
+        for c in [
+            input_home_score_col, input_away_score_col,
+            input_home_pitcher_hand_col, input_away_pitcher_hand_col,
+            *[f"h_inn_{i}" for i in range(1,10)], "h_inn_extra",
+            *[f"a_inn_{i}" for i in range(1,10)], "a_inn_extra",
+        ]:
+            if c not in df_game.columns:
+                df_game[c] = pd.NA
 
-    df_game['is_historical_game'] = is_historical_game
+    # 3) Parse date (ET)
+    if "game_date_et" in df_game.columns and pd.notna(df_game["game_date_et"].iloc[0]):
+        current_game_date_et = pd.to_datetime(df_game["game_date_et"].iloc[0], errors="coerce").date()
+    else:
+        dt_utc = pd.to_datetime(df_hist[input_game_date_utc_col].iloc[0], errors="coerce", utc=True) if not df_hist.empty else pd.NaT
+        current_game_date_et = dt_utc.tz_convert("America/New_York").date() if pd.notna(dt_utc) else None
 
-    # Determine game date and season
-    current_game_date_et = None
-    if input_game_date_col in df_game.columns and pd.notna(df_game[input_game_date_col].iloc[0]):
-        current_game_date_et = pd.to_datetime(df_game[input_game_date_col].iloc[0], errors='coerce').date()
-    elif input_game_date_utc_col in df_game.columns and pd.notna(df_game[input_game_date_utc_col].iloc[0]):
-        try:
-            dt_obj_utc = pd.to_datetime(df_game[input_game_date_utc_col].iloc[0], errors='coerce')
-            if pd.isna(dt_obj_utc): # Handle cases where to_datetime yields NaT
-                current_game_date_et = None
-            else:
-                # If the datetime object is naive (no timezone info), localize it to UTC.
-                # If it's already tz-aware, tz_localize will raise an error, so handle it.
-                if dt_obj_utc.tz is None: 
-                    dt_obj_utc = dt_obj_utc.tz_localize('UTC')
-                # Now convert to the target timezone (ET) and get the date part
-                current_game_date_et = dt_obj_utc.tz_convert('America/New_York').date()
-        except Exception as e:
-            logger.error(f"Error parsing {input_game_date_utc_col} for {game_id_str}: {e}", exc_info=True) # Added exc_info=True for full traceback
-
-    if current_game_date_et is None:
-        logger.error(f"No valid game date found for game_id={game_id_str}. Cannot proceed.")
+    if current_game_date_et is None or pd.isna(current_game_date_et):
+        logger.error(f"No valid game date for game_id={game_id_str}. Abort.")
         return
-    
-    # 1) Determine season for this game
+
+    # 4) Pre-game rest (only when NOT historical)
+    if not is_historical_game:
+        df_full_hist = fetch_mlb_full_history()
+        df_full_hist["played_date_et"] = (
+            pd.to_datetime(df_full_hist["game_date_time_utc"], errors="coerce", utc=True)
+              .dt.tz_convert("America/New_York").dt.date
+        )
+
+        home_id = str(df_game[input_home_team_id_col].iloc[0])
+        away_id = str(df_game[input_away_team_id_col].iloc[0])
+
+        def _days_rest(tid: str) -> int:
+            mask = (
+                (df_full_hist["home_team_id"].astype(str) == tid) |
+                (df_full_hist["away_team_id"].astype(str) == tid)
+            ) & (df_full_hist["played_date_et"] < current_game_date_et)
+            if not mask.any():
+                return 1
+            last = df_full_hist.loc[mask, "played_date_et"].max()
+            return max(1, (current_game_date_et - last).days)
+
+        df_game["rest_days_home"] = _days_rest(home_id)
+        df_game["rest_days_away"] = _days_rest(away_id)
+        df_game["rest_advantage"]  = df_game["rest_days_home"] - df_game["rest_days_away"]
+    else:
+        df_game["rest_days_home"] = pd.NA
+        df_game["rest_days_away"] = pd.NA
+        df_game["rest_advantage"]  = pd.NA
+
+    df_game["is_historical_game"] = is_historical_game
+
+    # 5) Season
     season_year = determine_season(pd.Timestamp(current_game_date_et))
 
-    # 2) Radar metric → feature-column map
-    radar_metrics_map: dict[str, dict[str, Any]] = {
-        "Pythagorean W%": {
-            "db_name": "Pythagorean Win %",
-            "home_col": "home_pythag_win_pct",
-            "away_col": "away_pythag_win_pct",
-            "round": 3
-        },
-        "Run Differential": {
-            "db_name": "Run Differential",
-            "home_col": "home_run_differential",
-            "away_col": "away_run_differential",
-            "round": 2
-        },
-        "Venue W%": {
-            "db_name": "Venue Win %",
-            "home_col": "home_venue_win_pct_home",
-            "away_col": "away_venue_win_pct_away",
-            "round": 3
-        },
-        "H/A Advantage": {
-            "db_name": "Home/Away Win Advantage",
-            "home_col": "home_venue_win_advantage",
-            "away_col": "away_venue_win_advantage",
-            "round": 3
-        },
-    }
+    # 6) Context dfs
+    df_full_history = fetch_mlb_full_history()
+    df_team_stats   = fetch_mlb_team_season_stats()
 
-    # 3) Fetch historical context
-    df_full_history = fetch_mlb_full_history()      # For H2H & form
-    df_team_stats  = fetch_mlb_team_season_stats()  # For league‐wide stats
-
-    # 4) Generate form strings
+    # 7) Form strings
     home_id = df_game[input_home_team_id_col].iloc[0]
     away_id = df_game[input_away_team_id_col].iloc[0]
     df_game["home_current_form"] = _get_mlb_team_form_string(home_id, current_game_date_et, df_full_history)
     df_game["away_current_form"] = _get_mlb_team_form_string(away_id, current_game_date_et, df_full_history)
-    logger.debug(f"Form strings: Home={df_game['home_current_form'].iloc[0]}, Away={df_game['away_current_form'].iloc[0]}")
 
-    # 5) Run core MLB feature pipeline
-    logger.info(f"Running core MLB feature pipeline for game {game_id_str}…")
+    # 8) Feature pipeline
     df_features = run_mlb_feature_pipeline(
         df=df_game.copy(),
         mlb_historical_games_df=df_full_history,
@@ -300,206 +297,168 @@ def make_mlb_snapshot(
         return
     if len(df_features) > 1:
         logger.warning(f"Expected 1 feature row, got {len(df_features)}; using first.")
-    row = df_features.iloc[0].copy()
+    row_dict = df_features.iloc[0].to_dict()
 
-        # 5a. Calculate our new display-only metrics for the Radar Chart
-    logger.debug("Calculating Run Differential and Pythagorean Win % for Radar Chart...")
-    home_runs_for = row.get('home_season_runs_for_avg', 4.5)
-    home_runs_against = row.get('home_season_runs_against_avg', 4.5)
-    away_runs_for = row.get('away_season_runs_for_avg', 4.5)
-    away_runs_against = row.get('away_season_runs_against_avg', 4.5)
+    # 9) Finalize rest once
+    if is_historical_game:
+        hr = float(row_dict.get("rest_days_home", 1) or 1)
+        ar = float(row_dict.get("rest_days_away", 1) or 1)
+        if hr > 14: hr = 1
+        if ar > 14: ar = 1
+        row_dict["rest_days_home"] = hr
+        row_dict["rest_days_away"] = ar
+        row_dict["rest_advantage"] = hr - ar
+    else:
+        row_dict["rest_days_home"] = int(df_game["rest_days_home"].iloc[0])
+        row_dict["rest_days_away"] = int(df_game["rest_days_away"].iloc[0])
+        row_dict["rest_advantage"]  = row_dict["rest_days_home"] - row_dict["rest_days_away"]
 
-    row['home_run_differential'] = home_runs_for - home_runs_against
-    row['away_run_differential'] = away_runs_for - away_runs_against
+    logger.info("Rest (final): H=%s A=%s Adv=%s",
+                row_dict["rest_days_home"], row_dict["rest_days_away"], row_dict["rest_advantage"])
 
-    # Using the "Pythagorean Expectation" formula
-    row['home_pythag_win_pct'] = (home_runs_for ** 2) / ((home_runs_for ** 2) + (home_runs_against ** 2))
-    row['away_pythag_win_pct'] = (away_runs_for ** 2) / ((away_runs_for ** 2) + (away_runs_against ** 2))
+    # 10) Radar metrics
+    h_for      = row_dict.get("home_season_runs_for_avg",     4.5)
+    h_against  = row_dict.get("home_season_runs_against_avg", 4.5)
+    a_for      = row_dict.get("away_season_runs_for_avg",     4.5)
+    a_against  = row_dict.get("away_season_runs_against_avg", 4.5)
+    row_dict["home_run_differential"] = h_for - h_against
+    row_dict["away_run_differential"] = a_for - a_against
+    row_dict["home_pythag_win_pct"]   = (h_for**2) / ((h_for**2) + (h_against**2))
+    row_dict["away_pythag_win_pct"]   = (a_for**2) / ((a_for**2) + (a_against**2))
 
-
-    # 6) Add display-only handedness features
+    # 11) Handedness display features
     df_pitcher_splits = fetch_mlb_pitcher_splits_data(season_year)
-    home_hand_col, away_hand_col = (
-        ("home_starter_pitcher_handedness", "away_starter_pitcher_handedness")
-        if is_historical_game
-        else ("home_probable_pitcher_handedness", "away_probable_pitcher_handedness")
-    )
-    row[home_hand_col] = df_game[home_hand_col].iloc[0]
-    row[away_hand_col] = df_game[away_hand_col].iloc[0]
+    home_hand_col = "home_starter_pitcher_handedness" if is_historical_game else "home_probable_pitcher_handedness"
+    away_hand_col = "away_starter_pitcher_handedness" if is_historical_game else "away_probable_pitcher_handedness"
+    row_dict[home_hand_col] = df_game.get(home_hand_col, pd.Series([pd.NA])).iloc[0]
+    row_dict[away_hand_col] = df_game.get(away_hand_col, pd.Series([pd.NA])).iloc[0]
+
     df_hand = handedness_transform(
-        df=pd.DataFrame([row]),
+        df=pd.DataFrame([row_dict]),
         mlb_pitcher_splits_df=df_pitcher_splits,
         home_team_col_param="home_team_norm",
         away_team_col_param="away_team_norm",
         home_pitcher_hand_col=home_hand_col,
         away_pitcher_hand_col=away_hand_col,
-        debug=True
+        debug=True,
     )
     if not df_hand.empty:
-        row = df_hand.iloc[0]
+        row_dict.update(df_hand.iloc[0].to_dict())
 
-    # 7) Fetch advanced team stats RPC for bar chart defaults
+    # 12) RPC for bar chart
     rpc_adv = sb_client.rpc("get_mlb_advanced_team_stats_splits", {"p_season": season_year}).execute().data or []
     df_rpc_adv = pd.DataFrame(rpc_adv)
     if "team_id" in df_rpc_adv.columns:
         df_rpc_adv["team_norm"] = df_rpc_adv["team_id"].apply(normalize_team_name)
-    home_norm = normalize_team_name(row.get(input_home_team_id_col))
-    away_norm = normalize_team_name(row.get(input_away_team_id_col))
-    home_adv_rpc_data = (
-        df_rpc_adv.loc[df_rpc_adv["team_norm"] == home_norm].iloc[0]
-        if not df_rpc_adv[df_rpc_adv["team_norm"] == home_norm].empty
-        else pd.Series()
-    )
-    away_adv_rpc_data = (
-        df_rpc_adv.loc[df_rpc_adv["team_norm"] == away_norm].iloc[0]
-        if not df_rpc_adv[df_rpc_adv["team_norm"] == away_norm].empty
-        else pd.Series()
-    )
 
-    # 8) Build headline stats
+    home_norm = normalize_team_name(row_dict.get(input_home_team_id_col))
+    away_norm = normalize_team_name(row_dict.get(input_away_team_id_col))
+
+    def _first_row_as_dict(df: pd.DataFrame) -> dict:
+        return df.iloc[0].to_dict() if not df.empty else {}
+
+    home_adv_rpc_data = _first_row_as_dict(df_rpc_adv[df_rpc_adv["team_norm"] == home_norm])
+    away_adv_rpc_data = _first_row_as_dict(df_rpc_adv[df_rpc_adv["team_norm"] == away_norm])
+
+    # 13) Headlines
     headlines = [
-        {"label": "Rest Advantage (Home)", "value": float(row.get("rest_advantage", MLB_DEFAULTS.get("mlb_rest_days", 0.0)))},
-        {"label": "Form Win% Diff", "value": round(float(row.get("form_win_pct_diff", 0.0)), 3)},
-        {"label": "Prev Season Win% Diff", "value": round(float(row.get("prev_season_win_pct_diff", 0.0)), 3)},
-        {"label": f"H2H Home Win% (L{int(row.get('matchup_num_games',0))})", "value": round(float(row.get("matchup_home_win_pct", 0.0)), 3)},
+        {"label": "Rest Advantage (Home)",  "value": int(row_dict["rest_advantage"])},
+        {"label": "Form Win% Diff",         "value": round(float(row_dict.get("form_win_pct_diff", 0.0)), 2)},
+        {"label": "Prev Season Win% Diff",  "value": round(float(row_dict.get("prev_season_win_pct_diff", 0.0)), 2)},
+        {"label": f"H2H Home Win% (L{int(row_dict.get('matchup_num_games', 0))})",
+         "value": round(float(row_dict.get("matchup_home_win_pct", 0.0)), 2)},
     ]
-    for h in headlines:
-        if h["label"] == "Rest Advantage (Home)":
-            h["value"] = int(h["value"])
-        else:
-            h["value"] = round(h["value"], 2)
 
-        # 9) Build bar chart data — always just Avg Runs For / Against
-        hf = home_adv_rpc_data.get("runs_for_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_for", 0.0))
-        af = away_adv_rpc_data.get("runs_for_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_for", 0.0))
-        ha = home_adv_rpc_data.get("runs_against_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_against", 0.0))
-        aa = away_adv_rpc_data.get("runs_against_avg_overall", MLB_DEFAULTS.get("mlb_avg_runs_against", 0.0))
-        bar_chart_data = [
-            {"category": "Avg Runs For",     "Home": round(float(hf), 2), "Away": round(float(af), 2)},
-            {"category": "Avg Runs Against", "Home": round(float(ha), 2), "Away": round(float(aa), 2)},
-        ]
+    RUNS_FOR_DEFAULT     = float(MLB_DEFAULTS.get("mlb_avg_runs_for", 4.5))
+    RUNS_AGAINST_DEFAULT = float(MLB_DEFAULTS.get("mlb_avg_runs_against", 4.5))
 
-    # 10) Fetch league ranges via RPC for radar
+    bar_chart_data = [
+        {"category": "Avg Runs For",     "Home": round(float(home_adv_rpc_data.get("runs_for_avg_overall",     RUNS_FOR_DEFAULT)), 2),
+                                          "Away": round(float(away_adv_rpc_data.get("runs_for_avg_overall",     RUNS_FOR_DEFAULT)), 2)},
+        {"category": "Avg Runs Against", "Home": round(float(home_adv_rpc_data.get("runs_against_avg_overall", RUNS_AGAINST_DEFAULT)), 2),
+                                          "Away": round(float(away_adv_rpc_data.get("runs_against_avg_overall", RUNS_AGAINST_DEFAULT)), 2)},
+    ]
+
+    # 14) Radar ranges
     ranges_rows = sb_client.rpc("get_mlb_metric_ranges", {"p_season": season_year}).execute().data or []
-    
-    # FIRST, build the dictionary from the database response
     league_ranges = {
         r["metric"]: {
-            "min":    float(r["min_value"]),
-            "max":    float(r["max_value"]),
-            "invert": (r["metric"] == "Season Runs Against")
-        }
-        for r in ranges_rows
+            "min": float(r["min_value"]),
+            "max": float(r["max_value"]),
+            "invert": (r["metric"] == "Season Runs Against"),
+        } for r in ranges_rows
     }
 
-    # SECOND, manually compute and add ranges for our new metrics if they don't already exist.
-    # This prevents KeyErrors during the radar payload creation.
     if "Pythagorean Win %" not in league_ranges and not df_team_stats.empty:
-        pythag_series = (df_team_stats['runs_for_avg_all'] ** 2) / ((df_team_stats['runs_for_avg_all'] ** 2) + (df_team_stats['runs_against_avg_all'] ** 2))
-        league_ranges["Pythagorean Win %"] = {"min": pythag_series.min(), "max": pythag_series.max(), "invert": False}
-        logger.debug("Manually calculated and added 'Pythagorean Win %' to league_ranges.")
+        pyth = (df_team_stats["runs_for_avg_all"]**2) / ((df_team_stats["runs_for_avg_all"]**2) + (df_team_stats["runs_against_avg_all"]**2))
+        league_ranges["Pythagorean Win %"] = {"min": float(pyth.min()), "max": float(pyth.max()), "invert": False}
 
     if "Run Differential" not in league_ranges and not df_team_stats.empty:
-        run_diff_series = df_team_stats['runs_for_avg_all'] - df_team_stats['runs_against_avg_all']
-        league_ranges["Run Differential"] = {"min": run_diff_series.min(), "max": run_diff_series.max(), "invert": False}
-        logger.debug("Manually calculated and added 'Run Differential' to league_ranges.")
+        rd = df_team_stats["runs_for_avg_all"] - df_team_stats["runs_against_avg_all"]
+        league_ranges["Run Differential"] = {"min": float(rd.min()), "max": float(rd.max()), "invert": False}
 
-    # The original fallback logic for when the RPC returns nothing is still needed
-    if not ranges_rows: # Check against the original RPC result
-        logger.warning("get_mlb_metric_ranges RPC empty; falling back to df_team_stats for all ranges")
-        # Note: This fallback will not include our two new metrics unless they are added here as well.
-        # The logic above already handles adding them, so this is fine.
-        league_ranges = {
+    if not ranges_rows:
+        league_ranges.update({
             "Venue Win %": {
-                "min": df_team_stats["wins_home_percentage"].min(),
-                "max": df_team_stats["wins_home_percentage"].max(),
-                "invert": False
+                "min": float(df_team_stats["wins_home_percentage"].min()),
+                "max": float(df_team_stats["wins_home_percentage"].max()),
+                "invert": False,
             },
             "Season Runs Scored": {
-                "min": df_team_stats["runs_for_avg_all"].min(),
-                "max": df_team_stats["runs_for_avg_all"].max(),
-                "invert": False
+                "min": float(df_team_stats["runs_for_avg_all"].min()),
+                "max": float(df_team_stats["runs_for_avg_all"].max()),
+                "invert": False,
             },
             "Season Runs Against": {
-                "min": df_team_stats["runs_against_avg_all"].min(),
-                "max": df_team_stats["runs_against_avg_all"].max(),
-                "invert": True
+                "min": float(df_team_stats["runs_against_avg_all"].min()),
+                "max": float(df_team_stats["runs_against_avg_all"].max()),
+                "invert": True,
             },
             "Home/Away Win Advantage": {
-                "min": (df_team_stats["wins_home_percentage"] - df_team_stats["wins_away_percentage"]).min(),
-                "max": (df_team_stats["wins_home_percentage"] - df_team_stats["wins_away_percentage"]).max(),
-                "invert": False
+                "min": float((df_team_stats["wins_home_percentage"] - df_team_stats["wins_away_percentage"]).min()),
+                "max": float((df_team_stats["wins_home_percentage"] - df_team_stats["wins_away_percentage"]).max()),
+                "invert": False,
             },
-        }
-
-    # 11) Build radar payload
-    radar_payload: List[Dict[str, Any]] = []
-    for display_metric, cfg in radar_metrics_map.items():
-        db_metric = cfg["db_name"] # Get the original DB name for lookup
-        h = float(row.get(cfg["home_col"], 0.0))
-        a = float(row.get(cfg["away_col"], 0.0))
-
-        # Look up the range using the name from the database
-        rng = league_ranges[db_metric]
-
-        def scale(v: float) -> float:
-            if rng["max"] == rng["min"]:
-                pct = 50.0
-            else:
-                pct = 100.0 * (v - rng["min"]) / (rng["max"] - rng["min"])
-            return 100.0 - pct if rng.get("invert", False) else pct
-
-        radar_payload.append({
-            "metric":   display_metric, # Use the new short name for the frontend
-            "home_raw": round(h, cfg["round"]),
-            "away_raw": round(a, cfg["round"]),
-            "home_idx": round(scale(h), 1),
-            "away_idx": round(scale(a), 1),
         })
-    logger.debug(f"radar_payload: {radar_payload}")
 
-    # New Handedness Matchup Visualization Data
-    pie_payload = []
-    logger.debug("Building handedness matchup visualization payload...")
+    radar_metrics_map = {
+        "Pythagorean W%":    {"db_name": "Pythagorean Win %",        "home_col": "home_pythag_win_pct",      "away_col": "away_pythag_win_pct",      "round": 3},
+        "Run Differential":  {"db_name": "Run Differential",          "home_col": "home_run_differential",    "away_col": "away_run_differential",    "round": 2},
+        "Venue W%":          {"db_name": "Venue Win %",               "home_col": "home_venue_win_pct_home",  "away_col": "away_venue_win_pct_away",  "round": 3},
+        "H/A Advantage":     {"db_name": "Home/Away Win Advantage",   "home_col": "home_venue_win_advantage", "away_col": "away_venue_win_advantage", "round": 3},
+    }
 
-    home_hand_val = float(row.get("h_team_off_avg_runs_vs_opp_hand", 0.0))
-    away_hand_val = float(row.get("a_team_off_avg_runs_vs_opp_hand", 0.0))
+    def _scale(v, rng):
+        if rng["max"] == rng["min"]:
+            pct = 50.0
+        else:
+            pct = 100.0 * (v - rng["min"]) / (rng["max"] - rng["min"])
+        return 100.0 - pct if rng.get("invert", False) else pct
 
-    # --- OPTION 1: Your Pie Chart Idea ---
-    # This shows the PROPORTION of the advantage between the two teams.
+    radar_payload = []
+    for disp, cfg in radar_metrics_map.items():
+        rng = league_ranges[cfg["db_name"]]
+        h_raw = float(row_dict.get(cfg["home_col"], 0.0))
+        a_raw = float(row_dict.get(cfg["away_col"], 0.0))
+        radar_payload.append({
+            "metric": disp,
+            "home_raw": round(h_raw, cfg["round"]),
+            "away_raw": round(a_raw, cfg["round"]),
+            "home_idx": round(_scale(h_raw, rng), 1),
+            "away_idx": round(_scale(a_raw, rng), 1),
+        })
+
+    home_hand_val = float(row_dict.get("h_team_off_avg_runs_vs_opp_hand", 0.0))
+    away_hand_val = float(row_dict.get("a_team_off_avg_runs_vs_opp_hand", 0.0))
     pie_payload = [
-        {
-            "category": f"Home Offense vs Starting Pitcher's Hand ({round(home_hand_val, 2)} Runs)", 
-            "value": home_hand_val, 
-            "color": "#60a5fa" # Blue for Home
-        },
-        {
-            "category": f"Away Offense vs Starting Pitcher's Hand ({round(away_hand_val, 2)} Runs)",
-            "value": away_hand_val, 
-            "color": "#4ade80" # Green for Away
-        },
+        {"category": f"Home Offense vs Starting Pitcher's Hand ({round(home_hand_val, 2)} Runs)", "value": home_hand_val, "color": "#60a5fa"},
+        {"category": f"Away Offense vs Starting Pitcher's Hand ({round(away_hand_val, 2)} Runs)", "value": away_hand_val, "color": "#4ade80"},
     ]
-    # The chart title in the frontend should be "Handedness Scoring Advantage"
 
-    # --- OPTION 2: Recommended Bar Chart ---
-    # For a clearer, direct comparison of the raw values.
-    # To use this, you would change your frontend component from a Pie Chart to a Bar Chart.
-    # The payload name `pie_chart_data` is kept for simplicity, but it would feed a bar chart.
-    # UNCOMMENT THE BLOCK BELOW to use this version.
-    """
-    pie_payload = [
-        {"name": "Home", "Runs vs Opp. Hand": round(home_hand_val, 2)},
-        {"name": "Away", "Runs vs Opp. Hand": round(away_hand_val, 2)},
-    ]
-    # The chart title in the frontend should be "Offensive Runs vs. Opposing Pitcher Hand"
-    """
-    logger.debug(f"Handedness visualization payload: {pie_payload}")
-
-    # 10) Upsert into Supabase
     snapshot_payload_final = {
         "game_id": game_id_str,
         "game_date": current_game_date_et.isoformat(),
-        "season": str(season_year), # Use the integer season year
+        "season": str(season_year),
         "is_historical": is_historical_game,
         "headline_stats": headlines,
         "bar_chart_data": bar_chart_data,
@@ -507,15 +466,14 @@ def make_mlb_snapshot(
         "pie_chart_data": pie_payload,
         "last_updated": pd.Timestamp.utcnow().isoformat()
     }
-    
+
     logger.info(f"Upserting MLB snapshot for game_id: {game_id_str}")
     upsert_response = sb_client.table("mlb_snapshots").upsert(snapshot_payload_final, on_conflict="game_id").execute()
-    
-    if hasattr(upsert_response, 'error') and upsert_response.error:
+
+    if getattr(upsert_response, "error", None):
         logger.error(f"MLB Snapshot upsert FAILED for game_id={game_id_str}: {upsert_response.error}")
-        logger.error(f"Supabase response: {upsert_response}")
-    elif hasattr(upsert_response, 'data') and not upsert_response.data and not (hasattr(upsert_response, 'count') and upsert_response.count is not None and upsert_response.count > 0) :
-        logger.warning(f"MLB Snapshot upsert for game_id={game_id_str} may have had an issue (no data/count returned). Response: {upsert_response}")
+    elif hasattr(upsert_response, "data") and not upsert_response.data and not getattr(upsert_response, "count", 0):
+        logger.warning(f"MLB Snapshot upsert maybe had an issue (no data/count). Resp: {upsert_response}")
     else:
         logger.info(f"✅ MLB Snapshot upserted for game_id={game_id_str}")
 

@@ -314,6 +314,15 @@ body {
   contain: layout;
 }
 
+mainContent {
+  overflow: auto;
+  /* no height: 100% on html/body */
+}
+nav.bottom-bar {
+  position: sticky;
+  bottom: 0;
+}
+
 /* Focus ring for interactive elements */
 @layer components {
   .focus-ring {
