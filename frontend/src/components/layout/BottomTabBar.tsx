@@ -1,6 +1,6 @@
 // frontend/src/components/layout/BottomTabBar.tsx
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Calendar as GamesIcon,
@@ -26,22 +26,32 @@ const TABS: Tab[] = [
 
 const BottomTabBar: React.FC = () => {
   const { pathname } = useLocation();
+  const [show, setShow] = useState(true);
+  const [lastY, setLastY] = useState(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentY = window.scrollY;
+      setShow(currentY > lastY);
+      setLastY(currentY);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [lastY]);
 
   return (
     <nav
       className={clsx(
-        "fixed inset-x-0 bottom-0 z-40 flex",
-        // ----- light vs dark wrapper ------------------------------------------------
-        "border-t bg-white/90 backdrop-blur-md shadow-[0_-1px_2px_rgba(0,0,0,0.05)]",
+        "fixed inset-x-0 bottom-0 z-40 transform transition-transform duration-200",
+        show ? "translate-y-0" : "translate-y-full",
+        "flex border-t bg-white/90 backdrop-blur-md shadow-[0_-1px_2px_rgba(0,0,0,0.05)]",
         "dark:bg-github-dark/95 dark:border-slate-700/40 dark:shadow-none",
-        "border-slate-300",
-        // safe‑area padding for iOS
-        "pb-[env(safe-area-inset-bottom)]"
+        "border-slate-300 pb-[env(safe-area-inset-bottom)]"
       )}
     >
       {TABS.map(({ path, label, Icon }) => {
         const isActive = pathname.startsWith(path);
-
         const tourAttr: Record<string, string | undefined> = {
           "/games": "tab-games",
           "/stats": "tab-stats",
