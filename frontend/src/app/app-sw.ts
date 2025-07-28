@@ -83,3 +83,15 @@ setCatchHandler(async ({ request }) => {
   }
   return Response.error();
 });
+registerRoute(
+  ({ url }) => url.pathname.startsWith("/api/"),
+  new NetworkFirst({
+    cacheName: "api-data-cache-v1",
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 50,
+        maxAgeSeconds: 5 * 60, // Cache data for 5 minutes
+      }),
+    ],
+  })
+);
