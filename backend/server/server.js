@@ -84,44 +84,44 @@ app.get("/", (req, res) => {
 });
 
 app.get("/help", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "help.html"));
 });
 
 // Add the missing handler for /support
 app.get("/support", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "support.html"));
 });
 
 app.get("/privacy", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "privacy.html"));
 });
 
 app.get("/documentation", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "documentation.html"));
 });
 
 app.get("/disclaimer", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "disclaimer.html"));
 });
 
 app.get("/terms", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "terms.html"));
 });
 
 // 2. PWA-specific assets
 app.get("/app-sw.js", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "no-cache");
   res.sendFile(path.join(staticRoot, "app-sw.js"));
 });
 
 app.get("/offline.html", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "offline.html"));
 });
 
@@ -150,7 +150,7 @@ app.get("/health", (_req, res) =>
 
 // 6. SPA fallback for all /app/* routes (MUST BE NEAR THE END)
 app.get(/^\/app(\/.*)?$/, (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "no-cache");
   res.sendFile(path.join(staticRoot, "app.html"));
 });
 
