@@ -1,4 +1,3 @@
-// frontend/vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -8,13 +7,18 @@ import { resolve } from "path";
 export default defineConfig({
   plugins: [
     react(),
+
     VitePWA({
       strategies: "generateSW",
       workbox: {
         cleanupOutdatedCaches: true,
         sourcemap: true,
-        // **Ignore the `v` query‑param**, so support?v=... === /support
         ignoreURLParametersMatching: [/^v$/],
+
+        // only fallback under /app
+        navigateFallback: "/app/app.html",
+        navigateFallbackAllowlist: [/^\/app\//],
+
         runtimeCaching: [
           {
             urlPattern: ({ request, url }) =>
@@ -65,9 +69,14 @@ export default defineConfig({
         ],
       },
     }),
+
     vitePluginImp({
       libList: [
-        { libName: "lodash", libDirectory: "", camel2DashComponentName: false },
+        {
+          libName: "lodash",
+          libDirectory: "",
+          camel2DashComponentName: false,
+        },
       ],
     }),
   ],
