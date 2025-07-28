@@ -1,8 +1,20 @@
+// scripts/inject-timestamp-postbuild.js
 import fs from "fs";
-const timestamp = new Date().toISOString();
-const htmlPath = "./public/support.html";
+import path from "path";
+import { fileURLToPath } from "url";
 
-let html = fs.readFileSync(htmlPath, "utf-8");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distPath = path.resolve(__dirname, "../dist/support.html");
+
+if (!fs.existsSync(distPath)) {
+  console.error("❌ dist/support.html not found.");
+  process.exit(1);
+}
+
+const timestamp = new Date().toISOString();
+
+let html = fs.readFileSync(distPath, "utf-8");
 html = html.replace(/%%RENDER_TIMESTAMP%%/, timestamp);
-fs.writeFileSync(htmlPath, html);
-console.log("✅ Injected timestamp:", timestamp);
+fs.writeFileSync(distPath, html);
+
+console.log("✅ Injected timestamp into dist/support.html:", timestamp);
