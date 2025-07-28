@@ -77,6 +77,8 @@ COPY --from=builder /app/frontend/dist/public/index.html \
      backend/server/static/public/index.html
 COPY --from=builder /app/frontend/dist/app.html \
      backend/server/static/app.html
+COPY --from=builder /app/frontend/dist/support.html \
+     backend/server/static/public/support.html
 COPY --from=builder /app/frontend/dist/manifest.webmanifest \
      backend/server/static/manifest.webmanifest
 COPY --from=builder /app/frontend/dist/assets \
