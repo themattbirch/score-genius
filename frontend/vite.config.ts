@@ -64,7 +64,7 @@ export default defineConfig({
 
         // only fallback under /app/*
         navigateFallback: "/app/app.html",
-        navigateFallbackAllowlist: [/^\/app\//],
+        navigateFallbackDenylist: [/^\/support/],
       },
 
       // include these static files in your precache manifest

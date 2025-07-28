@@ -32,13 +32,7 @@ function isPrecacheEntry(
   return typeof entry !== "string";
 }
 
-const precacheManifest = self.__WB_MANIFEST
-  .filter(
-    (entry) => isPrecacheEntry(entry) && !entry.url.includes("support.html")
-  )
-  .concat({ url: OFFLINE_URL, revision: null });
-
-precacheAndRoute(precacheManifest);
+precacheAndRoute(self.__WB_MANIFEST);
 
 clientsClaim();
 self.skipWaiting();
