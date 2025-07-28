@@ -12,7 +12,9 @@ export default defineConfig({
     VitePWA({
       strategies: "generateSW",
 
-      // 1) Files to precache (including your SPA shell)
+      // ⚡️ auto-update on every reload
+      registerType: "autoUpdate",
+
       includeAssets: [
         "offline.html",
         "privacy.html",
@@ -21,7 +23,6 @@ export default defineConfig({
         "icons/*",
       ],
 
-      // 2) Your Web App Manifest
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
@@ -54,15 +55,11 @@ export default defineConfig({
         ],
       },
 
-      // 3) All Workbox build options go under `workbox`
       workbox: {
-        // Clean up old caches
         cleanupOutdatedCaches: true,
-
-        // Strip off your `?v=` cache‑bust query
         ignoreURLParametersMatching: [/^v$/],
 
-        // Network‑First for anything matching /support (with optional query)
+        // 1) Network‑First for /support (with queries)
         runtimeCaching: [
           {
             urlPattern: /^\/support(?:\?.*)?$/,
@@ -70,15 +67,12 @@ export default defineConfig({
             options: {
               cacheName: "support-page-cache",
               networkTimeoutSeconds: 5,
-              expiration: {
-                maxEntries: 1,
-                maxAgeSeconds: 24 * 3600,
-              },
+              expiration: { maxEntries: 1, maxAgeSeconds: 24 * 3600 },
             },
           },
         ],
 
-        // Only under /app/* do we fall back to the SPA shell
+        // 2) Only under /app/*, fallback to your SPA shell
         navigateFallback: "/app/app.html",
         navigateFallbackAllowlist: [/^\/app\//],
       },
@@ -109,10 +103,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": {
-        target: "http://localhost:10000",
-        changeOrigin: true,
-      },
+      "/api": { target: "http://localhost:10000", changeOrigin: true },
     },
   },
 

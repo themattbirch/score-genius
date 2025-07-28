@@ -5,6 +5,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { setupSwagger } from "./docs/swagger.js";
+import mime from "mime";
+mime.define({ "application/manifest+json": ["webmanifest"] });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
