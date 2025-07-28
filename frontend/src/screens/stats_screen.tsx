@@ -68,6 +68,7 @@ const zeroDecimalKeys = new Set([
   "wins",
   "runs_for",
   "runs_against",
+  "gp",
 ]);
 
 type SortDir = "asc" | "desc";
