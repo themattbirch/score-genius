@@ -99,6 +99,21 @@ app.get("/privacy", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "privacy.html"));
 });
 
+app.get("/documentation", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(staticRoot, "public", "documentation.html"));
+});
+
+app.get("/disclaimer", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(staticRoot, "public", "disclaimer.html"));
+});
+
+app.get("/terms", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(staticRoot, "public", "terms.html"));
+});
+
 // 2. PWA-specific assets
 app.get("/app-sw.js", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
