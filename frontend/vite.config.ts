@@ -1,3 +1,4 @@
+// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -11,7 +12,7 @@ export default defineConfig({
     VitePWA({
       strategies: "generateSW",
 
-      // Files to precache
+      // 1) Files to precache (including your SPA shell)
       includeAssets: [
         "offline.html",
         "privacy.html",
@@ -20,7 +21,7 @@ export default defineConfig({
         "icons/*",
       ],
 
-      // Your web app manifest
+      // 2) Your Web App Manifest
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
@@ -53,19 +54,22 @@ export default defineConfig({
         ],
       },
 
+      // 3) All Workbox build options go under `workbox`
       workbox: {
-        // 1) Clean old caches & strip ?v=
+        // Clean up old caches
         cleanupOutdatedCaches: true,
+
+        // Strip off your `?v=` cache‑bust query
         ignoreURLParametersMatching: [/^v$/],
 
-        // 2) First, Network‑First for /support
+        // Network‑First for anything matching /support (with optional query)
         runtimeCaching: [
           {
-            urlPattern: ({ request, url }) =>
-              request.mode === "navigate" && url.pathname === "/support",
+            urlPattern: /^\/support(?:\?.*)?$/,
             handler: "NetworkFirst",
             options: {
               cacheName: "support-page-cache",
+              networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 1,
                 maxAgeSeconds: 24 * 3600,
@@ -74,7 +78,7 @@ export default defineConfig({
           },
         ],
 
-        // 3) Only under /app, fall back to your SPA shell
+        // Only under /app/* do we fall back to the SPA shell
         navigateFallback: "/app/app.html",
         navigateFallbackAllowlist: [/^\/app\//],
       },
