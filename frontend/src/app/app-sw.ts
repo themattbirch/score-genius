@@ -18,14 +18,30 @@ import {
 import { ExpirationPlugin } from "workbox-expiration";
 
 const OFFLINE_URL = "/app/offline.html";
-const ASSET_CACHE = "assets-cache-v2";
-const IMG_CACHE = "img-cache-v2";
+const ASSET_CACHE = "assets-cache-v3";
+const IMG_CACHE = "img-cache-v3";
+
+type PrecacheEntry = {
+  url: string;
+  revision?: string | null;
+};
+
+function isPrecacheEntry(
+  entry: string | PrecacheEntry
+): entry is PrecacheEntry {
+  return typeof entry !== "string";
+}
+
+const precacheManifest = self.__WB_MANIFEST
+  .filter(
+    (entry) => isPrecacheEntry(entry) && !entry.url.includes("support.html")
+  )
+  .concat({ url: OFFLINE_URL, revision: null });
+
+precacheAndRoute(precacheManifest);
 
 clientsClaim();
 self.skipWaiting();
-
-precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
-cleanupOutdatedCaches();
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", () => self.clients.claim());

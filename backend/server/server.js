@@ -1,13 +1,17 @@
 // backend/server/server.js
 // ScoreGenius backend entrypoint (Express)
+
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { setupSwagger } from "./docs/swagger.js";
 
+// Resolve __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load .env from known locations
 ["../.env", "../../.env"].forEach((rel) => {
   const p = path.join(__dirname, rel);
   if (fs.existsSync(p)) dotenv.config({ path: p, override: true });
@@ -29,6 +33,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("FATAL: SUPABASE_URL or SUPABASE_SERVICE_KEY missing");
   process.exit(1);
 }
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
@@ -36,6 +41,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 const staticRoot = path.join(__dirname, "static");
 const app = express();
 
+// ─── Middleware ─────────────────────────────────────────────────────────────
 app.use(
   cors({
     origin: [
@@ -84,9 +90,7 @@ app.use((req, res, next) => {
 
 // =================== ✨ SIMPLIFIED ROUTING ===================
 
-// 1. SERVE ALL Static Files. And Force fresh fetches for SW and offline HTML. And Marketing Pages.
-// This single line correctly serves EVERYTHING from your 'static' folder.
-// It will handle /assets/*, /icons/*, and most importantly, /app/app-sw.js.
+// 1. Serve all static files and handle SW, offline, and marketing pages
 app.get("/app/app-sw.js", (req, res) => {
   res.setHeader(
     "Cache-Control",
@@ -118,7 +122,7 @@ app.use(
   })
 );
 
-// 1a) .well‑known
+// 1a) .well-known directory
 app.use(
   "/.well-known",
   express.static(path.join(staticRoot, "public", ".well-known"), {
@@ -128,20 +132,20 @@ app.use(
 
 app.use(express.static(staticRoot));
 
-// 2. ✅ SERVE API ROUTES
+// 2. ✅ API Routes
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 app.use("/api/v1/nfl", nflRoutes);
 app.use("/api/weather", weatherRoutes);
+
+// Swagger & health check
 setupSwagger(app);
 app.get("/docs", (_req, res) => res.redirect("/api-docs"));
 app.get("/health", (_req, res) =>
   res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// 3. ✅ SPA FALLBACK (for the app)
-// This specifically catches any route under /app and serves the app shell.
-// It uses a Regular Expression to avoid parsing errors.
+// 3. ✅ SPA fallback for /app/* routes
 app.get(/^\/app(\/.*)?$/, (req, res) => {
   res.setHeader(
     "Cache-Control",
@@ -150,8 +154,7 @@ app.get(/^\/app(\/.*)?$/, (req, res) => {
   res.sendFile(path.join(staticRoot, "app.html"));
 });
 
-// 4. ✅ FINAL 404 & ERROR HANDLERS
-// These will now correctly catch any request that doesn't match the above routes.
+// 4. ✅ Final 404 and error handlers
 app.use((req, res, _next) => {
   const file404 = path.join(staticRoot, "public", "404.html");
   if (fs.existsSync(file404)) {
@@ -165,6 +168,6 @@ app.use((err, req, res, _next) => {
   res.status(err.status || 500).json({ error: err.message || "Server Error" });
 });
 
-// Start the server
+// Start server
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
