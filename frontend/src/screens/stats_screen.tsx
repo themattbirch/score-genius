@@ -389,11 +389,12 @@ const StatsScreen: React.FC = () => {
 
   const mlbAdvHeaders = [
     { label: "Team", key: "team_name" as MlbAdvKey },
-    { label: "Pyth W%", key: "pythagorean_win_pct" as MlbAdvKey },
+    { label: "Win %", key: "win_pct" as MlbAdvKey },
+    { label: "Pyth W%", key: "pythag_win_pct" as MlbAdvKey },
     { label: "Run Diff", key: "run_differential" as MlbAdvKey },
     { label: "Run Diff Avg", key: "run_differential_avg" as MlbAdvKey },
     { label: "Luck", key: "luck_factor" as MlbAdvKey },
-    { label: "GP", key: "games_played" as MlbAdvKey },
+    { label: "GP", key: "gp" as MlbAdvKey },
   ];
 
   const playerHeaders = [
