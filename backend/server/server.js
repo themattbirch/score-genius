@@ -1,12 +1,5 @@
 // backend/server/server.js
 // ScoreGenius backend entrypoint (Express)
-// -------------------------------------------------------------
-// Dependency‑free favicon support added:
-//   • Detects backend/server/public/favicon.ico at startup.
-//   • If present, serves /favicon.ico with long‑cache headers **before** logging middleware.
-//   • Prevents noisy 404s + Workbox bad‑precaching-response errors.
-// -------------------------------------------------------------
-
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -54,6 +47,19 @@ app.use(
 );
 app.use(express.json());
 
+app.get("/support", (req, res) => {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
+  res.sendFile(path.join(staticRoot, "public", "support.html"));
+});
+
+app.get("/privacy", (req, res) => {
+  res.sendFile(path.join(staticRoot, "public", "privacy.html"));
+});
+
 app.use("/api/v1", (_req, res, next) => {
   res.setHeader(
     "Cache-Control",
@@ -100,14 +106,6 @@ app.get("/app/offline.html", (req, res) => {
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.sendFile(path.join(staticRoot, "app", "offline.html"));
-});
-
-app.get("/support", (req, res) => {
-  res.sendFile(path.join(staticRoot, "public", "support.html"));
-});
-
-app.get("/privacy", (req, res) => {
-  res.sendFile(path.join(staticRoot, "public", "privacy.html"));
 });
 
 app.get("/", (req, res) => {
