@@ -54,7 +54,7 @@ COPY backend/ ./backend/
 RUN mkdir -p backend/server/static/public/.well-known
 COPY frontend/public/*.html backend/server/static/public/
 COPY frontend/public/.well-known/assetlinks.json backend/server/static/public/.well-known/
-COPY --from=builder /app/dist/index.html backend/server/static/app.html
+COPY --from=builder /app/frontend/dist/index.html backend/server/static/app.html
 COPY --from=builder /app/dist/manifest.webmanifest backend/server/static/manifest.webmanifest
 COPY --from=builder /app/dist/assets/ backend/server/static/assets/
 COPY --from=builder /app/dist/media/ backend/server/static/media/
