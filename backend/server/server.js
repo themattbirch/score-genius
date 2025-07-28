@@ -87,7 +87,6 @@ app.use((req, res, next) => {
 // 1. SERVE ALL Static Files. And Force fresh fetches for SW and offline HTML. And Marketing Pages.
 // This single line correctly serves EVERYTHING from your 'static' folder.
 // It will handle /assets/*, /icons/*, and most importantly, /app/app-sw.js.
-// Serve the generated SW at /app/app-sw.js
 app.get("/app/app-sw.js", (req, res) => {
   res.setHeader(
     "Cache-Control",
@@ -96,11 +95,6 @@ app.get("/app/app-sw.js", (req, res) => {
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.sendFile(path.join(staticRoot, "app", "app-sw.js"));
-});
-
-// Optional: redirect legacy /sw.js to new path
-app.get("/sw.js", (req, res) => {
-  res.redirect(302, "/app/app-sw.js");
 });
 
 app.get("/app/offline.html", (req, res) => {
