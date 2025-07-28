@@ -3,29 +3,24 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
+import vitePluginImp from "vite-plugin-imp";
+
+const swSrc = resolve(__dirname, "src/app/app-sw.ts");
 
 export default defineConfig({
-  // Where your static assets that are not processed by Vite live
-  publicDir: "public",
-
-  // Vite plugins
   plugins: [
     react(),
     VitePWA({
       strategies: "injectManifest",
-      srcDir: "src/app", // Directory where the service worker source is
-      filename: "app-sw.ts", // The service worker source file
-      injectRegister: false, // We register the service worker manually in app.ts
-
-      // Static assets to be included in the service worker precache
+      srcDir: "src/app", // where app-sw.ts lives
+      filename: "app-sw.ts", // input TS file -> outputs app-sw.js
+      injectRegister: false, // you register manually
       includeAssets: [
         "offline.html",
-        "help.html", // Changed from support.html
-        "privacy.html",
         "icons/*",
-      ],
-
-      // Web App Manifest configuration
+        "privacy.html",
+        "support.html",
+      ], // just static stuff to copy
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
@@ -38,6 +33,7 @@ export default defineConfig({
         display: "standalone",
         display_override: ["fullscreen", "standalone", "minimal-ui"],
         orientation: "portrait",
+        //splash_pages: ["splash_screen.html"],
         icons: [
           {
             src: "/icons/football-icon-192.png",
@@ -60,7 +56,8 @@ export default defineConfig({
     }),
   ],
 
-  // Path aliases
+  publicDir: "public",
+
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
@@ -68,7 +65,6 @@ export default defineConfig({
     },
   },
 
-  // Development server configuration
   server: {
     open: "/app",
     port: 5173,
@@ -82,7 +78,6 @@ export default defineConfig({
     },
   },
 
-  // Build configuration
   build: {
     outDir: "dist",
     target: "es2022",
@@ -105,7 +100,6 @@ export default defineConfig({
     },
   },
 
-  // Production preview server configuration
   preview: {
     port: 3000,
   },
