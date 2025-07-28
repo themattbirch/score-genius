@@ -29,6 +29,8 @@ COPY scripts/ ./frontend/scripts/
 
 # 3) Install dependencies and run the build from the project root
 RUN npm install --prefix frontend
+RUN echo ">>> DIAGNOSTIC: Listing contents of /app/frontend <<<" && ls -lR /app/frontend/
+
 RUN npm run build --prefix frontend
 
 # ─── Stage 2: assemble backend + static ─────────────────────────────────────
