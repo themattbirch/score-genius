@@ -34,7 +34,7 @@ registerRoute(
   ({ request, url }) =>
     request.mode === "navigate" && url.pathname === "/support",
   new NetworkFirst({
-    cacheName: "support-network-first",
+    cacheName: "support-network-first-v2",
   })
 );
 

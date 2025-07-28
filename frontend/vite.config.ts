@@ -2,24 +2,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
-import { resolve } from "path";
 import vitePluginImp from "vite-plugin-imp";
-const swSrc = resolve(__dirname, "src/app/app-sw.ts");
+import { resolve } from "path";
 
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      strategies: "injectManifest",
-      srcDir: "src/app", // where app-sw.ts lives
-      filename: "app-sw.ts", // input TS file -> outputs app-sw.js
-      injectRegister: false, // you register manually
+      strategies: "generateSW",
+      workbox: {
+        cleanupOutdatedCaches: true,
+        sourcemap: true,
+      },
       includeAssets: [
         "offline.html",
-        "icons/*",
-        "privacy.html",
         "support.html",
-      ], // just static stuff to copy
+        "privacy.html",
+        "icons/*",
+      ],
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
@@ -32,7 +32,6 @@ export default defineConfig({
         display: "standalone",
         display_override: ["fullscreen", "standalone", "minimal-ui"],
         orientation: "portrait",
-        //splash_pages: ["splash_screen.html"],
         icons: [
           {
             src: "/icons/football-icon-192.png",
@@ -53,9 +52,19 @@ export default defineConfig({
         ],
       },
     }),
+    vitePluginImp({
+      libList: [
+        {
+          libName: "lodash",
+          libDirectory: "",
+          camel2DashComponentName: false,
+        },
+      ],
+    }),
   ],
 
   publicDir: "public",
+
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
