@@ -32,7 +32,7 @@ function isPrecacheEntry(
   return typeof entry !== "string";
 }
 
-precacheAndRoute(self.__WB_MANIFEST);
+precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
 cleanupOutdatedCaches();
 
 clientsClaim();
