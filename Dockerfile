@@ -100,7 +100,7 @@ COPY --from=builder /app/frontend/dist/sw.js \
 
 # 3) the Workbox runtime that generateSW emitted at the dist root
 COPY --from=builder /app/frontend/dist/workbox-*.js \
-     backend/server/static/app/
+     backend/server/static
 
 # sanity check: make sure sw.js landed where Express expects it
 RUN test -f backend/server/static/sw.js \
