@@ -13,18 +13,30 @@ import {
   NetworkOnly,
   StaleWhileRevalidate,
   CacheFirst,
+  NetworkFirst,
 } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 
 const OFFLINE_URL = "/app/offline.html";
-const ASSET_CACHE = "assets-cache-v1";
-const IMG_CACHE = "img-cache-v1";
+const ASSET_CACHE = "assets-cache-v2";
+const IMG_CACHE = "img-cache-v2";
 
 clientsClaim();
 self.skipWaiting();
 
 precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
 cleanupOutdatedCaches();
+
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", () => self.clients.claim());
+
+registerRoute(
+  ({ request, url }) =>
+    request.mode === "navigate" && url.pathname === "/support",
+  new NetworkFirst({
+    cacheName: "support-network-first",
+  })
+);
 
 // --- Navigation: NetworkOnly + offline fallback ------------------------------
 const offlineFallbackPlugin = {
