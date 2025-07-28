@@ -21,17 +21,6 @@ const OFFLINE_URL = "/app/offline.html";
 const ASSET_CACHE = "assets-cache-v1";
 const IMG_CACHE = "img-cache-v1";
 
-type PrecacheEntry = {
-  url: string;
-  revision?: string | null;
-};
-
-function isPrecacheEntry(
-  entry: string | PrecacheEntry
-): entry is PrecacheEntry {
-  return typeof entry !== "string";
-}
-
 precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
 cleanupOutdatedCaches();
 
@@ -71,18 +60,6 @@ registerRoute(
   })
 );
 
-// --- Skip waiting on demand --------------------------------------------------
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
-});
-
-// --- Global catch (extra safety) --------------------------------------------
-setCatchHandler(async ({ request }) => {
-  if (request.mode === "navigate") {
-    return (await matchPrecache(OFFLINE_URL))!;
-  }
-  return Response.error();
-});
 registerRoute(
   ({ url }) => url.pathname.startsWith("/api/"),
   new NetworkFirst({
@@ -95,3 +72,16 @@ registerRoute(
     ],
   })
 );
+
+// --- Skip waiting on demand --------------------------------------------------
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+// --- Global catch (extra safety) --------------------------------------------
+setCatchHandler(async ({ request }) => {
+  if (request.mode === "navigate") {
+    return (await matchPrecache(OFFLINE_URL))!;
+  }
+  return Response.error();
+});
