@@ -78,11 +78,20 @@ app.use("/api/v1", (_req, res, next) => {
 
 // ─── Route Handlers ───────────────────────────────────────────────────────────
 
-// 1. Static marketing pages
+// 1. Explicit routes for all static marketing pages (HIGHEST PRIORITY)
+app.get("/", (req, res) => {
+  res.sendFile(path.join(staticRoot, "public", "index.html"));
+});
+
 app.get("/help", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  console.log("🔥 help route hit!");
   res.sendFile(path.join(staticRoot, "public", "help.html"));
+});
+
+// Add the missing handler for /support
+app.get("/support", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(staticRoot, "public", "support.html"));
 });
 
 app.get("/privacy", (req, res) => {
@@ -90,58 +99,35 @@ app.get("/privacy", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "privacy.html"));
 });
 
-// 2. Favicon with long-term caching
-if (fs.existsSync(faviconPath)) {
-  app.get("/favicon.ico", (req, res) => {
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.sendFile(faviconPath);
-  });
-}
-
-// 3. PWA-specific assets (service worker, offline page)
-app.get("/app/app-sw.js", (req, res) => {
+// 2. PWA-specific assets
+app.get("/app-sw.js", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.sendFile(path.join(staticRoot, "app", "app-sw.js"));
+  res.sendFile(path.join(staticRoot, "app-sw.js"));
 });
 
-app.get("/app/offline.html", (req, res) => {
+app.get("/offline.html", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.sendFile(path.join(staticRoot, "app", "offline.html"));
+  res.sendFile(path.join(staticRoot, "offline.html"));
 });
 
-// 4. Statically served directories (marketing site, assets, etc.)
-app.get("/", (req, res) => {
-  res.sendFile(path.join(staticRoot, "public", "index.html"));
-});
+// 3. Statically served asset directories (for CSS, images, etc.)
+// This will serve files from /public, /app, and /.well-known
+app.use(express.static(staticRoot));
 
-app.use(
-  express.static(path.join(staticRoot, "public"), {
-    extensions: ["html"],
-    index: false,
-  })
-);
-app.use(
-  "/.well-known",
-  express.static(path.join(staticRoot, "public", ".well-known"), {
-    dotfiles: "allow",
-  })
-);
-app.use(express.static(staticRoot)); // General static server for assets, images, etc.
-
-// 5. API routes
+// 4. API routes
 app.use("/api/v1/nba", nbaRoutes);
 app.use("/api/v1/mlb", mlbRoutes);
 app.use("/api/v1/nfl", nflRoutes);
 app.use("/api/weather", weatherRoutes);
 
-// 6. Docs and health check
+// 5. Docs and health check
 setupSwagger(app);
 app.get("/docs", (_req, res) => res.redirect("/api-docs"));
 app.get("/health", (_req, res) =>
   res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
 
-// 7. SPA fallback for all /app/* routes
+// 6. SPA fallback for all /app/* routes (MUST BE NEAR THE END)
 app.get(/^\/app(\/.*)?$/, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(staticRoot, "app.html"));
