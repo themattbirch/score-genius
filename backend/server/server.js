@@ -48,15 +48,14 @@ app.use(
 app.use(express.json());
 
 app.get("/support", (req, res) => {
-  res.set({
-    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-    Pragma: "no-cache",
-    Expires: "0",
-  });
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  console.log("🔥 support route hit!");
   res.sendFile(path.join(staticRoot, "public", "support.html"));
 });
 
 app.get("/privacy", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  console.log(" privacy route hit!");
   res.sendFile(path.join(staticRoot, "public", "privacy.html"));
 });
 
