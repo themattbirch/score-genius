@@ -81,8 +81,8 @@ COPY --from=builder /app/frontend/dist/icons/ backend/server/static/icons/
 
 # Copy generated PWA assets
 RUN mkdir -p backend/server/static/app
-COPY --from=builder /app/frontend/dist/offline.html backend/server/static/app/offline.html
-COPY --from=builder /app/frontend/dist/app/app-sw.* backend/server/static/app/app-sw.js
+COPY --from=builder /app/frontend/dist/app/offline.html backend/server/static/app/offline.html
+COPY --from=builder /app/frontend/dist/app-sw.* backend/server/static/app/app-sw.js
 COPY --from=builder /app/frontend/dist/workbox-*.js backend/server/static/app/
 
 # Final sanity check for the service worker
