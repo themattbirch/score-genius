@@ -40,13 +40,7 @@ export default defineConfig({
       },
 
       // include these static files in your precache manifest
-      includeAssets: [
-        "offline.html",
-        "privacy.html",
-        "support.html",
-        "app.html",
-        "icons/*",
-      ],
+      includeAssets: ["offline.html", "app.html", "icons/*"],
 
       manifest: {
         name: "ScoreGenius",
