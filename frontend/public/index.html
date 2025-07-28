@@ -1,88 +1,51 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Primary SEO -->
-    <title>
-      ScoreGenius – Powerful Predictive Stats for Passionate NBA Fans
-    </title>
-    <meta
-      name="description"
-      content="Powerful pre‑game NBA score forecasts and advanced analytics—no ads, no sign‑ups, no personal data collected."
-    />
+    <title>ScoreGenius – Powerful Predictive Stats for Passionate NBA Fans</title>
+    <meta name="description" content="Powerful pre‑game NBA score forecasts and advanced analytics—no ads, no sign‑ups, no personal data collected." />
 
-    <!-- Canonical -->
     <link rel="canonical" href="https://scoregenius.io/" />
 
-    <!-- Icons & PWA -->
-    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
     <link rel="icon" href="/favicon.ico" type="image/x-icon" />
-    <link
-      rel="icon"
-      href="/icons/favicon-16x16.png"
-      sizes="16x16"
-      type="image/png"
-    />
-    <link
-      rel="icon"
-      href="/icons/favicon-32x32.png"
-      sizes="32x32"
-      type="image/png"
-    />    
+    <link rel="icon" href="/icons/favicon-16x16.png" sizes="16x16" type="image/png" />
+    <link rel="icon" href="/icons/favicon-32x32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/icons/favicon-192x192.png" sizes="192x192" type="image/png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#F97316" />
     <meta name="mobile-web-app-capable" content="yes" />
 
-    <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://scoregenius.io/" />
     <meta property="og:site_name" content="ScoreGenius" />
-    <meta
-      property="og:title"
-      content="Predict the Game, Not the Noise – ScoreGenius"
-    />
-    <meta
-      property="og:description"
-      content="Free, ad‑free PWA delivering ML‑driven pre‑game NBA score predictions and advanced stats."
-    />
-    <!-- 1200 × 630 px (≥600 KB PNG/JPG) -->
-    <meta
-      property="og:image"
-      content="https://scoregenius.io/icons/football-icon-maskable-512.png"
-    />
-    <meta
-      property="og:image:alt"
-      content="ScoreGenius interface showing NBA pre‑game prediction screen"
-    />
+    <meta property="og:title" content="Predict the Game, Not the Noise – ScoreGenius" />
+    <meta property="og:description" content="Free, ad‑free PWA delivering ML‑driven pre‑game NBA score predictions and advanced stats." />
+    <meta property="og:image" content="https://scoregenius.io/icons/football-icon-maskable-512.png" />
+    <meta property="og:image:alt" content="ScoreGenius interface showing NBA pre‑game prediction screen" />
 
-    <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@scoregeniusapp" />
     <meta name="twitter:creator" content="@scoregeniusapp" />
-    <meta
-      name="twitter:title"
-      content="Predict the Game, Not the Noise – ScoreGenius"
-    />
-    <meta
-      name="twitter:description"
-      content="ML‑powered NBA score forecasts. No accounts, no ads—just powerful predictive stats."
-    />
-    <meta
-      name="twitter:image"
-      content="https://scoregenius.io/icons/football-icon-maskable-512.png"
-    />
-    <meta
-      name="twitter:image:alt"
-      content="ScoreGenius interface showing NBA pre‑game prediction screen"
-    />
+    <meta name="twitter:title" content="Predict the Game, Not the Noise – ScoreGenius" />
+    <meta name="twitter:description" content="ML‑powered NBA score forecasts. No accounts, no ads—just powerful predictive stats." />
+    <meta name="twitter:image" content="https://scoregenius.io/icons/football-icon-maskable-512.png" />
+    <meta name="twitter:image:alt" content="ScoreGenius interface showing NBA pre‑game prediction screen" />
 
-    <!-- Tailwind / Icons -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  </head>
+
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-Q10Q9ST6DC"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag("js", new Date());
+      gtag("config", "G-Q10Q9ST6DC");
+    </script>
+</head>
 
 <body class="min-h-screen bg-gradient-to-b from-gray-900 to-black">
   <nav
@@ -558,7 +521,7 @@
       </h4>
       <ul class="space-y-2">
         <li><a class="block text-white hover:text-orange-500" href="/documentation">Documentation</a></li>
-        <li><a class="block text-white hover:text-orange-500" href="/help">Help</a></li>
+        <li><a class="block text-white hover:text-orange-500" href="/support">Support</a></li>
         <li><a class="block text-white hover:text-orange-500" href="/disclaimer">Disclaimer</a></li>
         <li><a class="block text-white hover:text-orange-500" href="/privacy">Privacy Policy</a></li>
         <li><a class="block text-white hover:text-orange-500" href="/terms">Terms of Service</a></li>
