@@ -11,13 +11,30 @@ export default defineConfig({
     VitePWA({
       strategies: "generateSW",
       workbox: {
+        // precache and clean up old caches
         cleanupOutdatedCaches: true,
         sourcemap: true,
+
+        // runtime rule: when the user navigates to "/support", serve support.html
+        runtimeCaching: [
+          {
+            urlPattern: ({ url, request }) =>
+              request.mode === "navigate" && url.pathname === "/support",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "support-page-cache",
+              expiration: {
+                maxEntries: 1,
+                maxAgeSeconds: 24 * 60 * 60, // refresh daily
+              },
+            },
+          },
+        ],
       },
       includeAssets: [
         "offline.html",
-        "support.html",
         "privacy.html",
+        "support.html", // ensure this is precached
         "icons/*",
       ],
       manifest: {
@@ -54,11 +71,7 @@ export default defineConfig({
     }),
     vitePluginImp({
       libList: [
-        {
-          libName: "lodash",
-          libDirectory: "",
-          camel2DashComponentName: false,
-        },
+        { libName: "lodash", libDirectory: "", camel2DashComponentName: false },
       ],
     }),
   ],
@@ -76,13 +89,7 @@ export default defineConfig({
     open: "/app",
     port: 5173,
     strictPort: true,
-    proxy: {
-      "/api": {
-        target: "http://localhost:10000",
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    proxy: { "/api": { target: "http://localhost:10000", changeOrigin: true } },
   },
 
   build: {
@@ -97,17 +104,9 @@ export default defineConfig({
         entryFileNames: "assets/[name].[hash].js",
         chunkFileNames: "assets/[name].[name].[hash].js",
         assetFileNames: "assets/[name].[hash].[ext]",
-        manualChunks(id) {
-          if (id.includes("node_modules")) {
-            const pkg = id.split("node_modules/")[1].split("/")[0];
-            return `vendor-${pkg.replace("@", "")}`;
-          }
-        },
       },
     },
   },
 
-  preview: {
-    port: 3000,
-  },
+  preview: { port: 3000 },
 });
