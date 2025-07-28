@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --config vite.config.ts",
     "prebuild": "node scripts/replace-render-timestamp.js",
-    "build": "vite build --debug && node scripts/generate_sitemap.js",
+    "build": "vite build --debug && node scripts/inject-timestamp-postbuild.js && node scripts/generate_sitemap.js",
     "preview": "vite preview --port 4173 --open /app/",
     "lint": "eslint \"src/**/*.{js,ts,tsx}\" --fix",
     "check": "npm run lint && npm run build"
