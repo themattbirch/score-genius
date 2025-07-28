@@ -18,8 +18,8 @@ import {
 import { ExpirationPlugin } from "workbox-expiration";
 
 const OFFLINE_URL = "/app/offline.html";
-const ASSET_CACHE = "assets-cache-v3";
-const IMG_CACHE = "img-cache-v3";
+const ASSET_CACHE = "assets-cache-v1";
+const IMG_CACHE = "img-cache-v1";
 
 type PrecacheEntry = {
   url: string;
@@ -33,20 +33,13 @@ function isPrecacheEntry(
 }
 
 precacheAndRoute(self.__WB_MANIFEST);
+cleanupOutdatedCaches();
 
 clientsClaim();
 self.skipWaiting();
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", () => self.clients.claim());
-
-registerRoute(
-  ({ request, url }) =>
-    request.mode === "navigate" && url.pathname === "/support",
-  new NetworkFirst({
-    cacheName: "support-network-first-v2",
-  })
-);
 
 // --- Navigation: NetworkOnly + offline fallback ------------------------------
 const offlineFallbackPlugin = {
