@@ -175,6 +175,11 @@ const MoreScreen: React.FC = () => {
           label="Request a feature"
           icon={MessageSquareText}
         />
+        <LinkRow
+          href="https://scoregenius.io/support"
+          label="Support"
+          icon={Monitor}
+        />
       </div>
 
       {/* ───────────── Appearance / Options ───────────── */}
