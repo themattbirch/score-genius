@@ -28,7 +28,7 @@ COPY frontend/ .
 # ─── Sanity checks ──────────────────────────────────────────────────────────
 ARG CACHEBUST=1
 
-COPY frontend/scripts/ ./scripts/
+COPY frontend/scripts/ ./frontend/scripts/
 
 
 RUN test -f src/app/app-sw.ts || ( \
