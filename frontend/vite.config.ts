@@ -1,3 +1,4 @@
+// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -10,33 +11,16 @@ export default defineConfig({
 
     VitePWA({
       strategies: "generateSW",
-      workbox: {
-        cleanupOutdatedCaches: true,
-        sourcemap: true,
-        ignoreURLParametersMatching: [/^v$/],
 
-        // only fallback under /app
-        navigateFallback: "/app/app.html",
-        navigateFallbackAllowlist: [/^\/app\//],
-
-        runtimeCaching: [
-          {
-            urlPattern: ({ request, url }) =>
-              request.mode === "navigate" && url.pathname === "/support",
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "support-page-cache",
-              expiration: { maxEntries: 1, maxAgeSeconds: 24 * 3600 },
-            },
-          },
-        ],
-      },
+      // Assets to precache
       includeAssets: [
         "offline.html",
         "privacy.html",
         "support.html",
         "icons/*",
       ],
+
+      // Web app manifest
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
@@ -68,7 +52,31 @@ export default defineConfig({
           },
         ],
       },
-    }),
+
+      // All Workbox options go here:
+      workbox: {
+        cleanupOutdatedCaches: true,
+        sourcemap: true,
+        ignoreURLParametersMatching: [/^v$/],
+
+        // only fallback your SPA shell under /app/*
+        navigateFallback: "/app/app.html",
+        navigateFallbackAllowlist: [/^\/app\//],
+
+        // runtime rule for /support
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url }) =>
+              request.mode === "navigate" && url.pathname === "/support",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "support-page-cache",
+              expiration: { maxEntries: 1, maxAgeSeconds: 24 * 3600 },
+            },
+          },
+        ],
+      },
+    }), // ← make sure this comma is here
 
     vitePluginImp({
       libList: [
@@ -78,8 +86,8 @@ export default defineConfig({
           camel2DashComponentName: false,
         },
       ],
-    }),
-  ],
+    }), // ← and here
+  ], // end plugins
 
   publicDir: "public",
 
