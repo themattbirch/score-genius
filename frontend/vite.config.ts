@@ -1,4 +1,3 @@
-// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -12,15 +11,16 @@ export default defineConfig({
     VitePWA({
       strategies: "generateSW",
 
-      // Assets to precache
+      // Files to precache
       includeAssets: [
         "offline.html",
         "privacy.html",
         "support.html",
+        "app.html",
         "icons/*",
       ],
 
-      // Web app manifest
+      // Your web app manifest
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
@@ -53,17 +53,12 @@ export default defineConfig({
         ],
       },
 
-      // All Workbox options go here:
       workbox: {
+        // 1) Clean old caches & strip ?v=
         cleanupOutdatedCaches: true,
-        sourcemap: true,
         ignoreURLParametersMatching: [/^v$/],
 
-        // only fallback your SPA shell under /app/*
-        navigateFallback: "/app/app.html",
-        navigateFallbackAllowlist: [/^\/app\//],
-
-        // runtime rule for /support
+        // 2) First, Network‑First for /support
         runtimeCaching: [
           {
             urlPattern: ({ request, url }) =>
@@ -71,12 +66,19 @@ export default defineConfig({
             handler: "NetworkFirst",
             options: {
               cacheName: "support-page-cache",
-              expiration: { maxEntries: 1, maxAgeSeconds: 24 * 3600 },
+              expiration: {
+                maxEntries: 1,
+                maxAgeSeconds: 24 * 3600,
+              },
             },
           },
         ],
+
+        // 3) Only under /app, fall back to your SPA shell
+        navigateFallback: "/app/app.html",
+        navigateFallbackAllowlist: [/^\/app\//],
       },
-    }), // ← make sure this comma is here
+    }),
 
     vitePluginImp({
       libList: [
@@ -86,8 +88,8 @@ export default defineConfig({
           camel2DashComponentName: false,
         },
       ],
-    }), // ← and here
-  ], // end plugins
+    }),
+  ],
 
   publicDir: "public",
 
@@ -102,7 +104,12 @@ export default defineConfig({
     open: "/app",
     port: 5173,
     strictPort: true,
-    proxy: { "/api": { target: "http://localhost:10000", changeOrigin: true } },
+    proxy: {
+      "/api": {
+        target: "http://localhost:10000",
+        changeOrigin: true,
+      },
+    },
   },
 
   build: {
@@ -121,5 +128,7 @@ export default defineConfig({
     },
   },
 
-  preview: { port: 3000 },
+  preview: {
+    port: 3000,
+  },
 });
