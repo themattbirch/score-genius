@@ -82,6 +82,3 @@ ReactDOM.createRoot(container).render(
 // ─── Lazy‑load Firebase Analytics on First Interaction ───────────────────────
 // This will code-split analytics into its own chunk
 setupAnalytics();
-
-// ─── Register Service Worker for PWA (optional immediate) ──────────────────
-registerSW();
