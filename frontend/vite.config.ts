@@ -11,22 +11,18 @@ export default defineConfig({
     VitePWA({
       strategies: "generateSW",
       workbox: {
-        // precache and clean up old caches
         cleanupOutdatedCaches: true,
         sourcemap: true,
-
-        // runtime rule: when the user navigates to "/support", serve support.html
+        // **Ignore the `v` query‑param**, so support?v=... === /support
+        ignoreURLParametersMatching: [/^v$/],
         runtimeCaching: [
           {
-            urlPattern: ({ url, request }) =>
+            urlPattern: ({ request, url }) =>
               request.mode === "navigate" && url.pathname === "/support",
             handler: "NetworkFirst",
             options: {
               cacheName: "support-page-cache",
-              expiration: {
-                maxEntries: 1,
-                maxAgeSeconds: 24 * 60 * 60, // refresh daily
-              },
+              expiration: { maxEntries: 1, maxAgeSeconds: 24 * 3600 },
             },
           },
         ],
@@ -34,7 +30,7 @@ export default defineConfig({
       includeAssets: [
         "offline.html",
         "privacy.html",
-        "support.html", // ensure this is precached
+        "support.html",
         "icons/*",
       ],
       manifest: {
