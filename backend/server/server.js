@@ -77,12 +77,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// =================== ✂️ DELETED OLD STATIC ROUTES ===================
-// The old, complex static routes have been removed.
+// =================== ✨ SIMPLIFIED ROUTING ===================
 
-// =================== ✨ ADDED NEW SIMPLIFIED ROUTING ===================
-
-// Force fresh fetches for SW and offline HTML
+// 1. SERVE ALL Static Files. And Force fresh fetches for SW and offline HTML. And Marketing Pages.
+// This single line correctly serves EVERYTHING from your 'static' folder.
+// It will handle /assets/*, /icons/*, and most importantly, /app/app-sw.js.
 app.get("/app/app-sw.js", (req, res) => {
   res.setHeader(
     "Cache-Control",
@@ -103,17 +102,26 @@ app.get("/app/offline.html", (req, res) => {
   res.sendFile(path.join(staticRoot, "app", "offline.html"));
 });
 
-// 1. ✅ SERVE ALL STATIC FILES
-// This single line correctly serves EVERYTHING from your 'static' folder.
-// It will handle /assets/*, /icons/*, and most importantly, /app/app-sw.js.
-app.use(express.static(staticRoot));
+app.get("/", (req, res) => {
+  res.sendFile(path.join(staticRoot, "public", "index.html"));
+});
 
+app.use(
+  express.static(path.join(staticRoot, "public"), {
+    extensions: ["html"],
+    index: false,
+  })
+);
+
+// 1a) .well‑known
 app.use(
   "/.well-known",
   express.static(path.join(staticRoot, "public", ".well-known"), {
     dotfiles: "allow",
   })
 );
+
+app.use(express.static(staticRoot));
 
 // 2. ✅ SERVE API ROUTES
 app.use("/api/v1/nba", nbaRoutes);
@@ -137,14 +145,7 @@ app.get(/^\/app(\/.*)?$/, (req, res) => {
   res.sendFile(path.join(staticRoot, "app.html"));
 });
 
-// 4. ✅ HOMEPAGE / MARKETING FALLBACK
-// This specifically catches the root route and serves your main marketing page.
-// This fixes the homepage 404 error.
-app.get("/", (req, res) => {
-  res.sendFile(path.join(staticRoot, "public", "index.html"));
-});
-
-// 5. ✅ FINAL 404 & ERROR HANDLERS
+// 4. ✅ FINAL 404 & ERROR HANDLERS
 // These will now correctly catch any request that doesn't match the above routes.
 app.use((req, res, _next) => {
   const file404 = path.join(staticRoot, "public", "404.html");
