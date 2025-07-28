@@ -28,6 +28,9 @@ COPY frontend/ .
 # ─── Sanity checks ──────────────────────────────────────────────────────────
 ARG CACHEBUST=1
 
+COPY frontend/scripts/ ./scripts/
+
+
 RUN test -f src/app/app-sw.ts || ( \
   echo "❌ src/app/app-sw.ts missing" && \
   ls -lR src/app && exit 1 \
