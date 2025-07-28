@@ -14,7 +14,12 @@ export default defineConfig({
       srcDir: "src/app", // where app-sw.ts lives
       filename: "app-sw.ts", // input TS file -> outputs app-sw.js
       injectRegister: false, // you register manually
-      includeAssets: ["offline.html", "icons/*"], // just static stuff to copy
+      includeAssets: [
+        "offline.html",
+        "icons/*",
+        "privacy.html",
+        "support.html",
+      ], // just static stuff to copy
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
