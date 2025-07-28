@@ -102,6 +102,14 @@ app.get("/app/offline.html", (req, res) => {
   res.sendFile(path.join(staticRoot, "app", "offline.html"));
 });
 
+app.get("/support", (req, res) => {
+  res.sendFile(path.join(staticRoot, "public", "support.html"));
+});
+
+app.get("/privacy", (req, res) => {
+  res.sendFile(path.join(staticRoot, "public", "privacy.html"));
+});
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "index.html"));
 });

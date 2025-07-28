@@ -78,8 +78,6 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, "public/index.html"),
         app: resolve(__dirname, "app.html"),
-        support: resolve(__dirname, "public/support.html"),
-        privacy: resolve(__dirname, "public/privacy.html"),
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
