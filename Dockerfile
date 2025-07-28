@@ -23,7 +23,7 @@ ENV VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
-COPY frontend/ ./frontend/
+COPY frontend/ .
 
 # ─── Sanity checks ──────────────────────────────────────────────────────────
 ARG CACHEBUST=1
