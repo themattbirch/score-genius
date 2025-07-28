@@ -2,7 +2,35 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import vitePluginImp from "vite-plugin-imp";
-import { resolve } from "path";
+import path from "path"; // Use the full path module
+import fs from "fs"; // Added fs for file system operations
+
+// Custom plugin to inject the build timestamp
+const injectTimestampPlugin = () => ({
+  name: "inject-timestamp",
+  // This hook runs after Vite has finished building all files
+  closeBundle: () => {
+    // The build output directory is 'dist'
+    const supportHtmlPath = path.resolve(__dirname, "dist", "support.html");
+
+    try {
+      if (fs.existsSync(supportHtmlPath)) {
+        const timestamp = new Date().toISOString();
+        let htmlContent = fs.readFileSync(supportHtmlPath, "utf-8");
+        // Find and replace your placeholder
+        htmlContent = htmlContent.replace("%%RENDER_TIMESTAMP%%", timestamp);
+        fs.writeFileSync(supportHtmlPath, htmlContent);
+        console.log(`✅ Timestamp successfully injected into support.html`);
+      } else {
+        console.warn(
+          `⚠️ support.html not found in dist. Skipping timestamp injection.`
+        );
+      }
+    } catch (e) {
+      console.error("❌ Error injecting timestamp:", e);
+    }
+  },
+});
 
 export default defineConfig({
   plugins: [
@@ -80,13 +108,15 @@ export default defineConfig({
         { libName: "lodash", libDirectory: "", camel2DashComponentName: false },
       ],
     }),
+
+    injectTimestampPlugin(), // Add the custom plugin here
   ],
 
   publicDir: "public",
 
   resolve: {
     alias: {
-      "@": resolve(__dirname, "src"),
+      "@": path.resolve(__dirname, "src"),
       lodash: "lodash-es",
     },
   },
@@ -103,8 +133,8 @@ export default defineConfig({
     target: "es2022",
     rollupOptions: {
       input: {
-        index: resolve(__dirname, "public/index.html"),
-        app: resolve(__dirname, "app.html"),
+        index: path.resolve(__dirname, "public/index.html"),
+        app: path.resolve(__dirname, "app.html"),
       },
       output: {
         entryFileNames: "assets/[name].[hash].js",
