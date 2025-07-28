@@ -24,7 +24,8 @@ ENV VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
 COPY package*.json ./
 COPY frontend/package*.json ./frontend/
 COPY frontend/ ./frontend/
-COPY scripts/ ./scripts/
+# FIX: Copy scripts into the frontend directory for the build context
+COPY scripts/ ./frontend/scripts/
 
 # 3) Install dependencies and run the build from the project root
 RUN npm install --prefix frontend
