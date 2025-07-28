@@ -14,6 +14,7 @@ export default defineConfig({
       filename: "app-sw.ts", // input TS file -> outputs app-sw.js
       injectRegister: false, // you register manually
       registerType: "autoUpdate",
+
       // Workbox options for runtime caching
       workbox: {
         cleanupOutdatedCaches: true,
