@@ -127,6 +127,12 @@ app.get("/offline.html", (req, res) => {
 
 // 3. Statically served asset directories (for CSS, images, etc.)
 // This will serve files from /public, /app, and /.well-known
+app.use(
+  "/.well-known",
+  express.static(path.join(staticRoot, "public", ".well-known"), {
+    dotfiles: "allow",
+  })
+);
 app.use(express.static(staticRoot));
 
 // 4. API routes
