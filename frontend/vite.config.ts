@@ -1,4 +1,3 @@
-// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -10,11 +9,36 @@ export default defineConfig({
     react(),
 
     VitePWA({
-      strategies: "generateSW",
-
-      // ⚡️ auto-update on every reload
+      strategies: "injectManifest",
+      srcDir: "src/app", // where app-sw.ts lives
+      filename: "app-sw.ts", // input TS file -> outputs app-sw.js
+      injectRegister: false, // you register manually
       registerType: "autoUpdate",
+      // Workbox options for runtime caching
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
 
+        runtimeCaching: [
+          {
+            // network‑first for support page
+            urlPattern: /^\/support(?:\?.*)?$/,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "support-page-cache",
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 1, maxAgeSeconds: 24 * 3600 },
+            },
+          },
+        ],
+
+        // only fallback under /app/*
+        navigateFallback: "/app/app.html",
+        navigateFallbackAllowlist: [/^\/app\//],
+      },
+
+      // include these static files in your precache manifest
       includeAssets: [
         "offline.html",
         "privacy.html",
@@ -54,37 +78,11 @@ export default defineConfig({
           },
         ],
       },
-
-      workbox: {
-        cleanupOutdatedCaches: true,
-        ignoreURLParametersMatching: [/^v$/],
-
-        // 1) Network‑First for /support (with queries)
-        runtimeCaching: [
-          {
-            urlPattern: /^\/support(?:\?.*)?$/,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "support-page-cache",
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 1, maxAgeSeconds: 24 * 3600 },
-            },
-          },
-        ],
-
-        // 2) Only under /app/*, fallback to your SPA shell
-        navigateFallback: "/app/app.html",
-        navigateFallbackAllowlist: [/^\/app\//],
-      },
     }),
 
     vitePluginImp({
       libList: [
-        {
-          libName: "lodash",
-          libDirectory: "",
-          camel2DashComponentName: false,
-        },
+        { libName: "lodash", libDirectory: "", camel2DashComponentName: false },
       ],
     }),
   ],
@@ -102,9 +100,7 @@ export default defineConfig({
     open: "/app",
     port: 5173,
     strictPort: true,
-    proxy: {
-      "/api": { target: "http://localhost:10000", changeOrigin: true },
-    },
+    proxy: { "/api": { target: "http://localhost:10000", changeOrigin: true } },
   },
 
   build: {
@@ -123,7 +119,5 @@ export default defineConfig({
     },
   },
 
-  preview: {
-    port: 3000,
-  },
+  preview: { port: 3000 },
 });

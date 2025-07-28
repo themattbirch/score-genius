@@ -96,17 +96,17 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/offline.html \
      backend/server/static/app/offline.html
 
-# 2) grab the generated SW → static/sw.js
-COPY --from=builder /app/frontend/dist/sw.js \
-     backend/server/static/sw.js
+# 2) grab the generated SW → static/app/app-sw.js
+COPY --from=builder /app/frontend/dist/app/app-sw.js \
+     backend/server/static/app/app-sw.js
 
-# 3) the Workbox runtime that generateSW emitted at the dist root
+# 3) the Workbox runtime imported by app-sw.js (still lives at dist root)
 COPY --from=builder /app/frontend/dist/workbox-*.js \
-     backend/server/static
+     backend/server/static/app/
 
-# sanity check: make sure sw.js landed where Express expects it
-RUN test -f backend/server/static/sw.js \
-    || (echo "❌ SW missing!" && ls -lR backend/server/static && exit 1)
+# sanity check: make sure app-sw.js landed where Express expects it
+RUN test -f backend/server/static/app/app-sw.js \
+    || (echo "❌ app-sw.js missing!" && ls -lR backend/server/static/app && exit 1)
 
 # Final runner
 WORKDIR /app/backend/server
