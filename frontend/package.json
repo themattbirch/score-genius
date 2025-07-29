@@ -1,6 +1,6 @@
 {
   "name": "scoregenius",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "PWA delivering NBA & MLB predictions, advanced analytics—requires internet for live data",
   "type": "module",
   "scripts": {
