@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Union, List, Dict, Any, Optional
+from datetime import date
 
 import pandas as pd
 from supabase import create_client, Client
@@ -130,6 +131,12 @@ def fetch_nba_full_history() -> pd.DataFrame:
     # Ensure game_date is parsed for form strings and filtering
     if 'game_date' in df.columns:
         df['parsed_game_date'] = pd.to_datetime(df['game_date'], errors='coerce').dt.date
+        # Build ET date col for rest
+        df['played_date_et'] = df['parsed_game_date']
+
+        # Normalize team names
+        df['home_team_norm'] = df['home_team'].apply(normalize_nba_team_name)
+        df['away_team_norm'] = df['away_team'].apply(normalize_nba_team_name)
     logger.debug(f"Fetched {len(df)} rows from nba_historical_game_stats.")
     return df
 
@@ -160,6 +167,47 @@ def fetch_nba_season_advanced_stats_rpc(season_identifier: Union[str, int]) -> p
     except Exception as e:
         logger.error(f"Error calling RPC '{rpc_name}': {e}", exc_info=True)
         return pd.DataFrame()
+
+# ────────────────────────────────────────────────────────────────────────────
+# Rest calculation (mirror MLB)
+# ────────────────────────────────────────────────────────────────────────────
+MAX_REASONABLE_REST = 10
+MIN_REST = 0
+
+def _compute_rest_days(
+    all_hist: pd.DataFrame,
+    team_norm: str,
+    game_date: Union[pd.Timestamp, date, str]
+) -> int:
+    # ensure ET date
+    gdate = pd.to_datetime(game_date, errors="coerce")
+    if pd.isna(gdate):
+        return 1
+    gdate = gdate.date()
+
+    mask = (
+        (all_hist["played_date_et"] < gdate)
+        & (
+            (all_hist["home_team_norm"] == team_norm)
+            | (all_hist["away_team_norm"] == team_norm)
+        )
+    )
+    if not mask.any():
+        return 1
+
+    last = all_hist.loc[mask, "played_date_et"].max()
+    if pd.isna(last):
+        return 1
+
+    diff = (gdate - last).days
+    diff = max(MIN_REST, diff)
+    if diff > MAX_REASONABLE_REST:
+        logger.debug(
+            "NBA Rest clamp: team=%s, raw=%d days → 1 day",
+            team_norm, diff
+        )
+        return 1
+    return diff
 
 
 # --- Form String Helper (NBA specific, using nba_historical_game_stats) ---
@@ -298,7 +346,20 @@ def make_nba_snapshot(
     df_full_history = fetch_nba_full_history()
     df_historical_team_stats = fetch_nba_team_season_stats()
 
-    
+    # ────────────────────────────────────────────────────────
+    # PRE‑PIPELINE: compute rest days exactly like MLB
+    # ────────────────────────────────────────────────────────
+    home_norm = normalize_nba_team_name(df_game[input_home_team_col].iloc[0])
+    away_norm = normalize_nba_team_name(df_game[input_away_team_col].iloc[0])
+    rest_home = _compute_rest_days(df_full_history, home_norm, current_game_dt_obj)
+    rest_away = _compute_rest_days(df_full_history, away_norm, current_game_dt_obj)
+
+    df_game['rest_days_home'] = rest_home
+    df_game['rest_days_away'] = rest_away
+    df_game['rest_advantage']  = rest_home - rest_away
+
+    logger.info(f"[NBA] Pre‑pipeline rest: H={rest_home} A={rest_away} Adv={rest_home - rest_away}")
+
 
     # 3) Populate in-df_game form strings
     df_game["home_current_form"] = _get_season_form_string(
@@ -383,7 +444,7 @@ def make_nba_snapshot(
     manual_form_diff = round((win_pct(home_form) - win_pct(away_form)) * 100, 2)
     logger.debug(f"MANUAL_FORM_DIFF = {manual_form_diff}%")
 
-    # 4) Compute features via NBA engine
+    # 4) Compute features via NBA engine (it may also emit its own rest column, but ours is authoritative)
     logger.info(f"Running NBA feature pipeline for game {game_id_str}...")
     # Passing df_game (which includes form strings and potentially quarter scores if historical)
     df_features = run_nba_feature_pipeline(
@@ -439,10 +500,14 @@ def make_nba_snapshot(
     # 6) Build snapshot components
     logger.info(f"Building NBA snapshot components for game {game_id_str}...")
 
-    # Compute rest days for each team (make sure your feature pipeline populates these)
-    rest_home = int(row.get("rest_days_home", 0))
-    rest_away = int(row.get("rest_days_away", 0))
-    logger.debug(f"DEBUG REST: rest_days_home={rest_home}, rest_days_away={rest_away}")
+    # Override with our computed / clamped values
+    rest_home = int(rest_home)
+    rest_away = int(rest_away)
+    row['rest_days_home'] = rest_home
+    row['rest_days_away'] = rest_away
+    row['rest_advantage']  = rest_home - rest_away
+
+    logger.debug(f"[NBA] Final rest in payload: H={rest_home}, A={rest_away}, Adv={rest_home - rest_away}")
 
     # Extract and debug Form Win % Diff
     form_win_pct_diff = float(row.get("form_win_pct_diff", 0.0))

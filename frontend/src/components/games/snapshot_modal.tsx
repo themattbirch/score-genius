@@ -10,6 +10,7 @@ import HeadlineGrid from "./headline_grid";
 import SkeletonLoader from "../ui/skeleton_loader";
 import { useTheme } from "@/contexts/theme_context";
 import { Sport, SnapshotData, PieChartDataItem } from "@/types";
+import { Info, ExternalLink } from "lucide-react";
 
 /* Lazy‑loaded charts */
 const BarChartComponent = lazy(() => import("./charts/bar_chart_component"));
@@ -71,6 +72,8 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
     hasPie &&
     Array.isArray(sd?.pie_chart_data) &&
     (sd!.pie_chart_data as any[])[0]?.data !== undefined;
+
+  const DOCS_URL = "https://scoregenius.io/documentation#snapshots";
 
   /* theme helpers */
   const { theme } = useTheme();
@@ -189,6 +192,35 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
                 isLoading={isLoading}
               />
             </section>
+
+            {/* Inline tip row ---------------------------------------------------- */}
+            {!isExhibition && !isLoading && (
+              <section className="px-8 -mt-2 mb-2">
+                <p className="text-[11px] leading-snug text-slate-400 dark:text-slate-400 text-center">
+                  Interact with charts (tap/hover) to see exact values.
+                </p>
+                <p className="text-[11px] leading-snug text-slate-400 dark:text-slate-400 flex items-center justify-center gap-2 mt-1">
+                  Learn all about each metric shown in
+                  <a
+                    href={DOCS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md
+                   bg-slate-500/10 dark:bg-slate-100/5
+                   text-slate-400 hover:text-slate-200
+                   hover:bg-slate-500/20 transition-colors focus-ring"
+                  >
+                    Docs
+                    <ExternalLink
+                      size={11}
+                      className="opacity-70"
+                      aria-hidden="true"
+                    />
+                  </a>
+                </p>
+              </section>
+            )}
+            {/* ------------------------------------------------------------------ */}
 
             {/* All charts inside one Suspense */}
             <Suspense

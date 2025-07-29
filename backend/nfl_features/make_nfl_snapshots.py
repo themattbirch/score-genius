@@ -7,8 +7,10 @@ import os
 import sys
 import re
 from pathlib import Path
+from typing import Union
 import pandas as pd
 from supabase import create_client, Client
+from datetime import date
 import logging
 import math
 from dotenv import load_dotenv # <-- Add this import
@@ -79,6 +81,39 @@ def sanitize_float(value, default=None):
   if not math.isfinite(value):
       return default
   return value
+
+# ───────────────────────── Rest calculation (mirror MLB/NBA) ─────────────
+MAX_REASONABLE_REST = 10
+MIN_REST = 0
+
+def _compute_rest_days(
+    all_hist: pd.DataFrame,
+    team_id: Union[str, int],
+    game_date: Union[date, str, pd.Timestamp]
+) -> int:
+    # Normalize game_date to date
+    if not isinstance(game_date, date):
+        game_date = pd.to_datetime(game_date, errors="coerce").date()
+
+    # Mask for any prior game by that team
+    mask = (
+        (all_hist["home_team_id"].astype(str) == str(team_id))
+        | (all_hist["away_team_id"].astype(str) == str(team_id))
+    ) & (all_hist["played_date_et"] < game_date)
+
+    if not mask.any():
+        return 1
+
+    last_date = all_hist.loc[mask, "played_date_et"].max()
+    if pd.isna(last_date):
+        return 1
+
+    diff = (game_date - last_date).days
+    diff = max(MIN_REST, diff)
+    if diff > MAX_REASONABLE_REST:
+        logger.debug("NFL Rest clamp: team=%s, raw=%d days → 1", team_id, diff)
+        return 1
+    return diff
 
 
 def _calculate_win_pct_from_record(record_str: str) -> float:
@@ -211,22 +246,21 @@ def make_nfl_snapshot(game_id: str):
         }
 
     # ────────────────────────── 6) Rest advantage (days) ─────────────────────
-    def _last_played(team: str) -> pd.Timestamp | None:
-        mask = (
-            (df_games_all["home_team_id"].astype(str) == team) |
-            (df_games_all["away_team_id"].astype(str) == team)
-        )
-        prior_games = df_games_all.loc[mask & (pd.to_datetime(df_games_all["game_date"]).dt.date < game_date)]
-        return pd.to_datetime(prior_games["game_date"].max()) if not prior_games.empty else None
-
-    last_home, last_away = map(_last_played, (home_id, away_id))
-    rest_advantage = (
-        (game_date - last_home.date()).days -
-        (game_date - last_away.date()).days
-        if last_home is not None and last_away is not None
-        else 0
+   # a full-history DF with played_date_et
+    df_full_history = fetch_data_from_table("nfl_historical_game_stats", "*")
+    df_full_history["played_date_et"] = (
+        pd.to_datetime(df_full_history["game_date"], errors="coerce").dt.date
     )
 
+    rest_home = _compute_rest_days(df_full_history, home_id, game_date)
+    rest_away = _compute_rest_days(df_full_history, away_id, game_date)
+    rest_advantage = rest_home - rest_away
+    logger.info(
+        "NFL Rest: Home=%d days, Away=%d days → Adv=%d",
+        rest_home,
+        rest_away,
+        rest_advantage
+    )
     # ────────────────────────── 7) H2H – last 5 meetings ─────────────────────
     h2h_mask = (
         ((df_games_all["home_team_id"].astype(str) == home_id) &
@@ -402,7 +436,9 @@ def make_nfl_snapshot(game_id: str):
     delta_pct = (home_pct - away_pct) * 100
 
     headlines = [
-        {"label": "Rest Advantage (Home)",        "value": int(rest_advantage)},
+        {"label": "Rest Days (Home)",      "value": rest_home},
+        {"label": "Rest Days (Away)",      "value": rest_away},
+        {"label": "Rest Advantage (Home)", "value": rest_advantage},
         {"label": "Turnover Margin Difference",   "value": sanitize_float(round(
                                                     team_metrics[home_id]["turnover_diff_pg"] -
                                                     team_metrics[away_id]["turnover_diff_pg"], 2))},
