@@ -250,12 +250,11 @@
         </div>
       </nav>
 <!-- Content -->
-<div class="pt-24 pb-16 px-4">
+<div class="pt-20 md:pt-24 pb-8 md:pb-12 px-4">
   <div class="max-w-7xl mx-auto bg-gray-800 rounded-2xl shadow-xl p-8">
-
-    <header class="mb-8 border-b border-gray-700 pb-6">
+    <header class="mb-10 border-b border-gray-700">
       <h1 class="text-3xl font-bold text-white">Documentation</h1>
-      <p class="text-gray-400 text-sm mt-1">
+      <p class="text-gray-400 text-sm mt-6">
         Overview, usage tips, and metric definitions for NBA &amp; MLB.
       </p>
       <p class="mt-4 text-gray-300">
@@ -266,10 +265,9 @@
       </p>
     </header>
 
-    <!-- ▸ Jump to… / Table of Contents ▸ -->
-    <div class="mb-6">
-      <h3 class="text-lg font-semibold text-orange-400 mb-2">Jump to…</h3>
-      <nav class="flex flex-wrap gap-6">
+    <div class="mb-10">
+      <h3 class="text-lg font-semibold text-orange-400 mb-3">Jump to…</h3>
+      <nav class="flex flex-wrap gap-x-6 gap-y-2">
         <a href="#purpose-usage" class="text-orange-400 hover:underline">Purpose &amp; Usage</a>
         <a href="#teams-tab"      class="text-orange-400 hover:underline">Teams Tab</a>
         <a href="#players-tab"    class="text-orange-400 hover:underline">Players Tab</a>
@@ -279,7 +277,6 @@
     </div>
 
     <main class="space-y-10 text-gray-300">
-      <!-- Purpose & Usage -->
       <section id="purpose-usage">
         <h2 class="text-2xl font-semibold text-white mb-4">
           Purpose &amp; Usage
@@ -289,7 +286,7 @@
           advanced statistics for NBA and MLB. Use the controls at the top
           of the app to:
         </p>
-        <ul class="list-disc pl-5 space-y-2">
+        <ul class="list-disc space-y-2 pl-5">
           <li>
             <strong>Switch Sport:</strong> Toggle between NBA and MLB data.
           </li>
@@ -308,13 +305,12 @@
         </ul>
       </section>
 
-      <!-- Teams Tab Metrics -->
       <section id="teams-tab">
         <h2 class="text-2xl font-semibold text-white mb-4">Teams Tab</h2>
         <p class="mb-4">
           Displays basic team rankings for the selected sport and season.
         </p>
-        <dl class="space-y-3">
+        <dl class="space-y-4">
           <div>
             <dt class="font-semibold text-white">Win %</dt>
             <dd>
@@ -349,13 +345,12 @@
         </dl>
       </section>
 
-      <!-- Players Tab Metrics -->
       <section id="players-tab">
         <h2 class="text-2xl font-semibold text-white mb-4">NBA Players Tab</h2>
         <p class="mb-4">
           Key per-game stats for NBA players in the selected season.
         </p>
-        <dl class="space-y-3">
+        <dl class="space-y-4">
           <div>
             <dt class="font-semibold text-white">Points (Pts)</dt>
             <dd><code>points</code> = total points scored per game.</dd>
@@ -395,7 +390,6 @@
         </dl>
       </section>
 
-      <!-- Advanced Tab Metrics -->
       <section id="advanced-tab">
         <h2 class="text-2xl font-semibold text-white mb-4">
           Advanced Stats Tab
@@ -404,106 +398,105 @@
           More in-depth metrics to compare team efficiency and performance.
         </p>
 
-        <!-- NBA Advanced -->
-        <div class="mb-6">
-          <h3 class="text-xl font-semibold text-white mb-3">NBA Advanced</h3>
-          <dl class="space-y-3">
-            <div>
-              <dt class="font-semibold text-white">Pace</dt>
-              <dd><em>Possessions per 48 min</em> — measures game tempo.</dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">OffRtg</dt>
-              <dd><em>Points scored per 100 possessions</em>.</dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">DefRtg</dt>
-              <dd><em>Points allowed per 100 possessions</em>.</dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">eFG%</dt>
-              <dd>
-                <code>efg_pct</code> = <em>(FGM + 0.5×3PM) ÷ FGA</em> × 100
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">TOV%</dt>
-              <dd>
-                <code>tov_pct</code> = <em>Turnovers ÷ Possessions</em> × 100
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">ORB%</dt>
-              <dd>
-                <code>oreb_pct</code> = 
-                <em>Offensive rebounds ÷ (OffReb + Opponent DefReb)</em> × 100
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">GP</dt>
-              <dd>
-                <code>games_played</code> = total games in season.
-              </dd>
-            </div>
-          </dl>
-        </div>
+        <div class="mt-6 space-y-8">
+          <div>
+            <h3 class="text-xl font-semibold text-white mb-3">NBA Advanced</h3>
+            <dl class="space-y-4">
+              <div>
+                <dt class="font-semibold text-white">Pace</dt>
+                <dd><em>Possessions per 48 min</em> — measures game tempo.</dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">OffRtg</dt>
+                <dd><em>Points scored per 100 possessions</em>.</dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">DefRtg</dt>
+                <dd><em>Points allowed per 100 possessions</em>.</dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">eFG%</dt>
+                <dd>
+                  <code>efg_pct</code> = <em>(FGM + 0.5×3PM) ÷ FGA</em> × 100
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">TOV%</dt>
+                <dd>
+                  <code>tov_pct</code> = <em>Turnovers ÷ Possessions</em> × 100
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">ORB%</dt>
+                <dd>
+                  <code>oreb_pct</code> =
+                  <em>Offensive rebounds ÷ (OffReb + Opponent DefReb)</em> × 100
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">GP</dt>
+                <dd>
+                  <code>games_played</code> = total games in season.
+                </dd>
+              </div>
+            </dl>
+          </div>
 
-        <!-- MLB Advanced -->
-        <div>
-          <h3 class="text-xl font-semibold text-white mb-3">MLB Advanced</h3>
-          <dl class="space-y-3">
-            <div>
-              <dt class="font-semibold text-white">Win %</dt>
-              <dd>
-                <code>win_pct</code> = <em>wins ÷ games_played</em> × 100
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">Pythagorean W%</dt>
-              <dd>
-                <code>pythagorean_win_pct</code> =
-                <em>runs_for² ÷ (runs_for² + runs_against²)</em> × 100
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">Run Diff</dt>
-              <dd>
-                <code>run_differential</code> =
-                <em>runs_for − runs_against</em>
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">Avg. Run Diff</dt>
-              <dd>
-                <code>run_differential_avg</code> =
-                <em>run_differential ÷ games_played</em>
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">Luck Factor</dt>
-              <dd>
-                <code>luck_factor</code> =
-                <em>actual wins − expected wins</em>
-              </dd>
-            </div>
-            <div>
-              <dt class="font-semibold text-white">GP</dt>
-              <dd>
-                <code>games_played</code> = total games in season.
-              </dd>
-            </div>
-          </dl>
+          <div>
+            <h3 class="text-xl font-semibold text-white mb-3">MLB Advanced</h3>
+            <dl class="space-y-4">
+              <div>
+                <dt class="font-semibold text-white">Win %</dt>
+                <dd>
+                  <code>win_pct</code> = <em>wins ÷ games_played</em> × 100
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">Pythagorean W%</dt>
+                <dd>
+                  <code>pythagorean_win_pct</code> =
+                  <em>runs_for² ÷ (runs_for² + runs_against²)</em> × 100
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">Run Diff</dt>
+                <dd>
+                  <code>run_differential</code> =
+                  <em>runs_for − runs_against</em>
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">Avg. Run Diff</dt>
+                <dd>
+                  <code>run_differential_avg</code> =
+                  <em>run_differential ÷ games_played</em>
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">Luck Factor</dt>
+                <dd>
+                  <code>luck_factor</code> =
+                  <em>actual wins − expected wins</em>
+                </dd>
+              </div>
+              <div>
+                <dt class="font-semibold text-white">GP</dt>
+                <dd>
+                  <code>games_played</code> = total games in season.
+                </dd>
+              </div>
+            </dl>
+          </div>
         </div>
       </section>
 
-      <!-- Snapshots Section -->
-      <section id="snapshots" class="mt-12">
+      <section id="snapshots">
         <h2 class="text-2xl font-semibold text-white mb-4">Snapshots</h2>
         <p class="mb-4">
           View per‑game breakdowns for MLB and NBA matchups in our
           “Snapshots” modal. Each snapshot includes:
         </p>
-        <ul class="list-disc pl-5 space-y-2 mb-4">
+        <ul class="list-disc space-y-2 pl-5 mb-4">
           <li>
             <strong>Key Insights:</strong> At‑a‑glance headlines like Rest
             Advantage and Form differential.
