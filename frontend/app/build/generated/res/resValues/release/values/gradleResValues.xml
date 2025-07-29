@@ -38,7 +38,7 @@
     <!-- Value from default config. -->
     <string name="launcherName" translatable="false">ScoreGenius</string>
     <!-- Value from default config. -->
-    <string name="orientation" translatable="false">portrait</string>
+    <string name="orientation" translatable="false">default</string>
     <!-- Value from default config. -->
     <string name="providerAuthority" translatable="false">io.scoregenius.app.fileprovider</string>
     <!-- Value from default config. -->

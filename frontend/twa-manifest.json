@@ -21,13 +21,17 @@
     "path": "/Users/mattb/Desktop/Projects/score-genius/frontend/android.keystore",
     "alias": "score-genius"
   },
-  "appVersionName": "17",
-  "appVersionCode": 17,
+  "appVersionName": "21",
+  "appVersionCode": 21,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://scoregenius.io/manifest.webmanifest",
   "fallbackType": "customtabs",
-  "features": {},
+  "features": {
+    "edgeToEdge": {
+      "enabled": true
+    }
+  },
   "alphaDependencies": {
     "enabled": false
   },
@@ -36,10 +40,10 @@
   "isMetaQuest": false,
   "fullScopeUrl": "https://scoregenius.io/app",
   "minSdkVersion": 21,
-  "orientation": "portrait",
+  "orientation": "default",
   "fingerprints": [],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "protocolHandlers": [],
-  "appVersion": "17"
+  "appVersion": "21"
 }
