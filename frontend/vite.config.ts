@@ -3,24 +3,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
-import vitePluginImp from "vite-plugin-imp";
-
-const swSrc = resolve(__dirname, "src/app/app-sw.ts");
 
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       strategies: "injectManifest",
-      srcDir: "src/app", // where app-sw.ts lives
-      filename: "app-sw.ts", // input TS file -> outputs app-sw.js
-      injectRegister: false, // you register manually
-      includeAssets: [
-        "offline.html",
-        "icons/*",
-        "privacy.html",
-        "support.html",
-      ], // just static stuff to copy
+      srcDir: "src/app",
+      filename: "app-sw.ts",
+      injectRegister: false,
+      includeAssets: ["offline.html", "icons/*"],
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
@@ -32,7 +24,6 @@ export default defineConfig({
         background_color: "#ffffff",
         display: "standalone",
         display_override: ["fullscreen", "standalone", "minimal-ui"],
-        orientation: "portrait",
         //splash_pages: ["splash_screen.html"],
         icons: [
           {

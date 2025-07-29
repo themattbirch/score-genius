@@ -23,8 +23,8 @@
 23-->
 24<manifest xmlns:android="http://schemas.android.com/apk/res/android"
 25    package="io.scoregenius.app"
-26    android:versionCode="17"
-27    android:versionName="17" >
+26    android:versionCode="21"
+27    android:versionName="21" >
 28
 29    <uses-sdk
 30        android:minSdkVersion="21"
