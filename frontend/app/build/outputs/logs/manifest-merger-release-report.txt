@@ -5,6 +5,7 @@ INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/A
 INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:22:1-193:12
 INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:22:1-193:12
 MERGED from [com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:17:1-32:12
+MERGED from [androidx.core:core-splashscreen:1.0.1] /Users/mattb/.gradle/caches/8.11.1/transforms/5d8a0877f4accfc20ad6eac50576f898/transformed/core-splashscreen-1.0.1/AndroidManifest.xml:17:1-24:12
 MERGED from [androidx.appcompat:appcompat-resources:1.7.0] /Users/mattb/.gradle/caches/8.11.1/transforms/d6f2e3c3aeb152384c7f6efcc9d99697/transformed/appcompat-resources-1.7.0/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.appcompat:appcompat:1.7.0] /Users/mattb/.gradle/caches/8.11.1/transforms/183ebbc8ed821348f80a6d36d20b75e3/transformed/appcompat-1.7.0/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.fragment:fragment:1.5.4] /Users/mattb/.gradle/caches/8.11.1/transforms/48bafeae36779f423d74bd8112b18853/transformed/fragment-1.5.4/AndroidManifest.xml:17:1-24:12
@@ -293,6 +294,8 @@ INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/A
 INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml
 MERGED from [com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:20:5-44
 MERGED from [com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:20:5-44
+MERGED from [androidx.core:core-splashscreen:1.0.1] /Users/mattb/.gradle/caches/8.11.1/transforms/5d8a0877f4accfc20ad6eac50576f898/transformed/core-splashscreen-1.0.1/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.core:core-splashscreen:1.0.1] /Users/mattb/.gradle/caches/8.11.1/transforms/5d8a0877f4accfc20ad6eac50576f898/transformed/core-splashscreen-1.0.1/AndroidManifest.xml:20:5-22:41
 MERGED from [androidx.appcompat:appcompat-resources:1.7.0] /Users/mattb/.gradle/caches/8.11.1/transforms/d6f2e3c3aeb152384c7f6efcc9d99697/transformed/appcompat-resources-1.7.0/AndroidManifest.xml:5:5-44
 MERGED from [androidx.appcompat:appcompat-resources:1.7.0] /Users/mattb/.gradle/caches/8.11.1/transforms/d6f2e3c3aeb152384c7f6efcc9d99697/transformed/appcompat-resources-1.7.0/AndroidManifest.xml:5:5-44
 MERGED from [androidx.appcompat:appcompat:1.7.0] /Users/mattb/.gradle/caches/8.11.1/transforms/183ebbc8ed821348f80a6d36d20b75e3/transformed/appcompat-1.7.0/AndroidManifest.xml:5:5-44

@@ -23,11 +23,11 @@
 23-->
 24<manifest xmlns:android="http://schemas.android.com/apk/res/android"
 25    package="io.scoregenius.app"
-26    android:versionCode="24"
-27    android:versionName="24" >
+26    android:versionCode="51"
+27    android:versionName="51" >
 28
 29    <uses-sdk
-30        android:minSdkVersion="22"
+30        android:minSdkVersion="21"
 31        android:targetSdkVersion="35" />
 32
 33    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
