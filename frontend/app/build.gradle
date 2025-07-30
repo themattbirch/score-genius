@@ -55,10 +55,10 @@ android {
     namespace "io.scoregenius.app"
     defaultConfig {
         applicationId "io.scoregenius.app"
-        minSdkVersion 21
+        minSdkVersion 22
         targetSdkVersion 35
-        versionCode 21
-        versionName "21"
+        versionCode 24
+        versionName "24"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name
@@ -69,6 +69,8 @@ android {
         // The URL that will be used when launching the TWA from the Android Launcher
         def launchUrl = "https://" + twaManifest.hostName + twaManifest.launchUrl
         resValue "string", "launchUrl", launchUrl
+
+        
 
         
             // The URL the Web Manifest for the Progressive Web App that the TWA points to. This
@@ -145,6 +147,8 @@ android {
 
         resValue "bool", "enableSiteSettingsShortcut", twaManifest.enableSiteSettingsShortcut
         resValue "string", "orientation", twaManifest.orientation
+
+        
     }
     buildTypes {
         release {
@@ -204,6 +208,6 @@ repositories {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     
-        implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.6.0'
+        implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.6.2'
     
 }
