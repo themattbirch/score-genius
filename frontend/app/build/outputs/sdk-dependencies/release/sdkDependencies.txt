@@ -662,6 +662,18 @@ library {
   repo_index {
   }
 }
+library {
+  maven_library {
+    groupId: "androidx.core"
+    artifactId: "core-splashscreen"
+    version: "1.0.1"
+  }
+  digests {
+    sha256: "%\310\023\256w\225\311\235\322\006(RpC\370\320B^\262\350&\346\304,\267z\313\266\300\035\336h"
+  }
+  repo_index {
+  }
+}
 library_dependencies {
   library_dep_index: 1
   library_dep_index: 2
@@ -1025,9 +1037,15 @@ library_dependencies {
   library_dep_index: 18
   library_dep_index: 51
 }
+library_dependencies {
+  library_index: 55
+  library_dep_index: 11
+  library_dep_index: 9
+}
 module_dependencies {
   module_name: "base"
   dependency_index: 0
+  dependency_index: 55
 }
 repositories {
   maven_repo {

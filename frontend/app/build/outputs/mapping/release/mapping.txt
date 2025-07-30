@@ -1,14 +1,10 @@
 # compiler: R8
 # compiler_version: 8.9.32
-# min_api: 22
+# min_api: 21
 # common_typos_disable
 # {"id":"com.android.tools.r8.mapping","version":"2.2"}
-# pg_map_id: 042ebf4
-# pg_map_hash: SHA-256 042ebf40b5c23e6a3ab0f3f79f6e8cb0cc6f261401231f07ffe261f3d298ce6f
-android.app.AppComponentFactory -> android.app.AppComponentFactory:
-# {"id":"com.android.tools.r8.synthesized"}
-    void <clinit>() -> <clinit>
-      # {"id":"com.android.tools.r8.synthesized"}
+# pg_map_id: f32b5d3
+# pg_map_hash: SHA-256 f32b5d30a25991c74bb4057ce7e6cc1b2c2a6b5006242efdbe8e47be3c810761
 android.support.customtabs.ICustomTabsCallback -> a.a:
 # {"id":"sourceFile","fileName":"ICustomTabsCallback.java"}
     java.lang.String DESCRIPTOR -> a
@@ -4972,7 +4968,8 @@ androidx.appcompat.widget.AppCompatBackgroundHelper -> androidx.appcompat.widget
     12:16:void setSupportBackgroundTintMode(android.graphics.PorterDuff$Mode):112:112 -> j
     17:18:void setSupportBackgroundTintMode(android.graphics.PorterDuff$Mode):113:113 -> j
     19:22:void setSupportBackgroundTintMode(android.graphics.PorterDuff$Mode):115:115 -> j
-    1:8:boolean shouldApplyFrameworkTintUsingColorFilter():160:160 -> k
+    1:8:boolean shouldApplyFrameworkTintUsingColorFilter():156:156 -> k
+    9:18:boolean shouldApplyFrameworkTintUsingColorFilter():160:160 -> k
 androidx.appcompat.widget.AppCompatDrawableManager -> androidx.appcompat.widget.f:
 # {"id":"sourceFile","fileName":"AppCompatDrawableManager.java"}
     androidx.appcompat.widget.ResourceManagerInternal mResourceManager -> a
@@ -5341,7 +5338,8 @@ androidx.appcompat.widget.AppCompatImageHelper -> androidx.appcompat.widget.k:
     12:16:void setSupportImageTintMode(android.graphics.PorterDuff$Mode):130:130 -> k
     17:18:void setSupportImageTintMode(android.graphics.PorterDuff$Mode):131:131 -> k
     19:22:void setSupportImageTintMode(android.graphics.PorterDuff$Mode):133:133 -> k
-    1:8:boolean shouldApplyFrameworkTintUsingColorFilter():182:182 -> l
+    1:8:boolean shouldApplyFrameworkTintUsingColorFilter():178:178 -> l
+    9:18:boolean shouldApplyFrameworkTintUsingColorFilter():182:182 -> l
 androidx.appcompat.widget.AppCompatImageView -> androidx.appcompat.widget.l:
 # {"id":"sourceFile","fileName":"AppCompatImageView.java"}
     androidx.appcompat.widget.AppCompatBackgroundHelper mBackgroundTintHelper -> a
@@ -6381,10 +6379,12 @@ androidx.appcompat.widget.DrawableUtils -> androidx.appcompat.widget.v:
     11:14:void <clinit>():43:43 -> <clinit>
     15:22:void <clinit>():45:45 -> <clinit>
     1:8:void fixDrawable(android.graphics.drawable.Drawable):76:76 -> a
-    9:18:void fixDrawable(android.graphics.drawable.Drawable):77:77 -> a
-    19:20:void fixDrawable(android.graphics.drawable.Drawable):82:82 -> a
-    21:26:void fixDrawable(android.graphics.drawable.Drawable):83:83 -> a
-    27:30:void fixDrawable(android.graphics.drawable.Drawable):86:86 -> a
+    9:16:void fixDrawable(android.graphics.drawable.Drawable):77:77 -> a
+    17:22:void fixDrawable(android.graphics.drawable.Drawable):78:78 -> a
+    23:34:void fixDrawable(android.graphics.drawable.Drawable):81:81 -> a
+    35:36:void fixDrawable(android.graphics.drawable.Drawable):82:82 -> a
+    37:42:void fixDrawable(android.graphics.drawable.Drawable):83:83 -> a
+    43:46:void fixDrawable(android.graphics.drawable.Drawable):86:86 -> a
     1:6:void forceDrawableStateChange(android.graphics.drawable.Drawable):105:105 -> b
     7:10:void forceDrawableStateChange(android.graphics.drawable.Drawable):106:106 -> b
     11:16:void forceDrawableStateChange(android.graphics.drawable.Drawable):111:111 -> b
@@ -13784,7 +13784,9 @@ androidx.core.graphics.drawable.WrappedDrawableApi21 -> androidx.core.graphics.d
     1:2:void <init>(android.graphics.drawable.Drawable):43:44 -> <init>
     3:4:void <init>(androidx.core.graphics.drawable.WrappedDrawableState,android.content.res.Resources):48:49 -> <init>
       # {"id":"com.android.tools.r8.residualsignature","signature":"(Landroidx/core/graphics/drawable/e;Landroid/content/res/Resources;)V"}
-    1:1:boolean isCompatTintEnabled():0:0 -> a
+    1:7:boolean isCompatTintEnabled():113:113 -> a
+    8:9:boolean isCompatTintEnabled():114:114 -> a
+    10:30:boolean isCompatTintEnabled():115:115 -> a
     1:4:void findAndCacheIsProjectedDrawableMethod():141:141 -> f
     5:19:void findAndCacheIsProjectedDrawableMethod():143:143 -> f
     20:27:void findAndCacheIsProjectedDrawableMethod():145:145 -> f
@@ -14903,7 +14905,14 @@ androidx.core.view.ViewCompat -> androidx.core.view.v:
     1:70:void <clinit>():1582:1582 -> <clinit>
     71:77:void <clinit>():3225:3225 -> <clinit>
     78:85:void <clinit>():4920:4920 -> <clinit>
-    1:4:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3447:3447 -> A
+    1:2:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3446:3446 -> A
+    3:9:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3447:3447 -> A
+    10:13:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3452:3452 -> A
+    14:19:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3453:3453 -> A
+    20:33:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3454:3454 -> A
+    34:39:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3456:3456 -> A
+    40:46:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3457:3457 -> A
+    47:50:void setBackgroundTintMode(android.view.View,android.graphics.PorterDuff$Mode):3459:3459 -> A
     1:7:void setImportantForAccessibilityIfNeeded(android.view.View):4915:4915 -> B
     8:11:void setImportantForAccessibilityIfNeeded(android.view.View):4916:4916 -> B
     1:14:androidx.core.view.ViewCompat$AccessibilityViewProperty stateDescriptionProperty():4726:4726 -> C
@@ -14993,7 +15002,14 @@ androidx.core.view.ViewCompat -> androidx.core.view.v:
     1:9:void setAccessibilityPaneTitle(android.view.View,java.lang.CharSequence):4674:4674 -> y
     10:15:void setAccessibilityPaneTitle(android.view.View,java.lang.CharSequence):4676:4676 -> y
     16:21:void setAccessibilityPaneTitle(android.view.View,java.lang.CharSequence):4678:4678 -> y
-    1:4:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3399:3399 -> z
+    1:2:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3398:3398 -> z
+    3:9:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3399:3399 -> z
+    10:13:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3404:3404 -> z
+    14:19:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3405:3405 -> z
+    20:33:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3406:3406 -> z
+    34:39:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3408:3408 -> z
+    40:46:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3409:3409 -> z
+    47:50:void setBackgroundTintList(android.view.View,android.content.res.ColorStateList):3411:3411 -> z
 androidx.core.view.ViewCompat$$ExternalSyntheticLambda0 -> androidx.core.view.u:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
@@ -16842,8 +16858,20 @@ androidx.core.widget.ImageViewCompat -> androidx.core.widget.c:
 # {"id":"sourceFile","fileName":"ImageViewCompat.java"}
     1:5:android.content.res.ColorStateList getImageTintList(android.widget.ImageView):40:40 -> a
     1:5:android.graphics.PorterDuff$Mode getImageTintMode(android.widget.ImageView):77:77 -> b
-    1:4:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):53:53 -> c
-    1:4:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):91:91 -> d
+    1:2:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):52:52 -> c
+    3:9:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):53:53 -> c
+    10:15:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):58:58 -> c
+    16:21:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):59:59 -> c
+    22:27:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):60:60 -> c
+    28:34:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):61:61 -> c
+    35:38:void setImageTintList(android.widget.ImageView,android.content.res.ColorStateList):63:63 -> c
+    1:2:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):90:90 -> d
+    3:9:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):91:91 -> d
+    10:15:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):96:96 -> d
+    16:21:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):97:97 -> d
+    22:27:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):98:98 -> d
+    28:34:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):99:99 -> d
+    35:38:void setImageTintMode(android.widget.ImageView,android.graphics.PorterDuff$Mode):101:101 -> d
 androidx.core.widget.ImageViewCompat$Api21Impl -> androidx.core.widget.c$a:
 # {"id":"sourceFile","fileName":"ImageViewCompat.java"}
     1:5:android.content.res.ColorStateList getImageTintList(android.widget.ImageView):120:120 -> a

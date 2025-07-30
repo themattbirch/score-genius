@@ -28,5 +28,6 @@ string launcherName
 string orientation
 string providerAuthority
 string webManifestUrl
+style Theme.App.SplashScreen
 xml filepaths
 xml shortcuts
