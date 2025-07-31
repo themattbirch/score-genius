@@ -19,6 +19,6 @@
 <!-- App identity -->
 <string name="appName">ScoreGenius</string>
 <string name="launcherName">ScoreGenius</string>
-<string name="providerAuthority">io.scoregenius.twa.fileprovider</string>
+<string name="providerAuthority">io.scoregenius.app.fileprovider</string>
 <string name="generatorApp">bubblewrap-cli</string>
 </resources>

@@ -1744,10 +1744,10 @@
     <style name="TextAppearance.Widget.AppCompat.Toolbar.Title" parent="Base.TextAppearance.Widget.AppCompat.Toolbar.Title">
     </style>
     <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
-<item name="windowSplashScreenBackground">@color/backgroundColor</item>
-<item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
-<item name="postSplashScreenTheme">@style/Theme.AppCompat.NoActionBar</item>
-</style>
+        <item name="windowSplashScreenBackground">@color/backgroundColor</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.TwaLauncher</item>
+    </style>
     <style name="Theme.AppCompat" parent="Base.Theme.AppCompat"/>
     <style name="Theme.AppCompat.CompactMenu" parent="Base.Theme.AppCompat.CompactMenu"/>
     <style name="Theme.AppCompat.DayNight" parent="Theme.AppCompat.Light"/>
@@ -1803,6 +1803,10 @@
     <style name="Theme.SplashScreen.IconBackground" parent="Theme.SplashScreen">
         <item name="android:windowBackground">@drawable/compat_splash_screen</item>
         <item name="splashScreenIconSize">@dimen/splashscreen_icon_size_with_background</item>
+    </style>
+    <style name="Theme.TwaLauncher" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
     <style name="ThemeOverlay.AppCompat" parent="Base.ThemeOverlay.AppCompat"/>
     <style name="ThemeOverlay.AppCompat.ActionBar" parent="Base.ThemeOverlay.AppCompat.ActionBar"/>
