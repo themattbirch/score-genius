@@ -1256,6 +1256,7 @@ style Theme_AppCompat_NoActionBar
 style Theme_SplashScreen
 style Theme_SplashScreen_Common
 style Theme_SplashScreen_IconBackground
+style Theme_TwaLauncher
 style ThemeOverlay_AppCompat
 style ThemeOverlay_AppCompat_ActionBar
 style ThemeOverlay_AppCompat_Dark

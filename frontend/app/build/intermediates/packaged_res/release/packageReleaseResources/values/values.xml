@@ -26,8 +26,12 @@
     <string name="providerAuthority" translatable="false">io.scoregenius.app.fileprovider</string>
     <string name="webManifestUrl" translatable="false">https://scoregenius.io/manifest.webmanifest</string>
     <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
-<item name="windowSplashScreenBackground">@color/backgroundColor</item>
-<item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
-<item name="postSplashScreenTheme">@style/Theme.AppCompat.NoActionBar</item>
-</style>
+        <item name="windowSplashScreenBackground">@color/backgroundColor</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.TwaLauncher</item>
+    </style>
+    <style name="Theme.TwaLauncher" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
 </resources>
