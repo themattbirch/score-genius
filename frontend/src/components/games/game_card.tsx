@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   lazy,
   Suspense,
   memo,
@@ -15,6 +16,7 @@ import { useTour } from "@/contexts/tour_context";
 import { useWeather } from "@/hooks/use_weather";
 import WeatherBadge from "./weather_badge";
 const WeatherModal = lazy(() => import("./weather_modal"));
+import PredBadge from "@/components/games/pred_badge";
 import SnapshotButton from "./snapshot_button";
 const SnapshotModal = lazy(() => import("./snapshot_modal"));
 
@@ -45,16 +47,6 @@ const useIsDesktop = (bp = 1024): boolean => {
   return isDesk;
 };
 
-const PredBadge: React.FC<{ away: number; home: number }> = ({
-  away,
-  home,
-}) => (
-  <span className="pred-badge">
-    {away.toFixed(1)} – {home.toFixed(1)}
-    <span className="ml-1">pred.</span>
-  </span>
-);
-
 /* ------------------------------------------------------------ */
 /* Component                                                    */
 /* ------------------------------------------------------------ */
@@ -73,6 +65,94 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const [expanded, setExpanded] = useState<boolean>(!compactDefault);
   const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
+
+  /* ------------------------------------------------------------------ */
+  /* 🔔 Tooltip & Pulse state (persisted)                                */
+  /* ------------------------------------------------------------------ */
+  const TOOLTIP_KEY = "sg_viewDetailsTooltipDismissed";
+  const [showTooltip, setShowTooltip] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return !localStorage.getItem(TOOLTIP_KEY);
+  });
+  const lastClickRef = useRef<number>(0);
+  const arrowRef = useRef<HTMLSpanElement | null>(null);
+  const [hasPulsed, setHasPulsed] = useState(false);
+
+  useEffect(() => {
+    if (!arrowRef.current || hasPulsed) return;
+
+    // Respect reduced motion
+    const prefersReduced =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) return;
+
+    const node = arrowRef.current;
+
+    // Try to detect a likely scrollable ancestor as observer root
+    const findScrollRoot = (el: HTMLElement | null): Element | null => {
+      let cur: HTMLElement | null = el;
+      while (cur && cur !== document.body) {
+        const style = getComputedStyle(cur);
+        const overflowY = style.overflowY;
+        if (/(auto|scroll)/.test(overflowY)) return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    };
+
+    const root = findScrollRoot(node);
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            node.classList.add("card-chevron--pulse");
+            setHasPulsed(true);
+            obs.disconnect();
+            return;
+          }
+        }
+      },
+      {
+        root: (root as Element) || null,
+        // trigger when any part is visible, but not when it's too far below
+        threshold: 0,
+        rootMargin: "0px 0px -25% 0px",
+      }
+    );
+
+    obs.observe(node);
+
+    // Fallback: if observer never fires within ~1.5s, pulse once anyway
+    const t = window.setTimeout(() => {
+      if (!hasPulsed) {
+        node.classList.add("card-chevron--pulse");
+        setHasPulsed(true);
+        obs.disconnect();
+      }
+    }, 1500);
+
+    return () => {
+      obs.disconnect();
+      window.clearTimeout(t);
+    };
+  }, [hasPulsed]);
+
+  // tooltip dismiss (memoized)
+  const dismissTooltip = useCallback(() => {
+    if (!showTooltip) return;
+    setShowTooltip(false);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(TOOLTIP_KEY, "1");
+    }
+  }, [showTooltip]);
+
+  // expanded toggle with tooltip dismissal baked in
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => !prev);
+    dismissTooltip();
+  }, [dismissTooltip]);
 
   const H2HButton = () => (
     <SnapshotButton
@@ -112,6 +192,13 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     homePitcher,
     homePitcherHand,
   } = game;
+
+  // debug: track when tooltip state becomes true
+  useEffect(() => {
+    if (showTooltip) {
+      console.log("🛠 tooltip state true for game", gameId);
+    }
+  }, [showTooltip, gameId]);
 
   // Make the card "tour-aware"
   useEffect(() => {
@@ -176,10 +263,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const hasPrediction =
     dataType === "schedule" && predAway != null && predHome != null;
 
-  const toggleExpanded = useCallback(() => {
-    setExpanded((prev) => !prev);
-  }, []);
-
   // Ignore clicks that originate inside elements marked data-action
   const handleCardClick = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {
@@ -192,11 +275,21 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     },
     [compactDefault, toggleExpanded]
   );
+
+  const handleArrowInteraction = useCallback(
+    (e: React.MouseEvent | React.KeyboardEvent) => {
+      e.stopPropagation();
+      lastClickRef.current = Date.now();
+      toggleExpanded();
+    },
+    [toggleExpanded]
+  );
   return (
     <article
       data-tour="game-card"
       className={`app-card ripple contain-layout
       ${compactDefault ? "app-card--compact" : ""}
+      ${compactDefault && !expanded ? "edge-gradient" : ""}
       ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
       aria-expanded={expanded}
       onClick={handleCardClick}
@@ -264,13 +357,40 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
 
             {compactDefault && (
               <div className="mt-2 flex w-full justify-center">
-                <span
-                  className={`card-chevron transition-transform ${
-                    expanded ? "rotate-180" : ""
-                  }`}
-                >
-                  ▾
-                </span>
+                <div className="relative">
+                  {" "}
+                  {/* parent for positioning */}
+                  <span
+                    ref={arrowRef}
+                    className={`card-chevron transition-transform ${
+                      expanded ? "rotate-180" : ""
+                    }`}
+                    onMouseEnter={() => {
+                      if (!showTooltip) setShowTooltip(true);
+                    }}
+                    onFocus={() => {
+                      // suppress tooltip if focus came right after clicking (within 200ms)
+                      if (Date.now() - lastClickRef.current < 200) return;
+                      if (!showTooltip) setShowTooltip(true);
+                    }}
+                    onClick={handleArrowInteraction}
+                    aria-describedby={
+                      showTooltip ? "gamecard-tooltip" : undefined
+                    }
+                    role="button"
+                  >
+                    ▾
+                  </span>
+                  {showTooltip && (
+                    <span
+                      id="gamecard-tooltip"
+                      role="tooltip"
+                      className="absolute z-50 -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)]"
+                    >
+                      View&nbsp;details
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>

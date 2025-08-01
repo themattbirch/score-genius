@@ -3,21 +3,9 @@ import React, { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import { useInjuries } from "@/api/use_injuries";
+import PredBadge from "@/components/games/pred_badge";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import type { UnifiedGame } from "@/types";
-
-/* ────────────────────────────────────────────────────────────── */
-/* Helper: Prediction badge                                       */
-/* ────────────────────────────────────────────────────────────── */
-const PredBadge: React.FC<{ away: number; home: number }> = ({
-  away,
-  home,
-}) => (
-  <span className="pred-badge px-3 py-1">
-    {away.toFixed(1)} – {home.toFixed(1)}
-    <span className="ml-1">pred.</span>
-  </span>
-);
 
 /* ────────────────────────────────────────────────────────────── */
 /* Main component                                                 */

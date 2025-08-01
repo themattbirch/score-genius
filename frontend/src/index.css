@@ -143,10 +143,16 @@ body {
 
 /* Prediction badge */
 .pred-badge {
-  @apply inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-semibold leading-none;
+  @apply inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-semibold;
   background: var(--color-pred-badge) !important;
   color: var(--color-bg);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.pred-badge .score {
+  @apply text-sm;
+}
+.pred-badge .label {
+  @apply text-[10px] opacity-80;
 }
 .pred-badge span {
   @apply text-[10px] font-normal opacity-80;
@@ -213,7 +219,7 @@ body {
   @apply inline-flex items-center justify-center w-7 h-7 rounded-full text-xl leading-none;
   color: var(--color-text-secondary);
   opacity: 0.7; /* Slightly increased default opacity */
-  transition: all 150ms ease-in-out;
+  transition: transform 150ms ease-in-out, opacity 150ms ease-in-out;
 }
 
 /* Final Chevron Icon */
@@ -226,6 +232,7 @@ body {
 
 .card-chevron:hover {
   opacity: 1;
+  transform: scale(1.12);
 }
 
 /*
@@ -234,6 +241,52 @@ body {
 */
 .dark .card-chevron {
   color: #5e7368; /* Desaturated green for dark mode */
+}
+
+/* ---------- Arrow pulse (one-time) ---------- */
+@keyframes pulse-scale {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.card-chevron--pulse {
+  animation: pulse-scale 450ms cubic-bezier(0.4, 0, 0.2, 1) 1 forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-chevron--pulse {
+    animation: none;
+  }
+}
+
+/* ---------- Right-edge depth hint ---------- */
+.edge-gradient {
+  position: relative;
+}
+.edge-gradient::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0));
+  opacity: 0.5;
+  pointer-events: none;
+}
+.dark .edge-gradient::after {
+  background: linear-gradient(
+    to left,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0)
+  );
 }
 
 /* Pill badge (status chips, sport selector) */
