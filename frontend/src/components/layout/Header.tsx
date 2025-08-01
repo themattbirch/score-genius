@@ -15,6 +15,8 @@ interface HeaderProps {
   showDatePicker?: boolean;
 }
 
+const SPORT_OPTIONS: Sport[] = ["MLB", "NBA", "NFL"];
+
 const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
   const navigate = useNavigate();
   const { sport, setSport } = useSport();
@@ -38,12 +40,12 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
         onClick={() => navigate("/games")}
         className="flex items-center gap-2"
       >
-        <LogoWordmark className="logo-svg h-6 sm:h-8 md:h-10 w-auto" />
+        <LogoWordmark className="logo-svg h-5 sm:h-7 md:h-8 w-auto" />
       </button>
 
-      {/* Sport toggle + optional date picker */}
+      {/* Sport switcher + optional date picker */}
       <div className="flex items-center gap-3">
-        <SportToggle active={sport} onChange={setSport} />
+        <SportSwitcher active={sport} onChange={setSport} />
         {showDatePicker && (
           <Popover>
             <PopoverTrigger asChild>
@@ -78,48 +80,42 @@ const Header: React.FC<HeaderProps> = ({ showDatePicker = false }) => {
   );
 };
 
-/* ───────── Sport Toggle ───────── */
+/* ───────── SportSwitcher ───────── */
 
-interface SportToggleProps {
+interface SportSwitcherProps {
   active: Sport;
   onChange: (s: Sport) => void;
 }
 
-const SportToggle: React.FC<SportToggleProps> = ({ active, onChange }) => {
-  const base =
-    "relative w-16 py-1 text-center text-xs font-semibold transition-colors focus:outline-none";
-
-  return (
-    <div
-      className={clsx(
-        "flex overflow-hidden rounded-full border",
-        "border-slate-300 bg-white",
-        "dark:border-slate-600/60 dark:bg-slate-800"
-      )}
-      data-tour="sport-switch"
-    >
-      {(["MLB", "NBA"] as Sport[]).map((s) => {
-        const isActive = active === s;
-        return (
-          <button
-            key={s}
-            type="button"
-            aria-pressed={isActive}
-            onClick={() => onChange(s)}
-            className={clsx(
-              base,
-              isActive
-                ? "bg-brand-green text-github-dark"
-                : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-            )}
-          >
-            {s}
-          </button>
-        );
-      })}
-    </div>
-  );
-};
+const SportSwitcher: React.FC<SportSwitcherProps> = ({ active, onChange }) => (
+  <div
+    data-tour="sport-switch"
+    className={clsx(
+      "flex gap-1.5 overflow-x-auto sm:overflow-visible",
+      "px-1 py-1 rounded-full border",
+      "border-slate-300 bg-white dark:border-slate-600/60 dark:bg-slate-800"
+    )}
+  >
+    {SPORT_OPTIONS.map((s) => {
+      const isActive = s === active;
+      return (
+        <button
+          key={s}
+          type="button"
+          aria-pressed={isActive}
+          onClick={() => onChange(s)}
+          className={clsx(
+            "flex-shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors focus:outline-none",
+            isActive
+              ? "bg-green-600 text-white shadow-sm"
+              : "bg-[var(--color-panel)] text-text-secondary hover:bg-[var(--color-surface-hover)] dark:bg-[var(--color-panel)] dark:text-text-secondary dark:hover:bg-slate-700"
+          )}
+        >
+          {s}
+        </button>
+      );
+    })}
+  </div>
+);
 
 export default Header;
-export { SportToggle };

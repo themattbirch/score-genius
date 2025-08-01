@@ -55,7 +55,8 @@ const BottomTabBar: React.FC = () => {
   return (
     <nav
       className={clsx(
-        "fixed inset-x-0 bottom-0 z-40 transform transition-transform duration-200",
+        // fixed on mobile / small, static on large+
+        "fixed lg:static inset-x-0 bottom-0 z-40 transform transition-transform duration-200",
         show ? "translate-y-0" : "translate-y-full",
         "flex border-t bg-white/90 backdrop-blur-md shadow-[0_-1px_2px_rgba(0,0,0,0.05)]",
         "dark:bg-github-dark/95 dark:border-slate-700/40 dark:shadow-none",

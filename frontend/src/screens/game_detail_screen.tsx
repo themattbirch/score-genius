@@ -157,14 +157,6 @@ const GameDetailScreen: React.FC = () => {
           </div>
         )}
 
-        {tab === "Odds" && (
-          <div className="app-card p-4">
-            <p className="text-sm text-text-secondary">
-              Live odds / line movement placeholder.
-            </p>
-          </div>
-        )}
-
         {tab === "Snapshots" && (
           <div className="app-card p-4">
             <p className="text-sm text-text-secondary">

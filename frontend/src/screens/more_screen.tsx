@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 import ThemeToggle from "@/components/ui/ThemeToggle";
-import { useTour } from "@/components/ui/joyride_tour";
+import { useTour } from "@/contexts/tour_context";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 

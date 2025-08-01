@@ -1,17 +1,22 @@
 // frontend/src/api/use_nfl_schedule.ts
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import type { UnifiedGame } from "@/types";
 
 type GameWithET = UnifiedGame & { gameTimeET: string };
 
-export const useNFLSchedule = (date: string) =>
+// 1. Accept an 'options' parameter
+export const useNFLSchedule = (
+  date: string,
+  // 👇 Change this line
+  options?: Partial<UseQueryOptions<GameWithET[], Error>>
+) =>
   useQuery<GameWithET[], Error>({
     queryKey: ["nflSchedule", date],
-    staleTime: 60_000, // Refetch data considered stale after 1 minute
-    retry: (fails) => navigator.onLine && fails < 3, // Retry up to 3 times if online
-    enabled: !!date, // Only run the query if a date is provided
+    staleTime: 60_000,
+    retry: (fails) => navigator.onLine && fails < 3,
+    enabled: !!date, // Keep this base check
 
     queryFn: async () => {
       const controller = new AbortController();
@@ -46,4 +51,5 @@ export const useNFLSchedule = (date: string) =>
         }),
       }));
     },
+    ...options,
   });
