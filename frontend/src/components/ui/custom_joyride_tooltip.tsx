@@ -1,89 +1,134 @@
-// frontend/src/components/ui/custom_joyride_tooltip.tsx
 import React from "react";
 import type { TooltipRenderProps } from "react-joyride";
-// --- Import the useTour hook ---
-import { useTour } from "./joyride_tour"; // Adjust path if needed
+import { useTour } from "@/contexts/tour_context";
+
+/* -------------------------------------------------- */
+/* tiny helper – wait until selector is in the DOM    */
+/* (and has non-zero dimensions)                      */
+/* -------------------------------------------------- */
+const waitForElement = (
+  selector: string,
+  timeout = 3_000,
+  poll = 100
+): Promise<void> =>
+  new Promise((resolve) => {
+    const start = performance.now();
+    const check = () => {
+      const el = document.querySelector<HTMLElement>(selector);
+      if (el && el.offsetWidth && el.offsetHeight) {
+        return resolve();
+      }
+      if (performance.now() - start >= timeout) {
+        console.warn(
+          `[Joyride] waited ${timeout} ms – element not found`,
+          selector
+        );
+        return resolve(); // fail-soft: advance anyway
+      }
+      setTimeout(check, poll);
+    };
+    check();
+  });
+
+/**
+ * Mapping of **current** stepIndex  →  selector that must exist *before* we
+ * advance to the **next** step. (Step order is defined in joyride_tour.tsx.)
+ */
+const STEP_READINESS: Record<number, string | null> = {
+  1: null, // keep 300 ms synthetic delay
+  2: '[data-tour="snapshot-button"]', // H2H Stats button
+};
 
 export const CustomJoyrideTooltip: React.FC<TooltipRenderProps> = ({
   index,
   step,
   isLastStep,
   tooltipProps,
-  // We no longer need backProps, primaryProps, skipProps from Joyride!
 }) => {
-  // --- Get state setters and current index from context ---
   const { setStepIndex, setRun, currentStepIndex } = useTour();
 
-  // --- Custom Handler for NEXT ---
-  const handleNext = () => {
+  /* ------------------------- NAV HELPERS -------------------------- */
+  const advance = async () => {
     const nextIndex = currentStepIndex + 1;
-    // Special delay logic after Step 2 (index 1)
+
+    // synthetic delay for calendar step if needed
     if (currentStepIndex === 1) {
-      console.log("Custom Next on Step 2 (idx 1), delaying advancement...");
-      setTimeout(() => {
-        console.log(`Attempting to set stepIndex to ${nextIndex} after delay.`);
-        setStepIndex(nextIndex);
-      }, 300);
-    } else {
-      console.log(
-        `Custom Next on Step ${currentStepIndex}, advancing state to stepIndex: ${nextIndex}`
-      );
-      setStepIndex(nextIndex);
+      setTimeout(() => setStepIndex(nextIndex), 300);
+      return;
     }
-  };
 
-  // --- Custom Handler for BACK ---
-  const handleBack = () => {
-    const prevIndex = currentStepIndex - 1;
-    console.log(
-      `Custom Back on Step ${currentStepIndex}, going back state to stepIndex: ${prevIndex}`
-    );
-    if (prevIndex >= 0) {
-      setStepIndex(prevIndex);
+    // readiness gate (if any)
+    const selector = STEP_READINESS[currentStepIndex];
+    if (selector) {
+      await waitForElement(selector);
     }
+
+    setStepIndex(nextIndex);
   };
 
-  // --- Custom Handler for SKIP/CLOSE ---
-  const handleSkip = () => {
-    console.log("Custom Skip/Close clicked, stopping tour.");
-    setRun(false); // Set run to false
-    setStepIndex(0); // Reset index
+  const goBack = () => {
+    const prev = currentStepIndex - 1;
+    if (prev >= 0) setStepIndex(prev);
   };
 
+  const stopTour = () => {
+    setRun(false);
+    setStepIndex(0);
+  };
+
+  /* ------------------ MVP "no games scheduled" fallback ------------- */
+  const noGameCardPresent = !document.querySelector('[data-tour="game-card"]');
+  const isOnGameCardStep = currentStepIndex === 2;
+  const showFallback = isOnGameCardStep && noGameCardPresent;
+
+  const fallbackContent = (
+    <>
+      <div className="font-medium mb-2">
+        No games scheduled for that date/sport.
+      </div>
+      <div className="text-xs mb-3">
+        To continue the tour, pick a different date or switch to a sport that
+        has games.
+      </div>
+      <div className="text-[10px] text-slate-500">
+        Once you have a game card visible, click Next to proceed.
+      </div>
+    </>
+  );
+
+  /* --------------------------- UI -------------------------------- */
   return (
     <div
       {...tooltipProps}
-      className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg shadow-xl p-4 max-w-sm-full text-sm font-sans" // Example: Changed p-4 to p-5, max-w-xs to max-w-sm
+      className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg shadow-xl p-5 max-w-sm text-sm font-sans"
     >
-      <div className="mb-4 p-4">{step.content}</div>
+      <div className="mb-4">
+        {showFallback ? fallbackContent : step.content}
+      </div>
+
       <div className="flex justify-between items-center pt-3 mt-2 border-t border-slate-200 dark:border-slate-600">
-        {/* Skip Button */}
+        {/* SKIP / FINISH */}
         <button
-          onClick={handleSkip} // Use custom handler
+          onClick={stopTour}
           className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
         >
-          Skip {/* Or maybe Close? */}
+          {isLastStep ? "Finish" : "Skip"}
         </button>
 
-        {/* Back/Next Buttons Container */}
         <div className="flex gap-2">
-          {/* Back Button */}
-          {index > 0 && ( // Still use index prop for conditional rendering
+          {index > 0 && (
             <button
-              onClick={handleBack} // Use custom handler
+              onClick={goBack}
               className="px-3 py-1 text-xs rounded bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-800 dark:text-slate-100"
             >
               Back
             </button>
           )}
-          {/* Next/Finish Button */}
           <button
-            onClick={isLastStep ? handleSkip : handleNext} // Use custom handler (Finish acts like Skip/Close)
+            onClick={showFallback ? stopTour : isLastStep ? stopTour : advance}
             className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-700 text-white font-medium"
-            title={isLastStep ? "Finish" : "Next"}
-            aria-label={isLastStep ? "Finish" : "Next"}
           >
-            {isLastStep ? "Finish" : "Next"}
+            {showFallback ? "Got it" : isLastStep ? "Finish" : "Next"}
           </button>
         </div>
       </div>

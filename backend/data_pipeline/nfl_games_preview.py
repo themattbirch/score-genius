@@ -17,8 +17,23 @@ import time
 from datetime import date, timedelta, datetime, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
-
 import requests
+
+# -----------------------------------------------------------------
+# Add project root to Python path to allow for absolute imports
+# -----------------------------------------------------------------
+HERE = os.path.dirname(__file__)
+BACKEND_DIR = os.path.abspath(os.path.join(HERE, os.pardir))
+PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, os.pardir))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+# -----------------------------------------------------------------
+
+# 👇 NEW: Import the regular season snapshot function
+from backend.nfl_features.make_nfl_snapshots import make_nfl_snapshot
+
 
 # ── Credentials & Supabase Client Initialization ───────────────────────────
 try:
@@ -112,6 +127,7 @@ def transform_game(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def run_once() -> None:
     records: List[Dict[str, Any]] = []
     for d in date_range_iso(DAYS_AHEAD):
+        print(f"Fetching games for {d}...")
         for rec in fetch_games(d):
             row = transform_game(rec)
             if row:
@@ -122,13 +138,34 @@ def run_once() -> None:
         print(f"No upcoming NFL games found in next {DAYS_AHEAD} days.")
         return
 
+    # --- Step 1: Upsert schedule data ---
     print(f"Upserting {len(records)} games → Supabase…")
     try:
         supabase.table(SUPABASE_TABLE).upsert(records, on_conflict="game_id").execute()
-        print("✔ Upsert complete.")
+        print("✔ Schedule upsert complete.")
     except Exception as e:
         print(f"Supabase upsert error: {e}")
-
+        # Continue anyway to attempt snapshot generation
+    
+    # --- Step 2: Generate a snapshot for each game ---
+    print(f"\nGenerating snapshots for {len(records)} games...")
+    success_count = 0
+    failure_count = 0
+    for record in records:
+        game_id = record.get("game_id")
+        if not game_id:
+            continue
+        
+        try:
+            make_nfl_snapshot(str(game_id))
+            success_count += 1
+        except Exception as e:
+            print(f"❌ Error generating snapshot for NFL game {game_id}: {e}")
+            failure_count += 1
+            
+    print("\n--- NFL Regular Season Pipeline Finished ---")
+    print(f"Successfully generated snapshots: {success_count}")
+    print(f"Failed to generate snapshots: {failure_count}")
 
 if __name__ == "__main__":
     run_once()

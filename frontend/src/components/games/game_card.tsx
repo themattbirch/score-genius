@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { UnifiedGame, Sport } from "@/types";
 import { useSport } from "@/contexts/sport_context";
+import { useTour } from "@/contexts/tour_context";
 
 import { useWeather } from "@/hooks/use_weather";
 import WeatherBadge from "./weather_badge";
@@ -67,9 +68,23 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const isDesktop = useIsDesktop();
   const compactDefault = forceCompact ?? !isDesktop;
 
+  const { currentStepIndex, run: isTourRunning } = useTour();
+
   const [expanded, setExpanded] = useState<boolean>(!compactDefault);
   const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
+
+  const H2HButton = () => (
+    <SnapshotButton
+      data-action
+      data-tour="snapshot-button"
+      label="H2H Stats"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSnapshotOpen(true);
+      }}
+    />
+  );
 
   useEffect(() => {
     setExpanded(!compactDefault);
@@ -86,18 +101,36 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     sport,
     away_final_score,
     home_final_score,
-    predictionAway,
-    predictionHome,
-    predicted_away_runs,
-    predicted_home_runs,
+    predictionAway, // NBA
+    predictionHome, // NBA
+    predicted_away_runs, // MLB
+    predicted_home_runs, // MLB
+    predicted_away_score, // NFL
+    predicted_home_score, // NFL
     awayPitcher,
     awayPitcherHand,
     homePitcher,
     homePitcherHand,
   } = game;
 
+  // Make the card "tour-aware"
+  useEffect(() => {
+    // These are the tour step indices that target elements inside the card.
+    // Adjust these numbers if you change the order of your tour steps.
+    const TOUR_STEPS_REQUIRING_EXPANSION = [2, 3, 4];
+
+    const needsExpansion =
+      isTourRunning &&
+      sport !== "NFL" && // Only for sports with a collapsible section
+      TOUR_STEPS_REQUIRING_EXPANSION.includes(currentStepIndex);
+
+    if (needsExpansion) {
+      setExpanded(true);
+    }
+  }, [isTourRunning, currentStepIndex, sport]);
+
   // 1. Differentiate between sports that need a weather API call vs. just UI
-  const shouldFetchWeather = sport === "MLB" || (sport === "NFL" && expanded);
+  const shouldFetchWeather = sport === "MLB" || sport === "NFL";
   const isNBA = sport === "NBA";
   const showWeatherUI = shouldFetchWeather || isNBA;
 
@@ -122,14 +155,24 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     away_final_score != null &&
     home_final_score != null;
 
-  const predAway =
-    contextSport === "NBA"
-      ? predictionAway
-      : predicted_away_runs ?? predictionAway;
-  const predHome =
-    contextSport === "NBA"
-      ? predictionHome
-      : predicted_home_runs ?? predictionHome;
+  // 👇 **MODIFIED LOGIC**
+  // This logic now correctly handles the different prediction fields
+  // for each sport based on your UnifiedGame type.
+  let predAway, predHome;
+  switch (contextSport) {
+    case "NBA":
+      predAway = predictionAway;
+      predHome = predictionHome;
+      break;
+    case "MLB":
+      predAway = predicted_away_runs;
+      predHome = predicted_home_runs;
+      break;
+    case "NFL":
+      predAway = predicted_away_score;
+      predHome = predicted_home_score;
+      break;
+  }
   const hasPrediction =
     dataType === "schedule" && predAway != null && predHome != null;
 
@@ -184,37 +227,59 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
           <p className="text-xs text-text-secondary mt-1">{timeLine}</p>
         </div>
 
-        <div className="flex flex-col items-end text-right gap-1">
-          {isFinal ? (
-            <p className="font-semibold text-lg whitespace-nowrap leading-tight">
-              {away_final_score} – {home_final_score}
-              <span className="block text-[10px] font-normal text-text-secondary mt-0.5">
-                final
-              </span>
-            </p>
-          ) : hasPrediction ? (
-            <PredBadge away={predAway as number} home={predHome as number} />
-          ) : (
-            <span className="text-sm text-text-secondary">—</span>
-          )}
+        {/* We conditionally render a different layout for the right side based on the sport */}
+        {sport === "NFL" ? (
+          // --- This is the new layout for NFL cards ---
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <H2HButton />
+            <WeatherBadge
+              data-action
+              data-tour="weather-badge"
+              isIndoor={isEffectivelyIndoor}
+              // 👇 This is the fix. The conditions are removed.
+              isLoading={isWeatherLoading}
+              isError={isWeatherError}
+              data={weatherData}
+              onClick={(e) => {
+                e.stopPropagation();
+                setWeatherOpen(true);
+              }}
+            />
+          </div>
+        ) : (
+          // --- This is the original layout for MLB/NBA cards ---
+          <div className="flex flex-col items-end text-right gap-1">
+            {isFinal ? (
+              <p className="font-semibold text-lg whitespace-nowrap leading-tight">
+                {away_final_score} – {home_final_score}
+                <span className="block text-[10px] font-normal text-text-secondary mt-0.5">
+                  final
+                </span>
+              </p>
+            ) : hasPrediction ? (
+              <PredBadge away={predAway as number} home={predHome as number} />
+            ) : (
+              <span className="text-sm text-text-secondary">—</span>
+            )}
 
-          {/* Centered chevron row (mobile only) */}
-          {compactDefault && (
-            <div className="mt-2 flex w-full justify-center">
-              <span
-                className={`card-chevron transition-transform ${
-                  expanded ? "rotate-180" : ""
-                }`}
-              >
-                ▾
-              </span>
-            </div>
-          )}
-        </div>
+            {compactDefault && (
+              <div className="mt-2 flex w-full justify-center">
+                <span
+                  className={`card-chevron transition-transform ${
+                    expanded ? "rotate-180" : ""
+                  }`}
+                >
+                  ▾
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Expanded Content */}
-      {expanded &&
+      {sport !== "NFL" &&
+        expanded &&
         (() => {
           const hasPitchers =
             sport === "MLB" &&

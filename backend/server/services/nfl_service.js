@@ -4,7 +4,7 @@ import supabase from "../utils/supabase_client.js";
 import cache from "../utils/cache.js";
 import { DateTime } from "luxon";
 
-const SCHEDULE_TABLE = "nfl_game_schedule";
+const SCHEDULE_TABLE = "nfl_preseason_schedule";
 const HIST_STATS_TABLE = "nfl_historical_game_stats";
 const SNAPSHOT_TABLE = "nfl_snapshots";
 const FULL_VIEW = "v_nfl_team_season_full";
@@ -16,6 +16,7 @@ const NFL_SRS_VIEW = "v_nfl_team_srs_lite";
 const ADVANCED_STATS_VIEW = "mv_nfl_advanced_team_stats";
 const DEFAULT_CACHE_TTL = Number(process.env.NFL_VIEW_CACHE_TTL || 3600);
 
+// (This function doesn't need to change)
 function buildViewKey(view, { season, teamIds, conference, division }) {
   return [
     view,
@@ -26,7 +27,7 @@ function buildViewKey(view, { season, teamIds, conference, division }) {
   ].join(":");
 }
 
-// Cache header builder
+// (This function doesn't need to change)
 export function buildCacheHeader() {
   return {
     "Cache-Control":
@@ -34,42 +35,30 @@ export function buildCacheHeader() {
   };
 }
 
-// Unified schedule/historical mapping
 export function mapScheduleRow(raw, isPast) {
   const base = {
     id: String(raw.game_id),
-    gameDate: raw.game_date,
+    game_date: raw.game_date,
+    gameTimeUTC: raw.scheduled_time || raw.game_timestamp, // Use timestamp for past games
     status: raw.status,
     homeTeamId: raw.home_team_id,
     awayTeamId: raw.away_team_id,
     dataType: isPast ? "historical" : "schedule",
+    // 👇 This now handles both tables
+    homeTeamName: raw.home_team_name ?? raw.home_team,
+    awayTeamName: raw.away_team_name ?? raw.away_team,
   };
 
   if (isPast) {
     return {
       ...base,
-      finalHomeScore: raw.home_score,
-      finalAwayScore: raw.away_score,
-      homeQ: [
-        raw.home_q1,
-        raw.home_q2,
-        raw.home_q3,
-        raw.home_q4,
-        raw.home_ot,
-      ].filter((v) => v != null),
-      awayQ: [
-        raw.away_q1,
-        raw.away_q2,
-        raw.away_q3,
-        raw.away_q4,
-        raw.away_ot,
-      ].filter((v) => v != null),
+      home_final_score: raw.home_score,
+      away_final_score: raw.away_score,
     };
   }
 
   return {
     ...base,
-    scheduledTimeUTC: raw.scheduled_time,
     spreadLine: raw.spread_clean
       ? parseFloat((raw.spread_clean.match(/-?\d+(\.\d+)?/) || ["0"])[0])
       : null,
@@ -239,9 +228,12 @@ export async function fetchNflScheduleData(date) {
 
   const isPast = input.startOf("day") < nowEt.startOf("day");
   const table = isPast ? HIST_STATS_TABLE : SCHEDULE_TABLE;
+
+  // 👇 Selects the correct columns for each table
   const cols = isPast
-    ? "game_id, game_date, home_team_id, away_team_id, home_q1,home_q2,home_q3,home_q4,home_ot,away_q1,away_q2,away_q3,away_q4,away_ot,home_score,away_score,status"
-    : "game_id, game_date, scheduled_time, home_team_id, away_team_id, status, spread_clean, total_clean, predicted_home_score, predicted_away_score, prediction_utc";
+    ? "game_id, game_date, game_timestamp, home_team_name, away_team_name, home_team_id, away_team_id, home_score, away_score"
+    : "game_id, game_date, scheduled_time, home_team, away_team, home_team_id, away_team_id, status, spread_clean, total_clean, predicted_home_score, predicted_away_score";
+
   const { data, error, status } = await supabase
     .from(table)
     .select(cols)
@@ -254,8 +246,18 @@ export async function fetchNflScheduleData(date) {
     throw e;
   }
 
-  return Array.isArray(data) ? data.map((r) => mapScheduleRow(r, isPast)) : [];
+  // 👇 A more robust filter that checks for either set of team names
+  return (data || [])
+    .filter(
+      (row) =>
+        row &&
+        row.game_id &&
+        (row.home_team || row.home_team_name) &&
+        (row.away_team || row.away_team_name)
+    )
+    .map((r) => mapScheduleRow(r, isPast));
 }
+
 export async function fetchNflSnapshotsByIds(ids) {
   const hits = [];
   const misses = [];
@@ -267,14 +269,12 @@ export async function fetchNflSnapshotsByIds(ids) {
 
   let fetched = [];
   if (misses.length) {
-    // attempt to fetch from snapshots table, but if it doesn't exist, just return []
     const { data, error, status } = await supabase
       .from(SNAPSHOT_TABLE)
       .select("*")
       .in("game_id", misses);
 
     if (error) {
-      // if the table truly doesn't exist, swallow and return empty
       if (
         error.message.includes(`relation "${SNAPSHOT_TABLE}" does not exist`)
       ) {
@@ -284,23 +284,19 @@ export async function fetchNflSnapshotsByIds(ids) {
       e.status = status;
       throw e;
     }
-
     fetched = Array.isArray(data) ? data : [];
     fetched.forEach((snap) => cache.set(snap.game_id, snap));
   }
-
   return [...hits, ...fetched];
 }
 export async function fetchNflSnapshotData(gameId) {
   const cached = cache.get(gameId);
   if (cached) return cached;
-
   const { data, error, status } = await supabase
     .from(SNAPSHOT_TABLE)
     .select("*")
     .eq("game_id", gameId)
     .maybeSingle();
-
   if (error) {
     const e = new Error(error.message);
     e.status = status;
@@ -311,7 +307,6 @@ export async function fetchNflSnapshotData(gameId) {
     e.status = 404;
     throw e;
   }
-
   cache.set(gameId, data);
   return data;
 }
@@ -412,7 +407,6 @@ export async function fetchNflGameById(gameId) {
     "total_clean",
     "predicted_home_score",
     "predicted_away_score",
-    "prediction_utc",
   ].join(", ");
 
   const { data, error, status } = await supabase

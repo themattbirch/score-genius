@@ -239,18 +239,20 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
                 <BarChartComponent data={sd?.bar_chart_data} sport={sport} />
               </section>
 
-              {/* Radar */}
-              <section className="mb-6">
-                <h3
-                  className="text-lg font-semibold mb-2 text-center"
-                  style={{ color: textColor }}
-                >
-                  Team Strengths
-                </h3>
-                <div className="-mx-4">
-                  <RadarChartComponent data={sd?.radar_chart_data} />
-                </div>
-              </section>
+              {/* Conditionally render the Radar Chart */}
+              {sd?.radar_chart_data && sd.radar_chart_data.length > 0 && (
+                <section className="mb-6">
+                  <h3
+                    className="text-lg font-semibold mb-2 text-center"
+                    style={{ color: textColor }}
+                  >
+                    Team Strengths
+                  </h3>
+                  <div className="-mx-4">
+                    <RadarChartComponent data={sd?.radar_chart_data} />
+                  </div>
+                </section>
+              )}
 
               {/* Pie */}
               {hasPie && (

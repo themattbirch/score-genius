@@ -21,8 +21,9 @@ import {
   getNflCronHealth,
   getNflValidation,
   getNflAdvancedStats,
+  getNflTeamStatsSummary,
+  getNflGameById,
 } from "../controllers/nfl_controller.js";
-import { getNflGameById } from "../controllers/nfl_controller.js";
 
 const router = express.Router();
 
@@ -44,6 +45,9 @@ router.get("/team-stats/advanced", getNflAdvancedStats);
 
 // dashboard route
 router.get("/teams/:season/dashboard", getNflDashboard);
+
+// Consolidated summary of advanced + SRS + SoS
+router.get("/team-stats/summary", getNflTeamStatsSummary);
 
 // Snapshots endpoints
 router.get("/snapshots/:gameId", getNflSnapshot);

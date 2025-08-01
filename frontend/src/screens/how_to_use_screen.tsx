@@ -1,7 +1,8 @@
 // frontend/src/screens/how_to_use_screen.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { HelpCircle, Play, ArrowRight } from "lucide-react";
-import { useTour } from "@/components/ui/joyride_tour";
+import { useNavigate } from "react-router-dom";
+import { useTour } from "@/contexts/tour_context";
 import SnapshotModal from "@/components/games/snapshot_modal";
 
 /**
@@ -25,16 +26,24 @@ const GhostPill: React.FC<
 );
 
 const HowToUseScreen: React.FC = () => {
-  const { start } = useTour();
+  const { start, setRun, setStepIndex } = useTour();
+  const navigate = useNavigate();
   const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
+
+  const handleStartTour = () => {
+    navigate("/games"); // First, navigate to the games screen
+    start(); // Then, start the tour
+  };
 
   return (
     <>
       <section
         className={`
-          mx-auto max-w-lg p-6 md:px-8 lg:px-10
+          w-full px-4 sm:px-6 md:px-8 lg:px-10
+          2xl:max-w-4xl 2xl:mx-auto 
           text-slate-800 dark:text-text-primary
           pb-[env(safe-area-inset-bottom)] space-y-10
+          overflow-x-hidden box-border
         `}
       >
         {/* Title */}
@@ -61,7 +70,7 @@ const HowToUseScreen: React.FC = () => {
             <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold motion-safe:animate-pulse">
               1
             </span>
-            <div className="flex-1 space-y-3 leading-relaxed">
+            <div className="flex-1 min-w-0 break-words space-y-3 leading-relaxed">
               <h2 className="text-brand-green font-semibold text-xl">
                 Pick your sport
               </h2>
@@ -78,22 +87,20 @@ const HowToUseScreen: React.FC = () => {
             <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold">
               2
             </span>
-            <div className="flex-1 space-y-3 leading-relaxed">
-              <h2 className="text-brand-green font-semibold text-xl">
+            <div className="flex-1 min-w-0 break-words space-y-3 leading-relaxed">
+              <h2 className="text-brand-green font-semibold text-xl mb-2">
                 Browse games &amp; expand
               </h2>
-              <p className="text-base text-slate-600 dark:text-text-secondary">
+              <p className="text-base text-slate-600 dark:text-text-secondary mb-2">
                 In the <strong>Games</strong> tab you’ll see today’s matchups.
                 Use the calendar to change dates.
               </p>
               <p className="text-base text-slate-600 dark:text-text-secondary">
-                <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                  Click the
-                  <span className="card-chevron ring-1 ring-slate-300/60 dark:ring-slate-600/60 motion-safe:animate-pulse">
-                    ▾
-                  </span>
-                  on any game card to expand it.
-                </span>
+                Click the{" "}
+                <span className="inline-flex items-center flex-shrink-0 card-chevron ring-1 ring-slate-300/60 dark:ring-slate-600/60 motion-safe:animate-pulse">
+                  ▾
+                </span>{" "}
+                on any game card to expand it.
               </p>
             </div>
           </li>
@@ -103,8 +110,8 @@ const HowToUseScreen: React.FC = () => {
             <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold">
               3
             </span>
-            <div className="flex-1 space-y-4 leading-relaxed">
-              <h2 className="text-brand-green font-semibold text-xl">
+            <div className="flex-1 min-w-0 break-words space-y-3 leading-relaxed">
+              <h2 className="text-brand-green font-semibold text-xl mb-2">
                 H2H Stats &amp; Weather
               </h2>
               <p className="text-base text-slate-600 dark:text-text-secondary">
@@ -146,8 +153,8 @@ const HowToUseScreen: React.FC = () => {
             <span className="howto-step-num mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-green text-white font-bold">
               4
             </span>
-            <div className="flex-1 space-y-3 leading-relaxed">
-              <h2 className="text-brand-green font-semibold text-xl">
+            <div className="flex-1 min-w-0 break-words space-y-3 leading-relaxed">
+              <h2 className="text-brand-green font-semibold text-xl mb-2">
                 Explore advanced stats
               </h2>
               <p className="text-base text-slate-600 dark:text-text-secondary">
@@ -160,10 +167,10 @@ const HowToUseScreen: React.FC = () => {
         </ol>
 
         {/* CTA */}
-        <div className="pt-2">
+        <div className="pt-2 flex justify-center">
           <button
-            onClick={start}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-green px-6 py-4 text-base font-semibold text-white shadow-sm hover:bg-brand-green/90 focus-ring transition-colors"
+            onClick={handleStartTour}
+            className="flex items-center justify-center gap-2 rounded-2xl bg-brand-green px-6 py-4 text-base font-semibold text-white shadow-sm hover:bg-brand-green/90 focus-ring transition-colors w-full max-w-md lg:w-auto"
           >
             <Play size={18} strokeWidth={2.2} />
             Start Interactive Tour

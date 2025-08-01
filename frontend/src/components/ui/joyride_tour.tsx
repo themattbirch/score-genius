@@ -7,94 +7,51 @@ import React, {
   useEffect,
   SetStateAction,
   useMemo,
+  useCallback,
 } from "react";
-import Joyride, {
-  Step,
-  STATUS,
-  CallBackProps,
-  ACTIONS,
-  EVENTS,
-  LIFECYCLE,
-} from "react-joyride";
+import Joyride, { Step, STATUS, CallBackProps, EVENTS } from "react-joyride";
 import { useSport } from "@/contexts/sport_context";
-
-// --- Ensure this import is correct ---
-import { CustomJoyrideTooltip } from "./custom_joyride_tooltip"; // Import from separate file
-
-// --- CustomJoyrideTooltip definition should NOT be here ---
-// It should be in its own file as imported above.
+import { useLocation } from "react-router-dom";
+import { TourContext } from "@/contexts/tour_context";
+import { CustomJoyrideTooltip } from "./custom_joyride_tooltip";
 
 /* ------------------------------------------------------------------ */
-/* 1. Context - ADD SETTERS                                           */
+/* 1. Steps Definition                                                */
 /* ------------------------------------------------------------------ */
-interface TourCtx {
-  start: () => void;
-  // Add state setters and current index to context
-  setStepIndex: React.Dispatch<SetStateAction<number>>;
-  setRun: React.Dispatch<SetStateAction<boolean>>;
-  currentStepIndex: number;
-}
-const TourContext = createContext<TourCtx | undefined>(undefined);
-
-// Modify useTour to expose the full context value
-export const useTour = (): TourCtx => {
-  // Return TourCtx directly
-  const ctx = useContext(TourContext);
-  if (!ctx) throw new Error("useTour must be used inside <TourProvider>");
-  return ctx;
-};
-
-/* ------------------------------------------------------------------ */
-/* 2. Steps Definition                                                */
-/* ------------------------------------------------------------------ */
-const baseSteps: Step[] = [
-  // Step 1: Sport Switch (index 0)
+export const baseSteps: Step[] = [
   {
     target: '[data-tour="sport-switch"]',
     content: "Tap here to switch between NBA and MLB.",
     disableBeacon: true,
     placement: "bottom",
   },
-  // Step 2: Games Tab (index 1)
-  {
-    target: '[data-tour="tab-games"]',
-    content:
-      "TO CONTINUE: Click the 'Games' tab below to switch screens. THEN: Click the green 'Next' button below this text.",
-    disableBeacon: true,
-    placement: "top",
-  },
-  // Step 3: Date Picker (index 2)
   {
     target: '[data-tour="date-picker"]',
     content: "Use the calendar to select a game date...",
     disableBeacon: true,
     placement: "bottom",
   },
-  // Step 4: Game Card (index 3)
   {
     target: '[data-tour="game-card"]:first-of-type',
     content:
-      "Each card shows teams, game information and ScoreGenius' score prediction.",
+      "Each card shows teams and predictions. (IF VIEWING THIS ON MOBILE: TAP the arrow to expand it for more options.)",
     disableBeacon: true,
-    placement: "bottom",
+    placement: "top",
   },
-  // --- NEW STEP 5: Advanced Stats (index 4) ---
   {
     target: '[data-tour="snapshot-button"]:first-of-type',
     content:
-      "Click 'Advanced Stats' to see a detailed statistical snapshot and analysis for the matchup.",
+      "Click 'H2H Stats' to see a detailed statistical snapshot for the matchup.",
     disableBeacon: true,
     placement: "right",
   },
-  // --- NEW STEP 6: Weather Badge (index 5) ---
   {
     target: '[data-tour="weather-badge"]',
     content:
-      "For outdoor games, we provide real-time weather, including wind speed and direction, which can impact gameplay.",
+      "For outdoor games (MLB/NFL), we provide real-time weather, including wind speed and direction, which can impact gameplay.",
     disableBeacon: true,
     placement: "left",
   },
-  // Step 7: Stats Tab (index 6)
   {
     target: '[data-tour="tab-stats"]',
     content:
@@ -102,7 +59,6 @@ const baseSteps: Step[] = [
     disableBeacon: true,
     placement: "top",
   },
-  // Step 8: Sub-tabs (index 7)
   {
     target: '[data-tour="stats-subtab-advanced"]',
     content:
@@ -110,14 +66,12 @@ const baseSteps: Step[] = [
     placement: "bottom",
     disableBeacon: true,
   },
-  // Step 9: Stats Column (index 8)
   {
     target: '[data-tour="stats-column-winpct"]',
     content: "Click any column header like this one to sort teams and players.",
     placement: "bottom",
     disableBeacon: true,
   },
-  // Step 10: More Tab (index 9)
   {
     target: '[data-tour="tab-more"]',
     content:
@@ -125,7 +79,6 @@ const baseSteps: Step[] = [
     placement: "top",
     disableBeacon: true,
   },
-  // Step 11: Theme Toggle (index 10)
   {
     target: '[data-tour="theme-toggle"]',
     content: "Light or dark? Flip the theme anytime using this toggle.",
@@ -133,88 +86,177 @@ const baseSteps: Step[] = [
     disableBeacon: true,
   },
 ];
+
 /* ------------------------------------------------------------------ */
-/* 3. Provider component                                              */
+/* 2. Provider component                                              */
 /* ------------------------------------------------------------------ */
 export const TourProvider = ({ children }: { children: ReactNode }) => {
-  // --- State and Context ---
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const { sport } = useSport();
+  const location = useLocation();
 
-  // --- Dynamic Steps Logic ---
-  const tourSteps = useMemo(() => {
-    if (sport === "NBA") {
-      return baseSteps.filter(
-        (step) => step.target !== '[data-tour="weather-badge"]:first-of-type'
-      );
-    }
-    return baseSteps; // For MLB/NFL, return all steps
-  }, [sport]);
+  /* -------------------------------------------------- */
+  /* Track live presence of at least one game card      */
+  /* -------------------------------------------------- */
+  const [hasGameCard, setHasGameCard] = useState<boolean>(() =>
+    Boolean(document.querySelector('[data-tour="game-card"]'))
+  );
 
-  // --- Functions ---
-  const start = () => {
-    console.log("--- TourProvider: start function called ---");
-    setStepIndex(0);
-    setRun(true);
-  };
-
-  const handleJoyride = (data: CallBackProps) => {
-    const { status, type, lifecycle, step, action, index } = data;
-
-    console.log(
-      `Joyride Minimal Callback: Action=${action}, Status=${status}, Type=${type}, Index=${index}, Lifecycle=${lifecycle}`,
-      step?.target
-    );
-
-    if (
-      status === STATUS.FINISHED ||
-      status === STATUS.SKIPPED ||
-      status === STATUS.ERROR
-    ) {
-      console.log(`Tour Ended/Error via Joyride status: Status=${status}`);
-      if (status === STATUS.ERROR) {
-        console.error("Joyride Error:", data);
-      }
-      if (run) {
-        setRun(false);
-        setStepIndex(0);
-      }
-    } else if (type === EVENTS.TOUR_END) {
-      console.log("Tour ended via TOUR_END event");
-      if (run) {
-        setRun(false);
-        setStepIndex(0);
-      }
-    }
-  };
-
-  // --- Side Effects ---
   useEffect(() => {
-    console.log(`TourProvider state: run=${run}, stepIndex=${stepIndex}`);
-  }, [run, stepIndex]);
+    const updatePresence = () =>
+      setHasGameCard(
+        Boolean(document.querySelector('[data-tour="game-card"]'))
+      );
 
-  // --- Context Value ---
+    // Initial check
+    updatePresence();
+
+    // Observe DOM mutations for game‑card additions/removals
+    const mo = new MutationObserver(updatePresence);
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, []);
+
+  // unified scroll unlock helper
+  const unlockScroll = useCallback(() => {
+    ["body", "html", "main"].forEach((sel) => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el) {
+        el.style.overflow = "";
+        el.style.position = "";
+        el.style.paddingRight = "";
+        el.style.top = "";
+      }
+    });
+    document
+      .querySelectorAll<HTMLElement>(".react-joyride__scroll-parent")
+      .forEach((el) => {
+        el.style.overflow = "";
+        el.style.paddingRight = "";
+      });
+  }, []);
+
+  const scrub = useCallback(() => {
+    unlockScroll();
+  }, [unlockScroll]);
+
+  // teardown helper
+  const cleanUpArtifacts = useCallback(() => {
+    unlockScroll();
+    document
+      .querySelectorAll(
+        ".react-joyride__overlay, .react-joyride__mask, .react-joyride__spotlight"
+      )
+      .forEach((n) => n.remove());
+    document.documentElement.style.overflow = "auto";
+    document.body.style.overflow = "auto";
+  }, [unlockScroll]);
+
+  // observer to keep DOM from locking scroll via mutation churn
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      scrub();
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+      attributeFilter: ["style", "class"],
+    });
+
+    return () => observer.disconnect();
+  }, [scrub]);
+
+  // reset scroll when location changes
+  useEffect(() => {
+    unlockScroll();
+  }, [location.pathname, unlockScroll]);
+
+  /* -------------------------------------------------- */
+  /* Dynamically build steps, swapping in fallback      */
+  /* -------------------------------------------------- */
+  const tourSteps = useMemo(() => {
+    // base list cloned so we never mutate source
+    const steps: Step[] =
+      sport === "NBA"
+        ? baseSteps
+            .filter((s) => s.target !== '[data-tour="weather-badge"]')
+            .map((s) => ({ ...s }))
+        : baseSteps.map((s) => ({ ...s }));
+
+    // game‑card step is index 2
+    if (!hasGameCard && steps[2]) {
+      steps[2] = {
+        target: '[data-tour="date-picker"]',
+        content:
+          "No games are scheduled for this date or sport. Pick another date or switch sport, then click **Next** to continue the tour.",
+        disableBeacon: true,
+        placement: "bottom",
+      } as Step;
+    }
+
+    return steps;
+  }, [sport, hasGameCard]);
+
+  const handleJoyride = useCallback(
+    (data: CallBackProps) => {
+      const { status, type } = data;
+
+      console.debug("Joyride callback:", data);
+
+      // always ensure scroll is unlocked on every callback
+      unlockScroll();
+
+      const isTourFinished =
+        status === STATUS.FINISHED ||
+        status === STATUS.SKIPPED ||
+        status === STATUS.ERROR;
+
+      if (isTourFinished || type === EVENTS.TOUR_END) {
+        if (run) {
+          setRun(false);
+          setStepIndex(0);
+        }
+
+        setTimeout(cleanUpArtifacts, 50);
+      }
+    },
+    [run, cleanUpArtifacts, unlockScroll]
+  );
+
+  const start = () => {
+    // force-remount Joyride by toggling run OFF → ON on the next tick
+    setRun(false);
+    setStepIndex(0);
+    setTimeout(() => setRun(true), 0); // next macrotask
+  };
+
   const contextValue = {
     start,
     setStepIndex,
     setRun,
     currentStepIndex: stepIndex,
+    run,
   };
 
-  // --- Render ---
   return (
     <TourContext.Provider value={contextValue}>
       {children}
-      <Joyride
-        steps={tourSteps}
-        run={run}
-        stepIndex={stepIndex}
-        callback={handleJoyride}
-        tooltipComponent={CustomJoyrideTooltip}
-        scrollToFirstStep
-        styles={{ options: { zIndex: 9999 } }}
-      />
+      {run && (
+        <Joyride
+          key={`tour-${stepIndex}`}
+          steps={tourSteps}
+          run={run}
+          stepIndex={stepIndex}
+          callback={handleJoyride}
+          tooltipComponent={CustomJoyrideTooltip}
+          disableScrolling={true}
+          scrollToFirstStep
+          styles={{ options: { zIndex: 9999 } }}
+        />
+      )}
     </TourContext.Provider>
   );
 };

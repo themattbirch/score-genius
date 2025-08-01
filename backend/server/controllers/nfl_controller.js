@@ -98,6 +98,8 @@ export async function getNflTeamSeasonRegOnly(req, res, next) {
 }
 // GET /api/v1/nfl/schedule?date=YYYY-MM-DD
 export async function getNflSchedule(req, res, next) {
+  console.log("✅ --- Reached the REAL NFL Controller! --- ✅"); // <-- ADD THIS LINE
+
   try {
     const { date } = req.query;
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -300,6 +302,58 @@ export async function getNflAdvancedStats(req, res, next) {
     });
   } catch (err) {
     // 4. Pass any errors to the error-handling middleware
+    next(err);
+  }
+}
+// GET /api/v1/nfl/team-stats/summary?season=YYYY
+export async function getNflTeamStatsSummary(req, res, next) {
+  try {
+    const season = parseSeasonParam(req.query.season);
+    if (season == null)
+      return badParam(res, "Invalid or missing season parameter; use YYYY.");
+
+    // Parallel fetches
+    const [advanced, srs, sos] = await Promise.all([
+      fetchNflAdvancedStats({ season }),
+      fetchNflSrs({ season }),
+      fetchNflSos({ season }),
+    ]);
+
+    // Normalize by team_id (fallback to team_name if needed)
+    const indexed = {};
+
+    const upsertTeam = (row, source) => {
+      const key = row.team_id ?? row.teamId ?? row.team_name ?? row.teamName;
+      if (!key) return;
+      if (!indexed[key])
+        indexed[key] = {
+          team_id: row.team_id ?? row.teamId,
+          team_name: row.team_name ?? row.teamName,
+        };
+      // merge source-specific fields
+      if (source === "advanced") {
+        Object.assign(indexed[key], row);
+      } else if (source === "srs") {
+        indexed[key].srs_lite = row.srs_lite ?? row.srs; // adapt field name
+      } else if (source === "sos") {
+        indexed[key].sos = row.sos;
+      }
+    };
+
+    advanced.forEach((r) => upsertTeam(r, "advanced"));
+    srs.forEach((r) => upsertTeam(r, "srs"));
+    sos.forEach((r) => upsertTeam(r, "sos"));
+
+    // Convert to array
+    const data = Object.values(indexed);
+
+    res.set(buildCacheHeader());
+    return res.status(200).json({
+      season,
+      retrieved: data.length,
+      data,
+    });
+  } catch (err) {
     next(err);
   }
 }

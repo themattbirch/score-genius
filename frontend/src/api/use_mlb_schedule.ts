@@ -1,17 +1,22 @@
 // frontend/src/api/use_mlb_schedule.ts
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import type { UnifiedGame } from "@/types";
 
 type GameWithET = UnifiedGame & { gameTimeET: string };
 
-export const useMLBSchedule = (date: string) =>
+// 1. Accept an 'options' parameter
+export const useMLBSchedule = (
+  date: string,
+  // 👇 Change this line
+  options?: Partial<UseQueryOptions<GameWithET[], Error>>
+) =>
   useQuery<GameWithET[], Error>({
     queryKey: ["mlbSchedule", date],
     staleTime: 60_000,
     retry: (fails) => navigator.onLine && fails < 3,
-    enabled: !!date,
+    enabled: !!date, // Keep this base check
 
     queryFn: async () => {
       const controller = new AbortController();
@@ -44,4 +49,5 @@ export const useMLBSchedule = (date: string) =>
         }),
       }));
     },
+    ...options,
   });

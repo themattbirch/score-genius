@@ -31,7 +31,7 @@ import { TourProvider } from "@/components/ui/joyride_tour";
 const Layout: React.FC = memo(() => (
   <div className="layout-container flex h-screen flex-col">
     <Header />
-    <main className="flex flex-col flex-1 overflow-auto pb-14 lg:pb-0">
+    <main className="flex flex-col flex-1 overflow-auto pb-14 lg:pb-0 min-h-0">
       <Outlet />
     </main>
     <BottomTabBar />
@@ -49,8 +49,8 @@ const Loader: React.FC<{ message?: string }> = ({ message = "Loading…" }) => (
 const App: React.FC = () => (
   <ThemeProvider>
     <SportProvider>
-      <TourProvider>
-        <DateProvider>
+      <DateProvider>
+        <TourProvider>
           <Suspense fallback={<Loader />}>
             <Routes>
               <Route element={<Layout />}>
@@ -99,8 +99,8 @@ const App: React.FC = () => (
               <Route path="*" element={<Navigate to="/games" replace />} />
             </Routes>
           </Suspense>
-        </DateProvider>
-      </TourProvider>
+        </TourProvider>
+      </DateProvider>
     </SportProvider>
   </ThemeProvider>
 );

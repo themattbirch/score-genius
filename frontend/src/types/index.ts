@@ -185,6 +185,7 @@ export interface SnapshotData {
   key_metrics_data?: BarChartData[];
   pie_chart_data?: PieChartDataItem[] | NbaPreGameOffenseDataItem[];
   is_historical?: boolean;
+  stage?: string;
 }
 export interface WeatherData {
   temperature: number;
