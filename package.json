@@ -25,6 +25,7 @@
     "js-yaml": "^4.1.0",
     "lru-cache": "^11.1.0",
     "luxon": "^3.4.4",
+    "pwabuilder-windows10": "^2.0.4-rc.6",
     "react-day-picker": "^9.8.0",
     "react-virtualized-auto-sizer": "^1.0.26",
     "react-window": "^1.8.11",
