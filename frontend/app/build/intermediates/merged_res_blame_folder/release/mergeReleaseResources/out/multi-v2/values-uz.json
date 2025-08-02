@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "io.scoregenius.app-mergeReleaseResources-24:/values-uz/values-uz.xml",
+            "outputFile": "io.scoregenius.app-mergeReleaseResources-23:/values-uz/values-uz.xml",
             "map": [
                 {
                     "source": "/Users/mattb/.gradle/caches/8.11.1/transforms/183ebbc8ed821348f80a6d36d20b75e3/transformed/appcompat-1.7.0/res/values-uz/values-uz.xml",

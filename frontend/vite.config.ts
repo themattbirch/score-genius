@@ -5,6 +5,14 @@ import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(
+      `${process.env.npm_package_version ?? "dev"}-${
+        process.env.GIT_COMMIT_SHA ?? "local"
+      }`
+    ),
+  },
+
   plugins: [
     react(),
     VitePWA({

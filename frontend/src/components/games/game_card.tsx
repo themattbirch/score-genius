@@ -62,29 +62,56 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
 
   const { currentStepIndex, run: isTourRunning } = useTour();
 
-  const [expanded, setExpanded] = useState<boolean>(!compactDefault);
+  const [expanded, setExpanded] = useState(!compactDefault);
   const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
 
   /* ------------------------------------------------------------------ */
   /* 🔔 Tooltip & touch hint state (persisted)                           */
   /* ------------------------------------------------------------------ */
-  const TOOLTIP_KEY = "sg_viewDetailsTooltipDismissed";
+  const APP_VERSION =
+    typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+
+  const TOOLTIP_KEY = `sg_viewDetailsTooltipDismissed_v${APP_VERSION}`;
+  const LEGACY_KEY = "sg_viewDetailsTooltipDismissed"; // to migrate from old
+
+  // On mount/migration: if legacy exists but versioned does not, copy or clear
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    if (
+      localStorage.getItem(LEGACY_KEY) &&
+      !localStorage.getItem(TOOLTIP_KEY)
+    ) {
+      // Option A: promote the old dismissal to the current version so you don't see it again
+      // localStorage.setItem(TOOLTIP_KEY, "1");
+      // Option B: drop it so tooltip shows again on new version
+      localStorage.removeItem(LEGACY_KEY);
+    }
+  }, []);
 
   // Start hidden; we'll decide in an effect once the client is ready.
-  const [showTooltip, setShowTooltip] = useState<boolean>(false);
+  const [showTooltip, setShowTooltip] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const dismissed = !!localStorage.getItem(TOOLTIP_KEY);
+    return !dismissed && compactDefault && !expanded;
+  });
 
   const lastClickRef = useRef<number>(0);
   const arrowRef = useRef<HTMLSpanElement | null>(null);
-  const [hasPulsed, setHasPulsed] = useState(false);
 
-  // Dismiss tooltip and persist
+  // Simple expansion toggle (always flips)
+  const toggleExpandedImmediate = useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
+
+  const storage = sessionStorage;
+
+  const isDismissed = (): boolean => !!storage.getItem(TOOLTIP_KEY);
+
   const dismissTooltip = useCallback(() => {
     if (!showTooltip) return;
     setShowTooltip(false);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(TOOLTIP_KEY, "1");
-    }
+    storage.setItem(TOOLTIP_KEY, "1");
   }, [showTooltip]);
 
   // One-way reconciliation: if the card *becomes* eligible and tooltip
@@ -94,74 +121,27 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
    * If the card *becomes* eligible and the tooltip hasn’t been dismissed,
    * surface it.  Never hides it; dismissal is explicit via dismissTooltip().
    */
+
+  useEffect(() => {
+    /* TEMP DEBUG — remove when fixed */
+    if (process.env.NODE_ENV !== "production") {
+      console.table({
+        id: gameId,
+        compactDefault,
+        expanded,
+        dismissed: isDismissed(),
+        showTooltip,
+        key: TOOLTIP_KEY,
+      });
+    }
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const dismissed = !!localStorage.getItem(TOOLTIP_KEY);
-    if (!dismissed && compactDefault && !expanded && !showTooltip) {
+    if (!isDismissed() && compactDefault && !expanded && !showTooltip) {
       setShowTooltip(true);
     }
   }, [compactDefault, expanded, showTooltip]);
-
-  useEffect(() => {
-    if (!arrowRef.current || hasPulsed) return;
-
-    // Respect reduced motion
-    const prefersReduced =
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReduced) return;
-
-    const node = arrowRef.current;
-
-    // Try to detect a likely scrollable ancestor as observer root
-    const findScrollRoot = (el: HTMLElement | null): Element | null => {
-      let cur: HTMLElement | null = el;
-      while (cur && cur !== document.body) {
-        const style = getComputedStyle(cur);
-        const overflowY = style.overflowY;
-        if (/(auto|scroll)/.test(overflowY)) return cur;
-        cur = cur.parentElement;
-      }
-      return null;
-    };
-
-    const root = findScrollRoot(node);
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            node.classList.add("card-chevron--pulse");
-            setHasPulsed(true);
-            obs.disconnect();
-            return;
-          }
-        }
-      },
-      {
-        root: (root as Element) || null,
-        // trigger when any part is visible, but not when it's too far below
-        threshold: 0,
-        rootMargin: "0px 0px -25% 0px",
-      }
-    );
-
-    obs.observe(node);
-
-    // Fallback: if observer never fires within ~1.5s, pulse once anyway
-    const t = window.setTimeout(() => {
-      if (!hasPulsed) {
-        node.classList.add("card-chevron--pulse");
-        setHasPulsed(true);
-        obs.disconnect();
-      }
-    }, 1500);
-
-    return () => {
-      obs.disconnect();
-      window.clearTimeout(t);
-    };
-  }, [hasPulsed]);
 
   // expanded toggle with tooltip dismissal baked in
   const toggleExpanded = useCallback(() => {
@@ -180,10 +160,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
       }}
     />
   );
-
-  useEffect(() => {
-    setExpanded(!compactDefault);
-  }, [compactDefault]);
 
   const {
     id: gameId,
@@ -232,7 +208,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
       sport !== "NFL" && // Only for sports with a collapsible section
       TOUR_STEPS_REQUIRING_EXPANSION.includes(currentStepIndex);
 
-    if (needsExpansion) {
+    if (needsExpansion && isDismissed()) {
       setExpanded(true);
     }
   }, [isTourRunning, currentStepIndex, sport]);
@@ -309,10 +285,11 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     (e: React.MouseEvent | React.KeyboardEvent) => {
       e.stopPropagation();
       triggerTouchGlow(arrowRef.current);
-      lastClickRef.current = Date.now(); // for focus suppression
-      toggleExpanded();
+      lastClickRef.current = Date.now();
+      toggleExpandedImmediate();
+      dismissTooltip();
     },
-    [toggleExpanded]
+    [dismissTooltip, toggleExpandedImmediate]
   );
   return (
     <article
@@ -394,24 +371,15 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                       expanded ? "rotate-180" : ""
                     }`}
                     /* 👇 graceful fallback: still lets a hover/focus surface it
-   if auto-show failed for any edge-case */
+                    if auto-show failed for any edge-case */
                     onMouseEnter={() => {
-                      if (!showTooltip && localStorage.getItem(TOOLTIP_KEY)) {
-                        setShowTooltip(true);
-                      }
+                      if (!showTooltip && !isDismissed()) setShowTooltip(true);
                     }}
                     onFocus={(e) => {
                       if (Date.now() - lastClickRef.current < 200) return;
-                      if (!showTooltip && !localStorage.getItem(TOOLTIP_KEY)) {
-                        setShowTooltip(true);
-                      }
+                      if (!showTooltip && !isDismissed()) setShowTooltip(true);
                     }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      lastClickRef.current = Date.now();
-                      triggerTouchGlow(arrowRef.current);
-                      toggleExpanded();
-                    }}
+                    onClick={handleArrowInteraction}
                     aria-describedby={
                       showTooltip ? "gamecard-tooltip" : undefined
                     }
