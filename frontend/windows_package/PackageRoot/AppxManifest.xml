@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap mp">
+
+  <!-- Identity must match what Partner Center expects -->
+  <Identity
+    Name="mattbwebdev.ScoreGenius"
+    Publisher="CN=F55BAB6B-31B3-48DF-AEF9-64E278573516"
+    Version="1.10.0.0" />
+
+  <Properties>
+    <DisplayName>ScoreGenius</DisplayName>
+    <PublisherDisplayName>mattbwebdev</PublisherDisplayName>
+    <Description>Predict the game. Not the noise.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.19045.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <Capability Name="internetClientServer" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="App"
+                 Executable="$targetnametoken$.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="ScoreGenius"
+        Description="Predict the game. Not the noise."
+        BackgroundColor="#000000"
+        Square44x44Logo="Assets\Square44x44.png"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Wide310x150Logo="Assets\Wide310x150Logo.png"
+        ToastCapable="true">
+        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+      </uap:VisualElements>
+
+      <uap:ApplicationProperties>
+        <uap:HostedWebApp>
+          <uap:StartPage>https://scoregenius.com/app</uap:StartPage>
+          <uap:WebApplicationId>https://scoregenius.com</uap:WebApplicationId>
+        </uap:HostedWebApp>
+      </uap:ApplicationProperties>
+    </Application>
+  </Applications>
+</Package>
