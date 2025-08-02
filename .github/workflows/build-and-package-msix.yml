@@ -24,8 +24,17 @@ jobs:
         shell: pwsh
         run: |
           $manifest = "frontend/windows_package/PackageRoot/AppxManifest.xml"
+          if (-not (Test-Path $manifest)) { throw "Manifest not found at $manifest" }
+
           $version = '${{ steps.version.outputs.version }}'
-          (Get-Content $manifest) -replace '(Version=")[^"]+(")', "`$1$version`$2" | Set-Content $manifest
+
+          [xml]$xml = Get-Content -Raw -Encoding UTF8 $manifest
+          $xml.Package.Identity.Version = $version
+
+          # Save back *exactly* as UTF-8 without BOM so no illegal chars creep in
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText($manifest, $xml.OuterXml, $utf8NoBom)
+
           Write-Output "Manifest patched to version $version"
 
       - name: Package Appx and sign
