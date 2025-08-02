@@ -35,6 +35,7 @@ export default defineConfig({
             src: "/icons/football-icon-512.png",
             sizes: "512x512",
             type: "image/png",
+            purpose: "any",
           },
           {
             src: "/icons/football-icon-maskable-512.png",
