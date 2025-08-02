@@ -1,7 +1,6 @@
 {
-  "functions": {
-    "api/**.py": {
-      "runtime": "python3.11"
-    }
-  }
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "ignoreCommand": "echo ''"
 }
