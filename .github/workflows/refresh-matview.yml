@@ -45,10 +45,6 @@ jobs:
           for q in \
             "REFRESH MATERIALIZED VIEW CONCURRENTLY public.nba_team_rolling_20_features;" \
             "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_team_rolling_10_features;" \
-            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_nfl_season_stats;" \
-            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_nfl_recent_form;" \
-            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_nfl_team_srs_lite;" \
-            "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_nfl_team_sos;" \
             "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mlb_advanced_team_stats_mv;" ; do
               echo "Refreshing: $q"
               psql "$DB_URL_V4" --set ON_ERROR_STOP=on -c "$q"
