@@ -57,12 +57,11 @@ jobs:
             echo "SCOREGENIUS_PFX_PASSWORD=StrongPfxPass123" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           } else {
             Write-Output "External PFX provided; will sanitize and use it."
+            Write-Output "Cert ENV set. Fingerprint: $($cert.Thumbprint)"
           }
       - name: Package Appx and sign (with secret sanitization)
         shell: pwsh
         env:
-          SCOREGENIUS_PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
-          SCOREGENIUS_PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $packageRoot = 'frontend/windows_package/PackageRoot'
