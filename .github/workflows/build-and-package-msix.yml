@@ -32,6 +32,33 @@ jobs:
           [System.IO.File]::WriteAllText($manifest, $xml.OuterXml, $utf8NoBom)
           Write-Output "Manifest patched to version $version"
 
+      - name: Ensure code signing certificate exists
+        shell: pwsh
+        run: |
+          if (-not $env:SCOREGENIUS_PFX_B64) {
+            Write-Output "No external PFX provided; generating fresh RSA-2048 code signing cert."
+            $cert = New-SelfSignedCertificate `
+              -Subject "CN=ScoreGeniusTest,O=SG,L=NY,C=US" `
+              -Type CodeSigningCert `
+              -KeyAlgorithm RSA -KeyLength 2048 `
+              -HashAlgorithm SHA256 `
+              -NotAfter (Get-Date).AddYears(3)
+
+            $pwd = ConvertTo-SecureString "StrongPfxPass123" -AsPlainText -Force
+            $pfxPath = "$PWD\scoregenius_generated.pfx"
+            Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
+
+            # Export its base64 so you could persist or debug if needed
+            $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pfxPath))
+            Write-Output "Generated PFX base64 prefix: $($b64.Substring(0,80))..."
+
+            # Set up for later steps
+            $env:SCOREGENIUS_PFX_PASSWORD = "StrongPfxPass123"
+            $env:SCOREGENIUS_PFX_B64 = $b64
+          } else {
+            Write-Output "External PFX provided; will sanitize and use it."
+          }
+
       - name: Package Appx and sign (with secret sanitization)
         shell: pwsh
         env:
