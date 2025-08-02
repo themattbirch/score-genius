@@ -35,8 +35,7 @@ jobs:
       - name: Ensure code signing certificate exists
         shell: pwsh
         env:
-          SCOREGENIUS_PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
-          SCOREGENIUS_PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if (-not $env:SCOREGENIUS_PFX_B64) {
             Write-Output "No external PFX provided; generating fresh RSA-2048 code signing cert."
