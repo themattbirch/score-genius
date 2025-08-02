@@ -66,7 +66,7 @@ jobs:
             Write-Output "External PFX provided; will sanitize and use it."
           }
 
-      - name: Package Appx and sign (with secret sanitization + bundle)
+      - name: Package Appxbundle and sign (with secret sanitization)
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -89,6 +89,7 @@ jobs:
             [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($cleaned))
             Write-Output "Decoded and sanitized .pfx to $pfxPath"
 
+            # Validate PFX loads with password
             certutil -f -p $env:SCOREGENIUS_PFX_PASSWORD -dump $pfxPath | Out-Null
             if ($LASTEXITCODE -ne 0) {
               Write-Error "PFX failed to load; bad password or corrupted content."
@@ -101,41 +102,35 @@ jobs:
           }
 
           # Locate tools
-          $makeappx = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter MakeAppx.exe |
-                       Sort-Object FullName -Descending | Select-Object -First 1
+          $binRoot = 'C:\Program Files (x86)\Windows Kits\10\bin\'
+          $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe |
+                      Sort-Object FullName -Descending | Select-Object -First 1
+          $signtool = Get-ChildItem $binRoot -Recurse -Filter signtool.exe |
+                      Where-Object { $_.FullName -match '\\x64\\' } |
+                      Sort-Object FullName -Descending | Select-Object -First 1
+
           if (-not $makeappx) { throw "MakeAppx.exe not found." }
-
-          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter signtool.exe |
-                       Where-Object { $_.FullName -match '\\x64\\' } |
-                       Sort-Object FullName -Descending | Select-Object -First 1
-
           Write-Output "Using MakeAppx: $($makeappx.FullName)"
-          if ($signtool) {
-            Write-Output "Using SignTool: $($signtool.FullName)"
-          } else {
-            Write-Output "x64 SignTool not found; signing will be skipped."
-          }
+          if ($signtool) { Write-Output "Using SignTool: $($signtool.FullName)" }
 
-          # 1. Pack the .appx
+          # Step 1: Pack .appx
           & $makeappx.FullName pack /d $packageRoot /p $appxName
-          if (-not (Test-Path $appxName)) { throw "Appx packaging failed." }
+          if (-not (Test-Path $appxName)) { throw "Packaging .appx failed." }
           Write-Output "Created .appx: $appxName"
 
-          # 2. Create single-arch bundle (required by Partner Center since previous bundle submission)
-          #    Build a temporary bundle layout directory containing the .appx and bundle manifest
+          # Step 2: Bundle into .appxbundle (single-arch)
           $bundleLayout = Join-Path $env:RUNNER_TEMP "bundlelayout"
           Remove-Item -Recurse -Force $bundleLayout -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $bundleLayout | Out-Null
           Copy-Item $appxName -Destination $bundleLayout
 
-          # Generate the bundle. For a single .appx, this creates a .appxbundle containing it.
-          & $makeappx.FullName bundle /d $bundleLayout /p $bundleName
-          if (-not (Test-Path $bundleName)) { throw "Appxbundle creation failed." }
+          & $makeappx.FullName bundle /bv $version /d $bundleLayout /p $bundleName
+          if (-not (Test-Path $bundleName)) { throw "Bundling failed." }
           Write-Output "Created bundle: $bundleName"
 
-          # 3. Sign the bundle if we have a PFX
+          # Step 3: Sign the bundle
           if ($signtool -and $pfxPath) {
-            Write-Output "Signing bundle with debug output..."
+            Write-Output "Signing .appxbundle with debug output..."
             & $signtool.FullName sign /debug /fd SHA256 /a /f $pfxPath /p $env:SCOREGENIUS_PFX_PASSWORD $bundleName
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Signing failed with code $LASTEXITCODE"
@@ -146,14 +141,14 @@ jobs:
             Write-Output "Skipping signing (missing signtool or PFX)."
           }
 
-          # Expose final artifact name for later steps
+          # Expose final package for downstream steps
           echo "FINAL_PACKAGE=$bundleName" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: scoregenius-appx
-          path: "ScoreGenius_${{ steps.version.outputs.version }}.appx"
+          name: scoregenius-package
+          path: "${{ env.FINAL_PACKAGE }}"
 
       - name: Draft GitHub Release
         uses: softprops/action-gh-release@v2
@@ -161,6 +156,6 @@ jobs:
           tag_name: "v${{ steps.version.outputs.version }}"
           name: "ScoreGenius v${{ steps.version.outputs.version }}"
           draft: true
-          files: "ScoreGenius_${{ steps.version.outputs.version }}.appx"
+          files: "${{ env.FINAL_PACKAGE }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
