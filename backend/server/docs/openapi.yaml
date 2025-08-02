@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: REST API for NFL analytics endpoints used by ScoreGenius PWA
 servers:
-  - url: /api/v1/nfl
+  - url: /api/v1
 paths:
   /schedule:
     get:
@@ -77,7 +77,7 @@ paths:
           $ref: "#/components/responses/NotFound"
   /teams/{season}/full:
     get:
-      summary: Fetch full season stats (incl. playoffs) for teams
+      summary: Fetch full season stats (including playoffs) for teams
       parameters:
         - in: path
           name: season
@@ -145,8 +145,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  season: { type: integer }
-                  retrieved: { type: integer }
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
                   data:
                     type: array
                     items:
@@ -167,8 +169,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  season: { type: integer }
-                  retrieved: { type: integer }
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
                   data:
                     type: array
                     items:
@@ -189,8 +193,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  season: { type: integer }
-                  retrieved: { type: integer }
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
                   data:
                     type: array
                     items:
@@ -206,8 +212,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  lastRun: { type: string, format: date-time }
-                  status: { type: string }
+                  lastRun:
+                    type: string
+                    format: date-time
+                  status:
+                    type: string
   /health/validate:
     get:
       summary: Validate team aggregation via RPC
@@ -219,8 +228,14 @@ paths:
               schema:
                 type: object
                 properties:
-                  checks: { type: array, items: { type: string } }
-                  errors: { type: array, items: { type: string } }
+                  checks:
+                    type: array
+                    items:
+                      type: string
+                  errors:
+                    type: array
+                    items:
+                      type: string
   /nfl/team-stats/summary:
     get:
       summary: Fetch consolidated NFL team summary (advanced + SRS + SoS) for a season
@@ -237,43 +252,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  season:
-                    type: integer
-                  retrieved:
-                    type: integer
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        team_id:
-                          type: integer
-                        team_name:
-                          type: string
-                        season:
-                          type: integer
-                        srs:
-                          type: number
-                        sos:
-                          type: number
-                        sosRank:
-                          type: integer
-                        winPct:
-                          type: number
-                        pythagoreanWinPct:
-                          type: number
-                        avg_third_down_pct:
-                          type: number
-                        avg_red_zone_pct:
-                          type: number
-                        avg_yards_per_drive:
-                          type: number
-                        avg_turnovers_per_game:
-                          type: number
-                        avg_time_of_possession:
-                          type: string
+                $ref: "#/components/schemas/NflTeamSummaryResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
   /nfl/team-stats/advanced:
@@ -292,35 +271,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  season:
-                    type: integer
-                  retrieved:
-                    type: integer
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        team_id:
-                          type: integer
-                        team_name:
-                          type: string
-                        season:
-                          type: integer
-                        avg_third_down_pct:
-                          type: number
-                        avg_red_zone_pct:
-                          type: number
-                        avg_yards_per_drive:
-                          type: number
-                        avg_turnovers_per_game:
-                          type: number
-                        pythagorean_win_pct:
-                          type: number
-                        avg_time_of_possession:
-                          type: string
+                $ref: "#/components/schemas/NflAdvancedStatsResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
 components:
@@ -353,27 +304,41 @@ components:
     ScheduleEntry:
       type: object
       properties:
-        id: { type: string }
-        gameDate: { type: string, format: date }
+        id:
+          type: string
+        gameDate:
+          type: string
+          format: date
         dataType:
           type: string
-          enum: ["schedule", "historical"]
-        status: { type: string }
-        homeTeamId: { type: integer }
-        awayTeamId: { type: integer }
+          enum:
+            - schedule
+            - historical
+        status:
+          type: string
+        homeTeamId:
+          type: integer
+        awayTeamId:
+          type: integer
         # ── fields present for upcoming games ──
-        scheduledTimeUTC: { type: string, format: date-time }
+        scheduledTimeUTC:
+          type: string
+          format: date-time
         spreadLine:
           type: number
           nullable: true
         totalLine:
           type: number
           nullable: true
-        predictedHomeScore: { type: number }
-        predictedAwayScore: { type: number }
+        predictedHomeScore:
+          type: number
+        predictedAwayScore:
+          type: number
         # ── fields present for completed games ──
-        finalHomeScore: { type: integer }
-        finalAwayScore: { type: integer }
+        finalHomeScore:
+          type: integer
+        finalAwayScore:
+          type: integer
         homeQ:
           type: array
           items:
@@ -385,9 +350,13 @@ components:
     Snapshot:
       type: object
       properties:
-        game_id: { type: string }
-        game_date: { type: string, format: date }
-        season: { type: integer }
+        game_id:
+          type: string
+        game_date:
+          type: string
+          format: date
+        season:
+          type: integer
         headline_stats:
           type: array
         bar_chart_data:
@@ -396,39 +365,133 @@ components:
           type: array
         pie_chart_data:
           type: array
-        last_updated: { type: string, format: date-time }
+        last_updated:
+          type: string
+          format: date-time
     TeamSeasonStats:
       type: object
       properties:
-        teamId: { type: integer }
-        teamName: { type: string }
-        wins: { type: integer }
-        losses: { type: integer }
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        wins:
+          type: integer
+        losses:
+          type: integer
     DashboardCard:
       type: object
       properties:
-        teamId: { type: integer }
-        teamName: { type: string }
-        PF: { type: integer }
-        PA: { type: integer }
-        YdsPerPlay: { type: number }
-        TOsPerGame: { type: number }
-        WinPctHome: { type: number }
-        WinPctAway: { type: number }
-        SOSRank: { type: integer }
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        PF:
+          type: integer
+        PA:
+          type: integer
+        YdsPerPlay:
+          type: number
+        TOsPerGame:
+          type: number
+        WinPctHome:
+          type: number
+        WinPctAway:
+          type: number
+        SOSRank:
+          type: integer
     SosEntry:
       type: object
       properties:
-        teamId: { type: integer }
-        teamName: { type: string }
-        sosPct: { type: number }
-        sosRank: { type: integer }
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        sosPct:
+          type: number
+        sosRank:
+          type: integer
     SrsEntry:
       type: object
       properties:
-        teamId: { type: integer }
-        teamName: { type: string }
-        netRating: { type: number }
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        netRating:
+          type: number
+    NflTeamSummaryEntry:
+      type: object
+      properties:
+        team_id:
+          type: integer
+        team_name:
+          type: string
+        season:
+          type: integer
+        srs:
+          type: number
+        sos:
+          type: number
+        sos_rank:
+          type: integer
+        win_pct:
+          type: number
+        pythagorean_win_pct:
+          type: number
+        avg_third_down_pct:
+          type: number
+        avg_red_zone_pct:
+          type: number
+        avg_yards_per_drive:
+          type: number
+        avg_turnovers_per_game:
+          type: number
+        avg_time_of_possession:
+          type: string
+    NflAdvancedStatsEntry:
+      type: object
+      properties:
+        team_id:
+          type: integer
+        team_name:
+          type: string
+        season:
+          type: integer
+        avg_third_down_pct:
+          type: number
+        avg_red_zone_pct:
+          type: number
+        avg_yards_per_drive:
+          type: number
+        avg_turnovers_per_game:
+          type: number
+        pythagorean_win_pct:
+          type: number
+        avg_time_of_possession:
+          type: string
+    NflTeamSummaryResponse:
+      type: object
+      properties:
+        season:
+          type: integer
+        retrieved:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/NflTeamSummaryEntry"
+    NflAdvancedStatsResponse:
+      type: object
+      properties:
+        season:
+          type: integer
+        retrieved:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/NflAdvancedStatsEntry"
   responses:
     BadRequest:
       description: Invalid parameter
@@ -446,4 +509,5 @@ components:
           schema:
             type: object
             properties:
-              message: { type: string }
+              message:
+                type: string
