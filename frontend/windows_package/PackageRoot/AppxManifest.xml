@@ -39,8 +39,7 @@
         Description="Predict the game. Not the noise."
         BackgroundColor="#000000"
         Square44x44Logo="assets/Square44x44.png"
-        Square150x150Logo="assets/Square150x150Logo.png"
-        ToastCapable="true">
+        Square150x150Logo="assets/Square150x150Logo.png">
         <uap:SplashScreen Image="assets/SplashScreen.png"/>
       </uap:VisualElements>
 
