@@ -1,0 +1,37 @@
+name: Build and Package MSIX
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package-msix:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup MSIX tooling
+        run: |
+          # Install the Windows 10/11 SDK if not already available.
+          # On GitHub-hosted runners, MakeAppx.exe and SignTool should already exist.
+          where.exe MakeAppx.exe
+          where.exe signtool.exe
+
+      - name: Package MSIX using MakeAppx + Sign (if you have cert)
+        run: |
+          # Create the MSIX package (assuming PackageRoot has AppxManifest.xml etc.)
+          MakeAppx.exe pack /d windows_package/PackageRoot /p ScoreGenius_1.10.0.0.appx
+
+          # If you need MSIX specifically, you can rename or wrap; better: use a proper template or
+          # use the MSIX Packaging Tool on a full Windows desktop to generate the .msix from the same root.
+
+          # OPTIONAL: sign the package if you have a .pfx
+          # signtool.exe sign /fd SHA256 /a /f path\to\certificate.pfx /p yourpassword ScoreGenius_1.10.0.0.appx
+
+          # (You can extend this to convert/apply the MSIX format; full-fidelity MSIX packaging ideally uses the MSIX Packaging Tool UI/CLI on Windows.)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoregenius-msix
+          path: ScoreGenius_1.10.0.0.appx
