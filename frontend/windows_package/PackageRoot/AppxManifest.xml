@@ -2,15 +2,11 @@
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
-  xmlns:mp="http://schemas.microsoft.com/appx/manifest/2014/phone/manifest"
-  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap mp">
+  IgnorableNamespaces="uap">
 
-  <!-- Identity ... -->
-  <Identity
-    Name="mattbwebdev.ScoreGenius"
-    Publisher="CN=F55BAB6B-31B3-48DF-AEF9-64E278573516"
-    Version="1.10.0.0" />
+  <Identity Name="mattbwebdev.ScoreGenius"
+            Publisher="CN=F55BAB6B-31B3-48DF-AEF9-64E278573516"
+            Version="1.10.0.0" />
 
   <Properties>
     <DisplayName>ScoreGenius</DisplayName>
@@ -20,22 +16,24 @@
   </Properties>
 
   <Resources>
-    <Resource Language="en-us" />
+    <Resource Language="en-us"/>
   </Resources>
 
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.19045.0" />
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.19041.0"
+                        MaxVersionTested="10.0.19045.0"/>
   </Dependencies>
 
   <Capabilities>
-    <Capability Name="internetClient" />
-    <Capability Name="internetClientServer" />
+    <Capability Name="internetClient"/>
+    <Capability Name="internetClientServer"/>
   </Capabilities>
 
   <Applications>
-    <Application Id="App"
-                 Executable="$targetnametoken$.exe"
-                 EntryPoint="Windows.FullTrustApplication">
+    <Application
+      Id="App"
+      StartPage="https://scoregenius.com/app">
       <uap:VisualElements
         DisplayName="ScoreGenius"
         Description="Predict the game. Not the noise."
@@ -43,15 +41,13 @@
         Square44x44Logo="assets/Square44x44.png"
         Square150x150Logo="assets/Square150x150Logo.png"
         ToastCapable="true">
-        <uap:SplashScreen Image="assets/SplashScreen.png" />
+        <uap:SplashScreen Image="assets/SplashScreen.png"/>
       </uap:VisualElements>
 
-      <uap:ApplicationProperties>
-        <uap:HostedWebApp>
-          <uap:StartPage>https://scoregenius.com/app</uap:StartPage>
-          <uap:WebApplicationId>https://scoregenius.com</uap:WebApplicationId>
-        </uap:HostedWebApp>
-      </uap:ApplicationProperties>
+      <!-- Allow the app to load any path under your domain -->
+      <uap:ApplicationContentUriRules>
+        <uap:Rule Type="include" Match="https://scoregenius.com/*"/>
+      </uap:ApplicationContentUriRules>
     </Application>
   </Applications>
 </Package>
