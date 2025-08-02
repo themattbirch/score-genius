@@ -200,6 +200,12 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     }
   }, [showTooltip, gameId]);
 
+  useEffect(() => {
+    if (showTooltip) {
+      triggerTouchGlow(arrowRef.current);
+    }
+  }, [showTooltip]);
+
   // Make the card "tour-aware"
   useEffect(() => {
     // These are the tour step indices that target elements inside the card.
@@ -276,10 +282,18 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     [compactDefault, toggleExpanded]
   );
 
+  const triggerTouchGlow = (node: HTMLElement | null) => {
+    if (!node) return;
+    node.classList.add("card-chevron--touch-glow");
+    setTimeout(() => {
+      node.classList.remove("card-chevron--touch-glow");
+    }, 300); // matches transition duration
+  };
+
   const handleArrowInteraction = useCallback(
     (e: React.MouseEvent | React.KeyboardEvent) => {
       e.stopPropagation();
-      lastClickRef.current = Date.now();
+      triggerTouchGlow(arrowRef.current);
       toggleExpanded();
     },
     [toggleExpanded]

@@ -243,26 +243,15 @@ body {
   color: #5e7368; /* Desaturated green for dark mode */
 }
 
-/* ---------- Arrow pulse (one-time) ---------- */
-@keyframes pulse-scale {
-  0% {
-    transform: scale(1);
-  }
-  45% {
-    transform: scale(1.25);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.card-chevron--pulse {
-  animation: pulse-scale 450ms cubic-bezier(0.4, 0, 0.2, 1) 1 forwards;
+.card-chevron--touch-glow {
+  transform: scale(1.12);
+  box-shadow: 0 0 10px rgba(0, 255, 150, 0.4);
+  transition: transform 250ms ease-out, box-shadow 250ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card-chevron--pulse {
-    animation: none;
+  .card-chevron--touch-glow {
+    transition: none;
   }
 }
 
