@@ -1,4 +1,4 @@
-name: Package ScoreGenius Appx
+name: Build & Package ScoreGenius Appx
 
 on:
   workflow_dispatch:
@@ -6,76 +6,142 @@ on:
 jobs:
   package-appx:
     runs-on: windows-latest
+    permissions:
+      contents: write # needed for release draft
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inspect expected PackageRoot location
+      - name: Compute dynamic version
+        id: version
+        run: |
+          # base version prefix can be bumped manually as needed
+          $base = "1.10"
+          $runnum = $env:GITHUB_RUN_NUMBER
+          $version = "$base.$runnum.0"
+          Write-Output "version=$version" | Out-File -Encoding ASCII -NoNewline $env:GITHUB_OUTPUT
+
+      - name: Inspect PackageRoot
         shell: pwsh
         run: |
-          Write-Output "Current working directory:"
-          pwd
-          Write-Output "Verifying frontend/windows_package/PackageRoot exists..."
-          if (Test-Path 'frontend/windows_package/PackageRoot') {
-            Write-Output "✅ Found PackageRoot"
-            Get-ChildItem 'frontend/windows_package/PackageRoot' -Recurse -Depth 2 | ForEach-Object { Write-Output $_.FullName }
-          } else {
-            Write-Output "❌ PackageRoot missing at frontend/windows_package/PackageRoot"
+          Write-Output "Looking for frontend/windows_package/PackageRoot"
+          if (-not (Test-Path 'frontend/windows_package/PackageRoot')) {
+            Write-Error "PackageRoot missing at expected location"
             Get-ChildItem -Recurse -Depth 2 | ForEach-Object { Write-Output $_.FullName }
-            throw "Cannot proceed: frontend/windows_package/PackageRoot not found."
+            exit 1
           }
+          Write-Output "PackageRoot exists. Listing top-level:"
+          Get-ChildItem 'frontend/windows_package/PackageRoot' | ForEach-Object { Write-Output $_.Name }
+
+      - name: Patch manifest version
+        shell: pwsh
+        run: |
+          $manifestPath = "frontend/windows_package/PackageRoot/AppxManifest.xml"
+          if (-not (Test-Path $manifestPath)) { throw "Manifest not found at $manifestPath" }
+          $version = '${{ steps.version.outputs.version }}'
+          (Get-Content $manifestPath) -replace '(Version=")[^"]+(")', "`$1$version`$2" | Set-Content $manifestPath
+          Write-Output "Patched manifest to version $version"
+          # Optional: dump the identity line for verification
+          Select-String -Pattern 'Identity' -Path $manifestPath | ForEach-Object { Write-Output $_.Line }
+
+      - name: Validate manifest schema early
+        shell: pwsh
+        run: |
+          $manifestPath = "frontend/windows_package/PackageRoot/AppxManifest.xml"
+          $makeappx = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter MakeAppx.exe |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeappx) { throw "MakeAppx.exe not found." }
+          Write-Output "Running manifest validation..."
+          & $makeappx.FullName validate /m $manifestPath
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Manifest validation failed."
+            exit $LASTEXITCODE
+          }
+          Write-Output "Manifest validated."
 
       - name: Package Appx and sign
         shell: pwsh
         env:
           PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
           PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $packageRoot = 'frontend/windows_package/PackageRoot'
-          $outputPackage = 'ScoreGenius_1.10.0.0.appx'
+          $version = '${{ steps.version.outputs.version }}'
+          $outputPackage = "ScoreGenius_${version}.appx"
 
-          # Decode base64 PFX into a file if provided
+          # Decode base64 PFX if provided
+          $pfxPath = $null
           if ($env:PFX_B64) {
-            $pfxPath = "$PWD\scoregenius.pfx"
-            [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:PFX_B64))
-            Write-Output "Decoded .pfx to $pfxPath"
+            try {
+              $pfxPath = "$PWD\scoregenius.pfx"
+              [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:PFX_B64))
+              Write-Output "Decoded .pfx to $pfxPath"
+            } catch {
+              Write-Error "Failed to decode PFX: $_"
+              exit 1
+            }
+            # Validate PFX loads with password
+            Write-Output "Validating PFX..."
+            certutil -f -p $env:PFX_PASSWORD -dump $pfxPath | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "PFX failed to load; check password or encoding."
+              exit 1
+            }
+            Write-Output "PFX loaded successfully."
           } else {
-            $pfxPath = $null
-            Write-Output "No PFX base64 provided; skipping signing later."
+            Write-Output "No PFX provided; signing will be skipped."
           }
 
-          # Locate latest MakeAppx.exe and signtool.exe
+          # Locate tooling
           $makeappx = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter MakeAppx.exe |
             Sort-Object FullName -Descending | Select-Object -First 1
-          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter signtool.exe |
-            Sort-Object FullName -Descending | Select-Object -First 1
-
           if (-not $makeappx) { throw "MakeAppx.exe not found." }
+          # Prefer x64 signtool to avoid format errors
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match '\\x64\\' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
 
           Write-Output "Using MakeAppx: $($makeappx.FullName)"
           if ($signtool) {
             Write-Output "Using SignTool: $($signtool.FullName)"
           } else {
-            Write-Output "SignTool missing; cannot sign even if PFX exists."
+            Write-Output "SignTool x64 not found; signing will be skipped."
           }
 
           # Pack
           & $makeappx.FullName pack /d $packageRoot /p $outputPackage
-
           if (-not (Test-Path $outputPackage)) {
-            throw "Packaging failed; appx not produced."
+            Write-Error "Packaging failed; appx not produced."
+            exit 1
           }
+          Write-Output "Created package: $outputPackage (size: $(Get-Item $outputPackage).Length bytes)"
 
-          # Sign if we have both signtool and the decoded PFX
+          # Sign if possible
           if ($signtool -and $pfxPath) {
-            Write-Output "Signing package..."
-            & $signtool.FullName sign /fd SHA256 /a /f $pfxPath /p $env:PFX_PASSWORD $outputPackage
+            Write-Output "Signing package with debug output..."
+            & $signtool.FullName sign /debug /fd SHA256 /a /f $pfxPath /p $env:PFX_PASSWORD $outputPackage
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Signing failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
+            Write-Output "Signing succeeded."
           } else {
             Write-Output "Skipping signing (missing signtool or PFX)."
           }
 
-      - name: Upload packaged artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: scoregenius-appx
-          path: ScoreGenius_1.10.0.0.appx
+          path: "ScoreGenius_${{ steps.version.outputs.version }}.appx"
+
+      - name: Create GitHub Release draft
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.version.outputs.version }}"
+          name: "ScoreGenius v${{ steps.version.outputs.version }}"
+          draft: true
+          files: "ScoreGenius_${{ steps.version.outputs.version }}.appx"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
