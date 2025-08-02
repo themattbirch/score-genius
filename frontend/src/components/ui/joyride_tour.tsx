@@ -34,7 +34,7 @@ export const baseSteps: Step[] = [
   {
     target: '[data-tour="game-card"]:first-of-type',
     content:
-      "Each card shows teams and predictions. (IF VIEWING THIS ON MOBILE: TAP the arrow to expand it for more options.)",
+      "Each card shows teams and predictions. Tap the arrow to expand for more options.",
     disableBeacon: true,
     placement: "top",
   },

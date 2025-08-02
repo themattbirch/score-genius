@@ -1,3 +1,4 @@
+````yaml
 # Repository Overview & Next Steps
 
 This document outlines the current security setup, documentation status, future development plan, and next actions for the NFL stats repository.
@@ -59,3 +60,4 @@ The following table outlines planned features and where they will be implemented
 1.  Should I proceed with generating the **Metric Dictionary** (`nfl_team_agg_metrics_dict.md`), pre-filled with all columns and their corresponding formulas?
 2.  Do you want a minimal **GitHub Actions workflow** that runs a SQL validation script nightly and fails the build on any data mismatch?
 3.  Which Phase 3 feature should be prioritized: **Strength of Schedule (SRS)**, **rolling splits**, or **predictive power ratings**?
+````

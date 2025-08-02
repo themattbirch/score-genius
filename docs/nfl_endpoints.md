@@ -1,312 +1,426 @@
+```yaml
 openapi: 3.0.3
 info:
-title: ScoreGenius NFL API
-version: 1.0.0
-description: REST API for NFL analytics endpoints used by ScoreGenius PWA
+  title: ScoreGenius NFL API
+  version: 1.0.0
+  description: REST API for NFL analytics endpoints used by ScoreGenius PWA
 servers:
+  - url: /api/v1/nfl
 
-- url: /api/v1/nfl
-  paths:
+paths:
   /schedule:
-  get:
-  summary: Fetch NFL schedule or historical results for a given date
-  parameters: - in: query
-  name: date
-  schema:
-  type: string
-  pattern: '^\\d{4}-\\d{2}-\\d{2}$'
-  required: true
-  description: Date in YYYY-MM-DD format
-  responses:
-  '200':
-  description: Array of schedule or historical games
-  content:
-  application/json:
-  schema:
-  type: object
-  properties:
-  message:
-  type: string
-  retrieved:
-  type: integer
-  data:
-  type: array
-  items:
-  $ref: '#/components/schemas/ScheduleEntry'
-  '400':
-  $ref: '#/components/responses/BadRequest'
+    get:
+      summary: Fetch NFL schedule or historical results for a given date
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Date in YYYY-MM-DD format
+      responses:
+        '200':
+          description: Array of schedule or historical games
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  retrieved:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScheduleEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /snapshots:
-  get:
-  summary: Fetch multiple game snapshots by comma-separated IDs
-  parameters: - in: query
-  name: gameIds
-  schema:
-  type: string
-  required: true
-  description: Comma-separated list of game_id strings
-  responses:
-  '200':
-  description: Array of snapshot objects
-  content:
-  application/json:
-  schema:
-  type: array
-  items:
-  $ref: '#/components/schemas/Snapshot'
-  '400':
-  $ref: '#/components/responses/BadRequest'
+    get:
+      summary: Fetch multiple game snapshots by comma-separated IDs
+      parameters:
+        - in: query
+          name: gameIds
+          required: true
+          schema:
+            type: string
+          description: Comma-separated list of game_id strings
+      responses:
+        '200':
+          description: Array of snapshot objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Snapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /snapshots/{gameId}:
-  get:
-  summary: Fetch single game snapshot by ID
-  parameters: - in: path
-  name: gameId
-  schema:
-  type: string
-  required: true
-  description: game_id to retrieve snapshot
-  responses:
-  '200':
-  description: Snapshot object
-  content:
-  application/json:
-  schema:
-  $ref: '#/components/schemas/Snapshot'
-  '404':
-  $ref: '#/components/responses/NotFound'
+    get:
+      summary: Fetch single game snapshot by ID
+      parameters:
+        - in: path
+          name: gameId
+          required: true
+          schema:
+            type: string
+          description: game_id to retrieve snapshot
+      responses:
+        '200':
+          description: Snapshot object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /teams/{season}/full:
-  get:
-  summary: Fetch full season stats (incl. playoffs) for teams
-  parameters: - in: path
-  name: season
-  schema:
-  type: integer
-  required: true - in: query
-  name: teamId
-  schema:
-  type: string
-  description: Comma-separated list of team IDs - in: query
-  name: conference
-  schema:
-  type: string
-  description: AFC or NFC - in: query
-  name: division
-  schema:
-  type: string
-  description: East, West, North, South
-  responses:
-  '200':
-  description: Array of team season stats
-  content:
-  application/json:
-  schema:
-  type: array
-  items:
-  $ref: '#/components/schemas/TeamSeasonStats'
-  '400':
-  $ref: '#/components/responses/BadRequest'
+    get:
+      summary: Fetch full season stats (incl. playoffs) for teams
+      parameters:
+        - in: path
+          name: season
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: teamId
+          schema:
+            type: string
+          description: Comma-separated list of team IDs
+        - in: query
+          name: conference
+          schema:
+            type: string
+          description: AFC or NFC
+        - in: query
+          name: division
+          schema:
+            type: string
+          description: East, West, North, South
+      responses:
+        '200':
+          description: Array of team season stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamSeasonStats'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /teams/{season}/regonly:
-  get:
-  summary: Fetch regular-season stats for teams
-  parameters: - $ref: '#/components/parameters/season' - $ref: '#/components/parameters/teamId' - $ref: '#/components/parameters/conference' - $ref: '#/components/parameters/division'
-  responses:
-  '200':
-  description: Array of team season stats
-  content:
-  application/json:
-  schema:
-  type: array
-  items:
-  $ref: '#/components/schemas/TeamSeasonStats'
-  '400':
-  $ref: '#/components/responses/BadRequest'
+    get:
+      summary: Fetch regular-season stats for teams
+      parameters:
+        - $ref: '#/components/parameters/season'
+        - $ref: '#/components/parameters/teamId'
+        - $ref: '#/components/parameters/conference'
+        - $ref: '#/components/parameters/division'
+      responses:
+        '200':
+          description: Array of team season stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamSeasonStats'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /teams/{season}/dashboard:
-  get:
-  summary: Fetch dashboard card metrics for teams
-  parameters: - $ref: '#/components/parameters/season' - $ref: '#/components/parameters/teamId' - $ref: '#/components/parameters/conference' - $ref: '#/components/parameters/division'
-  responses:
-  '200':
-  description: Dashboard card data
-  content:
-  application/json:
-  schema:
-  type: object
-  properties:
-  season: { type: integer }
-  retrieved: { type: integer }
-  data:
-  type: array
-  items:
-  $ref: '#/components/schemas/DashboardCard'
+    get:
+      summary: Fetch dashboard card metrics for teams
+      parameters:
+        - $ref: '#/components/parameters/season'
+        - $ref: '#/components/parameters/teamId'
+        - $ref: '#/components/parameters/conference'
+        - $ref: '#/components/parameters/division'
+      responses:
+        '200':
+          description: Dashboard card data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DashboardCard'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /teams/{season}/sos:
-  get:
-  summary: Fetch Strength-of-Schedule for teams
-  parameters: - $ref: '#/components/parameters/season' - $ref: '#/components/parameters/teamId' - $ref: '#/components/parameters/conference' - $ref: '#/components/parameters/division'
-  responses:
-  '200':
-  description: Array of SOS metrics
-  content:
-  application/json:
-  schema:
-  type: object
-  properties:
-  season: { type: integer }
-  retrieved: { type: integer }
-  data:
-  type: array
-  items:
-  $ref: '#/components/schemas/SosEntry'
+    get:
+      summary: Fetch Strength-of-Schedule for teams
+      parameters:
+        - $ref: '#/components/parameters/season'
+        - $ref: '#/components/parameters/teamId'
+        - $ref: '#/components/parameters/conference'
+        - $ref: '#/components/parameters/division'
+      responses:
+        '200':
+          description: Array of SOS metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SosEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /teams/{season}/srs:
-  get:
-  summary: Fetch Simple Rating System for teams
-  parameters: - $ref: '#/components/parameters/season' - $ref: '#/components/parameters/teamId' - $ref: '#/components/parameters/conference' - $ref: '#/components/parameters/division'
-  responses:
-  '200':
-  description: Array of SRS metrics
-  content:
-  application/json:
-  schema:
-  type: object
-  properties:
-  season: { type: integer }
-  retrieved: { type: integer }
-  data:
-  type: array
-  items:
-  $ref: '#/components/schemas/SrsEntry'
+    get:
+      summary: Fetch Simple Rating System for teams
+      parameters:
+        - $ref: '#/components/parameters/season'
+        - $ref: '#/components/parameters/teamId'
+        - $ref: '#/components/parameters/conference'
+        - $ref: '#/components/parameters/division'
+      responses:
+        '200':
+          description: Array of SRS metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SrsEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /health/cron:
-  get:
-  summary: Check cron job health
-  responses:
-  '200':
-  description: Cron health payload
-  content:
-  application/json:
-  schema:
-  type: object
-  properties:
-  lastRun: { type: string, format: date-time }
-  status: { type: string }
+    get:
+      summary: Check cron job health
+      responses:
+        '200':
+          description: Cron health payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lastRun:
+                    type: string
+                    format: date-time
+                  status:
+                    type: string
+
   /health/validate:
-  get:
-  summary: Validate team aggregation via RPC
-  responses:
-  '200':
-  description: Validation payload
-  content:
-  application/json:
-  schema:
-  type: object
-  properties:
-  checks: { type: array, items: { type: string } }
-  errors: { type: array, items: { type: string } }
+    get:
+      summary: Validate team aggregation via RPC
+      responses:
+        '200':
+          description: Validation payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checks:
+                    type: array
+                    items:
+                      type: string
+                  errors:
+                    type: array
+                    items:
+                      type: string
 
 components:
-parameters:
-season:
-in: path
-name: season
-schema:
-type: integer
-required: true
-teamId:
-in: query
-name: teamId
-schema:
-type: string
-description: Comma-separated team IDs
-conference:
-in: query
-name: conference
-schema:
-type: string
-description: AFC or NFC
-division:
-in: query
-name: division
-schema:
-type: string
-description: East, West, North, South
+  parameters:
+    season:
+      in: path
+      name: season
+      required: true
+      schema:
+        type: integer
+    teamId:
+      in: query
+      name: teamId
+      schema:
+        type: string
+      description: Comma-separated team IDs
+    conference:
+      in: query
+      name: conference
+      schema:
+        type: string
+      description: AFC or NFC
+    division:
+      in: query
+      name: division
+      schema:
+        type: string
+      description: East, West, North, South
 
-schemas:
-ScheduleEntry:
-type: object
-properties:
-id: { type: string }
-gameDate: { type: string, format: date }
-dataType: { type: string, enum: ["schedule","historical"] }
-status: { type: string }
-homeTeamId: { type: integer }
-awayTeamId: { type: integer }
-/_ if schedule _/
-scheduledTimeUTC: { type: string, format: date-time }
-spreadLine: { type: number, nullable: true }
-totalLine: { type: number, nullable: true }
-predictedHomeScore: { type: number }
-predictedAwayScore: { type: number }
-/_ if historical _/
-finalHomeScore: { type: integer }
-finalAwayScore: { type: integer }
-homeQ: { type: array, items: { type: integer } }
-awayQ: { type: array, items: { type: integer } }
-Snapshot:
-type: object
-properties:
-game_id: { type: string }
-game_date: { type: string, format: date }
-season: { type: integer }
-headline_stats: { type: array }
-bar_chart_data: { type: array }
-radar_chart_data: { type: array }
-pie_chart_data: { type: array }
-last_updated: { type: string, format: date-time }
-TeamSeasonStats:
-type: object
-properties:
-teamId: { type: integer }
-teamName: { type: string }
-wins: { type: integer }
-losses: { type: integer }
-// … rest of fields
-DashboardCard:
-type: object
-properties:
-teamId: { type: integer }
-teamName: { type: string }
-PF: { type: integer }
-PA: { type: integer }
-YdsPerPlay: { type: number }
-TOsPerGame: { type: number }
-WinPctHome: { type: number }
-WinPctAway: { type: number }
-SOSRank: { type: integer }
-SosEntry:
-type: object
-properties:
-teamId: { type: integer }
-teamName: { type: string }
-sosPct: { type: number }
-sosRank: { type: integer }
-SrsEntry:
-type: object
-properties:
-teamId: { type: integer }
-teamName: { type: string }
-netRating: { type: number }
-responses:
-BadRequest:
-description: Invalid parameter
-content:
-application/json:
-schema:
-type: object
-properties:
-message:
-type: string
-NotFound:
-description: Resource not found
-content:
-application/json:
-schema:
-type: object
-properties:
-message: { type: string }
+  schemas:
+    ScheduleEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        gameDate:
+          type: string
+          format: date
+        dataType:
+          type: string
+          enum: ["schedule", "historical"]
+        status:
+          type: string
+        homeTeamId:
+          type: integer
+        awayTeamId:
+          type: integer
+        # if schedule
+        scheduledTimeUTC:
+          type: string
+          format: date-time
+        spreadLine:
+          type: number
+          nullable: true
+        totalLine:
+          type: number
+          nullable: true
+        predictedHomeScore:
+          type: number
+        predictedAwayScore:
+          type: number
+        # if historical
+        finalHomeScore:
+          type: integer
+        finalAwayScore:
+          type: integer
+        homeQ:
+          type: array
+          items:
+            type: integer
+        awayQ:
+          type: array
+            type: integer
+
+    Snapshot:
+      type: object
+      properties:
+        game_id:
+          type: string
+        game_date:
+          type: string
+          format: date
+        season:
+          type: integer
+        headline_stats:
+          type: array
+        bar_chart_data:
+          type: array
+        radar_chart_data:
+          type: array
+        pie_chart_data:
+          type: array
+        last_updated:
+          type: string
+          format: date-time
+
+    TeamSeasonStats:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        wins:
+          type: integer
+        losses:
+          type: integer
+        # … rest of fields
+
+    DashboardCard:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        PF:
+          type: integer
+        PA:
+          type: integer
+        YdsPerPlay:
+          type: number
+        TOsPerGame:
+          type: number
+        WinPctHome:
+          type: number
+        WinPctAway:
+          type: number
+        SOSRank:
+          type: integer
+
+    SosEntry:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        sosPct:
+          type: number
+        sosRank:
+          type: integer
+
+    SrsEntry:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        netRating:
+          type: number
+
+  responses:
+    BadRequest:
+      description: Invalid parameter
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string

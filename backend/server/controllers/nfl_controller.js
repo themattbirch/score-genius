@@ -13,6 +13,7 @@ import {
   checkCronHealth,
   validateTeamAgg,
   fetchNflAdvancedStats,
+  fetchNflSeasonStats,
 } from "../services/nfl_service.js";
 import {
   NFL_ALLOWED_CONFERENCES,
@@ -306,45 +307,71 @@ export async function getNflAdvancedStats(req, res, next) {
   }
 }
 // GET /api/v1/nfl/team-stats/summary?season=YYYY
+// GET /api/v1/nfl/team-stats/summary?season=YYYY
 export async function getNflTeamStatsSummary(req, res, next) {
   try {
     const season = parseSeasonParam(req.query.season);
     if (season == null)
       return badParam(res, "Invalid or missing season parameter; use YYYY.");
 
-    // Parallel fetches
-    const [advanced, srs, sos] = await Promise.all([
+    // Parallel fetches of the components
+    const [advancedRaw, srsRaw, sosRaw, seasonStats] = await Promise.all([
       fetchNflAdvancedStats({ season }),
       fetchNflSrs({ season }),
       fetchNflSos({ season }),
+      fetchNflSeasonStats({
+        season,
+        teamIds: [],
+        conference: null,
+        division: null,
+      }),
     ]);
 
-    // Normalize by team_id (fallback to team_name if needed)
+    // Logging for visibility (optional)
+    console.log("Summary source lengths:", {
+      advanced: advancedRaw.length,
+      srs: srsRaw.length,
+      sos: sosRaw.length,
+      season: seasonStats.length,
+    });
+
     const indexed = {};
 
-    const upsertTeam = (row, source) => {
-      const key = row.team_id ?? row.teamId ?? row.team_name ?? row.teamName;
-      if (!key) return;
-      if (!indexed[key])
-        indexed[key] = {
-          team_id: row.team_id ?? row.teamId,
+    const upsert = (row, source) => {
+      const teamId = row.team_id ?? row.teamId;
+      if (!teamId) return;
+      if (!indexed[teamId]) {
+        indexed[teamId] = {
+          team_id: teamId,
           team_name: row.team_name ?? row.teamName,
         };
-      // merge source-specific fields
+      }
       if (source === "advanced") {
-        Object.assign(indexed[key], row);
+        Object.assign(indexed[teamId], row);
       } else if (source === "srs") {
-        indexed[key].srs_lite = row.srs_lite ?? row.srs; // adapt field name
+        indexed[teamId].srs = row.srs_lite ?? row.srs;
       } else if (source === "sos") {
-        indexed[key].sos = row.sos;
+        indexed[teamId].sos = row.sos;
+        if (row.sos_rank !== undefined) {
+          indexed[teamId].sosRank = row.sos_rank;
+        }
       }
     };
 
-    advanced.forEach((r) => upsertTeam(r, "advanced"));
-    srs.forEach((r) => upsertTeam(r, "srs"));
-    sos.forEach((r) => upsertTeam(r, "sos"));
+    advancedRaw.forEach((r) => upsert(r, "advanced"));
+    srsRaw.forEach((r) => upsert(r, "srs"));
+    sosRaw.forEach((r) => upsert(r, "sos"));
 
-    // Convert to array
+    // Augment with winPct from season stats
+    Object.entries(indexed).forEach(([teamId, existing]) => {
+      const seasonRow = seasonStats.find(
+        (r) => String(r.team_id) === String(teamId)
+      );
+      if (seasonRow) {
+        existing.winPct = seasonRow.win_pct ?? seasonRow.wins_all_percentage;
+      }
+    });
+
     const data = Object.values(indexed);
 
     res.set(buildCacheHeader());

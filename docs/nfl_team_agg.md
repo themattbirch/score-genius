@@ -1,3 +1,5 @@
+```yaml
+
 # NFL Team Aggregation Layer (v1.3)
 
 ## Overview
@@ -49,3 +51,4 @@ Season-level performance metrics from API-Sports box scores.
 ## Logo Hosting
 
 Supabase Storage bucket `team-logos/nfl/<team_id>.png`.
+```

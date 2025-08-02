@@ -327,13 +327,42 @@ export async function fetchNflDashboardCards({
 }
 // Fetch Strength of Schedule
 export async function fetchNflSos({ season, teamIds, conference, division }) {
-  return fetchFromView("v_nfl_team_sos", {
+  const cacheKey = buildViewKey(NFL_SOS_VIEW, {
     season,
     teamIds,
     conference,
     division,
-    includeRaw: false,
   });
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  let q = supabase.from(NFL_SOS_VIEW).select("*").eq("season", season);
+  if (teamIds?.length) q = q.in("team_id", teamIds);
+  if (conference) q = q.eq("conference", conference);
+  if (division) q = q.eq("division", division);
+
+  const { data, error, status } = await q;
+
+  if (error) {
+    const e = new Error(error.message || "Error fetching SoS");
+    e.status = status;
+    throw e;
+  }
+
+  // Normalize field: rename sos_pct to sos so downstream code is consistent
+  const result = Array.isArray(data)
+    ? data.map((r) => {
+        const copy = { ...r };
+        if (copy.sos_pct !== undefined) {
+          copy.sos = copy.sos_pct;
+          delete copy.sos_pct;
+        }
+        return copy;
+      })
+    : [];
+
+  cache.set(cacheKey, result, DEFAULT_CACHE_TTL);
+  return result;
 }
 
 // Cron & Validation RPC calls ----------------------------------------------
@@ -452,6 +481,40 @@ export async function fetchNflAdvancedStats({ season }) {
     throw e;
   }
 
+  const result = Array.isArray(data) ? data : [];
+  cache.set(cacheKey, result, DEFAULT_CACHE_TTL);
+  return result;
+}
+export async function fetchNflSeasonStats({
+  season,
+  teamIds,
+  conference,
+  division,
+}) {
+  // Reuse generic view fetch pattern manually here
+  const cacheKey = buildViewKey("mv_nfl_season_stats", {
+    season,
+    teamIds,
+    conference,
+    division,
+  });
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  let query = supabase
+    .from("mv_nfl_season_stats")
+    .select("*")
+    .eq("season", season);
+  if (teamIds?.length) query = query.in("team_id", teamIds);
+  if (conference) query = query.eq("conference", conference);
+  if (division) query = query.eq("division", division);
+
+  const { data, error, status } = await query;
+  if (error) {
+    const e = new Error(error.message || "Error fetching season stats");
+    e.status = status || 503;
+    throw e;
+  }
   const result = Array.isArray(data) ? data : [];
   cache.set(cacheKey, result, DEFAULT_CACHE_TTL);
   return result;

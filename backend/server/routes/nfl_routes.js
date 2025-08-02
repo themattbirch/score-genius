@@ -46,6 +46,8 @@ router.get("/team-stats/advanced", getNflAdvancedStats);
 // dashboard route
 router.get("/teams/:season/dashboard", getNflDashboard);
 
+// Shim for backward compatibility / existing frontend usage
+router.get("/team-stats", getNflTeamStatsSummary);
 // Consolidated summary of advanced + SRS + SoS
 router.get("/team-stats/summary", getNflTeamStatsSummary);
 
