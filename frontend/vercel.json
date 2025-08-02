@@ -2,5 +2,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "ignoreCommand": "echo ''"
+  "ignoreCommand": "echo ''",
+  "routes": []
 }

@@ -21,7 +21,7 @@ import { CustomJoyrideTooltip } from "./custom_joyride_tooltip";
 export const baseSteps: Step[] = [
   {
     target: '[data-tour="sport-switch"]',
-    content: "Tap here to switch between NBA and MLB.",
+    content: "Tap here to switch between NFL, NBA and MLB.",
     disableBeacon: true,
     placement: "bottom",
   },
