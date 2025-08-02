@@ -34,6 +34,9 @@ jobs:
 
       - name: Ensure code signing certificate exists
         shell: pwsh
+        env:
+          SCOREGENIUS_PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
+          SCOREGENIUS_PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
         run: |
           if (-not $env:SCOREGENIUS_PFX_B64) {
             Write-Output "No external PFX provided; generating fresh RSA-2048 code signing cert."
@@ -44,21 +47,18 @@ jobs:
               -HashAlgorithm SHA256 `
               -NotAfter (Get-Date).AddYears(3)
 
-            $pwd = ConvertTo-SecureString "StrongPfxPass123" -AsPlainText -Force
+            $pwd     = ConvertTo-SecureString "StrongPfxPass123" -AsPlainText -Force
             $pfxPath = "$PWD\scoregenius_generated.pfx"
             Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
 
-            # Export its base64 so you could persist or debug if needed
             $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pfxPath))
             Write-Output "Generated PFX base64 prefix: $($b64.Substring(0,80))..."
 
-            # Set up for later steps
-            $env:SCOREGENIUS_PFX_PASSWORD = "StrongPfxPass123"
-            $env:SCOREGENIUS_PFX_B64 = $b64
+            echo "SCOREGENIUS_PFX_B64=$b64"       | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+            echo "SCOREGENIUS_PFX_PASSWORD=StrongPfxPass123" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           } else {
             Write-Output "External PFX provided; will sanitize and use it."
           }
-
       - name: Package Appx and sign (with secret sanitization)
         shell: pwsh
         env:
