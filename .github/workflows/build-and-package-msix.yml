@@ -66,14 +66,15 @@ jobs:
             Write-Output "External PFX provided; will sanitize and use it."
           }
 
-      - name: Package Appx and sign (with secret sanitization)
+      - name: Package Appx and sign (with secret sanitization + bundle)
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $packageRoot = 'frontend/windows_package/PackageRoot'
           $version = '${{ steps.version.outputs.version }}'
-          $output = "ScoreGenius_${version}.appx"
+          $appxName = "ScoreGenius_${version}.appx"
+          $bundleName = "ScoreGenius_${version}.appxbundle"
 
           # --- sanitize and validate base64 PFX secret ---
           if ($env:SCOREGENIUS_PFX_B64) {
@@ -84,11 +85,10 @@ jobs:
               Write-Error "PFX secret is not valid base64 after sanitization."
               exit 1
             }
-            $pfxPath = "$PWD\scoregenius.pfx"
+            $pfxPath = Join-Path $env:RUNNER_TEMP "scoregenius.pfx"
             [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($cleaned))
             Write-Output "Decoded and sanitized .pfx to $pfxPath"
 
-            # Validate PFX loads with password (will fail early if bad)
             certutil -f -p $env:SCOREGENIUS_PFX_PASSWORD -dump $pfxPath | Out-Null
             if ($LASTEXITCODE -ne 0) {
               Write-Error "PFX failed to load; bad password or corrupted content."
@@ -116,15 +116,27 @@ jobs:
             Write-Output "x64 SignTool not found; signing will be skipped."
           }
 
-          # Pack
-          & $makeappx.FullName pack /d $packageRoot /p $output
-          if (-not (Test-Path $output)) { throw "Packaging failed." }
-          Write-Output "Created package: $output"
+          # 1. Pack the .appx
+          & $makeappx.FullName pack /d $packageRoot /p $appxName
+          if (-not (Test-Path $appxName)) { throw "Appx packaging failed." }
+          Write-Output "Created .appx: $appxName"
 
-          # Sign if possible
+          # 2. Create single-arch bundle (required by Partner Center since previous bundle submission)
+          #    Build a temporary bundle layout directory containing the .appx and bundle manifest
+          $bundleLayout = Join-Path $env:RUNNER_TEMP "bundlelayout"
+          Remove-Item -Recurse -Force $bundleLayout -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $bundleLayout | Out-Null
+          Copy-Item $appxName -Destination $bundleLayout
+
+          # Generate the bundle. For a single .appx, this creates a .appxbundle containing it.
+          & $makeappx.FullName bundle /d $bundleLayout /p $bundleName
+          if (-not (Test-Path $bundleName)) { throw "Appxbundle creation failed." }
+          Write-Output "Created bundle: $bundleName"
+
+          # 3. Sign the bundle if we have a PFX
           if ($signtool -and $pfxPath) {
-            Write-Output "Signing package with debug output..."
-            & $signtool.FullName sign /debug /fd SHA256 /a /f $pfxPath /p $env:SCOREGENIUS_PFX_PASSWORD $output
+            Write-Output "Signing bundle with debug output..."
+            & $signtool.FullName sign /debug /fd SHA256 /a /f $pfxPath /p $env:SCOREGENIUS_PFX_PASSWORD $bundleName
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Signing failed with code $LASTEXITCODE"
               exit $LASTEXITCODE
@@ -133,6 +145,9 @@ jobs:
           } else {
             Write-Output "Skipping signing (missing signtool or PFX)."
           }
+
+          # Expose final artifact name for later steps
+          echo "FINAL_PACKAGE=$bundleName" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
