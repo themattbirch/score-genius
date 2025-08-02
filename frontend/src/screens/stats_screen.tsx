@@ -11,12 +11,15 @@ import { useTeamStats } from "@/api/use_team_stats";
 import { usePlayerStats } from "@/api/use_player_stats";
 import { useAdvancedStats as useNbaAdvancedStats } from "@/api/use_nba_advanced_stats";
 import { useMlbAdvancedStats } from "@/api/use_mlb_advanced_stats";
+import { useNflAdvancedStats } from "@/api/use_nfl_advanced_stats";
+import { useNflTeamSummary } from "@/api/use_nfl_team_summary";
 
 import {
   UnifiedPlayerStats,
   UnifiedTeamStats,
   NbaAdvancedTeamStats,
   MlbAdvancedTeamStats,
+  NflAdvancedTeamStats,
 } from "@/types";
 
 import SkeletonBox from "@/components/ui/skeleton_box";
@@ -37,9 +40,11 @@ const pctKeys = new Set([
   "three_pct",
   "ft_pct",
   "wins_all_percentage",
+  "winPct",
   "efg_pct",
   "tov_pct",
   "oreb_pct",
+  "pythagoreanWinPct",
   "pythagorean_win_pct",
   "home_away_win_pct_split",
 ]);
@@ -177,6 +182,34 @@ const StatsScreen: React.FC = () => {
   );
 
   /* ─── memoised hook option objects ──────────────────────────────────── */
+  // define NFL headers
+  const nflSummaryHeaders = [
+    { label: "Team", key: "teamName" as const },
+    { label: "SRS", key: "srs" as const },
+    { label: "Win %", key: "winPct" as const },
+    { label: "SoS", key: "sos" as const },
+    { label: "Pythagorean %", key: "pythagoreanWinPct" as const },
+  ];
+
+  const nflAdvHeaders = [
+    { label: "Team", key: "team_name" as const },
+    { label: "3rd %", key: "avg_third_down_pct" as const },
+    { label: "Red Zone %", key: "avg_red_zone_pct" as const },
+    { label: "Yds / Drive", key: "avg_yards_per_drive" as const },
+    { label: "TOs / Game", key: "avg_turnovers_per_game" as const },
+    { label: "Pythag %", key: "pythagorean_win_pct" as const },
+    { label: "TOP", key: "avg_time_of_possession" as const },
+  ];
+
+  // new sort state override for NFL
+  useEffect(() => {
+    if (sport === "NFL") {
+      setTeamSort({ key: "srs" as any, dir: "desc" });
+    } else {
+      setTeamSort({ key: "wins_all_percentage" as any, dir: "desc" });
+    }
+  }, [sport]);
+
   const teamOpts = useMemo(
     () => ({
       sport,
@@ -217,11 +250,29 @@ const StatsScreen: React.FC = () => {
   );
 
   /* ───── queries ─────────────────────────────────────────────────────── */
+  // NFL summary / team stats (single source)
+  const isNflTeamSummaryActive = sport === "NFL" && tab === "teams";
   const {
     data: teamData,
     isLoading: teamLoading,
     error: teamErr,
-  } = useTeamStats(teamOpts);
+  } = isNflTeamSummaryActive
+    ? useNflTeamSummary({
+        season,
+        sport: "NFL",
+        enabled: online && canFetchSeason && tab === "teams",
+      })
+    : useTeamStats(teamOpts);
+
+  const {
+    data: nflAdv,
+    isLoading: nflAdvLoading,
+    error: nflAdvErr,
+  } = useNflAdvancedStats({
+    season,
+    sport: "NFL",
+    enabled: online && canFetchSeason && sport === "NFL" && tab === "advanced",
+  });
 
   const {
     data: playerData,
@@ -250,6 +301,13 @@ const StatsScreen: React.FC = () => {
     setTeamSort({ key: "wins_all_percentage", dir: "desc" });
   }, [sport]);
 
+  // NFL override
+  useEffect(() => {
+    if (sport === "NFL") {
+      setTeamSort({ key: "srs" as any, dir: "desc" });
+    }
+  }, [sport]);
+
   const [playerSort, setPlayerSort] = useState<{
     key: PlayerKey;
     dir: SortDir;
@@ -264,6 +322,21 @@ const StatsScreen: React.FC = () => {
     key: MlbAdvKey;
     dir: SortDir;
   }>({ key: "run_differential", dir: "desc" });
+
+  type NflAdvKey = keyof NflAdvancedTeamStats;
+  const [nflAdvSort, setNflAdvSort] = useState<{
+    key: NflAdvKey;
+    dir: SortDir;
+  }>({
+    key: "srs",
+    dir: "desc",
+  });
+  const toggleNflAdvSort = (k: NflAdvKey) =>
+    setNflAdvSort((p) =>
+      p.key === k
+        ? { key: k, dir: p.dir === "asc" ? "desc" : "asc" }
+        : { key: k, dir: "asc" }
+    );
 
   /* ─── explicit toggle helpers (typed) ──────────────────────────────── */
   const toggleTeamSort = (k: TeamKey) =>
@@ -294,22 +367,49 @@ const StatsScreen: React.FC = () => {
         : { key: k, dir: "asc" }
     );
 
-  /* ───── sorted data memo – unchanged logic ─────────────────────────── */
+  /* ───── sorted data memo – ─────────────────────────── */
+  const effectiveTeamData = teamData;
+
   const sortedTeams = useMemo(() => {
-    if (!teamData) return [];
-    const out = [...teamData];
+    if (!effectiveTeamData) return [];
+    const out = [...effectiveTeamData];
     const { key, dir } = teamSort;
-    out.sort((a, b) => {
-      const av = a[key] ?? -Infinity;
-      const bv = b[key] ?? -Infinity;
-      const diff =
-        typeof av === "number" && typeof bv === "number"
-          ? av - bv
-          : String(av).localeCompare(String(bv));
+
+    out.sort((a: any, b: any) => {
+      const getVal = (obj: any) => {
+        const v = obj[key];
+        if (v === null || v === undefined) return null;
+        return v;
+      };
+
+      const av = getVal(a);
+      const bv = getVal(b);
+
+      let diff;
+      if (typeof av === "number" && typeof bv === "number") {
+        diff = av - bv;
+      } else if (av === null && bv === null) {
+        diff = 0;
+      } else if (av === null) {
+        diff = dir === "asc" ? -1 : 1;
+      } else if (bv === null) {
+        diff = dir === "asc" ? 1 : -1;
+      } else {
+        diff = String(av).localeCompare(String(bv));
+      }
+
+      if (diff === 0) {
+        // fallback to teamName for stability
+        const aName = String(a.teamName ?? a.team_name ?? "");
+        const bName = String(b.teamName ?? b.team_name ?? "");
+        diff = aName.localeCompare(bName);
+      }
+
       return dir === "asc" ? diff : -diff;
     });
+
     return out;
-  }, [teamData, teamSort]);
+  }, [effectiveTeamData, teamSort]);
 
   const sortedPlayers = useMemo(() => {
     if (!playerData) return [];
@@ -353,6 +453,27 @@ const StatsScreen: React.FC = () => {
       return dir === "asc" ? diff : -diff;
     });
   }, [mlbAdv, mlbAdvSort]);
+
+  const sortedNflAdv = useMemo(() => {
+    if (!nflAdv) return [];
+    const { key, dir } = nflAdvSort;
+    return [...nflAdv].sort((a: any, b: any) => {
+      const av = a[key] ?? -Infinity;
+      const bv = b[key] ?? -Infinity;
+      let diff;
+      if (typeof av === "number" && typeof bv === "number") {
+        diff = av - bv;
+      } else {
+        diff = String(av).localeCompare(String(bv));
+      }
+      if (diff === 0) {
+        const aName = String(a.team_name);
+        const bName = String(b.team_name);
+        diff = aName.localeCompare(bName);
+      }
+      return dir === "asc" ? diff : -diff;
+    });
+  }, [nflAdv, nflAdvSort]);
 
   /* -------------------------------------------------------------------- */
   /*  Header configs                                                      */
@@ -443,9 +564,15 @@ const StatsScreen: React.FC = () => {
 
   /* ===== TEAM TABLE ==================================================== */
   const TeamTable = () => {
-    if (teamLoading) return renderSkeletonList(8);
-    if (teamErr) return renderEmpty("Failed to load team stats.");
-    if (!sortedTeams.length)
+    const usingNflSummary = sport === "NFL" && tab === "teams";
+    const headers = usingNflSummary ? nflSummaryHeaders : teamHeaders;
+    const loading = teamLoading;
+    const error = teamErr;
+    const dataToRender = sortedTeams;
+
+    if (loading) return renderSkeletonList(8);
+    if (error) return renderEmpty("Failed to load team stats.");
+    if (!dataToRender.length)
       return renderEmpty("No team stats for this season.");
 
     return (
@@ -454,9 +581,9 @@ const StatsScreen: React.FC = () => {
           <caption className="sr-only">Team statistics</caption>
           <thead className={theadBase}>
             <tr>
-              {teamHeaders.map(({ label, key }, idx) => (
+              {headers.map(({ label, key }, idx) => (
                 <HeaderCell
-                  key={key as string}
+                  key={`${String(key)}-${idx}`}
                   data-tour={
                     key === "wins_all_percentage"
                       ? "stats-column-winpct"
@@ -465,7 +592,7 @@ const StatsScreen: React.FC = () => {
                   label={label}
                   active={teamSort.key === key}
                   dir={teamSort.dir}
-                  onClick={() => toggleTeamSort(key)}
+                  onClick={() => toggleTeamSort(key as any)}
                   align={idx === 0 ? "left" : "right"}
                   className={
                     idx > 0
@@ -477,21 +604,21 @@ const StatsScreen: React.FC = () => {
             </tr>
           </thead>
           <tbody className={tbodyBase}>
-            {sortedTeams.map((t) => (
+            {dataToRender.map((t) => (
               <tr
-                key={t.team_id}
+                key={String(t.team_id ?? t.teamId)}
                 className="odd:bg-gray-50 dark:odd:bg-slate-800/40 hover:bg-gray-50 dark:hover:bg-gray-800/60"
               >
-                {teamHeaders.map(({ key }, idx) => (
+                {headers.map(({ key }, idx) => (
                   <td
-                    key={key as string}
+                    key={`${String(key)}-${idx}`}
                     className={`py-1.5 sm:py-2 px-2 sm:px-3 whitespace-nowrap ${
                       idx === 0
                         ? "text-left font-medium"
                         : "text-center border-l border-[var(--color-border-subtle)]"
                     }`}
                   >
-                    {formatCell(t[key], key as string)}
+                    {formatCell(t[key as string], key as string)}
                   </td>
                 ))}
               </tr>
@@ -674,21 +801,77 @@ const StatsScreen: React.FC = () => {
     );
   };
 
+  /* ===== NFL ADVANCED TABLE =========================================== */
+
+  const NflAdvTable = () => {
+    if (nflAdvLoading) return renderSkeletonList(8);
+    if (nflAdvErr) return renderEmpty("Problem loading NFL advanced stats.");
+    if (!sortedNflAdv.length)
+      return renderEmpty("No advanced stats for this season.");
+
+    return (
+      <div className={tableWrapper}>
+        <table className={tableBase}>
+          <caption className="sr-only">NFL advanced statistics</caption>
+          <thead className={theadBase}>
+            <tr>
+              {nflAdvHeaders.map(({ label, key }, idx) => (
+                <HeaderCell
+                  key={`${String(key)}-${idx}`}
+                  label={label}
+                  active={nflAdvSort.key === key}
+                  dir={nflAdvSort.dir}
+                  onClick={() => toggleNflAdvSort(key as NflAdvKey)}
+                  align={idx === 0 ? "left" : "right"}
+                  className={
+                    idx > 0
+                      ? "border-l border-[var(--color-border-subtle)]"
+                      : ""
+                  }
+                />
+              ))}
+            </tr>
+          </thead>
+          <tbody className={tbodyBase}>
+            {sortedNflAdv.map((t) => (
+              <tr
+                key={String(t.team_name)}
+                className="odd:bg-gray-50 dark:odd:bg-slate-800/40 hover:bg-gray-50 dark:hover:bg-gray-800/60"
+              >
+                {nflAdvHeaders.map(({ key }, idx) => (
+                  <td
+                    key={`${String(key)}-${idx}`}
+                    className={`py-1.5 sm:py-2 px-2 sm:px-3 whitespace-nowrap ${
+                      idx === 0
+                        ? "text-left font-medium"
+                        : "text-center border-l border-[var(--color-border-subtle)]"
+                    }`}
+                  >
+                    {formatCell(t[key as string], key as string)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   /* -------------------------------------------------------------------- */
   /*  Season selector options                                             */
   /* -------------------------------------------------------------------- */
-  const seasonOpts = useMemo(
-    () =>
-      Array.from({ length: 5 }).map((_, i) => {
-        const yr = defaultSeason - i;
-        return {
-          value: yr,
-          label:
-            sport === "NBA" ? `${yr}-${String(yr + 1).slice(-2)}` : String(yr),
-        };
-      }),
-    [defaultSeason, sport]
-  );
+  const seasonOpts = useMemo(() => {
+    return Array.from({ length: 5 }).map((_, i) => {
+      const yr = defaultSeason - i;
+      return {
+        value: yr,
+        label:
+          sport === "NBA" ? `${yr}-${String(yr + 1).slice(-2)}` : String(yr),
+        disabled: sport === "NFL" && yr > defaultSeason, // disable future for NFL
+      };
+    });
+  }, [defaultSeason, sport]);
 
   /* -------------------------------------------------------------------- */
   /*  Render                                                              */
@@ -752,18 +935,28 @@ const StatsScreen: React.FC = () => {
             className="bg-white dark:bg-[var(--color-panel)] rounded-lg shadow-lg p-2 w-36"
           >
             <div className="space-y-1">
-              {seasonOpts.map(({ value, label }) => (
+              {seasonOpts.map(({ value, label, disabled }) => (
                 <button
                   key={value}
-                  onClick={() => setSeason(value)}
+                  onClick={() => !disabled && setSeason(value)}
+                  disabled={disabled}
+                  aria-disabled={disabled}
                   className={`w-full text-left px-3 py-2 rounded text-sm transition-colors
-                             ${
-                               value === season
-                                 ? "font-semibold text-green-600 dark:text-green-500 bg-gray-100 dark:bg-slate-700"
-                                 : "hover:bg-gray-100 dark:hover:bg-slate-700"
-                             }`}
+      ${
+        value === season
+          ? "font-semibold text-green-600 dark:text-green-500 bg-gray-100 dark:bg-slate-700"
+          : disabled
+          ? "text-gray-400 cursor-not-allowed"
+          : "hover:bg-gray-100 dark:hover:bg-slate-700"
+      }`}
+                  title={
+                    disabled ? "Season not yet available for NFL" : undefined
+                  }
                 >
                   {label}
+                  {disabled && (
+                    <span className="ml-1 text-xs opacity-60">(upcoming)</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -798,6 +991,12 @@ const StatsScreen: React.FC = () => {
         ) : (
           <NbaAdvTable />
         )
+      ) : sport === "NFL" ? (
+        tab === "teams" ? (
+          <TeamTable />
+        ) : tab === "advanced" ? (
+          <NflAdvTable />
+        ) : null
       ) : tab === "teams" ? (
         <TeamTable />
       ) : (

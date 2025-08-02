@@ -209,3 +209,20 @@ export interface VenueLocation {
   latitude: number;
   longitude: number;
 }
+export interface NflTeamSummary {
+  teamId: string;
+  teamName: string;
+  season: number;
+  srs?: number;
+  sos?: number;
+  sosRank?: number;
+  winPct?: number;
+  pythagoreanWinPct?: number;
+  avgThirdDownPct?: number;
+  avgRedZonePct?: number;
+  avgYardsPerDrive?: number;
+  avgTurnoversPerGame?: number;
+  avgTimeOfPossession?: string;
+
+  [key: string]: any;
+}
