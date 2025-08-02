@@ -221,7 +221,108 @@ paths:
                 properties:
                   checks: { type: array, items: { type: string } }
                   errors: { type: array, items: { type: string } }
-
+  /nfl/team-stats/summary:
+    get:
+      summary: Fetch consolidated NFL team summary (advanced + SRS + SoS) for a season
+      parameters:
+        - in: query
+          name: season
+          schema:
+            type: integer
+          required: true
+          description: Season year (e.g., 2024)
+      responses:
+        "200":
+          description: Team summary array
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        team_id:
+                          type: integer
+                        team_name:
+                          type: string
+                        season:
+                          type: integer
+                        srs:
+                          type: number
+                        sos:
+                          type: number
+                        sosRank:
+                          type: integer
+                        winPct:
+                          type: number
+                        pythagoreanWinPct:
+                          type: number
+                        avg_third_down_pct:
+                          type: number
+                        avg_red_zone_pct:
+                          type: number
+                        avg_yards_per_drive:
+                          type: number
+                        avg_turnovers_per_game:
+                          type: number
+                        avg_time_of_possession:
+                          type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /nfl/team-stats/advanced:
+    get:
+      summary: Fetch NFL advanced team statistics for a season
+      parameters:
+        - in: query
+          name: season
+          schema:
+            type: integer
+          required: true
+          description: Season year (e.g., 2024)
+      responses:
+        "200":
+          description: Advanced stats array
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  season:
+                    type: integer
+                  retrieved:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        team_id:
+                          type: integer
+                        team_name:
+                          type: string
+                        season:
+                          type: integer
+                        avg_third_down_pct:
+                          type: number
+                        avg_red_zone_pct:
+                          type: number
+                        avg_yards_per_drive:
+                          type: number
+                        avg_turnovers_per_game:
+                          type: number
+                        pythagorean_win_pct:
+                          type: number
+                        avg_time_of_possession:
+                          type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
 components:
   parameters:
     season:
@@ -248,71 +349,86 @@ components:
       schema:
         type: string
       description: East, West, North, South
-
   schemas:
     ScheduleEntry:
       type: object
       properties:
         id: { type: string }
         gameDate: { type: string, format: date }
-        dataType: { type: string, enum: ["schedule", "historical"] }
+        dataType:
+          type: string
+          enum: ["schedule", "historical"]
         status: { type: string }
         homeTeamId: { type: integer }
         awayTeamId: { type: integer }
         # ── fields present for upcoming games ──
         scheduledTimeUTC: { type: string, format: date-time }
-        spreadLine: { type: number, nullable: true }
-        totalLine: { type: number, nullable: true }
+        spreadLine:
+          type: number
+          nullable: true
+        totalLine:
+          type: number
+          nullable: true
         predictedHomeScore: { type: number }
         predictedAwayScore: { type: number }
         # ── fields present for completed games ──
         finalHomeScore: { type: integer }
         finalAwayScore: { type: integer }
-        homeQ: { type: array, items: { type: integer } }
-        awayQ: { type: array, items: { type: integer } }
-  Snapshot:
-    type: object
-    properties:
-      game_id: { type: string }
-      game_date: { type: string, format: date }
-      season: { type: integer }
-      headline_stats: { type: array }
-      bar_chart_data: { type: array }
-      radar_chart_data: { type: array }
-      pie_chart_data: { type: array }
-      last_updated: { type: string, format: date-time }
-  TeamSeasonStats:
-    type: object
-    properties:
-      teamId: { type: integer }
-      teamName: { type: string }
-      wins: { type: integer }
-      losses: { type: integer }
-  DashboardCard:
-    type: object
-    properties:
-      teamId: { type: integer }
-      teamName: { type: string }
-      PF: { type: integer }
-      PA: { type: integer }
-      YdsPerPlay: { type: number }
-      TOsPerGame: { type: number }
-      WinPctHome: { type: number }
-      WinPctAway: { type: number }
-      SOSRank: { type: integer }
-  SosEntry:
-    type: object
-    properties:
-      teamId: { type: integer }
-      teamName: { type: string }
-      sosPct: { type: number }
-      sosRank: { type: integer }
-  SrsEntry:
-    type: object
-    properties:
-      teamId: { type: integer }
-      teamName: { type: string }
-      netRating: { type: number }
+        homeQ:
+          type: array
+          items:
+            type: integer
+        awayQ:
+          type: array
+          items:
+            type: integer
+    Snapshot:
+      type: object
+      properties:
+        game_id: { type: string }
+        game_date: { type: string, format: date }
+        season: { type: integer }
+        headline_stats:
+          type: array
+        bar_chart_data:
+          type: array
+        radar_chart_data:
+          type: array
+        pie_chart_data:
+          type: array
+        last_updated: { type: string, format: date-time }
+    TeamSeasonStats:
+      type: object
+      properties:
+        teamId: { type: integer }
+        teamName: { type: string }
+        wins: { type: integer }
+        losses: { type: integer }
+    DashboardCard:
+      type: object
+      properties:
+        teamId: { type: integer }
+        teamName: { type: string }
+        PF: { type: integer }
+        PA: { type: integer }
+        YdsPerPlay: { type: number }
+        TOsPerGame: { type: number }
+        WinPctHome: { type: number }
+        WinPctAway: { type: number }
+        SOSRank: { type: integer }
+    SosEntry:
+      type: object
+      properties:
+        teamId: { type: integer }
+        teamName: { type: string }
+        sosPct: { type: number }
+        sosRank: { type: integer }
+    SrsEntry:
+      type: object
+      properties:
+        teamId: { type: integer }
+        teamName: { type: string }
+        netRating: { type: number }
   responses:
     BadRequest:
       description: Invalid parameter
