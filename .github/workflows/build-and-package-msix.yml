@@ -25,14 +25,24 @@ jobs:
             throw "Cannot proceed: frontend/windows_package/PackageRoot not found."
           }
 
-      - name: Package Appx and optionally sign
+      - name: Package Appx and sign
         shell: pwsh
         env:
-          MSIX_CERT_PATH: ${{ secrets.SCOREGENIUS_PFX_B64 }} # optional: path to uploaded .pfx or you can decode from base64 in a prior step
-          MSIX_CERT_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }} # optional: password for the .pfx
+          PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
+          PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
         run: |
           $packageRoot = 'frontend/windows_package/PackageRoot'
           $outputPackage = 'ScoreGenius_1.10.0.0.appx'
+
+          # Decode base64 PFX into a file if provided
+          if ($env:PFX_B64) {
+            $pfxPath = "$PWD\scoregenius.pfx"
+            [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:PFX_B64))
+            Write-Output "Decoded .pfx to $pfxPath"
+          } else {
+            $pfxPath = $null
+            Write-Output "No PFX base64 provided; skipping signing later."
+          }
 
           # Locate latest MakeAppx.exe and signtool.exe
           $makeappx = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter MakeAppx.exe |
@@ -40,33 +50,28 @@ jobs:
           $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter signtool.exe |
             Sort-Object FullName -Descending | Select-Object -First 1
 
-          if (-not $makeappx) {
-            throw "MakeAppx.exe not found in Windows Kits."
-          }
+          if (-not $makeappx) { throw "MakeAppx.exe not found." }
 
           Write-Output "Using MakeAppx: $($makeappx.FullName)"
           if ($signtool) {
             Write-Output "Using SignTool: $($signtool.FullName)"
           } else {
-            Write-Output "SignTool not found; signing will be skipped if requested."
+            Write-Output "SignTool missing; cannot sign even if PFX exists."
           }
 
-          # Create the .appx package
+          # Pack
           & $makeappx.FullName pack /d $packageRoot /p $outputPackage
 
           if (-not (Test-Path $outputPackage)) {
-            throw "Packaging failed: output package not created."
+            throw "Packaging failed; appx not produced."
           }
 
-          # Conditional signing
-          if ($env:MSIX_CERT_PATH) {
-            if (-not $signtool) {
-              throw "signtool.exe missing; cannot sign."
-            }
-            Write-Output "Signing the package..."
-            & $signtool.FullName sign /fd SHA256 /a /f $env:MSIX_CERT_PATH /p $env:MSIX_CERT_PASSWORD $outputPackage
+          # Sign if we have both signtool and the decoded PFX
+          if ($signtool -and $pfxPath) {
+            Write-Output "Signing package..."
+            & $signtool.FullName sign /fd SHA256 /a /f $pfxPath /p $env:PFX_PASSWORD $outputPackage
           } else {
-            Write-Output "No certificate provided; skipping signing."
+            Write-Output "Skipping signing (missing signtool or PFX)."
           }
 
       - name: Upload packaged artifact
