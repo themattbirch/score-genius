@@ -32,10 +32,11 @@
     <Capability Name="internetClientServer" />
   </Capabilities>
 
-  <Applications>
-    <Application Id="App"
-                 Executable="$targetnametoken$.exe"
-                 EntryPoint="Windows.FullTrustApplication">
+<Applications>
+  <Application Id="App"
+               Executable="$targetnametoken$.exe"
+               EntryPoint="Windows.FullTrustApplication">
+    <uap:VisualElementsChoice>
       <uap:VisualElements
         DisplayName="ScoreGenius"
         Description="Predict the game. Not the noise."
@@ -46,13 +47,14 @@
         ToastCapable="true">
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+    </uap:VisualElementsChoice>
 
-      <uap:ApplicationProperties>
-        <uap:HostedWebApp>
-          <uap:StartPage>https://scoregenius.com/app</uap:StartPage>
-          <uap:WebApplicationId>https://scoregenius.com</uap:WebApplicationId>
-        </uap:HostedWebApp>
-      </uap:ApplicationProperties>
-    </Application>
-  </Applications>
+    <uap:ApplicationProperties>
+      <uap:HostedWebApp>
+        <uap:StartPage>https://scoregenius.com/app</uap:StartPage>
+        <uap:WebApplicationId>https://scoregenius.com</uap:WebApplicationId>
+      </uap:HostedWebApp>
+    </uap:ApplicationProperties>
+  </Application>
+</Applications>
 </Package>
