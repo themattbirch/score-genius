@@ -67,16 +67,40 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
 
   /* ------------------------------------------------------------------ */
-  /* 🔔 Tooltip & Pulse state (persisted)                                */
+  /* 🔔 Tooltip & touch hint state (persisted)                           */
   /* ------------------------------------------------------------------ */
   const TOOLTIP_KEY = "sg_viewDetailsTooltipDismissed";
-  const [showTooltip, setShowTooltip] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return !localStorage.getItem(TOOLTIP_KEY);
-  });
+
+  // Start hidden; we'll decide in an effect once the client is ready.
+  const [showTooltip, setShowTooltip] = useState<boolean>(false);
+
   const lastClickRef = useRef<number>(0);
   const arrowRef = useRef<HTMLSpanElement | null>(null);
   const [hasPulsed, setHasPulsed] = useState(false);
+
+  // Dismiss tooltip and persist
+  const dismissTooltip = useCallback(() => {
+    if (!showTooltip) return;
+    setShowTooltip(false);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(TOOLTIP_KEY, "1");
+    }
+  }, [showTooltip]);
+
+  // One-way reconciliation: if the card *becomes* eligible and tooltip
+  // hasn't been dismissed, surface it. Never forcibly hide it here.
+  /**
+   * One-way reconciliation:
+   * If the card *becomes* eligible and the tooltip hasn’t been dismissed,
+   * surface it.  Never hides it; dismissal is explicit via dismissTooltip().
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const dismissed = !!localStorage.getItem(TOOLTIP_KEY);
+    if (!dismissed && compactDefault && !expanded && !showTooltip) {
+      setShowTooltip(true);
+    }
+  }, [compactDefault, expanded, showTooltip]);
 
   useEffect(() => {
     if (!arrowRef.current || hasPulsed) return;
@@ -138,15 +162,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
       window.clearTimeout(t);
     };
   }, [hasPulsed]);
-
-  // tooltip dismiss (memoized)
-  const dismissTooltip = useCallback(() => {
-    if (!showTooltip) return;
-    setShowTooltip(false);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(TOOLTIP_KEY, "1");
-    }
-  }, [showTooltip]);
 
   // expanded toggle with tooltip dismissal baked in
   const toggleExpanded = useCallback(() => {
@@ -294,6 +309,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     (e: React.MouseEvent | React.KeyboardEvent) => {
       e.stopPropagation();
       triggerTouchGlow(arrowRef.current);
+      lastClickRef.current = Date.now(); // for focus suppression
       toggleExpanded();
     },
     [toggleExpanded]
@@ -372,22 +388,30 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
             {compactDefault && (
               <div className="mt-2 flex w-full justify-center">
                 <div className="relative">
-                  {" "}
-                  {/* parent for positioning */}
                   <span
                     ref={arrowRef}
                     className={`card-chevron transition-transform ${
                       expanded ? "rotate-180" : ""
                     }`}
+                    /* 👇 graceful fallback: still lets a hover/focus surface it
+   if auto-show failed for any edge-case */
                     onMouseEnter={() => {
-                      if (!showTooltip) setShowTooltip(true);
+                      if (!showTooltip && localStorage.getItem(TOOLTIP_KEY)) {
+                        setShowTooltip(true);
+                      }
                     }}
-                    onFocus={() => {
-                      // suppress tooltip if focus came right after clicking (within 200ms)
+                    onFocus={(e) => {
                       if (Date.now() - lastClickRef.current < 200) return;
-                      if (!showTooltip) setShowTooltip(true);
+                      if (!showTooltip && !localStorage.getItem(TOOLTIP_KEY)) {
+                        setShowTooltip(true);
+                      }
                     }}
-                    onClick={handleArrowInteraction}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      lastClickRef.current = Date.now();
+                      triggerTouchGlow(arrowRef.current);
+                      toggleExpanded();
+                    }}
                     aria-describedby={
                       showTooltip ? "gamecard-tooltip" : undefined
                     }
