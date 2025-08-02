@@ -1,37 +1,50 @@
-name: Build and Package MSIX
+name: Package MSIX/Appx
 
 on:
   workflow_dispatch:
 
 jobs:
-  package-msix:
+  package:
     runs-on: windows-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup MSIX tooling
+      - name: Package Appx and optionally sign
+        shell: pwsh
         run: |
-          # Install the Windows 10/11 SDK if not already available.
-          # On GitHub-hosted runners, MakeAppx.exe and SignTool should already exist.
-          where.exe MakeAppx.exe
-          where.exe signtool.exe
+          # Locate latest MakeAppx.exe and signtool.exe from Windows Kits
+          $makeappx = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter MakeAppx.exe |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter signtool.exe |
+            Sort-Object FullName -Descending | Select-Object -First 1
 
-      - name: Package MSIX using MakeAppx + Sign (if you have cert)
-        run: |
-          # Create the MSIX package (assuming PackageRoot has AppxManifest.xml etc.)
-          MakeAppx.exe pack /d windows_package/PackageRoot /p ScoreGenius_1.10.0.0.appx
+          if (-not $makeappx) {
+            throw "MakeAppx.exe not found in Windows Kits."
+          }
 
-          # If you need MSIX specifically, you can rename or wrap; better: use a proper template or
-          # use the MSIX Packaging Tool on a full Windows desktop to generate the .msix from the same root.
+          Write-Output "Using MakeAppx: $($makeappx.FullName)"
+          if ($signtool) {
+            Write-Output "Using SignTool: $($signtool.FullName)"
+          } else {
+            Write-Output "SignTool not found; skipping signing."
+          }
 
-          # OPTIONAL: sign the package if you have a .pfx
-          # signtool.exe sign /fd SHA256 /a /f path\to\certificate.pfx /p yourpassword ScoreGenius_1.10.0.0.appx
+          $output = "ScoreGenius_1.10.0.0.appx"
+          & $makeappx.FullName pack /d windows_package/PackageRoot /p $output
 
-          # (You can extend this to convert/apply the MSIX format; full-fidelity MSIX packaging ideally uses the MSIX Packaging Tool UI/CLI on Windows.)
+          if ($env:MSIX_CERT_PATH) {
+            if (-not $signtool) {
+              throw "signtool.exe missing; cannot sign."
+            }
+            Write-Output "Signing package with provided certificate..."
+            & $signtool.FullName sign /fd SHA256 /a /f $env:MSIX_CERT_PATH /p $env:MSIX_CERT_PASSWORD $output
+          } else {
+            Write-Output "No certificate provided; package remains unsigned."
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: scoregenius-msix
+          name: scoregenius-appx
           path: ScoreGenius_1.10.0.0.appx
