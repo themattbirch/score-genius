@@ -1,0 +1,38 @@
+name: Build and Sign Windows Appx Package
+
+on:
+  workflow_dispatch: # Manual trigger only
+
+jobs:
+  build-sign-appx:
+    name: Package and Sign ScoreGenius App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Package .appx using makeappx.exe
+        run: |
+          & "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.19041.0\x64\makeappx.exe" pack `
+            /d frontend\windows_package\PackageRoot `
+            /p ScoreGenius.appx
+
+      - name: Decode .pfx from GitHub Secret
+        run: |
+          [System.Convert]::FromBase64String("${{ secrets.SCOREGENIUS_PFX_B64 }}") | `
+            Set-Content -Encoding Byte scoregenius_test.pfx
+
+      - name: Sign .appx using signtool.exe
+        run: |
+          & "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe" sign `
+            /fd SHA256 `
+            /f scoregenius_test.pfx `
+            /p "${{ secrets.SCOREGENIUS_PFX_PASSWORD }}" `
+            ScoreGenius.appx
+
+      - name: Upload signed Appx as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScoreGenius-signed-appx
+          path: ScoreGenius.appx
