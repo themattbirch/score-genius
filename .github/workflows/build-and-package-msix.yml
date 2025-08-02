@@ -52,13 +52,15 @@ jobs:
 
             $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pfxPath))
             Write-Output "Generated PFX base64 prefix: $($b64.Substring(0,80))..."
+            Write-Output "Generated cert with Thumbprint: $($cert.Thumbprint)"
 
             echo "SCOREGENIUS_PFX_B64=$b64"       | Out-File -Encoding ascii -Append $env:GITHUB_ENV
             echo "SCOREGENIUS_PFX_PASSWORD=StrongPfxPass123" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           } else {
             Write-Output "External PFX provided; will sanitize and use it."
-            Write-Output "Cert ENV set. Fingerprint: $($cert.Thumbprint)"
+            # Do not access $cert here — it’s undefined in this branch
           }
+
       - name: Package Appx and sign (with secret sanitization)
         shell: pwsh
         env:
