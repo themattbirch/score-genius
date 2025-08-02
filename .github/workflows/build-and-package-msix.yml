@@ -1,19 +1,40 @@
-name: Package MSIX/Appx
+name: Package ScoreGenius Appx
 
 on:
   workflow_dispatch:
 
 jobs:
-  package:
+  package-appx:
     runs-on: windows-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Inspect expected PackageRoot location
+        shell: pwsh
+        run: |
+          Write-Output "Current working directory:"
+          pwd
+          Write-Output "Verifying frontend/windows_package/PackageRoot exists..."
+          if (Test-Path 'frontend/windows_package/PackageRoot') {
+            Write-Output "✅ Found PackageRoot"
+            Get-ChildItem 'frontend/windows_package/PackageRoot' -Recurse -Depth 2 | ForEach-Object { Write-Output $_.FullName }
+          } else {
+            Write-Output "❌ PackageRoot missing at frontend/windows_package/PackageRoot"
+            Get-ChildItem -Recurse -Depth 2 | ForEach-Object { Write-Output $_.FullName }
+            throw "Cannot proceed: frontend/windows_package/PackageRoot not found."
+          }
 
       - name: Package Appx and optionally sign
         shell: pwsh
+        env:
+          MSIX_CERT_PATH: ${{ secrets.SCOREGENIUS_PFX_B64 }} # optional: path to uploaded .pfx or you can decode from base64 in a prior step
+          MSIX_CERT_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }} # optional: password for the .pfx
         run: |
-          # Locate latest MakeAppx.exe and signtool.exe from Windows Kits
+          $packageRoot = 'frontend/windows_package/PackageRoot'
+          $outputPackage = 'ScoreGenius_1.10.0.0.appx'
+
+          # Locate latest MakeAppx.exe and signtool.exe
           $makeappx = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter MakeAppx.exe |
             Sort-Object FullName -Descending | Select-Object -First 1
           $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\' -Recurse -Filter signtool.exe |
@@ -27,23 +48,28 @@ jobs:
           if ($signtool) {
             Write-Output "Using SignTool: $($signtool.FullName)"
           } else {
-            Write-Output "SignTool not found; skipping signing."
+            Write-Output "SignTool not found; signing will be skipped if requested."
           }
 
-          $output = "ScoreGenius_1.10.0.0.appx"
-          & $makeappx.FullName pack /d windows_package/PackageRoot /p $output
+          # Create the .appx package
+          & $makeappx.FullName pack /d $packageRoot /p $outputPackage
 
+          if (-not (Test-Path $outputPackage)) {
+            throw "Packaging failed: output package not created."
+          }
+
+          # Conditional signing
           if ($env:MSIX_CERT_PATH) {
             if (-not $signtool) {
               throw "signtool.exe missing; cannot sign."
             }
-            Write-Output "Signing package with provided certificate..."
-            & $signtool.FullName sign /fd SHA256 /a /f $env:MSIX_CERT_PATH /p $env:MSIX_CERT_PASSWORD $output
+            Write-Output "Signing the package..."
+            & $signtool.FullName sign /fd SHA256 /a /f $env:MSIX_CERT_PATH /p $env:MSIX_CERT_PASSWORD $outputPackage
           } else {
-            Write-Output "No certificate provided; package remains unsigned."
+            Write-Output "No certificate provided; skipping signing."
           }
 
-      - name: Upload artifact
+      - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
           name: scoregenius-appx
