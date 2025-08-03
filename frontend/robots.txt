@@ -1,6 +1,0 @@
-# frontend/public/robots.txt
-User-agent: *
-Disallow: /app/
-Allow: /
-
-Sitemap: https://scoregenius.io/sitemap.xml

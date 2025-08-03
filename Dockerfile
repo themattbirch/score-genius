@@ -68,7 +68,6 @@ RUN cd backend/server && npm ci --production
 COPY backend/ ./backend/
 RUN mkdir -p backend/server/static/public/.well-known
 COPY frontend/public/*.html backend/server/static/public/
-COPY frontend/public/robots.txt backend/server/static/public/robots.txt
 COPY frontend/public/.well-known/assetlinks.json backend/server/static/public/.well-known/
 
 # Copy SPA artifacts from the builder stage
