@@ -11,18 +11,6 @@ import { apiFetch } from "@/api/client";
  */
 export const use_snapshot = (gameId, sport) => {
   const isEnabled = !!gameId && !!sport;
-  console.log(
-    "use_snapshot hook - checking enabled status:",
-    isEnabled,
-    "gameId:",
-    gameId,
-    "typeof gameId:",
-    typeof gameId,
-    "sport:",
-    sport,
-    "typeof sport:",
-    typeof sport
-  );
 
   const query = useQuery({
     queryKey: ["snapshot", sport, gameId],

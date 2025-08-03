@@ -55,6 +55,11 @@ interface GameCardProps {
   forceCompact?: boolean;
 }
 
+const isSameLocalDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
 const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const { sport: contextSport } = useSport();
   const isDesktop = useIsDesktop();
@@ -67,6 +72,14 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const [expanded, setExpanded] = useState(!compactDefault);
   const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
+
+  // determine if this game is for "today" in user's local timezone based on its UTC time
+  const isTodayGame = useMemo(() => {
+    if (!game.gameTimeUTC) return false;
+    const now = new Date();
+    const gameDate = new Date(game.gameTimeUTC);
+    return isSameLocalDay(now, gameDate);
+  }, [game.gameTimeUTC]);
 
   /* ------------------------------------------------------------------ */
   /* 🔔 “View details” tooltip — exactly once per browser-tab session    */
@@ -87,15 +100,37 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     );
   });
 
-  /* Persist the fact that we’ve shown the tooltip in this tab */
   const markSeen = () => sessionStorage.setItem(TOOLTIP_SESSION_KEY, "1");
 
-  /* Hide tooltip and mark as seen */
   const dismissTooltip = useCallback(() => {
     if (!showTooltip) return;
     setShowTooltip(false);
     markSeen();
   }, [showTooltip]);
+
+  useEffect(() => {
+    if (!isTodayGame) {
+      setShowTooltip(false);
+      return;
+    }
+
+    const eligible =
+      compactDefault &&
+      !expanded &&
+      !showTooltip &&
+      !sessionStorage.getItem(TOOLTIP_SESSION_KEY);
+
+    if (eligible) {
+      setShowTooltip(true);
+    }
+  }, [compactDefault, expanded, showTooltip, isTodayGame]);
+
+  useEffect(() => {
+    if (showTooltip && isTodayGame) {
+      triggerTouchGlow(arrowRef.current);
+      markSeen();
+    }
+  }, [showTooltip, isTodayGame]);
 
   /* Surface tooltip if the card later becomes eligible */
   useEffect(() => {
@@ -318,7 +353,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
               data-action
               data-tour="weather-badge"
               isIndoor={isEffectivelyIndoor}
-              // 👇 This is the fix. The conditions are removed.
               isLoading={isWeatherLoading}
               isError={isWeatherError}
               data={weatherData}
@@ -332,18 +366,21 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
           // --- This is the original layout for MLB/NBA cards ---
           <div className="flex flex-col items-end text-right gap-1">
             {isFinal ? (
-              <p className="font-semibold text-lg whitespace-nowrap leading-tight">
-                {away_final_score} – {home_final_score}
-                <span className="block text-[10px] font-normal text-text-secondary mt-0.5">
+              <div className="flex flex-col items-center w-full">
+                <p className="font-semibold text-lg leading-tight text-center">
+                  {away_final_score} – {home_final_score}
+                </p>
+                <span className="text-[10px] font-normal text-text-secondary mt-0.5 text-center">
                   final
                 </span>
-              </p>
+              </div>
             ) : hasPrediction ? (
               <PredBadge away={predAway as number} home={predHome as number} />
             ) : (
               <span className="text-sm text-text-secondary">—</span>
             )}
-            {compactDefault && (
+
+            {compactDefault && isTodayGame && (
               <div className="mt-2 flex w-full justify-center">
                 <div className="relative">
                   <span
@@ -351,7 +388,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                     className={`card-chevron transition-transform ${
                       expanded ? "rotate-180" : ""
                     }`}
-                    /* graceful fallback: surface if eligible */
                     onMouseEnter={() => {
                       if (
                         !showTooltip &&
@@ -381,7 +417,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                   >
                     ▾
                   </span>
-                  {showTooltip && (
+                  {showTooltip && isTodayGame && (
                     <span
                       id="gamecard-tooltip"
                       role="tooltip"
@@ -393,7 +429,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                 </div>
               </div>
             )}
-          </div>
+          </div> /* <-- closes MLB/NBA right-side wrapper */
         )}
       </header>
 
