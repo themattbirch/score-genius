@@ -88,7 +88,7 @@ const PieChartComponent: React.FC<PieChartComponentProps> = ({
 
   const isPlaceholder =
     chartData.length === 1 &&
-    chartData[0].category === "Pre-Game Distribution N/A";
+    chartData[0].category === "Pregame Distribution N/A";
   if (isPlaceholder) return null;
 
   return (

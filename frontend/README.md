@@ -52,7 +52,7 @@ The system is designed with modularity and scalability in mind, structured into 
 
 ### Prediction & Calibration
 
-- Pre-game predictions are generated on-the-fly using a dedicated prediction module.
+- Pregame predictions are generated on-the-fly using a dedicated prediction module.
 - Predictions are calibrated with betting odds when available.
 - The system logs both raw and calibrated predictions along with uncertainty intervals.
 - Modular functions ensure that data ingestion, feature generation, and prediction are decoupled for easier testing and maintenance.
