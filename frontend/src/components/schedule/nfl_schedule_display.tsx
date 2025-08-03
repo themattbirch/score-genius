@@ -8,6 +8,10 @@ import { useNetworkStatus } from "@/hooks/use_network_status";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import type { UnifiedGame } from "@/types";
 
+import { useInjuries, type Injury } from "@/api/use_injuries";
+const LazyInjuryReport = lazy(
+  () => import("@/components/shared/injury_report")
+);
 const LazyGameCard = lazy(() => import("@/components/games/game_card"));
 
 const formatLocalDate = (d: Date | null | undefined): string =>
@@ -38,6 +42,38 @@ const NFLScheduleDisplay: React.FC = () => {
   }, []);
 
   const { data: games = [], isLoading, isError } = useNFLSchedule(isoDate);
+  const {
+    data: injuries = [],
+    isLoading: isLoadingInjuries,
+    error: injuriesError,
+  } = useInjuries("NFL", isoDate);
+
+  const playingTeams = useMemo(() => {
+    const set = new Set<string>();
+    games.forEach(({ homeTeamName, awayTeamName }) => {
+      [homeTeamName, awayTeamName].forEach((t) => {
+        if (t) set.add(t.trim().toLowerCase());
+      });
+    });
+    return set;
+  }, [games]);
+
+  const injuriesByTeam = useMemo(() => {
+    const grouped: Record<string, Injury[]> = {};
+    injuries.forEach((inj) => {
+      const t = inj.team_display_name?.trim();
+      if (!t) return;
+      const key = t.toLowerCase();
+      if (!playingTeams.has(key)) return;
+      (grouped[t] ||= []).push(inj);
+    });
+    return grouped;
+  }, [injuries, playingTeams]);
+
+  const teamsWithInjuries = useMemo(
+    () => Object.keys(injuriesByTeam).sort(),
+    [injuriesByTeam]
+  );
 
   const filteredGames = useMemo(() => {
     if (isPastDate) return games;
@@ -101,6 +137,30 @@ const NFLScheduleDisplay: React.FC = () => {
               All NFL games for {displayDate} have concluded.
             </p>
           ) : null}
+        </div>
+      )}
+      {games.length > 0 && (
+        <div className="mt-8 border-t border-border pt-6">
+          <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
+            Daily Injury Report
+          </h2>
+          <Suspense
+            fallback={
+              <p className="text-left text-sm italic text-text-secondary">
+                Loading injury report…
+              </p>
+            }
+          >
+            <LazyInjuryReport
+              displayDate={displayDate as string}
+              isPastDate={isPastDate}
+              allGamesFilteredOut={allGamesFilteredOut}
+              isLoadingInjuries={isLoadingInjuries}
+              injuriesError={injuriesError ?? undefined}
+              teamsWithInjuries={teamsWithInjuries}
+              injuriesByTeam={injuriesByTeam}
+            />
+          </Suspense>
         </div>
       )}
     </div>

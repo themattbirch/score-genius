@@ -180,13 +180,13 @@ def main():
     fresh = [
         r for r in all_recs
         if dateutil_parser.isoparse(r["report_date_utc"]).date() == today
-    ]
+        ]
 
-    if fresh:
-        print(f"Upserting {len(fresh)} injuries reported on {today}")
-        upsert_nba_injuries(supa, fresh)
+    if all_recs:
+        print(f"Upserting {len(all_recs)} total active injuries...")
+        upsert_nba_injuries(supa, all_recs)
     else:
-        print(f"No new injuries for {today} to upsert.")
+        print("No active injuries found to upsert.")
 
     # remove this next line if you *only* want today's
     # upsert_nba_injuries(supa, all_recs)

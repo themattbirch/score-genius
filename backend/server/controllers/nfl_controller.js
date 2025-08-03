@@ -14,6 +14,7 @@ import {
   validateTeamAgg,
   fetchNflAdvancedStats,
   fetchNflSeasonStats,
+  fetchNflInjuries,
 } from "../services/nfl_service.js";
 import {
   NFL_ALLOWED_CONFERENCES,
@@ -384,3 +385,21 @@ export async function getNflTeamStatsSummary(req, res, next) {
     next(err);
   }
 }
+export const getNflInjuries = async (req, res, next) => {
+  const { date } = req.query;
+  console.log("→ [getNflInjuries] start, date =", date);
+
+  try {
+    // This service function will be created in the next step
+    const injuriesData = await fetchNflInjuries(date);
+
+    return res.status(200).json({
+      message: "NFL injuries fetched successfully",
+      retrieved: injuriesData.length,
+      data: injuriesData,
+    });
+  } catch (error) {
+    console.error("→ [getNflInjuries] ERROR:", error);
+    return next(error);
+  }
+};

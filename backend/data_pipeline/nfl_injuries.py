@@ -173,17 +173,40 @@ def main():
         print("Failed to fetch NFL injuries. Exiting.")
         return
 
+    # This part correctly unnests the data
     team_list = injuries_raw
     all_recs: List[Dict[str, Any]] = []
     for team in team_list:
         all_recs.extend(transform_team_injury_record(team))
 
-    upsert_nfl_injuries(supa, all_recs)
+    # --- Filtering Logic (now added) ---
+    # This section filters for injuries reported only on the current day in UTC.
+    today = datetime.now(ZoneInfo("UTC")).date()
+    fresh = [
+        r for r in all_recs
+        if dateutil_parser.isoparse(r["report_date_utc"]).date() == today
+    ]
 
-    # To upsert all fetched injuries (not just today's), uncomment the next line
-    # upsert_nfl_injuries(supa, all_recs)
+    # --- CHOOSE ONE OPTION BELOW ---
 
+    # OPTION 1: Upsert ALL fetched injuries (Recommended for complete data)
+    # This is the line you should use to solve the original problem of populating
+    # your database with all 803 injuries so the API can find them.
+    if all_recs:
+        print(f"Upserting {len(all_recs)} total active injuries...")
+        upsert_nfl_injuries(supa, all_recs)
+    else:
+        print("No active injuries found to upsert.")
+
+    # OPTION 2: Only upsert injuries reported TODAY
+    # (This is commented out, but you could use it for daily updates later)
+    # if fresh:
+    #     print(f"Upserting {len(fresh)} injuries reported on {today}")
+    #     upsert_nfl_injuries(supa, fresh)
+    # else:
+    #     print(f"No new injuries for {today} to upsert.")
+    
     print(f"Done in {time.time() - start:.1f}s.")
-
+    
 if __name__ == "__main__":
     main()

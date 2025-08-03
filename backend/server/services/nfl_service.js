@@ -9,6 +9,7 @@ const HIST_STATS_TABLE = "nfl_historical_game_stats";
 const SNAPSHOT_TABLE = "nfl_snapshots";
 const FULL_VIEW = "v_nfl_team_season_full";
 const REG_VIEW = "v_nfl_team_season_regonly";
+const NFL_INJURIES_TABLE = "nfl_injuries";
 const CACHE_TTL = Number(process.env.NFL_TEAM_CACHE_TTL || 43200);
 
 const NFL_SOS_VIEW = "v_nfl_team_sos";
@@ -519,3 +520,41 @@ export async function fetchNflSeasonStats({
   cache.set(cacheKey, result, DEFAULT_CACHE_TTL);
   return result;
 }
+export const fetchNflInjuries = async (date) => {
+  // The 'date' parameter is no longer used but we can leave it for future compatibility
+  console.log("→ [fetchNflInjuries] querying ALL active injuries...");
+
+  const { data, error } = await supabase
+    .from(NFL_INJURIES_TABLE) // Make sure you have this constant defined
+    .select(
+      `
+      injury_id,
+      player_display_name,
+      team_display_name,
+      report_date_utc,
+      injury_status,
+      injury_type,
+      injury_detail
+      `
+    )
+    .order("report_date_utc", { ascending: false }); // Ordering is still good practice
+
+  if (error) {
+    console.error("→ [fetchNflInjuries] Supabase error:", error);
+    return [];
+  }
+
+  console.log(`→ [fetchNflInjuries] got ${data.length} total rows`);
+
+  const normalized = data.map((inj) => ({
+    id: String(inj.injury_id),
+    player: inj.player_display_name,
+    team_display_name: inj.team_display_name,
+    status: inj.injury_status || "N/A",
+    detail: inj.injury_detail || "",
+    updated: inj.report_date_utc,
+    injury_type: inj.injury_type || null,
+  }));
+
+  return normalized;
+};

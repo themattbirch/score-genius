@@ -23,6 +23,7 @@ import {
   getNflAdvancedStats,
   getNflTeamStatsSummary,
   getNflGameById,
+  getNflInjuries,
 } from "../controllers/nfl_controller.js";
 
 const router = express.Router();
@@ -34,6 +35,7 @@ router.get("/teams/:season/regonly", getNflTeamSeasonRegOnly);
 
 // Schedule endpoint (past vs future)
 router.get("/schedule", getNflSchedule);
+router.get("/injuries", getNflInjuries);
 router.get("/games/:id", getNflGameById);
 
 // SRS + SoS endpoints

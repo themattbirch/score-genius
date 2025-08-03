@@ -44,8 +44,9 @@ const getUTCDateString = (date) => date.toISOString().split("T")[0];
 // backend/server/services/nba_service.js
 
 // Fetch current injuries (no cache for now)
-export const fetchNbaInjuries = async () => {
-  console.log("→ [fetchNbaInjuries] querying injuries table…");
+export const fetchNbaInjuries = async (date) => {
+  // The 'date' parameter is no longer used
+  console.log("→ [fetchNbaInjuries] querying ALL active injuries…");
 
   const { data, error } = await supabase
     .from(NBA_INJURIES_TABLE)
@@ -67,7 +68,7 @@ export const fetchNbaInjuries = async () => {
     return [];
   }
 
-  console.log(`→ [fetchNbaInjuries] got ${data.length} rows`);
+  console.log(`→ [fetchNbaInjuries] got ${data.length} total rows`);
 
   const normalized = data.map((inj) => ({
     id: String(inj.injury_id),
@@ -76,12 +77,11 @@ export const fetchNbaInjuries = async () => {
     status: inj.injury_status || "N/A",
     detail: inj.injury_detail || "",
     updated: inj.report_date_utc,
-    injury_type: inj.injury_type || null, // ← renamed from `type`
+    injury_type: inj.injury_type || null,
   }));
 
   return normalized;
 };
-
 // Fetch historical games w/ pagination & filters
 export const fetchNbaGameHistory = async ({
   startDate,

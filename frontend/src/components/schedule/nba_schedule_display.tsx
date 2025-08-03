@@ -26,7 +26,7 @@ const formatLocalDate = (d: Date | null | undefined): string => {
 
 const LazyGameCard = lazy(() => import("@/components/games/game_card"));
 const LazyInjuryReport = lazy(
-  () => import("@/components/schedule/nba_injury_report")
+  () => import("@/components/shared/injury_report")
 );
 
 /* ────────────────────────────────────────────────────────── */
