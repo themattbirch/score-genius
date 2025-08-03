@@ -32,7 +32,7 @@ ARG CACHEBUST=1
 RUN test -f src/app/app-sw.ts || (echo "src/app/app-sw.ts missing" && ls -lR src/app && exit 1)
 RUN echo ">>>> src tree <<<<" && ls -lR /app/frontend/src
 RUN echo ">>> sanity: does src/app/app-sw.ts exist?" && test -f src/app/app-sw.ts && echo YES || (echo NO && ls -lR src/app && exit 1)
-RUN npm run build
+RUN npm run build && node scripts/generate_sitemap.js
 RUN echo ">>> dist contents <<<" && ls -lR /app/frontend/dist
 
 # ─── Stage 2: Assemble Backend + Static Assets ──────────────────────────────
@@ -84,6 +84,7 @@ RUN mkdir -p backend/server/static/app
 COPY --from=builder /app/frontend/dist/app/offline.html backend/server/static/app/offline.html
 COPY --from=builder /app/frontend/dist/app-sw.* backend/server/static/app/app-sw.js
 COPY --from=builder /app/frontend/dist/workbox-*.js backend/server/static/app/
+COPY --from=builder /app/frontend/dist/sitemap.xml backend/server/static/sitemap.xml
 
 # Final sanity check for the service worker
 RUN test -f backend/server/static/app/app-sw.js || (echo "Service Worker missing!" && ls -lR backend/server/static/app && exit 1)
