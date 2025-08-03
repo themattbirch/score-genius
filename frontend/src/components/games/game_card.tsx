@@ -47,7 +47,7 @@ const useIsDesktop = (bp = 1024): boolean => {
   return isDesk;
 };
 
-// LAZY LOAD THE NEW COMPONENTS
+// Lazy load injury components
 const InjuriesChipButton = lazy(
   () => import("@/components/ui/injuries_chip_button")
 );
@@ -72,6 +72,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const compactDefault = forceCompact ?? !isDesktop;
   const lastClickRef = useRef<number>(0);
   const arrowRef = useRef<HTMLSpanElement | null>(null);
+  const [hoverTooltip, setHoverTooltip] = useState(false);
 
   const { currentStepIndex, run: isTourRunning } = useTour();
 
@@ -116,33 +117,30 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     markSeen();
   }, [showTooltip]);
 
-  useEffect(() => {
-    if (showTooltip && isTodayGame) {
-      triggerTouchGlow(arrowRef.current);
-      markSeen();
-    }
-  }, [showTooltip, isTodayGame]);
-
-  /* Surface tooltip if the card later becomes eligible */
-  useEffect(() => {
-    const eligible =
+  const isTooltipEligible = useMemo(() => {
+    return (
+      isTodayGame &&
       compactDefault &&
       !expanded &&
-      !showTooltip &&
-      !sessionStorage.getItem(TOOLTIP_SESSION_KEY);
+      !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
+    );
+  }, [isTodayGame, compactDefault, expanded]);
 
-    if (eligible) setShowTooltip(true);
-  }, [compactDefault, expanded, showTooltip]);
-
-  /* When tooltip becomes visible, trigger the arrow glow and record it */
   useEffect(() => {
-    if (showTooltip) {
+    if (isTooltipEligible) {
+      setShowTooltip(true);
+    } else {
+      setShowTooltip(false);
+    }
+  }, [isTooltipEligible]);
+
+  useEffect(() => {
+    if (showTooltip && isTooltipEligible) {
       triggerTouchGlow(arrowRef.current);
       markSeen();
     }
-  }, [showTooltip]);
+  }, [showTooltip, isTooltipEligible]);
 
-  // expansion toggles
   const toggleExpandedImmediate = useCallback(() => {
     setExpanded((prev) => !prev);
   }, []);
@@ -156,8 +154,8 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
       e.stopPropagation();
       triggerTouchGlow(arrowRef.current);
       lastClickRef.current = Date.now();
-      setExpanded((prev) => !prev); // directly toggle without involving dismissTooltip
-      dismissTooltip(); // if needed separately
+      setExpanded((prev) => !prev); // immediate flip
+      dismissTooltip();
     },
     [dismissTooltip]
   );
@@ -387,16 +385,21 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                       transition: "transform 0.2s ease",
                     }}
                     onMouseEnter={() => {
+                      // only show hover tooltip if persistent one isn't showing and basic eligibility (today, compact collapsed)
                       if (
                         !showTooltip &&
+                        isTodayGame &&
                         compactDefault &&
-                        !expanded &&
-                        !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
+                        !expanded
                       ) {
-                        setShowTooltip(true);
+                        setHoverTooltip(true);
                       }
                     }}
+                    onMouseLeave={() => {
+                      setHoverTooltip(false);
+                    }}
                     onFocus={(e) => {
+                      // keep existing logic for persistent tooltip via focus, not hover
                       if (Date.now() - lastClickRef.current < 200) return;
                       if (
                         !showTooltip &&
@@ -415,11 +418,12 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                   >
                     ▾
                   </span>
-                  {showTooltip && isTodayGame && (
+                  {(showTooltip || hoverTooltip) && isTodayGame && (
                     <span
                       id="gamecard-tooltip"
                       role="tooltip"
-                      className="absolute z-50 -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)]"
+                      className={`absolute z-50 -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)]
+                      ${!showTooltip ? "opacity-80" : ""}`}
                     >
                       View&nbsp;details
                     </span>
@@ -490,18 +494,34 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
             </div>
           );
         })()}
-      {/* This renders only when the card is collapsed AND not final */}
-      {compactDefault && !expanded && !isFinal && sport !== "MLB" && (
+      {/* Injuries chip: always show for NFL; for others only when compact/collapsed/non-final */}
+      {sport === "NFL" ? (
         <div className="absolute bottom-2 left-0 w-full px-4 flex justify-start pointer-events-none">
           <div className="pointer-events-auto">
             <InjuriesChipButton
               onClick={(e) => {
-                e.stopPropagation(); // Prevent card from expanding
+                e.stopPropagation();
                 setInjuryModalOpen(true);
               }}
             />
           </div>
         </div>
+      ) : (
+        compactDefault &&
+        !expanded &&
+        !isFinal &&
+        sport !== "MLB" && (
+          <div className="absolute bottom-2 left-0 w-full px-4 flex justify-start pointer-events-none">
+            <div className="pointer-events-auto">
+              <InjuriesChipButton
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInjuryModalOpen(true);
+                }}
+              />
+            </div>
+          </div>
+        )
       )}
 
       <Suspense fallback={null}>
