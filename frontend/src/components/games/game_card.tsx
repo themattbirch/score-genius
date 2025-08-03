@@ -47,6 +47,12 @@ const useIsDesktop = (bp = 1024): boolean => {
   return isDesk;
 };
 
+// LAZY LOAD THE NEW COMPONENTS
+const InjuriesChipButton = lazy(
+  () => import("@/components/ui/injuries_chip_button")
+);
+const InjuryModal = lazy(() => import("./injury_modal"));
+
 /* ------------------------------------------------------------ */
 /* Component                                                    */
 /* ------------------------------------------------------------ */
@@ -72,6 +78,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const [expanded, setExpanded] = useState(!compactDefault);
   const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
+  const [injuryModalOpen, setInjuryModalOpen] = useState<boolean>(false);
 
   // determine if this game is for "today" in user's local timezone based on its UTC time
   const isTodayGame = useMemo(() => {
@@ -296,16 +303,18 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   return (
     <article
       data-tour="game-card"
-      className={`app-card ripple contain-layout
-      ${compactDefault ? "app-card--compact" : ""}
-      ${compactDefault && !expanded ? "edge-gradient" : ""}
-      ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
+      className={`app-card ripple contain-layout relative
+    ${compactDefault ? "app-card--compact" : ""}
+    ${compactDefault && !expanded ? "edge-gradient" : ""}
+    ${expanded && !isDesktop ? "md:col-span-2" : ""}`}
       aria-expanded={expanded}
       onClick={handleCardClick}
     >
       {/* Header */}
       <header
-        className="flex items-start justify-between gap-4 cursor-pointer"
+        className={`flex items-start justify-between gap-4 cursor-pointer ${
+          sport === "NFL" ? "pb-8" : ""
+        }`}
         role={compactDefault ? "button" : undefined}
         tabIndex={compactDefault ? 0 : -1}
         onKeyDown={
@@ -481,6 +490,20 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
             </div>
           );
         })()}
+      {/* This renders only when the card is collapsed AND not final */}
+      {compactDefault && !expanded && !isFinal && sport !== "MLB" && (
+        <div className="absolute bottom-2 left-0 w-full px-4 flex justify-start pointer-events-none">
+          <div className="pointer-events-auto">
+            <InjuriesChipButton
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent card from expanding
+                setInjuryModalOpen(true);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       <Suspense fallback={null}>
         <SnapshotModal
           gameId={gameId}
@@ -495,6 +518,13 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
           weatherData={weatherData}
           // And use the new variable here as well
           isIndoor={isEffectivelyIndoor}
+        />
+        <InjuryModal
+          isOpen={injuryModalOpen}
+          onClose={() => setInjuryModalOpen(false)}
+          league={sport}
+          gameDate={game.game_date}
+          teamNames={[game.awayTeamName, game.homeTeamName]}
         />
       </Suspense>
     </article>

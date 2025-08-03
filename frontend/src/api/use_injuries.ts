@@ -15,7 +15,12 @@ export interface Injury {
   injury_type: string | null; // ← remove the “?” here
 }
 
-export function useInjuries(league: string, date: string) {
+export function useInjuries(
+  league: string,
+  date: string,
+  options: { enabled?: boolean } = {}
+) {
+  const { enabled = true } = options;
   return useQuery<Injury[], Error>({
     queryKey: ["injuries", league, date],
     queryFn: async () => {
@@ -36,6 +41,6 @@ export function useInjuries(league: string, date: string) {
         injury_type: i.injury_type ?? null,
       }));
     },
-    enabled: Boolean(date),
+    enabled: enabled && Boolean(date),
   });
 }
