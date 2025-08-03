@@ -59,6 +59,8 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const { sport: contextSport } = useSport();
   const isDesktop = useIsDesktop();
   const compactDefault = forceCompact ?? !isDesktop;
+  const lastClickRef = useRef<number>(0);
+  const arrowRef = useRef<HTMLSpanElement | null>(null);
 
   const { currentStepIndex, run: isTourRunning } = useTour();
 
@@ -67,87 +69,71 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
 
   /* ------------------------------------------------------------------ */
-  /* 🔔 Tooltip & touch hint state (persisted)                           */
+  /* 🔔 “View details” tooltip — exactly once per browser-tab session    */
   /* ------------------------------------------------------------------ */
-  const APP_VERSION =
-    typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+  const TOOLTIP_SESSION_KEY = "sg_viewDetailsTooltipSeen";
 
-  const TOOLTIP_KEY = `sg_viewDetailsTooltipDismissed_v${APP_VERSION}`;
-  const LEGACY_KEY = "sg_viewDetailsTooltipDismissed"; // to migrate from old
-
-  // On mount/migration: if legacy exists but versioned does not, copy or clear
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    if (
-      localStorage.getItem(LEGACY_KEY) &&
-      !localStorage.getItem(TOOLTIP_KEY)
-    ) {
-      // Option A: promote the old dismissal to the current version so you don't see it again
-      // localStorage.setItem(TOOLTIP_KEY, "1");
-      // Option B: drop it so tooltip shows again on new version
-      localStorage.removeItem(LEGACY_KEY);
-    }
-  }, []);
-
-  // Start hidden; we'll decide in an effect once the client is ready.
-  const [showTooltip, setShowTooltip] = useState<boolean>(() => {
+  /**
+   * Show only when:
+   *   • the card is in compact (collapsed) mode
+   *   • the tooltip hasn’t appeared yet this session
+   */
+  const [showTooltip, setShowTooltip] = useState(() => {
     if (typeof window === "undefined") return false;
-    const dismissed = !!localStorage.getItem(TOOLTIP_KEY);
-    return !dismissed && compactDefault && !expanded;
+    return (
+      compactDefault &&
+      !expanded &&
+      !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
+    );
   });
 
-  const lastClickRef = useRef<number>(0);
-  const arrowRef = useRef<HTMLSpanElement | null>(null);
+  /* Persist the fact that we’ve shown the tooltip in this tab */
+  const markSeen = () => sessionStorage.setItem(TOOLTIP_SESSION_KEY, "1");
 
-  // Simple expansion toggle (always flips)
-  const toggleExpandedImmediate = useCallback(() => {
-    setExpanded((prev) => !prev);
-  }, []);
-
-  const storage = sessionStorage;
-
-  const isDismissed = (): boolean => !!storage.getItem(TOOLTIP_KEY);
-
+  /* Hide tooltip and mark as seen */
   const dismissTooltip = useCallback(() => {
     if (!showTooltip) return;
     setShowTooltip(false);
-    storage.setItem(TOOLTIP_KEY, "1");
+    markSeen();
   }, [showTooltip]);
 
-  // One-way reconciliation: if the card *becomes* eligible and tooltip
-  // hasn't been dismissed, surface it. Never forcibly hide it here.
-  /**
-   * One-way reconciliation:
-   * If the card *becomes* eligible and the tooltip hasn’t been dismissed,
-   * surface it.  Never hides it; dismissal is explicit via dismissTooltip().
-   */
-
+  /* Surface tooltip if the card later becomes eligible */
   useEffect(() => {
-    /* TEMP DEBUG — remove when fixed */
-    if (process.env.NODE_ENV !== "production") {
-      console.table({
-        id: gameId,
-        compactDefault,
-        expanded,
-        dismissed: isDismissed(),
-        showTooltip,
-        key: TOOLTIP_KEY,
-      });
-    }
-  });
+    const eligible =
+      compactDefault &&
+      !expanded &&
+      !showTooltip &&
+      !sessionStorage.getItem(TOOLTIP_SESSION_KEY);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!isDismissed() && compactDefault && !expanded && !showTooltip) {
-      setShowTooltip(true);
-    }
+    if (eligible) setShowTooltip(true);
   }, [compactDefault, expanded, showTooltip]);
 
-  // expanded toggle with tooltip dismissal baked in
+  /* When tooltip becomes visible, trigger the arrow glow and record it */
+  useEffect(() => {
+    if (showTooltip) {
+      triggerTouchGlow(arrowRef.current);
+      markSeen();
+    }
+  }, [showTooltip]);
+
+  // expansion toggles
+  const toggleExpandedImmediate = useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
   const toggleExpanded = useCallback(() => {
     setExpanded((prev) => !prev);
     dismissTooltip();
   }, [dismissTooltip]);
+
+  const handleArrowInteraction = useCallback(
+    (e: React.MouseEvent | React.KeyboardEvent) => {
+      e.stopPropagation();
+      triggerTouchGlow(arrowRef.current);
+      lastClickRef.current = Date.now();
+      toggleExpanded(); // toggles + dismisses
+    },
+    [toggleExpanded]
+  );
 
   const H2HButton = () => (
     <SnapshotButton
@@ -197,18 +183,24 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     }
   }, [showTooltip]);
 
-  // Make the card "tour-aware"
+  // keep expanded in sync with compact vs desktop mode
   useEffect(() => {
-    // These are the tour step indices that target elements inside the card.
-    // Adjust these numbers if you change the order of your tour steps.
-    const TOUR_STEPS_REQUIRING_EXPANSION = [2, 3, 4];
+    setExpanded((prev) => {
+      if (compactDefault && prev) return false; // switched to compact → collapse
+      if (!compactDefault && !prev) return true; // switched to desktop → expand
+      return prev;
+    });
+  }, [compactDefault]);
 
+  // tour-aware expansion
+  useEffect(() => {
+    const TOUR_STEPS_REQUIRING_EXPANSION = [2, 3, 4];
     const needsExpansion =
       isTourRunning &&
-      sport !== "NFL" && // Only for sports with a collapsible section
+      sport !== "NFL" &&
       TOUR_STEPS_REQUIRING_EXPANSION.includes(currentStepIndex);
 
-    if (needsExpansion && isDismissed()) {
+    if (needsExpansion) {
       setExpanded(true);
     }
   }, [isTourRunning, currentStepIndex, sport]);
@@ -281,16 +273,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     }, 300); // matches transition duration
   };
 
-  const handleArrowInteraction = useCallback(
-    (e: React.MouseEvent | React.KeyboardEvent) => {
-      e.stopPropagation();
-      triggerTouchGlow(arrowRef.current);
-      lastClickRef.current = Date.now();
-      toggleExpandedImmediate();
-      dismissTooltip();
-    },
-    [dismissTooltip, toggleExpandedImmediate]
-  );
   return (
     <article
       data-tour="game-card"
@@ -361,7 +343,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
             ) : (
               <span className="text-sm text-text-secondary">—</span>
             )}
-
             {compactDefault && (
               <div className="mt-2 flex w-full justify-center">
                 <div className="relative">
@@ -370,14 +351,27 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                     className={`card-chevron transition-transform ${
                       expanded ? "rotate-180" : ""
                     }`}
-                    /* 👇 graceful fallback: still lets a hover/focus surface it
-                    if auto-show failed for any edge-case */
+                    /* graceful fallback: surface if eligible */
                     onMouseEnter={() => {
-                      if (!showTooltip && !isDismissed()) setShowTooltip(true);
+                      if (
+                        !showTooltip &&
+                        compactDefault &&
+                        !expanded &&
+                        !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
+                      ) {
+                        setShowTooltip(true);
+                      }
                     }}
                     onFocus={(e) => {
                       if (Date.now() - lastClickRef.current < 200) return;
-                      if (!showTooltip && !isDismissed()) setShowTooltip(true);
+                      if (
+                        !showTooltip &&
+                        compactDefault &&
+                        !expanded &&
+                        !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
+                      ) {
+                        setShowTooltip(true);
+                      }
                     }}
                     onClick={handleArrowInteraction}
                     aria-describedby={
