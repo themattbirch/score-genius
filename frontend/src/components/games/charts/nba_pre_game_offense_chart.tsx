@@ -40,7 +40,7 @@ const NbaPreGameOffenseChart: React.FC<NbaPreGameOffenseChartProps> = ({
   if (!data || data.length === 0) {
     return (
       <div className="text-center text-text-secondary py-12">
-        No pre-game offensive stats available.
+        No pregame offensive stats available.
       </div>
     );
   }
