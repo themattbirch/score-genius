@@ -1,27 +1,33 @@
 // frontend/scripts/generate_sitemap.js
-
 import { SitemapStream, streamToPromise } from "sitemap";
-import { createWriteStream, readdirSync } from "fs";
-import { resolve } from "path";
+import { writeFileSync, readdirSync, mkdirSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 async function buildSitemap() {
-  const distDir = resolve("dist");
+  const distDir = resolve(__dirname, "../dist");
+  const backendStatic = resolve(__dirname, "../../backend/server/static");
   const hostname = "https://scoregenius.io";
 
-  /* ---------- collect routes ---------- */
   const pages = readdirSync(distDir)
-    .filter((f) => f.endsWith(".html") && f !== "app.html") // ← exclude SPA shell
+    .filter((f) => f.endsWith(".html") && f !== "app.html")
     .map((f) => (f === "index.html" ? "/" : `/${f.replace(".html", "")}`));
 
-  /* ---------- stream → file ---------- */
   const smStream = new SitemapStream({ hostname });
-  const write = createWriteStream(resolve(distDir, "sitemap.xml"));
-
-  smStream.pipe(write); // 1) pipe first
   pages.forEach((url) => smStream.write({ url, changefreq: "weekly" }));
-  smStream.end(); // 2) close the stream
+  smStream.end();
+  const xml = (await streamToPromise(smStream)).toString();
 
-  await streamToPromise(smStream); // 3) wait until fully flushed
+  console.log("📁 distDir =", distDir);
+  console.log("📁 backendStatic =", backendStatic);
+
+  mkdirSync(backendStatic, { recursive: true }); // 👈 ensure static/ exists
+  writeFileSync(resolve(distDir, "sitemap.xml"), xml, "utf-8");
+  writeFileSync(resolve(backendStatic, "sitemap.xml"), xml, "utf-8");
+
   console.log("✅ sitemap.xml written with", pages.length, "routes");
 }
 

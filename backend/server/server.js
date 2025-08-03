@@ -125,11 +125,6 @@ app.get("/offline.html", (req, res) => {
   res.sendFile(path.join(staticRoot, "offline.html"));
 });
 
-app.get("/sitemap.xml", (req, res) => {
-  res.setHeader("Content-Type", "application/xml");
-  res.sendFile(path.join(staticRoot, "sitemap.xml"));
-});
-
 // 3. Statically served asset directories (for CSS, images, etc.)
 // This will serve files from /public, /app, and /.well-known
 app.use(
