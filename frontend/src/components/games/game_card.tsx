@@ -75,11 +75,12 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
 
   // determine if this game is for "today" in user's local timezone based on its UTC time
   const isTodayGame = useMemo(() => {
-    if (!game.gameTimeUTC) return false;
+    const dateSrc = game.gameTimeUTC ?? game.game_date; // ISO or YYYY-MM-DD
+    if (!dateSrc) return false;
+    const gameDate = new Date(dateSrc);
     const now = new Date();
-    const gameDate = new Date(game.gameTimeUTC);
     return isSameLocalDay(now, gameDate);
-  }, [game.gameTimeUTC]);
+  }, [game.gameTimeUTC, game.game_date]);
 
   /* ------------------------------------------------------------------ */
   /* 🔔 “View details” tooltip — exactly once per browser-tab session    */
@@ -107,23 +108,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     setShowTooltip(false);
     markSeen();
   }, [showTooltip]);
-
-  useEffect(() => {
-    if (!isTodayGame) {
-      setShowTooltip(false);
-      return;
-    }
-
-    const eligible =
-      compactDefault &&
-      !expanded &&
-      !showTooltip &&
-      !sessionStorage.getItem(TOOLTIP_SESSION_KEY);
-
-    if (eligible) {
-      setShowTooltip(true);
-    }
-  }, [compactDefault, expanded, showTooltip, isTodayGame]);
 
   useEffect(() => {
     if (showTooltip && isTodayGame) {
@@ -165,9 +149,10 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
       e.stopPropagation();
       triggerTouchGlow(arrowRef.current);
       lastClickRef.current = Date.now();
-      toggleExpanded(); // toggles + dismisses
+      setExpanded((prev) => !prev); // directly toggle without involving dismissTooltip
+      dismissTooltip(); // if needed separately
     },
-    [toggleExpanded]
+    [dismissTooltip]
   );
 
   const H2HButton = () => (
@@ -388,6 +373,10 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                     className={`card-chevron transition-transform ${
                       expanded ? "rotate-180" : ""
                     }`}
+                    style={{
+                      transform: expanded ? "rotate(180deg)" : "none",
+                      transition: "transform 0.2s ease",
+                    }}
                     onMouseEnter={() => {
                       if (
                         !showTooltip &&
