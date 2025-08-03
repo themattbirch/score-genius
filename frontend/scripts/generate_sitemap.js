@@ -21,9 +21,6 @@ async function buildSitemap() {
   smStream.end();
   const xml = (await streamToPromise(smStream)).toString();
 
-  console.log("📁 distDir =", distDir);
-  console.log("📁 backendStatic =", backendStatic);
-
   mkdirSync(backendStatic, { recursive: true }); // 👈 ensure static/ exists
   writeFileSync(resolve(distDir, "sitemap.xml"), xml, "utf-8");
   writeFileSync(resolve(backendStatic, "sitemap.xml"), xml, "utf-8");
