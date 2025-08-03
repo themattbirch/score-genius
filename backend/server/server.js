@@ -83,6 +83,12 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "index.html"));
 });
 
+app.get("/robots.txt", (req, res) => {
+  res.setHeader("Content-Type", "text/plain");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.sendFile(path.join(staticRoot, "public", "robots.txt"));
+});
+
 app.get("/help", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "help.html"));
