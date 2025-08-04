@@ -526,6 +526,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                     onMouseEnter={() => {
                       // only show hover tooltip if persistent one isn't showing and basic eligibility (today, compact collapsed)
                       if (
+                        isFirst &&
                         !showTooltip &&
                         isTodayGame &&
                         compactDefault &&
@@ -542,6 +543,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                       // keep existing logic for persistent tooltip via focus, not hover
                       if (Date.now() - lastClickRef.current < 200) return;
                       if (
+                        isFirst &&
                         !showTooltip &&
                         compactDefault &&
                         !expanded &&
@@ -558,7 +560,8 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                   >
                     ▾
                   </span>
-                  {(showTooltip || hoverTooltip) &&
+                  {isFirst &&
+                    (showTooltip || hoverTooltip) &&
                     isTodayGame &&
                     !isInProgress && (
                       <span
