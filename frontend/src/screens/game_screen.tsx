@@ -134,7 +134,7 @@ const GamesScreen: React.FC = () => {
           </p>
         ) : (
           /* responsive grid of active cards */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {visibleGames.map((g, idx) => (
               <GameCard key={g.id} game={g} isFirst={idx === 0} />
             ))}

@@ -1,369 +1,373 @@
 1<?xml version="1.0" encoding="utf-8"?>
 2<!--
-3    Copyright 2019 Google Inc. All Rights Reserved.
+3Copyright 2019 Google Inc. All Rights Reserved.
 4
-5     Licensed under the Apache License, Version 2.0 (the "License");
-6     you may not use this file except in compliance with the License.
-7     You may obtain a copy of the License at
+5Licensed under the Apache License, Version 2.0 (the "License");
+6you may not use this file except in compliance with the License.
+7You may obtain a copy of the License at
 8
-9         http://www.apache.org/licenses/LICENSE-2.0
+9http://www.apache.org/licenses/LICENSE-2.0
 10
-11     Unless required by applicable law or agreed to in writing, software
-12     distributed under the License is distributed on an "AS IS" BASIS,
-13     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-14     See the License for the specific language governing permissions and
-15     limitations under the License.
+11Unless required by applicable law or agreed to in writing, software
+12distributed under the License is distributed on an "AS IS" BASIS,
+13WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+14See the License for the specific language governing permissions and
+15limitations under the License.
 16-->
 17<!--
-18 The "package" attribute is rewritten by the Gradle build with the value of applicationId.
-19     It is still required here, as it is used to derive paths, for instance when referring
-20     to an Activity by ".MyActivity" instead of the full name. If more Activities are added to the
-21     application, the package attribute will need to reflect the correct path in order to use
-22     the abbreviated format.
-23-->
-24<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-25    package="io.scoregenius.app"
-26    android:versionCode="62"
-27    android:versionName="62" >
-28
-29    <uses-sdk
-30        android:minSdkVersion="21"
-31        android:targetSdkVersion="35" />
+18 The "package" attribute is rewritten by the Gradle build with the
+19value of applicationId.
+20It is still required here, as it is used to derive paths, for instance
+21when referring
+22to an Activity by ".MyActivity" instead of the full name. If more
+23Activities are added to the
+24application, the package attribute will need to reflect the correct
+25path in order to use
+26the abbreviated format.
+27-->
+28<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+29    package="io.scoregenius.app"
+30    android:versionCode="63"
+31    android:versionName="63" >
 32
-33    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-33-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:26:9-80
-33-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:26:26-78
-34
-35    <queries>
-35-->[com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:22:5-30:15
-36        <intent>
-36-->[com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:23:9-29:18
-37            <action android:name="android.intent.action.VIEW" />
-37-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:139:17-68
-37-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:139:25-66
+33    <uses-sdk
+34        android:minSdkVersion="21"
+35        android:targetSdkVersion="35" />
+36
+37    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+37-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:29:1-72
+37-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:29:18-70
 38
-39            <category android:name="android.intent.category.BROWSABLE" />
-39-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:17-77
-39-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:27-75
-40
-41            <data android:scheme="https" />
-41-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:142:17-147:19
-41-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:142:23-45
-42        </intent>
-43    </queries>
+39    <queries>
+39-->[com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:22:5-30:15
+40        <intent>
+40-->[com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:23:9-29:18
+41            <action android:name="android.intent.action.VIEW" />
+41-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:1-52
+41-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:9-50
+42
+43            <category android:name="android.intent.category.BROWSABLE" />
+43-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:128:1-61
+43-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:128:11-59
 44
-45    <permission
-45-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:22:5-24:47
-46        android:name="io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
-46-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:23:9-81
-47        android:protectionLevel="signature" />
-47-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:24:9-44
+45            <data android:scheme="https" />
+45-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:129:1-132:3
+45-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:129:7-29
+46        </intent>
+47    </queries>
 48
-49    <uses-permission android:name="io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
-49-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:5-97
-49-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:22-94
-50
-51    <application
-51-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:35:5-192:19
-52        android:name="io.scoregenius.app.Application"
-52-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:36:9-35
-53        android:allowBackup="true"
-53-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:37:9-35
-54        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
-54-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
-55        android:extractNativeLibs="true"
-56        android:icon="@mipmap/ic_launcher"
-56-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:38:9-43
-57        android:label="@string/appName"
-57-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:39:9-40
-58        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
-58-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:41:9-105
-59        android:supportsRtl="true"
-59-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:43:9-35
-60        android:theme="@android:style/Theme.Translucent.NoTitleBar" >
-60-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:44:9-68
-61        <meta-data
-61-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:46:9-48:58
-62            android:name="asset_statements"
-62-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:47:13-44
-63            android:resource="@string/assetStatements" />
-63-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:48:13-55
-64        <meta-data
-64-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:51:13-53:58
-65            android:name="web_manifest_url"
-65-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:52:17-48
-66            android:value="@string/webManifestUrl" />
-66-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:53:17-55
-67        <meta-data
-67-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:56:9-58:52
-68            android:name="twa_generator"
-68-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:57:13-41
-69            android:value="@string/generatorApp" />
-69-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:58:13-49
-70
-71        <activity android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity" >
-71-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:65:13-69:24
-71-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:65:23-104
-72            <meta-data
-72-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:66:13-68:53
-73                android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
-73-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:67:17-83
-74                android:value="@string/launchUrl" />
-74-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:68:17-50
-75        </activity>
-76        <activity
-76-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:72:9-153:20
-77            android:name="io.scoregenius.app.LauncherActivity"
-77-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:72:19-50
-78            android:alwaysRetainTaskState="true"
-78-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:73:13-49
-79            android:exported="true"
-79-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:75:13-36
-80            android:label="@string/launcherName" >
-80-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:74:13-49
-81            <meta-data
-81-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:76:13-77:53
-82                android:name="android.support.customtabs.trusted.DEFAULT_URL"
-82-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:76:24-85
-83                android:value="@string/launchUrl" />
-83-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:77:17-50
-84            <meta-data
-84-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:79:13-81:58
-85                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
-85-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:80:17-83
-86                android:resource="@color/colorPrimary" />
-86-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:81:17-55
-87            <meta-data
-87-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:85:13-87:62
-88                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
-88-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:86:17-88
-89                android:resource="@color/colorPrimaryDark" />
-89-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:87:17-59
-90            <meta-data
-90-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:89:13-91:61
-91                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
-91-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:90:17-87
-92                android:resource="@color/navigationColor" />
-92-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:91:17-58
-93            <meta-data
-93-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:93:13-95:65
-94                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK"
-94-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:94:17-92
-95                android:resource="@color/navigationColorDark" />
-95-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:95:17-62
-96            <meta-data
-96-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:97:13-99:68
-97                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
-97-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:98:17-84
-98                android:resource="@color/navigationDividerColor" />
-98-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:99:17-65
-99            <meta-data
-99-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:101:13-103:72
-100                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
-100-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:102:17-89
-101                android:resource="@color/navigationDividerColorDark" />
-101-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:103:17-69
-102            <meta-data
-102-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:105:13-106:54
-103                android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
-103-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:105:24-95
-104                android:resource="@drawable/splash" />
-104-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:106:17-52
-105            <meta-data
-105-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:108:13-109:60
-106                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
-106-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:108:24-104
-107                android:resource="@color/backgroundColor" />
-107-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:109:17-58
-108            <meta-data
-108-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:111:13-112:71
-109                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
-109-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:111:24-105
-110                android:value="@integer/splashScreenFadeOutDuration" />
-110-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:112:17-69
-111            <meta-data
-111-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:114:13-115:60
-112                android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
-112-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:114:24-97
-113                android:value="@string/providerAuthority" />
-113-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:115:17-58
-114            <meta-data
-114-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:117:13-97
-115                android:name="android.app.shortcuts"
-115-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:117:24-60
-116                android:resource="@xml/shortcuts" />
-116-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:117:61-94
-117            <meta-data
-117-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:119:13-120:56
-118                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
-118-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:119:24-91
-119                android:value="@string/fallbackType" />
-119-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:120:17-53
-120            <meta-data
-120-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:13-127:54
-121                android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION"
-121-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:24-92
-122                android:value="@string/orientation" />
-122-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:127:17-52
-123
-124            <intent-filter>
-124-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:133:13-136:29
-125                <action android:name="android.intent.action.MAIN" />
-125-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:134:17-69
-125-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:134:25-66
-126
-127                <category android:name="android.intent.category.LAUNCHER" />
-127-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:135:17-77
-127-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:135:27-74
-128            </intent-filter>
-129            <intent-filter android:autoVerify="true" >
-129-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:138:13-148:29
-129-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:138:28-53
-130                <action android:name="android.intent.action.VIEW" />
-130-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:139:17-68
-130-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:139:25-66
-131
-132                <category android:name="android.intent.category.DEFAULT" />
-132-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:140:17-76
-132-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:140:27-73
-133                <category android:name="android.intent.category.BROWSABLE" />
-133-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:17-77
-133-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:27-75
-134
-135                <data
-135-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:142:17-147:19
-136                    android:host="@string/hostName"
-136-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:143:21-52
-137                    android:pathPrefix="/app"
-137-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:145:21-46
-138                    android:scheme="https" />
-138-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:142:23-45
-139            </intent-filter>
-140        </activity>
-141        <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
-141-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:155:9-90
-141-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:155:19-87
-142        <activity
-142-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:157:9-158:62
-143            android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
-143-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:157:19-97
-144            android:configChanges="orientation|screenSize" />
-144-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:158:13-59
-145
-146        <provider
-146-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:160:9-168:20
-147            android:name="androidx.core.content.FileProvider"
-147-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:161:13-62
-148            android:authorities="@string/providerAuthority"
-148-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:162:13-60
-149            android:exported="false"
-149-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:164:13-37
-150            android:grantUriPermissions="true" >
-150-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:163:13-47
-151            <meta-data
-151-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:165:13-167:53
-152                android:name="android.support.FILE_PROVIDER_PATHS"
-152-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:166:17-67
-153                android:resource="@xml/filepaths" />
-153-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:167:17-50
-154        </provider>
-155
-156        <service
-156-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:170:9-185:19
-157            android:name="io.scoregenius.app.DelegationService"
-157-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:171:13-46
-158            android:enabled="@bool/enableNotification"
-158-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:172:13-55
-159            android:exported="@bool/enableNotification" >
-159-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:173:13-56
-160            <meta-data
-160-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:176:17-178:73
-161                android:name="android.support.customtabs.trusted.SMALL_ICON"
-161-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:177:21-81
-162                android:resource="@drawable/ic_notification_icon" />
-162-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:178:21-70
-163
-164            <intent-filter>
-164-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:181:13-184:29
-165                <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
-165-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:182:17-105
-165-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:182:25-103
-166
-167                <category android:name="android.intent.category.DEFAULT" />
-167-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:140:17-76
-167-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:140:27-73
-168            </intent-filter>
-169        </service>
+49    <permission
+49-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:22:5-24:47
+50        android:name="io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+50-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:23:9-81
+51        android:protectionLevel="signature" />
+51-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:24:9-44
+52
+53    <uses-permission android:name="io.scoregenius.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+53-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:5-97
+53-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:26:22-94
+54
+55    <application
+55-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:34:1-172:15
+56        android:name="io.scoregenius.app.Application"
+56-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:35:1-27
+57        android:allowBackup="true"
+57-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:36:1-27
+58        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+58-->[androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
+59        android:extractNativeLibs="true"
+60        android:icon="@mipmap/ic_launcher"
+60-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:37:1-35
+61        android:label="@string/appName"
+61-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:38:1-32
+62        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+62-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:39:1-97
+63        android:supportsRtl="true"
+63-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:40:1-27
+64        android:theme="@android:style/Theme.Translucent.NoTitleBar" >
+64-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:41:1-60
+65        <meta-data
+65-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:43:1-45:46
+66            android:name="asset_statements"
+66-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:44:1-32
+67            android:resource="@string/assetStatements" />
+67-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:45:1-43
+68        <meta-data
+68-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:47:1-49:42
+69            android:name="web_manifest_url"
+69-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:48:1-32
+70            android:value="@string/webManifestUrl" />
+70-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:49:1-39
+71        <meta-data
+71-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:51:1-53:40
+72            android:name="twa_generator"
+72-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:52:1-29
+73            android:value="@string/generatorApp" />
+73-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:53:1-37
+74
+75        <activity android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity" >
+75-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:57:1-61:12
+75-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:57:11-92
+76            <meta-data
+76-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:58:1-60:37
+77                android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
+77-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:59:1-67
+78                android:value="@string/launchUrl" />
+78-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:60:1-34
+79        </activity>
+80        <activity
+80-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:63:1-136:12
+81            android:name="io.scoregenius.app.LauncherActivity"
+81-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:63:11-42
+82            android:alwaysRetainTaskState="true"
+82-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:64:1-37
+83            android:exported="true"
+83-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:66:1-24
+84            android:label="@string/launcherName" >
+84-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:65:1-37
+85            <meta-data
+85-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:67:1-68:37
+86                android:name="android.support.customtabs.trusted.DEFAULT_URL"
+86-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:67:12-73
+87                android:value="@string/launchUrl" />
+87-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:68:1-34
+88            <meta-data
+88-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:70:1-72:42
+89                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+89-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:71:1-67
+90                android:resource="@color/colorPrimary" />
+90-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:72:1-39
+91            <meta-data
+91-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:75:1-77:46
+92                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
+92-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:76:1-72
+93                android:resource="@color/colorPrimaryDark" />
+93-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:77:1-43
+94            <meta-data
+94-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:79:1-81:45
+95                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+95-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:80:1-71
+96                android:resource="@color/navigationColor" />
+96-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:81:1-42
+97            <meta-data
+97-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:83:1-85:49
+98                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK"
+98-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:84:1-76
+99                android:resource="@color/navigationColorDark" />
+99-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:85:1-46
+100            <meta-data
+100-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:87:1-89:52
+101                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
+101-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:88:1-68
+102                android:resource="@color/navigationDividerColor" />
+102-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:89:1-49
+103            <meta-data
+103-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:91:1-93:56
+104                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
+104-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:92:1-73
+105                android:resource="@color/navigationDividerColorDark" />
+105-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:93:1-53
+106            <meta-data
+106-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:95:1-96:38
+107                android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
+107-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:95:12-83
+108                android:resource="@drawable/splash" />
+108-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:96:1-36
+109            <meta-data
+109-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:98:1-99:44
+110                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
+110-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:98:12-92
+111                android:resource="@color/backgroundColor" />
+111-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:99:1-42
+112            <meta-data
+112-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:101:1-102:55
+113                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
+113-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:101:12-93
+114                android:value="@integer/splashScreenFadeOutDuration" />
+114-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:102:1-53
+115            <meta-data
+115-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:104:1-105:44
+116                android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
+116-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:104:12-85
+117                android:value="@string/providerAuthority" />
+117-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:105:1-42
+118            <meta-data
+118-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:107:1-108:37
+119                android:name="android.app.shortcuts"
+119-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:107:12-48
+120                android:resource="@xml/shortcuts" />
+120-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:108:1-34
+121            <meta-data
+121-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:110:1-111:40
+122                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
+122-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:110:12-79
+123                android:value="@string/fallbackType" />
+123-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:111:1-37
+124            <meta-data
+124-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:115:1-116:38
+125                android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION"
+125-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:115:12-80
+126                android:value="@string/orientation" />
+126-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:116:1-36
+127
+128            <intent-filter>
+128-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:120:1-123:17
+129                <action android:name="android.intent.action.MAIN" />
+129-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:121:1-53
+129-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:121:9-50
+130
+131                <category android:name="android.intent.category.LAUNCHER" />
+131-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:122:1-61
+131-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:122:11-58
+132            </intent-filter>
+133            <intent-filter android:autoVerify="true" >
+133-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:125:1-133:17
+133-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:125:16-41
+134                <action android:name="android.intent.action.VIEW" />
+134-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:1-52
+134-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:9-50
+135
+136                <category android:name="android.intent.category.DEFAULT" />
+136-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:127:1-60
+136-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:127:11-57
+137                <category android:name="android.intent.category.BROWSABLE" />
+137-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:128:1-61
+137-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:128:11-59
+138
+139                <data
+139-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:129:1-132:3
+140                    android:host="@string/hostName"
+140-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:130:1-32
+141                    android:pathPrefix="/app"
+141-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:131:1-26
+142                    android:scheme="https" />
+142-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:129:7-29
+143            </intent-filter>
+144        </activity>
+145        <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
+145-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:138:1-139:3
+145-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:138:11-79
+146        <activity
+146-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:1-142:50
+147            android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
+147-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:11-89
+148            android:configChanges="orientation|screenSize" />
+148-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:142:1-47
+149
+150        <provider
+150-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:144:1-152:12
+151            android:name="androidx.core.content.FileProvider"
+151-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:145:1-50
+152            android:authorities="@string/providerAuthority"
+152-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:146:1-48
+153            android:exported="false"
+153-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:148:1-25
+154            android:grantUriPermissions="true" >
+154-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:147:1-35
+155            <meta-data
+155-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:149:1-151:37
+156                android:name="android.support.FILE_PROVIDER_PATHS"
+156-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:150:1-51
+157                android:resource="@xml/filepaths" />
+157-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:151:1-34
+158        </provider>
+159
+160        <service
+160-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:154:1-167:11
+161            android:name="io.scoregenius.app.DelegationService"
+161-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:155:1-34
+162            android:enabled="@bool/enableNotification"
+162-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:156:1-43
+163            android:exported="@bool/enableNotification" >
+163-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:157:1-44
+164            <meta-data
+164-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:159:1-161:53
+165                android:name="android.support.customtabs.trusted.SMALL_ICON"
+165-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:160:1-61
+166                android:resource="@drawable/ic_notification_icon" />
+166-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:161:1-50
+167
+168            <intent-filter>
+168-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:163:1-166:17
+169                <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
+169-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:164:1-89
+169-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:164:9-87
 170
-171        <activity android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity" />
-171-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:188:13-118
-171-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:188:23-115
-172
-173        <provider
-173-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
-174            android:name="androidx.startup.InitializationProvider"
-174-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:25:13-67
-175            android:authorities="io.scoregenius.app.androidx-startup"
-175-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:26:13-68
-176            android:exported="false" >
-176-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:27:13-37
-177            <meta-data
-177-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
-178                android:name="androidx.emoji2.text.EmojiCompatInitializer"
-178-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:30:17-75
-179                android:value="androidx.startup" />
-179-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:31:17-49
-180            <meta-data
-180-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/4bc52031417e9743197e36b704fe409f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
-181                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-181-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/4bc52031417e9743197e36b704fe409f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
-182                android:value="androidx.startup" />
-182-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/4bc52031417e9743197e36b704fe409f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
-183            <meta-data
-183-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
-184                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
-184-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
-185                android:value="androidx.startup" />
-185-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
-186        </provider>
-187
-188        <receiver
-188-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
-189            android:name="androidx.profileinstaller.ProfileInstallReceiver"
-189-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
-190            android:directBootAware="false"
-190-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
-191            android:enabled="true"
-191-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
-192            android:exported="true"
-192-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
-193            android:permission="android.permission.DUMP" >
-193-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
-194            <intent-filter>
-194-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
-195                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
-195-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
-195-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
-196            </intent-filter>
-197            <intent-filter>
-197-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
-198                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
-198-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
-198-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
-199            </intent-filter>
-200            <intent-filter>
-200-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
-201                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
-201-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
-201-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
-202            </intent-filter>
-203            <intent-filter>
-203-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
-204                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
-204-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
-204-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
-205            </intent-filter>
-206        </receiver>
-207    </application>
-208
-209</manifest>
+171                <category android:name="android.intent.category.DEFAULT" />
+171-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:127:1-60
+171-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:127:11-57
+172            </intent-filter>
+173        </service>
+174
+175        <activity android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity" />
+175-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:169:1-170:3
+175-->/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:169:11-103
+176
+177        <provider
+177-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
+178            android:name="androidx.startup.InitializationProvider"
+178-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:25:13-67
+179            android:authorities="io.scoregenius.app.androidx-startup"
+179-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:26:13-68
+180            android:exported="false" >
+180-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:27:13-37
+181            <meta-data
+181-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
+182                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+182-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:30:17-75
+183                android:value="androidx.startup" />
+183-->[androidx.emoji2:emoji2:1.3.0] /Users/mattb/.gradle/caches/8.11.1/transforms/5cb7738f5242d8c4e38c8ffa2b265b31/transformed/emoji2-1.3.0/AndroidManifest.xml:31:17-49
+184            <meta-data
+184-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/4bc52031417e9743197e36b704fe409f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
+185                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+185-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/4bc52031417e9743197e36b704fe409f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
+186                android:value="androidx.startup" />
+186-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/4bc52031417e9743197e36b704fe409f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
+187            <meta-data
+187-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
+188                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+188-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
+189                android:value="androidx.startup" />
+189-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
+190        </provider>
+191
+192        <receiver
+192-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
+193            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+193-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
+194            android:directBootAware="false"
+194-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
+195            android:enabled="true"
+195-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
+196            android:exported="true"
+196-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
+197            android:permission="android.permission.DUMP" >
+197-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
+198            <intent-filter>
+198-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
+199                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+199-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
+199-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
+200            </intent-filter>
+201            <intent-filter>
+201-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
+202                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+202-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
+202-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
+203            </intent-filter>
+204            <intent-filter>
+204-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
+205                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+205-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
+205-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
+206            </intent-filter>
+207            <intent-filter>
+207-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
+208                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+208-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
+208-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/mattb/.gradle/caches/8.11.1/transforms/bb4a0d32d1b17a1dcea0cf71d2bde5e0/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
+209            </intent-filter>
+210        </receiver>
+211    </application>
+212
+213</manifest>
