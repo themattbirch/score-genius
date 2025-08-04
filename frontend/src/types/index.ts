@@ -41,6 +41,7 @@ export interface UnifiedGame {
   id: string;
   game_date: string; // YYYY-MM-DD (ET, based on backend logic)
   scheduled_time: string;
+  scheduled_time_utc?: string;
   homeTeamName: string;
   awayTeamName: string;
   gameTimeUTC?: string | null; // ISO UTC timestamp for scheduled or historical

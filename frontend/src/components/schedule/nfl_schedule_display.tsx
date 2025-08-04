@@ -4,10 +4,9 @@ import { startOfDay, isBefore } from "date-fns";
 import { useDate } from "@/contexts/date_context";
 import { useNFLSchedule } from "@/api/use_nfl_schedule";
 import { useNetworkStatus } from "@/hooks/use_network_status";
-
-import SkeletonBox from "@/components/ui/skeleton_box";
 import type { UnifiedGame } from "@/types";
 
+import SkeletonBox from "@/components/ui/skeleton_box";
 import { useInjuries, type Injury } from "@/api/use_injuries";
 const LazyInjuryReport = lazy(
   () => import("@/components/shared/injury_report")
@@ -34,6 +33,12 @@ const NFLScheduleDisplay: React.FC = () => {
   const today = startOfDay(new Date());
   const selectedDay = date ? startOfDay(date) : null;
   const isPastDate = selectedDay ? isBefore(selectedDay, today) : false;
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const [currentTime, setCurrentTime] = useState(Date.now());
   useEffect(() => {
@@ -77,13 +82,13 @@ const NFLScheduleDisplay: React.FC = () => {
 
   const filteredGames = useMemo(() => {
     if (isPastDate) return games;
-    // An NFL game is ~3.5 hours long, this buffer hides games after they've concluded.
-    const buffer = 3.5 * 60 * 60 * 1000;
-    return games.filter((g: UnifiedGame) => {
-      const ms = new Date(g.gameTimeUTC ?? "").getTime();
-      return Number.isNaN(ms) ? true : currentTime < ms + buffer;
+
+    const bufferMs = 3.5 * 60 * 60 * 1000;
+    return games.filter(({ gameTimeUTC }: UnifiedGame) => {
+      const ms = new Date(gameTimeUTC ?? "").getTime();
+      return Number.isNaN(ms) ? true : now < ms + bufferMs;
     });
-  }, [games, currentTime, isPastDate]);
+  }, [games, now, isPastDate]);
 
   const noGamesInitiallyScheduled = games.length === 0;
   const allGamesFilteredOut = games.length > 0 && filteredGames.length === 0;

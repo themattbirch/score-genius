@@ -41,15 +41,35 @@ const MLBScheduleDisplay: React.FC = () => {
 
   const filteredGames = useMemo(() => {
     if (isPastDate) return games;
-    const buffer = 3.5 * 60 * 60 * 1000;
-    return games.filter((g: UnifiedGame) => {
+    const bufferMs = 3.5 * 60 * 60 * 1000;
+    const out: UnifiedGame[] = [];
+    games.forEach((g) => {
       const ms = new Date(g.gameTimeUTC ?? "").getTime();
-      return Number.isNaN(ms) ? true : currentTime < ms + buffer;
+      const expiresAt = ms + bufferMs;
+      const keep = Number.isNaN(ms) ? true : currentTime < expiresAt;
+      console.log("FILTER CHECK (foreach)", {
+        id: g.id,
+        gameTimeUTC: g.gameTimeUTC,
+        parsed: ms,
+        expiresAt: new Date(expiresAt).toISOString(),
+        now: new Date(currentTime).toISOString(),
+        keep,
+      });
+      if (keep) out.push(g);
     });
+    return out;
   }, [games, currentTime, isPastDate]);
+
+  console.log("MLB schedule date state", { date, isPastDate, displayDate });
+  console.log("raw MLB games", games);
 
   const noGamesInitiallyScheduled = games.length === 0;
   const allGamesFilteredOut = games.length > 0 && filteredGames.length === 0;
+
+  console.log("filtered vs raw", {
+    rawCount: games.length,
+    filteredCount: filteredGames.length,
+  });
 
   return (
     <div className="pt-4">

@@ -5,6 +5,7 @@ import { useDate } from "@/contexts/date_context";
 import { useNBASchedule } from "@/api/use_nba_schedule";
 import { useInjuries, type Injury } from "@/api/use_injuries";
 import { useNetworkStatus } from "@/hooks/use_network_status";
+import type { UnifiedGame } from "@/types";
 
 import SkeletonBox from "@/components/ui/skeleton_box";
 
@@ -111,7 +112,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
     if (isPastDate) return games;
 
     const bufferMs = 3.5 * 60 * 60 * 1000;
-    return games.filter(({ gameTimeUTC }) => {
+    return games.filter(({ gameTimeUTC }: UnifiedGame) => {
       const ms = new Date(gameTimeUTC ?? "").getTime();
       return Number.isNaN(ms) ? true : now < ms + bufferMs;
     });

@@ -1,4 +1,5 @@
 // frontend/src/components/games/game_card.tsx
+// frontend/src/components/games/game_card.tsx
 import React, {
   useState,
   useEffect,
@@ -35,6 +36,8 @@ const needsStatusSuffix = (statusState?: string | null): boolean =>
   statusState != null &&
   !["final", "sched", "pre"].some((s) => statusState.toLowerCase().includes(s));
 
+const TOOLTIP_SESSION_KEY = "sg_viewDetailsTooltipSeen";
+
 const useIsDesktop = (bp = 1024): boolean => {
   const [isDesk, setIsDesk] = useState<boolean>(
     typeof window === "undefined" ? true : window.innerWidth >= bp
@@ -59,6 +62,7 @@ const InjuryModal = lazy(() => import("./injury_modal"));
 interface GameCardProps {
   game: UnifiedGame;
   forceCompact?: boolean;
+  isFirst?: boolean;
 }
 
 const isSameLocalDay = (a: Date, b: Date) =>
@@ -66,20 +70,17 @@ const isSameLocalDay = (a: Date, b: Date) =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
+const GameCardComponent: React.FC<GameCardProps> = ({
+  game,
+  forceCompact,
+  isFirst = false,
+}) => {
   const { sport: contextSport } = useSport();
   const isDesktop = useIsDesktop();
   const compactDefault = forceCompact ?? !isDesktop;
   const lastClickRef = useRef<number>(0);
   const arrowRef = useRef<HTMLSpanElement | null>(null);
   const [hoverTooltip, setHoverTooltip] = useState(false);
-
-  const { currentStepIndex, run: isTourRunning } = useTour();
-
-  const [expanded, setExpanded] = useState(!compactDefault);
-  const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
-  const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
-  const [injuryModalOpen, setInjuryModalOpen] = useState<boolean>(false);
 
   // determine if this game is for "today" in user's local timezone based on its UTC time
   const isTodayGame = useMemo(() => {
@@ -89,88 +90,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     const now = new Date();
     return isSameLocalDay(now, gameDate);
   }, [game.gameTimeUTC, game.game_date]);
-
-  /* ------------------------------------------------------------------ */
-  /* 🔔 “View details” tooltip — exactly once per browser-tab session    */
-  /* ------------------------------------------------------------------ */
-  const TOOLTIP_SESSION_KEY = "sg_viewDetailsTooltipSeen";
-
-  /**
-   * Show only when:
-   *   • the card is in compact (collapsed) mode
-   *   • the tooltip hasn’t appeared yet this session
-   */
-  const [showTooltip, setShowTooltip] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return (
-      compactDefault &&
-      !expanded &&
-      !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
-    );
-  });
-
-  const markSeen = () => sessionStorage.setItem(TOOLTIP_SESSION_KEY, "1");
-
-  const dismissTooltip = useCallback(() => {
-    if (!showTooltip) return;
-    setShowTooltip(false);
-    markSeen();
-  }, [showTooltip]);
-
-  const isTooltipEligible = useMemo(() => {
-    return (
-      isTodayGame &&
-      compactDefault &&
-      !expanded &&
-      !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
-    );
-  }, [isTodayGame, compactDefault, expanded]);
-
-  useEffect(() => {
-    if (isTooltipEligible) {
-      setShowTooltip(true);
-    } else {
-      setShowTooltip(false);
-    }
-  }, [isTooltipEligible]);
-
-  useEffect(() => {
-    if (showTooltip && isTooltipEligible) {
-      triggerTouchGlow(arrowRef.current);
-      markSeen();
-    }
-  }, [showTooltip, isTooltipEligible]);
-
-  const toggleExpandedImmediate = useCallback(() => {
-    setExpanded((prev) => !prev);
-  }, []);
-  const toggleExpanded = useCallback(() => {
-    setExpanded((prev) => !prev);
-    dismissTooltip();
-  }, [dismissTooltip]);
-
-  const handleArrowInteraction = useCallback(
-    (e: React.MouseEvent | React.KeyboardEvent) => {
-      e.stopPropagation();
-      triggerTouchGlow(arrowRef.current);
-      lastClickRef.current = Date.now();
-      setExpanded((prev) => !prev); // immediate flip
-      dismissTooltip();
-    },
-    [dismissTooltip]
-  );
-
-  const H2HButton = () => (
-    <SnapshotButton
-      data-action
-      data-tour="snapshot-button"
-      label="H2H Stats"
-      onClick={(e) => {
-        e.stopPropagation();
-        setSnapshotOpen(true);
-      }}
-    />
-  );
 
   const {
     id: gameId,
@@ -194,6 +113,156 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     homePitcher,
     homePitcherHand,
   } = game;
+
+  // cutoff after game is over: 3.5 hours after scheduled time
+  // cutoff after game is over: 3.5 hours after scheduled time
+  const GAME_STALE_MS = 3.5 * 60 * 60 * 1000; // 3.5h
+
+  // parse the game start time
+  const gameStartDate = useMemo(() => {
+    const dateSrc = game.gameTimeUTC ?? game.game_date;
+    return dateSrc ? new Date(dateSrc) : null;
+  }, [game.gameTimeUTC, game.game_date]);
+
+  const now = Date.now();
+
+  const isInProgress =
+    gameStartDate !== null &&
+    now >= gameStartDate.getTime() &&
+    now < gameStartDate.getTime() + GAME_STALE_MS;
+
+  const isStale =
+    gameStartDate !== null &&
+    isTodayGame &&
+    now >= gameStartDate.getTime() + GAME_STALE_MS;
+
+  const isFinal = (() => {
+    const status = (statusState ?? "").toLowerCase();
+    if (
+      ["final", "ended", "ft", "post-game", "postgame", "completed"].some((s) =>
+        status.includes(s)
+      )
+    ) {
+      return true;
+    }
+    if (away_final_score != null && home_final_score != null) {
+      return true;
+    }
+    return false;
+  })();
+
+  const [expanded, setExpanded] = useState(!compactDefault);
+
+  const { showTooltip, setShowTooltip, dismissTooltip } = useViewDetailsTooltip(
+    {
+      isFirst,
+      isTodayGame,
+      compactDefault,
+      expanded,
+    }
+  );
+
+  const { currentStepIndex, run: isTourRunning } = useTour();
+
+  const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
+  const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
+  const [injuryModalOpen, setInjuryModalOpen] = useState<boolean>(false);
+
+  /* ------------------------------------------------------------------ */
+  /* 🔔 “View details” tooltip — exactly once per browser-tab session    */
+  /* ------------------------------------------------------------------ */
+  function useViewDetailsTooltip({
+    isFirst,
+    isTodayGame,
+    compactDefault,
+    expanded,
+  }: {
+    isFirst: boolean;
+    isTodayGame: boolean;
+    compactDefault: boolean;
+    expanded: boolean;
+  }) {
+    const isTooltipEligible = useMemo(() => {
+      return (
+        !!isFirst &&
+        isTodayGame &&
+        compactDefault &&
+        !expanded &&
+        !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
+      );
+    }, [isFirst, isTodayGame, compactDefault, expanded]);
+
+    const [showTooltip, setShowTooltip] = useState(() => {
+      if (typeof window === "undefined") return false;
+      return isTooltipEligible;
+    });
+
+    const markSeen = useCallback(() => {
+      sessionStorage.setItem(TOOLTIP_SESSION_KEY, "1");
+    }, []);
+
+    const dismissTooltip = useCallback(() => {
+      if (!showTooltip) return;
+      setShowTooltip(false);
+      markSeen();
+    }, [showTooltip, markSeen]);
+
+    // Sync showTooltip to eligibility; if eligibility goes away hide it.
+    useEffect(() => {
+      if (isTooltipEligible) {
+        setShowTooltip(true);
+      } else {
+        setShowTooltip(false);
+      }
+    }, [isTooltipEligible]);
+
+    // Persist the fact we showed it (only when it's visible and eligible)
+    useEffect(() => {
+      if (showTooltip && isTooltipEligible) {
+        markSeen();
+      }
+    }, [showTooltip, isTooltipEligible, markSeen]);
+
+    return {
+      showTooltip,
+      setShowTooltip,
+      dismissTooltip,
+      isTooltipEligible,
+    };
+  }
+
+  const toggleExpandedImmediate = useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
+
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => !prev);
+    dismissTooltip();
+  }, [dismissTooltip]);
+
+  const handleArrowInteraction = useCallback(
+    (e: React.MouseEvent | React.KeyboardEvent) => {
+      e.stopPropagation();
+      triggerTouchGlow(arrowRef.current);
+      lastClickRef.current = Date.now();
+      setExpanded((prev) => !prev);
+      // dismiss after state change intent, not coupled to it
+      dismissTooltip();
+    },
+    [dismissTooltip]
+  );
+
+  const H2HButton = () => (
+    <SnapshotButton
+      data-action
+      data-tour="snapshot-button"
+      label="H2H Stats"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSnapshotOpen(true);
+      }}
+    />
+  );
 
   // debug: track when tooltip state becomes true
   useEffect(() => {
@@ -250,11 +319,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
     const suffix = needsStatusSuffix(statusState) ? ` (${statusState!})` : "";
     return `${t}${suffix}`;
   }, [gameTimeUTC, game_date, statusState]);
-
-  const isFinal =
-    dataType === "historical" &&
-    away_final_score != null &&
-    home_final_score != null;
 
   // 👇 **MODIFIED LOGIC**
   // This logic now correctly handles the different prediction fields
@@ -326,19 +390,33 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
             : undefined
         }
       >
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-sm sm:text-base leading-tight break-words">
-            {awayTeamName}
-          </p>
-          <p className="font-semibold text-sm sm:text-base leading-tight break-words">
-            {homeTeamName}
-          </p>
-          <p className="text-xs text-text-secondary mt-1">{timeLine}</p>
+        <div className="min-w-0 flex-1 flex flex-col">
+          <div>
+            <p className="font-semibold text-sm sm:text-base leading-tight break-words">
+              {awayTeamName}
+            </p>
+            <p className="font-semibold text-sm sm:text-base leading-tight break-words">
+              {homeTeamName}
+            </p>
+            <p className="text-xs text-text-secondary mt-1">{timeLine}</p>
+          </div>
+
+          {/* Injuries: always for NFL; for NBA only when compact, collapsed, non-final; never for MLB */}
+          {(sport === "NFL" ||
+            (sport === "NBA" && compactDefault && !expanded && !isStale)) && (
+            <div className="mt-2">
+              <InjuriesChipButton
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInjuryModalOpen(true);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* We conditionally render a different layout for the right side based on the sport */}
         {sport === "NFL" ? (
-          // --- This is the new layout for NFL cards ---
           <div className="flex flex-col items-end gap-2 shrink-0">
             <H2HButton />
             <WeatherBadge
@@ -366,6 +444,10 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
                   final
                 </span>
               </div>
+            ) : isInProgress ? (
+              <span className="text-xs font-medium text-text-secondary tracking-wide">
+                in&nbsp;progress
+              </span>
             ) : hasPrediction ? (
               <PredBadge away={predAway as number} home={predHome as number} />
             ) : (
@@ -494,22 +576,11 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
             </div>
           );
         })()}
-      {/* Injuries chip: always show for NFL; for others only when compact/collapsed/non-final */}
-      {sport === "NFL" ? (
-        <div className="absolute bottom-2 left-0 w-full px-4 flex justify-start pointer-events-none">
-          <div className="pointer-events-auto">
-            <InjuriesChipButton
-              onClick={(e) => {
-                e.stopPropagation();
-                setInjuryModalOpen(true);
-              }}
-            />
-          </div>
-        </div>
-      ) : (
+      {/* Injuries chip overlay for non-NFL cards (compact, collapsed, non-final, non-MLB) */}
+      {sport !== "NFL" &&
         compactDefault &&
         !expanded &&
-        !isFinal &&
+        !isStale &&
         sport !== "MLB" && (
           <div className="absolute bottom-2 left-0 w-full px-4 flex justify-start pointer-events-none">
             <div className="pointer-events-auto">
@@ -521,8 +592,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({ game, forceCompact }) => {
               />
             </div>
           </div>
-        )
-      )}
+        )}
 
       <Suspense fallback={null}>
         <SnapshotModal
