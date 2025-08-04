@@ -17,11 +17,6 @@ const formatOdd = (odd?: string | number | null): string => {
   return String(num);
 };
 
-const formatTotal = (total?: number | null): string => {
-  if (total === null || total === undefined) return "N/A";
-  return String(total);
-};
-
 const OddsDisplay: React.FC<OddsDisplayProps> = ({
   sport,
   moneylineHome,
@@ -41,7 +36,7 @@ const OddsDisplay: React.FC<OddsDisplayProps> = ({
         </>
       )}
       <span className="mx-1 select-none">|</span>
-      <span className="whitespace-nowrap">O/U: {formatTotal(totalLine)}</span>
+      <span className="whitespace-nowrap">O/U: {formatOdd(totalLine)}</span>
     </div>
   );
 };
