@@ -559,7 +559,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                           whiteSpace: "nowrap",
                           pointerEvents: "none",
                         }}
-                        className="absolute z-50 -top-9 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)] transition-opacity"
+                        className="absolute z-50 -top-[2.375rem] whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)] transition-opacity"
                       >
                         View&nbsp;details
                       </span>
