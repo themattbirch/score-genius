@@ -1,4 +1,5 @@
-import React, { memo } from "react";
+// frontend/src/screens/game_screen.tsx
+import React, { memo, useMemo } from "react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
@@ -11,58 +12,68 @@ import { Calendar } from "@/components/ui/calendar";
 import GameCard from "@/components/games/game_card";
 import { useMLBSchedule } from "@/api/use_mlb_schedule";
 import { useNBASchedule } from "@/api/use_nba_schedule";
-// 🏈 1. Import the new NFL hook and display component
 import { useNFLSchedule } from "@/api/use_nfl_schedule";
 import NBAScheduleDisplay from "@/components/schedule/nba_schedule_display";
 import MLBScheduleDisplay from "@/components/schedule/mlb_schedule_display";
 import NFLScheduleDisplay from "@/components/schedule/nfl_schedule_display";
 import SkeletonBox from "@/components/ui/skeleton_box";
 import { getLocalYYYYMMDD } from "@/utils/date";
+import { isGameStale } from "@/game";
 
+/* ------------------------------------------------------------ */
+/* Hook selector                                                */
+/* ------------------------------------------------------------ */
 const useGamesForSport = (sport: "NBA" | "MLB" | "NFL", apiDate: string) => {
-  // Only enable the hook that matches the currently selected sport
-  const nflQuery = useNFLSchedule(apiDate, { enabled: sport === "NFL" });
-  const mlbQuery = useMLBSchedule(apiDate, { enabled: sport === "MLB" });
-  const nbaQuery = useNBASchedule(apiDate, { enabled: sport === "NBA" });
+  const nfl = useNFLSchedule(apiDate, { enabled: sport === "NFL" });
+  const mlb = useMLBSchedule(apiDate, { enabled: sport === "MLB" });
+  const nba = useNBASchedule(apiDate, { enabled: sport === "NBA" });
 
   switch (sport) {
     case "NFL":
-      return nflQuery;
-    case "NBA":
-      return nbaQuery;
+      return nfl;
     case "MLB":
-      return mlbQuery;
+      return mlb;
+    case "NBA":
+      return nba;
     default:
-      // Should not happen
       return { data: [], isLoading: false, isError: true };
   }
 };
 
+/* ------------------------------------------------------------ */
+/* Screen component                                             */
+/* ------------------------------------------------------------ */
 const GamesScreen: React.FC = () => {
   const { sport } = useSport();
   const { date, setDate } = useDate();
 
   const apiDate = getLocalYYYYMMDD(date);
-  // 🏈 2. Use a dynamic hook selector for cleaner data fetching
   const {
     data: games = [],
     isLoading,
     isError,
   } = useGamesForSport(sport, apiDate);
 
+  const visibleGames = useMemo(
+    () => games.filter((g) => !isGameStale(g)),
+    [games]
+  );
+
   const formattedDate = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });
 
-  // 👇 ADD THIS CONSOLE LOG
-  console.log("GAMES SCREEN STATE:", {
-    sport,
-    isLoading,
-    isError,
-    "games object": games,
-    "games.length": games?.length,
-  });
+  /* dev inspect */
+  if (import.meta.env.DEV) {
+    console.log("GAMES SCREEN STATE:", {
+      sport,
+      isLoading,
+      isError,
+      rawCount: games.length,
+      visibleCount: visibleGames.length,
+    });
+  }
 
   /* -------------------------------------------------- render */
   return (
@@ -74,10 +85,7 @@ const GamesScreen: React.FC = () => {
         </h1>
         <Popover>
           <PopoverTrigger asChild>
-            <button
-              data-tour="date-picker"
-              className="pill border text-sm gap-1 bg-surface hover:bg-surface-hover border-border-subtle focus-ring"
-            >
+            <button className="pill border text-sm gap-1 bg-surface hover:bg-surface-hover border-border-subtle focus-ring">
               <CalendarIcon size={16} strokeWidth={1.8} />
               {formattedDate}
             </button>
@@ -106,24 +114,29 @@ const GamesScreen: React.FC = () => {
         )}
 
         {isLoading ? (
-          /* skeleton list */
+          /* skeleton list while fetching */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
               <SkeletonBox key={i} className="app-card h-32 w-full" />
             ))}
           </div>
         ) : games.length === 0 ? (
-          // 🏈 3. Add the NFL fallback component
+          /* API returned nothing → fall back to legacy schedule displays */
           <>
-            {sport === "NBA" && <NBAScheduleDisplay key="nba-fallback" />}
-            {sport === "MLB" && <MLBScheduleDisplay key="mlb-fallback" />}
-            {sport === "NFL" && <NFLScheduleDisplay key="nfl-fallback" />}
+            {sport === "NBA" && <NBAScheduleDisplay />}
+            {sport === "MLB" && <MLBScheduleDisplay />}
+            {sport === "NFL" && <NFLScheduleDisplay />}
           </>
+        ) : visibleGames.length === 0 ? (
+          /* All games have concluded / stale-filtered out */
+          <p className="text-left text-text-secondary">
+            All {sport} games for {formattedDate} have concluded.
+          </p>
         ) : (
-          /* responsive grid of cards */
+          /* responsive grid of active cards */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {games.map((g) => (
-              <GameCard key={g.id} game={g} />
+            {visibleGames.map((g, idx) => (
+              <GameCard key={g.id} game={g} isFirst={idx === 0} />
             ))}
           </div>
         )}
