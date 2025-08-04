@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useCallback,
   useRef,
+  useLayoutEffect,
   lazy,
   Suspense,
   memo,
@@ -79,6 +80,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
   const isDesktop = useIsDesktop();
   const compactDefault = forceCompact ?? !isDesktop;
   const lastClickRef = useRef<number>(0);
+  const tooltipRef = useRef<HTMLSpanElement | null>(null);
   const arrowRef = useRef<HTMLSpanElement | null>(null);
   const [hoverTooltip, setHoverTooltip] = useState(false);
 
@@ -168,6 +170,40 @@ const GameCardComponent: React.FC<GameCardProps> = ({
   const [snapshotOpen, setSnapshotOpen] = useState<boolean>(false);
   const [weatherOpen, setWeatherOpen] = useState<boolean>(false);
   const [injuryModalOpen, setInjuryModalOpen] = useState<boolean>(false);
+
+  useLayoutEffect(() => {
+    if (!tooltipRef.current || !arrowRef.current) return;
+    if (!(showTooltip || hoverTooltip)) return;
+    if (isInProgress) return;
+
+    const tooltipEl = tooltipRef.current;
+    const arrowEl = arrowRef.current;
+
+    // Measure
+    const arrowRect = arrowEl.getBoundingClientRect();
+    const tooltipRect = tooltipEl.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+
+    // Desired left (centered over arrow) in viewport coords
+    const absoluteLeft =
+      arrowRect.left + arrowRect.width / 2 - tooltipRect.width / 2;
+
+    // Clamp so it doesn't overflow
+    const min = 4; // padding from left edge
+    const max = viewportWidth - tooltipRect.width - 4; // padding from right
+    const clampedLeft = Math.min(Math.max(absoluteLeft, min), max);
+
+    // Compute left relative to offsetParent (since tooltip is absolutely positioned inside)
+    const offsetParent = tooltipEl.offsetParent as HTMLElement | null;
+    const parentLeft = offsetParent
+      ? offsetParent.getBoundingClientRect().left
+      : 0;
+    const relativeLeft = clampedLeft - parentLeft;
+
+    // Apply positioning: explicit left, and clear any centering transform
+    tooltipEl.style.left = `${relativeLeft}px`;
+    tooltipEl.style.transform = ""; // remove translateX(-50%) if previously set
+  }, [showTooltip, hoverTooltip, isInProgress]);
 
   /* ------------------------------------------------------------------ */
   /* 🔔 “View details” tooltip — exactly once per browser-tab session    */
@@ -438,7 +474,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
           </div>
         ) : (
           // --- This is the original layout for MLB/NBA cards ---
-          <div className="flex flex-col items-end text-right gap-1">
+          <div className="flex flex-col items-end text-right gap-1 pr-8">
             {isFinal ? (
               <div className="flex flex-col items-center w-full">
                 <p className="font-semibold text-lg leading-tight text-center">
@@ -455,7 +491,9 @@ const GameCardComponent: React.FC<GameCardProps> = ({
             ) : hasPrediction ? (
               <PredBadge away={predAway as number} home={predHome as number} />
             ) : (
-              <span className="text-sm text-text-secondary">—</span>
+              <span className="text-sm text-text-secondary w-full text-center">
+                —
+              </span>
             )}
 
             {compactDefault && isTodayGame && (
@@ -509,10 +547,19 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                     isTodayGame &&
                     !isInProgress && (
                       <span
+                        ref={tooltipRef}
                         id="gamecard-tooltip"
                         role="tooltip"
-                        className={`absolute z-50 -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)]
-                      ${!showTooltip ? "opacity-80" : ""}`}
+                        style={{
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          maxWidth: "160px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          pointerEvents: "none",
+                        }}
+                        className="absolute z-50 -top-9 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)] transition-opacity"
                       >
                         View&nbsp;details
                       </span>
@@ -520,7 +567,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                 </div>
               </div>
             )}
-          </div> /* <-- closes MLB/NBA right-side wrapper */
+          </div>
         )}
       </header>
 

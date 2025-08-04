@@ -278,6 +278,14 @@ body {
   );
 }
 
+.tooltip-edge-clamp {
+  inset-inline-start: clamp(
+    0.5rem,
+    50% - var(--tw-tooltip-half),
+    calc(100vw - var(--tw-tooltip-w) - 0.5rem)
+  );
+}
+
 /* Pill badge (status chips, sport selector) */
 .pill {
   @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold;
