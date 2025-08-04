@@ -455,7 +455,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
           )}
 
           {/* Odds Display: Show for ANY non-final game in compact view */}
-          {!isFinal && compactDefault && (
+          {!isFinal && (
             <OddsDisplay
               sport={sport}
               moneylineHome={game.moneylineHome}
