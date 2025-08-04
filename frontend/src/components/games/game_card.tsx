@@ -13,6 +13,7 @@ import React, {
 import { UnifiedGame, Sport } from "@/types";
 import { useSport } from "@/contexts/sport_context";
 import { useTour } from "@/contexts/tour_context";
+import OddsDisplay from "./odds_display";
 
 import { useWeather } from "@/hooks/use_weather";
 import WeatherBadge from "./weather_badge";
@@ -440,7 +441,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
             <p className="text-xs text-text-secondary mt-1">{timeLine}</p>
           </div>
 
-          {/* Injuries: always for NFL; for NBA only when compact, collapsed, non-final; never for MLB */}
+          {/* Injuries button logic... */}
           {(sport === "NFL" ||
             (sport === "NBA" && compactDefault && !expanded && !isStale)) && (
             <div className="mt-2">
@@ -451,6 +452,17 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                 }}
               />
             </div>
+          )}
+
+          {/* Odds Display: Show for ANY non-final game in compact view */}
+          {!isFinal && compactDefault && (
+            <OddsDisplay
+              sport={sport}
+              moneylineHome={game.moneylineHome}
+              moneylineAway={game.moneylineAway}
+              spreadLine={game.spreadLine}
+              totalLine={game.totalLine}
+            />
           )}
         </div>
 
@@ -637,7 +649,8 @@ const GameCardComponent: React.FC<GameCardProps> = ({
       {sport !== "NFL" &&
         compactDefault &&
         !expanded &&
-        !isStale &&
+        isTodayGame &&
+        !isFinal &&
         sport !== "MLB" && (
           <div className="absolute bottom-2 left-0 w-full px-4 flex justify-start pointer-events-none">
             <div className="pointer-events-auto">
