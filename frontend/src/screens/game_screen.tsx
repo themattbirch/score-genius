@@ -59,6 +59,25 @@ const GamesScreen: React.FC = () => {
     [games]
   );
 
+  // --- pick out the first game that hasn't started and isn't final ---
+  const firstUpcomingGameId = useMemo(() => {
+    const GAME_STALE_MS = 3.5 * 60 * 60 * 1000;
+    const now = Date.now();
+    return visibleGames.find((g) => {
+      const src = g.gameTimeUTC ?? g.game_date;
+      if (!src) return false;
+      const start = new Date(src).getTime();
+      const inProgress = now >= start && now < start + GAME_STALE_MS;
+      const status = (g.statusState ?? "").toLowerCase();
+      const isFinal =
+        ["final", "ended", "ft", "post-game", "postgame", "completed"].some(
+          (s) => status.includes(s)
+        ) ||
+        (g.away_final_score != null && g.home_final_score != null);
+      return !inProgress && !isFinal;
+    })?.id;
+  }, [visibleGames]);
+
   const formattedDate = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -135,8 +154,12 @@ const GamesScreen: React.FC = () => {
         ) : (
           /* responsive grid of active cards */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {visibleGames.map((g, idx) => (
-              <GameCard key={g.id} game={g} isFirst={idx === 0} />
+            {visibleGames.map((g) => (
+              <GameCard
+                key={g.id}
+                game={g}
+                isFirst={g.id === firstUpcomingGameId}
+              />
             ))}
           </div>
         )}
