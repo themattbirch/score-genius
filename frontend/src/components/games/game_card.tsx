@@ -1,5 +1,4 @@
 // frontend/src/components/games/game_card.tsx
-// frontend/src/components/games/game_card.tsx
 import React, {
   useState,
   useEffect,
@@ -474,7 +473,12 @@ const GameCardComponent: React.FC<GameCardProps> = ({
           </div>
         ) : (
           // --- This is the original layout for MLB/NBA cards ---
-          <div className="flex flex-col items-end text-right gap-1 pr-8">
+          <div
+            className={`flex flex-col items-end text-right gap-1 ${
+              !isFinal && !hasPrediction ? "pr-8" : ""
+            }`}
+          >
+            {" "}
             {isFinal ? (
               <div className="flex flex-col items-center w-full">
                 <p className="font-semibold text-lg leading-tight text-center">
@@ -495,7 +499,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                 —
               </span>
             )}
-
             {compactDefault && isTodayGame && (
               <div className="mt-2 flex w-full justify-center">
                 <div className="relative">
