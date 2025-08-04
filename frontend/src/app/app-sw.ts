@@ -25,11 +25,7 @@ const IMG_CACHE = "img-cache-v1";
 // -----------------------------------------------------------------------------
 // Pre-cache core assets (shell + offline fallback) and clean old caches
 // -----------------------------------------------------------------------------
-precacheAndRoute([
-  ...self.__WB_MANIFEST,
-  { url: "/index.html", revision: null }, // ensure shell is cached
-  { url: OFFLINE_URL, revision: null },
-]);
+precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
 cleanupOutdatedCaches();
 
 // -----------------------------------------------------------------------------
@@ -56,9 +52,7 @@ registerRoute(
     plugins: [
       {
         // If both network & cache miss, still return something useful
-        handlerDidError: async () =>
-          (await matchPrecache("/index.html")) ??
-          (await matchPrecache(OFFLINE_URL)),
+        handlerDidError: async () => await matchPrecache(OFFLINE_URL),
       },
     ],
   })
