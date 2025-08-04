@@ -115,7 +115,7 @@ const GamesScreen: React.FC = () => {
 
         {isLoading ? (
           /* skeleton list while fetching */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
               <SkeletonBox key={i} className="app-card h-32 w-full" />
             ))}
@@ -134,7 +134,7 @@ const GamesScreen: React.FC = () => {
           </p>
         ) : (
           /* responsive grid of active cards */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
             {visibleGames.map((g, idx) => (
               <GameCard key={g.id} game={g} isFirst={idx === 0} />
             ))}

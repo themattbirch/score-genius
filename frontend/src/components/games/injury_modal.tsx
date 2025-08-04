@@ -60,17 +60,17 @@ const InjuryModal: React.FC<InjuryModalProps> = ({
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-40 flex items-start lg:items-center justify-center
-                 pt-12 lg:pt-0 px-4 overflow-auto bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-start justify-center
+                 pt-12 px-4 overflow-auto bg-black/60 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="injury-modal-title"
       onClick={onClose}
     >
       <div
-        className="relative z-50 w-full max-w-lg rounded-2xl border border-border bg-panel
+        className="z-50 w-full max-w-lg rounded-2xl border border-border bg-panel
                    shadow-lg ring-1 ring-white/10 flex flex-col
-                   min-h-[60vh] max-h-[80vh] overflow-hidden"
+                   min-h-[50vh] lg:min-h-[60vh] max-h-[90vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
