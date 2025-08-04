@@ -159,6 +159,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
       isTodayGame,
       compactDefault,
       expanded,
+      isInProgress,
     }
   );
 
@@ -176,11 +177,13 @@ const GameCardComponent: React.FC<GameCardProps> = ({
     isTodayGame,
     compactDefault,
     expanded,
+    isInProgress,
   }: {
     isFirst: boolean;
     isTodayGame: boolean;
     compactDefault: boolean;
     expanded: boolean;
+    isInProgress: boolean;
   }) {
     const isTooltipEligible = useMemo(() => {
       return (
@@ -188,6 +191,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
         isTodayGame &&
         compactDefault &&
         !expanded &&
+        !isInProgress &&
         !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
       );
     }, [isFirst, isTodayGame, compactDefault, expanded]);
@@ -472,7 +476,8 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                         !showTooltip &&
                         isTodayGame &&
                         compactDefault &&
-                        !expanded
+                        !expanded &&
+                        !isInProgress
                       ) {
                         setHoverTooltip(true);
                       }
@@ -500,16 +505,18 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                   >
                     ▾
                   </span>
-                  {(showTooltip || hoverTooltip) && isTodayGame && (
-                    <span
-                      id="gamecard-tooltip"
-                      role="tooltip"
-                      className={`absolute z-50 -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)]
+                  {(showTooltip || hoverTooltip) &&
+                    isTodayGame &&
+                    !isInProgress && (
+                      <span
+                        id="gamecard-tooltip"
+                        role="tooltip"
+                        className={`absolute z-50 -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)]
                       ${!showTooltip ? "opacity-80" : ""}`}
-                    >
-                      View&nbsp;details
-                    </span>
-                  )}
+                      >
+                        View&nbsp;details
+                      </span>
+                    )}
                 </div>
               </div>
             )}
