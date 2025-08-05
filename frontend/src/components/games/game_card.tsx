@@ -590,64 +590,50 @@ const GameCardComponent: React.FC<GameCardProps> = ({
       </header>
 
       {/* Expanded Content */}
-      {sport !== "NFL" &&
-        expanded &&
-        (() => {
-          const hasPitchers =
-            sport === "MLB" &&
-            ((awayPitcher && awayPitcher.trim() !== "") ||
-              (homePitcher && homePitcher.trim() !== ""));
-
-          return (
-            <div
-              className={`mt-4 flex items-center gap-2 ${
-                hasPitchers ? "justify-between" : "justify-start"
-              }`}
-            >
-              {/* Pitchers — render only when at least one name exists */}
-              {hasPitchers && (
-                <div className="flex flex-col justify-center text-xs text-text-secondary leading-tight">
-                  {awayPitcher && (
-                    <p>
-                      {awayPitcher} {awayPitcherHand && `(${awayPitcherHand})`}
-                    </p>
-                  )}
-                  {homePitcher && (
-                    <p>
-                      {homePitcher} {homePitcherHand && `(${homePitcherHand})`}
-                    </p>
-                  )}
-                </div>
+      {sport !== "NFL" && expanded && (
+        <div className="mt-4 flex items-center gap-2 justify-between">
+          {/* Pitchers — only if present */}
+          {sport === "MLB" && (awayPitcher?.trim() || homePitcher?.trim()) && (
+            <div className="flex flex-col justify-center text-xs text-text-secondary leading-tight">
+              {awayPitcher && (
+                <p>
+                  {awayPitcher} {awayPitcherHand && `(${awayPitcherHand})`}
+                </p>
               )}
-
-              {/* Action Chips */}
-              <div className="flex flex-col gap-2">
-                <SnapshotButton
-                  data-action
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSnapshotOpen(true);
-                  }}
-                />
-                {showWeatherUI && (
-                  <WeatherBadge
-                    data-action
-                    data-tour="weather-badge"
-                    // The following props were made conditional for NBA
-                    isIndoor={isEffectivelyIndoor}
-                    isLoading={!isNBA && isWeatherLoading}
-                    isError={!isNBA && isWeatherError}
-                    data={weatherData}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setWeatherOpen(true);
-                    }}
-                  />
-                )}
-              </div>
+              {homePitcher && (
+                <p>
+                  {homePitcher} {homePitcherHand && `(${homePitcherHand})`}
+                </p>
+              )}
             </div>
-          );
-        })()}
+          )}
+          {/* Action Chips always on the right */}
+          <div className="flex flex-col gap-2">
+            <SnapshotButton
+              data-action
+              onClick={(e) => {
+                e.stopPropagation();
+                setSnapshotOpen(true);
+              }}
+            />
+            {showWeatherUI && (
+              <WeatherBadge
+                data-action
+                data-tour="weather-badge"
+                isIndoor={isEffectivelyIndoor}
+                isLoading={!isNBA && isWeatherLoading}
+                isError={!isNBA && isWeatherError}
+                data={weatherData}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setWeatherOpen(true);
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Injuries chip overlay for non-NFL cards (compact, collapsed, non-final, non-MLB) */}
       {sport !== "NFL" &&
         compactDefault &&
@@ -679,9 +665,9 @@ const GameCardComponent: React.FC<GameCardProps> = ({
           isOpen={weatherOpen}
           onClose={() => setWeatherOpen(false)}
           weatherData={weatherData}
-          // And use the new variable here as well
           isIndoor={isEffectivelyIndoor}
         />
+
         <InjuryModal
           isOpen={injuryModalOpen}
           onClose={() => setInjuryModalOpen(false)}
