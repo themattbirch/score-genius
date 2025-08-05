@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-from typing import Any, Optional, List, Dict, Sequence # Added Sequence
+from typing import Any, Optional, List, Dict, Sequence
 import pandas as pd
 import numpy as np
 
@@ -99,22 +99,26 @@ def _fetch_team_stats(db: Client) -> pd.DataFrame:
 def _fetch_game_stats(db: Client) -> pd.DataFrame:
     return _fetch_table_from_supabase(db, "nba_historical_game_stats")
 
-def _fetch_adv_splits_for_season(db: Client, season_year: int) -> pd.DataFrame:
-    """Fetches advanced splits for a single specified season."""
-    return _fetch_table_from_supabase(
-        db,
-        "nba_team_seasonal_advanced_splits",
-        filter_params={"season": season_year} # Assumes 'season' column in Supabase table is the start year
-    )
+# -- REMOVED -- This function is no longer needed as the data is passed in.
+# def _fetch_adv_splits_for_season(db: Client, season_year: int) -> pd.DataFrame:
+#     """Fetches advanced splits for a single specified season."""
+#     return _fetch_table_from_supabase(
+#         db,
+#         "nba_team_seasonal_advanced_splits",
+#         filter_params={"season": season_year}
+#     )
 
 def run_feature_pipeline(
     df: pd.DataFrame,
     *,
+    # -- MODIFIED -- Added new arguments to accept pre-fetched DataFrames
+    seasonal_splits_data: Optional[pd.DataFrame] = None,
+    rolling_features_data: Optional[pd.DataFrame] = None,
     db_conn: Optional[Client] = None,
     execution_order: Optional[List[str]] = None,
     h2h_lookback: int = 7,
     rolling_windows: Optional[List[int]] = None,
-    adv_splits_lookup_offset: int = -1, # Default to -1 for prior season
+    adv_splits_lookup_offset: int = -1,
     flag_imputations_all: bool = True,
     debug: bool = False,
 ) -> pd.DataFrame:
@@ -153,6 +157,7 @@ def run_feature_pipeline(
     if active_db_conn is None:
         logger.warning("No Supabase connection available. Data fetching for helper tables will be skipped.")
 
+    # These fetches remain as they are for modules not covered by our new RPCs
     _general_team_stats_df: Optional[pd.DataFrame] = None
     if active_db_conn and any(m in active_order for m in ['season', 'form']):
         _general_team_stats_df = _fetch_team_stats(active_db_conn)
@@ -161,11 +166,10 @@ def run_feature_pipeline(
     if active_db_conn and 'h2h' in active_order:
         _historical_games_df = _fetch_game_stats(active_db_conn)
 
-    # --- MODIFIED LOGIC FOR adv_splits DATA FETCHING ---
+    # -- MODIFIED -- Logic for adv_splits DATA uses the passed-in DataFrame
     _all_fetched_adv_splits_df: Optional[pd.DataFrame] = None
     if 'adv_splits' in active_order:
-        # Step 1: Determine the lookup season for each game (e.g., prior season).
-        # The advanced.py module needs this column on the main DataFrame to know which stats to find.
+        # Step 1: Determine the lookup season (this logic remains the same)
         if not processed_df['game_date'].dropna().empty:
             processed_df['game_nba_season_start_year'] = processed_df['game_date'].dropna().apply(
                 lambda date: int(determine_season(date).split('-')[0]) if pd.notna(date) else pd.NA
@@ -177,20 +181,14 @@ def run_feature_pipeline(
         else:
             logger.warning("Cannot determine 'adv_stats_lookup_season' because 'game_date' is empty or all NaT.")
 
-        # Step 2: Fetch the ENTIRE historical splits table without pre-filtering.
-        # Let advanced.py handle the normalization and merging.
-        if active_db_conn:
-            logger.info("Fetching all rows from 'nba_team_seasonal_advanced_splits'...")
-            _all_fetched_adv_splits_df = _fetch_table_from_supabase(
-                active_db_conn,
-                "nba_team_seasonal_advanced_splits"
-            )
-            if _all_fetched_adv_splits_df.empty:
-                 logger.warning("Fetched 'nba_team_seasonal_advanced_splits' but it was empty.")
+        # Step 2: Use the pre-fetched DataFrame instead of querying the database
+        if seasonal_splits_data is not None:
+            logger.info("Using pre-fetched seasonal splits DataFrame.")
+            _all_fetched_adv_splits_df = seasonal_splits_data
         else:
-            logger.warning("'adv_splits' module active, but no database connection. Will pass empty DataFrame.")
+            logger.warning("'adv_splits' module active, but no 'seasonal_splits_data' DataFrame was provided.")
             _all_fetched_adv_splits_df = pd.DataFrame()
-    # --- END OF MODIFIED LOGIC FOR adv_splits ---
+    # --- END OF MODIFIED LOGIC ---
 
     for module_name in active_order:
         transform_function = TRANSFORMS.get(module_name)
@@ -215,17 +213,16 @@ def run_feature_pipeline(
         elif module_name == 'form':
             current_module_kwargs.update({'team_stats_df': _general_team_stats_df})
         elif module_name == 'adv_splits':
-            # Pass the DataFrame containing all fetched prior seasons' stats.
-            # advanced.py will also need processed_df itself to access 'adv_stats_lookup_season' per game.
             current_module_kwargs.update({
                 'all_historical_splits_df': _all_fetched_adv_splits_df if _all_fetched_adv_splits_df is not None else pd.DataFrame(),
                 'flag_imputations': flag_imputations_all
-                # processed_df (which now includes 'adv_stats_lookup_season') is passed as the first arg to transform
             })
         elif module_name == 'rolling':
+            # -- MODIFIED -- Pass the pre-fetched rolling features DataFrame
             current_module_kwargs.update({
                 'window_sizes': effective_rolling_windows,
-                'flag_imputation': flag_imputations_all
+                'flag_imputation': flag_imputations_all,
+                'precomputed_rolling_features_df': rolling_features_data
             })
         
         try:
@@ -244,48 +241,32 @@ def run_feature_pipeline(
     logger.info(
         f"Feature pipeline completed in {time.time() - pipeline_start_time:.2f}s. Final DataFrame shape: {processed_df.shape}"
     )
-    # Clean up added columns if they are no longer needed and not meant to be output by the engine
+
     if 'game_nba_season_start_year' in processed_df.columns:
          processed_df.drop(columns=['game_nba_season_start_year'], inplace=True, errors='ignore')
-    # 'adv_stats_lookup_season' is used by advanced.py, which then drops its own helper columns.
-    # If 'adv_stats_lookup_season' is not needed downstream of advanced.py, it could also be dropped here
-    # or by advanced.py itself. For now, let advanced.py manage it if it uses it.
 
     final_cols = processed_df.columns
     cols_to_drop = [c for c in final_cols if c.endswith('_dup')]
     if cols_to_drop:
         logger.warning(f"Removing leftover duplicate columns from merge: {cols_to_drop}")
         processed_df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
-    # --- END CLEANUP BLOCK ---
 
-        # AGGREGATION STEP: If modules created multiple rows per game (e.g., from splits),
-    # aggregate them back down to a single, representative row.
     if not processed_df.empty and 'game_id' in processed_df.columns:
         num_rows = len(processed_df)
         num_unique_games = processed_df['game_id'].nunique()
         
         if num_rows > num_unique_games:
-            logger.info(
-                f"Aggregating {num_rows} feature rows back to {num_unique_games} unique game(s)..."
-            )
-            
-            # Define aggregations: mean for numbers, first for everything else
+            logger.info(f"Aggregating {num_rows} feature rows back to {num_unique_games} unique game(s)...")
             numeric_cols = processed_df.select_dtypes(include=np.number).columns
             agg_dict = {col: 'mean' for col in numeric_cols}
-            
             non_numeric_cols = processed_df.select_dtypes(exclude=np.number).columns
             for col in non_numeric_cols:
-                if col != 'game_id': # Don't aggregate the group key
+                if col != 'game_id':
                     agg_dict[col] = 'first'
-            
             processed_df = processed_df.groupby('game_id', as_index=False).agg(agg_dict)
-            
-            # Restore original column order as best as possible
             final_ordered_cols = [col for col in final_cols if col in processed_df.columns]
             processed_df = processed_df[final_ordered_cols]
-            
             logger.info(f"Aggregation complete. Final DataFrame shape: {processed_df.shape}")
-
 
     if debug:
         logger.setLevel(original_logger_level)

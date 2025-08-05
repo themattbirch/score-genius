@@ -205,6 +205,56 @@ def load_team_stats_data(supabase_client: Any) -> pd.DataFrame:
         logger.error(f"Error loading team stats: {e}", exc_info=True)
         return pd.DataFrame()
 
+def load_nba_seasonal_splits_data(supabase_client: Any, season: int) -> pd.DataFrame:
+    """Fetches all team seasonal splits for a given season using a bulk RPC."""
+    if not supabase_client:
+        return pd.DataFrame()
+    logger.info(f"Loading all seasonal splits for season {season} via RPC...")
+    try:
+        resp = supabase_client.rpc(
+            'rpc_get_nba_all_seasonal_splits',
+            {'p_season': season}
+        ).execute()
+        if not resp.data:
+            logger.warning(f"No seasonal splits data found for season {season}.")
+            return pd.DataFrame()
+        return pd.DataFrame(resp.data)
+    except Exception as e:
+        logger.error(f"Error loading seasonal splits via RPC: {e}", exc_info=True)
+        return pd.DataFrame()
+
+def load_nba_rolling_features_data(supabase_client: Any, upcoming_games_df: pd.DataFrame) -> pd.DataFrame:
+    """Fetches all rolling 20-game features for upcoming games using a bulk RPC."""
+    if not supabase_client or upcoming_games_df.empty:
+        return pd.DataFrame()
+    
+    logger.info("Preparing keys to fetch rolling features for upcoming games...")
+    
+    # Create the keys needed by the RPC: (game_id, team_id, game_date)
+    home_keys = upcoming_games_df[['game_id', 'home_team', 'game_date']].rename(columns={'home_team': 'team_id'})
+    away_keys = upcoming_games_df[['game_id', 'away_team', 'game_date']].rename(columns={'away_team': 'team_id'})
+    
+    keys_df = pd.concat([home_keys, away_keys], ignore_index=True)
+    keys_df['game_date'] = keys_df['game_date'].dt.strftime('%Y-%m-%d')
+    
+    # Format for the RPC: array of composite type strings
+    # Looks like: {"(game_id_val,team_id_val,game_date_val)","(...)"}
+    rpc_keys = [f"({row['game_id']},{row['team_id']},{row['game_date']})" for _, row in keys_df.iterrows()]
+    
+    logger.info(f"Loading rolling features for {len(upcoming_games_df)} games via RPC...")
+    try:
+        resp = supabase_client.rpc(
+            'rpc_get_nba_rolling_features_for_games',
+            {'p_keys': rpc_keys}
+        ).execute()
+        if not resp.data:
+            logger.warning("No rolling features data returned from RPC.")
+            return pd.DataFrame()
+        return pd.DataFrame(resp.data)
+    except Exception as e:
+        logger.error(f"Error loading rolling features via RPC: {e}", exc_info=True)
+        return pd.DataFrame()
+
 def fetch_upcoming_games_data(supabase_client: Any, days_window: int) -> pd.DataFrame:
     # Expand UTC cutoff to align with ET-midnight → UTC
     from zoneinfo import ZoneInfo
@@ -631,22 +681,33 @@ def generate_predictions(
         _restore()
         return [], []
 
+    # -- Determine current NBA season (e.g., 2024 for the 2024-25 season) --
+    now = datetime.now()
+    current_season = now.year if now.month >= 8 else now.year - 1
+    logger.info(f"Determined current NBA season to be: {current_season}")
+
+    # -- Fetch data from base tables (no change here) --
     hist_df       = load_recent_historical_data(supabase, historical_lookback)
-    team_stats_df = load_team_stats_data(supabase)
     upcoming_df   = fetch_upcoming_games_data(supabase, days_window)
+
+    # -- FETCH DATA USING NEW RPCS --
+    seasonal_splits_df = load_nba_seasonal_splits_data(supabase, current_season)
+    rolling_features_df = load_nba_rolling_features_data(supabase, upcoming_df)
+    
+    # Note: load_team_stats_data is no longer called as its data should
+    # be replaced by the more detailed seasonal_splits_df
 
     if upcoming_df.empty:
         logger.warning("No upcoming games; exiting.")
         _restore()
         return [], []
 
-    # If no history or team stats, pass None downstream
-    if hist_df.empty:
-        hist_df = None
-    if team_stats_df.empty:
-        team_stats_df = None
+    # If no history or other data, pass None downstream
+    if hist_df.empty: hist_df = None
+    if seasonal_splits_df.empty: seasonal_splits_df = None
+    if rolling_features_df.empty: rolling_features_df = None
 
-    # Uncertainty estimator (optional)
+    # Uncertainty estimator (optional, no change)
     cov_file = REPORTS_DIR / "historical_coverage_stats.csv"
     cov_df   = pd.read_csv(cov_file) if cov_file.is_file() else None
     uncertainty = PredictionUncertaintyEstimator(
@@ -654,64 +715,39 @@ def generate_predictions(
         debug=debug_mode
     )
 
-    # ————— LOAD MODELS & FEATURE LIST —————
+    # ————— LOAD MODELS & FEATURE LIST (no change) —————
     models, feature_list = load_trained_models(model_dir, load_feature_list=True)
     if not models:
         logger.error("No models loaded; aborting.")
         _restore()
         return [], []
 
-    # ————— ENSEMBLE WEIGHTS —————
+    # ————— ENSEMBLE WEIGHTS (no change) —————
     weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
     wfile   = model_dir / ENSEMBLE_WEIGHTS_FILENAME
-
     if wfile.is_file():
         try:
+            # (logic remains the same)
             raw = json.loads(wfile.read_text())
-            if not isinstance(raw, dict) or not raw:
-                raise ValueError("must be a non-empty dict")
-
-            # strip "_score_predictor" suffix to get base keys
+            if not isinstance(raw, dict) or not raw: raise ValueError("must be a non-empty dict")
             base_weights: Dict[str, float] = {}
             for fullname, val in raw.items():
-                if fullname.endswith("_score_predictor"):
-                    base = fullname[: -len("_score_predictor")]
-                else:
-                    base = fullname
+                base = fullname.replace("_score_predictor", "")
                 base_weights[base] = float(val)
-
             total = sum(base_weights.values())
-            expected = set(weights.keys())   # e.g. {"ridge","svr","xgb"}
+            expected = set(weights.keys())
             loaded   = set(base_weights.keys())
-
-            # reject only if sum ≉1 or any extra keys
-            if abs(total - 1.0) > 1e-6 or not loaded.issubset(expected):
-                raise ValueError(f"sum={total:.4f}, keys={loaded}")
-
-            # zero‐fill any missing
-            for m in expected - loaded:
-                base_weights[m] = 0.0
-
-            # renormalize (just in case)
+            if abs(total - 1.0) > 1e-6 or not loaded.issubset(expected): raise ValueError(f"sum={total:.4f}, keys={loaded}")
+            for m in expected - loaded: base_weights[m] = 0.0
             subtotal = sum(base_weights.values())
-            if abs(subtotal - 1.0) > 1e-6 and subtotal > 0:
-                base_weights = {k: v / subtotal for k, v in base_weights.items()}
-
+            if abs(subtotal - 1.0) > 1e-6 and subtotal > 0: base_weights = {k: v / subtotal for k, v in base_weights.items()}
             weights = base_weights
             logger.info("Loaded ensemble weights from %s: %s", wfile.name, weights)
-
         except Exception as e:
-            logger.warning(
-                "%s invalid (%s); falling back to defaults %s",
-                wfile.name, e, FALLBACK_ENSEMBLE_WEIGHTS
-            )
+            logger.warning("%s invalid (%s); falling back to defaults %s", wfile.name, e, FALLBACK_ENSEMBLE_WEIGHTS)
             weights = FALLBACK_ENSEMBLE_WEIGHTS.copy()
     else:
-        logger.warning(
-            "%s not found in %s; using defaults %s",
-            wfile.name, model_dir, FALLBACK_ENSEMBLE_WEIGHTS
-        )
-
+        logger.warning("%s not found in %s; using defaults %s", wfile.name, model_dir, FALLBACK_ENSEMBLE_WEIGHTS)
     logger.debug("Final ensemble weights = %s", weights)
 
 
@@ -724,20 +760,25 @@ def generate_predictions(
         combined = upcoming_df.copy()
 
     try:
+        # UPDATED: Pass the pre-fetched DataFrames directly into the pipeline
+        # The db_conn argument is removed as it's no longer needed for these features
         features_all = run_feature_pipeline(
-            df=combined,                       # The main DataFrame to process
-            db_conn=supabase,                  # Pass the Supabase client for data fetching
-            rolling_windows=[5, 10, 20],       # Or from config/args
-            h2h_lookback=7,                    # Or from config/args (parameter name is h2h_lookback)
-            execution_order=DEFAULT_ORDER,     # Use the correctly imported name
-            adv_splits_lookup_offset=-1,       # Provide this, or make it configurable
-            flag_imputations_all=True,         # Provide this, or make it configurable
+            df=combined,
+            seasonal_splits_data=seasonal_splits_df,  # New argument
+            rolling_features_data=rolling_features_df, # New argument
+            rolling_windows=[5, 10, 20],
+            h2h_lookback=7,
+            execution_order=DEFAULT_ORDER,
+            adv_splits_lookup_offset=-1,
+            flag_imputations_all=True,
             debug=debug_mode
         )
     except Exception as e:
         logger.error("Feature pipeline error: %s", e, exc_info=debug_mode)
         _restore()
         return [], []
+
+    # ————— (The rest of the function for prediction, assembly, and display remains the same) —————
 
     # Slice back out just the upcoming games
     features_df = features_all.loc[
@@ -757,12 +798,8 @@ def generate_predictions(
             logger.warning("Missing %d features; filling with zeros: %s", len(missing), missing)
         X = features_df.reindex(columns=feature_list, fill_value=0)
     else:
-        logger.warning(
-            "selected_features.json not found — using all %d pipeline-generated features",
-            features_df.shape[1]
-        )
+        logger.warning("selected_features.json not found — using all %d pipeline-generated features", features_df.shape[1])
         X = features_df.copy()
-
     X = X.fillna(0).replace([np.inf, -np.inf], 0)
 
     # ————— PER-MODEL PREDICTIONS —————
@@ -778,41 +815,21 @@ def generate_predictions(
                 columns=["predicted_home_score","predicted_away_score"],
                 index=X.index
             )
-            
         except Exception as e:
             logger.error("Error in %s.predict(): %s", name, e, exc_info=debug_mode)
-
     if not preds_by_model:
         logger.error("No predictions produced by any model; exiting.")
         _restore()
         return [], []
 
-    # Metadata for each row
-    info_df = features_df.set_index(X.index)[
-        ["game_id","game_date","home_team","away_team"]
-    ]
-
     # ————— ASSEMBLE RAW PREDICTIONS —————
+    info_df = features_df.set_index(X.index)[["game_id","game_date","home_team","away_team"]]
     raw_preds: List[Dict] = []
     for idx in X.index:
         row = info_df.loc[idx]
-        comps = {
-            m: {
-                "home": float(df.at[idx,"predicted_home_score"]),
-                "away": float(df.at[idx,"predicted_away_score"])
-            }
-            for m, df in preds_by_model.items()
-            if idx in df.index
-        }
-        if not comps:
-            continue
-        
-        logger.debug(
-        "Blending models %s at idx %s with weights %s",
-        list(comps.keys()), idx, weights
-        )
-
-        # ensemble blend
+        comps = {m: {"home": float(df.at[idx,"predicted_home_score"]), "away": float(df.at[idx,"predicted_away_score"])} for m, df in preds_by_model.items() if idx in df.index}
+        if not comps: continue
+        logger.debug("Blending models %s at idx %s with weights %s", list(comps.keys()), idx, weights)
         w_sum = sum(weights.get(m,0) for m in comps)
         if w_sum < 1e-6:
             h_ens = np.mean([c["home"] for c in comps.values()])
@@ -820,43 +837,20 @@ def generate_predictions(
         else:
             h_ens = sum(comps[m]["home"] * weights[m] for m in comps) / w_sum
             a_ens = sum(comps[m]["away"] * weights[m] for m in comps) / w_sum
-
-        diff = h_ens - a_ens
-        tot  = h_ens + a_ens
-        winp = 1 / (1 + math.exp(-0.1 * diff))
-
-        # optionally add uncertainty intervals
+        diff, tot, winp = h_ens - a_ens, h_ens + a_ens, 1 / (1 + math.exp(-0.1 * (h_ens - a_ens)))
         try:
-            tmp = pd.DataFrame({
-                "predicted_home_score":[h_ens],
-                "predicted_away_score":[a_ens]
-            }, index=[idx])
+            tmp = pd.DataFrame({"predicted_home_score":[h_ens], "predicted_away_score":[a_ens]}, index=[idx])
             ints = uncertainty.add_prediction_intervals(tmp)
-            lb = float(ints.at[idx,"total_score_lower"])
-            ub = float(ints.at[idx,"total_score_upper"])
-        except Exception:
-            lb = ub = float("nan")
-
+            lb, ub = float(ints.at[idx,"total_score_lower"]), float(ints.at[idx,"total_score_upper"])
+        except Exception: lb, ub = float("nan"), float("nan")
         raw_preds.append({
-            "game_id":               row["game_id"],
-            "game_date":             row["game_date"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "home_team":             row["home_team"],
-            "away_team":             row["away_team"],
-            "predicted_home_score":  round(h_ens,1),
-            "predicted_away_score":  round(a_ens,1),
-            "predicted_point_diff":  round(diff,1),
-            "predicted_total_score": round(tot,1),
-            "win_probability":       round(winp,3),
-            "lower_bound":           (round(lb,1) if not math.isnan(lb) else None),
-            "upper_bound":           (round(ub,1) if not math.isnan(ub) else None),
-            "raw_predicted_home_score":  round(h_ens,1),
-            "raw_predicted_away_score":  round(a_ens,1),
-            "raw_predicted_point_diff":  round(diff,1),
-            "raw_predicted_total_score": round(tot,1),
-            "raw_win_probability":       round(winp,3),
-            "raw_lower_bound":           (round(lb,1) if not math.isnan(lb) else None),
-            "raw_upper_bound":           (round(ub,1) if not math.isnan(ub) else None),
-            "component_predictions":     comps
+            "game_id": row["game_id"], "game_date": row["game_date"].strftime("%Y-%m-%dT%H:%M:%SZ"), "home_team": row["home_team"], "away_team": row["away_team"],
+            "predicted_home_score": round(h_ens,1), "predicted_away_score": round(a_ens,1), "predicted_point_diff": round(diff,1), "predicted_total_score": round(tot,1),
+            "win_probability": round(winp,3), "lower_bound": (round(lb,1) if not math.isnan(lb) else None), "upper_bound": (round(ub,1) if not math.isnan(ub) else None),
+            "raw_predicted_home_score": round(h_ens,1), "raw_predicted_away_score": round(a_ens,1), "raw_predicted_point_diff": round(diff,1),
+            "raw_predicted_total_score": round(tot,1), "raw_win_probability": round(winp,3),
+            "raw_lower_bound": (round(lb,1) if not math.isnan(lb) else None), "raw_upper_bound": (round(ub,1) if not math.isnan(ub) else None),
+            "component_predictions": comps
         })
 
     final_preds = raw_preds

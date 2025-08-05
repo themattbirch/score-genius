@@ -1,20 +1,17 @@
 # backend/nfl_features/rolling.py
-
 """Rolling‑window (recent form) feature loader.
 
-This module *does not compute* rolling averages – the heavy lifting is handled
-by the `mv_nfl_recent_form` materialised view inside Supabase.  We simply fetch
-the latest rows for all teams involved in a list of upcoming games, reshape
-those rows into home/away columns, apply sensible defaults for early‑season
-edge cases, and derive home‑minus‑away differentials.
+-- MODIFIED to use a pre-fetched DataFrame instead of its own Supabase queries --
+
+This module takes a pre-fetched DataFrame of recent-form stats, reshapes it
+into home/away columns, applies sensible defaults, and derives differentials.
 """
 from __future__ import annotations
 
 import logging
-from typing import List, Mapping
+from typing import Mapping, Optional
 
 import pandas as pd
-from supabase import Client
 
 from .utils import DEFAULTS, prefix_columns
 
@@ -24,7 +21,8 @@ logger.addHandler(logging.NullHandler())
 # ---------------------------------------------------------------------------
 # Configuration constants (column naming contract with the DB view)
 # ---------------------------------------------------------------------------
-_ROLLING_VIEW: str = "mv_nfl_recent_form"
+# Note: The view name is no longer used here, but keeping constants is good practice.
+_ROLLING_VIEW: str = "nfl_recent_form" # (formerly mv_nfl_recent_form)
 _BASE_FEATURE_COLS: Mapping[str, str] = {
     # DB column → logical key used for defaults & naming
     "rolling_points_for_avg": "points_for_avg",
@@ -41,57 +39,29 @@ _DERIVED_COLS = {
 }
 
 
-def load_rolling_features(game_ids: List[int], supabase: Client) -> pd.DataFrame:
-    """Fetches recent‑form metrics for each team in the provided ``game_ids``."""
-    if not game_ids:
+def load_rolling_features(
+    games: pd.DataFrame,
+    *,
+    recent_form_df: Optional[pd.DataFrame] = None,
+    **kwargs # Absorbs unused kwargs from the engine like 'window'
+) -> pd.DataFrame:
+    """
+    Attaches recent-form metrics to a games DataFrame using a pre-fetched
+    DataFrame of stats.
+    """
+    if games.empty:
         return pd.DataFrame()
 
-    # 1. Pull schedule (home/away team IDs) from Supabase
-    schedule_resp = (
-        supabase.table("nfl_game_schedule")
-        .select("game_id, home_team_id, away_team_id")
-        .in_("game_id", game_ids)
-        .execute()
-    )
-    # support both dict-like and attribute .data responses
-    if hasattr(schedule_resp, "data"):
-        sched_rows = schedule_resp.data or []
-    else:
-        sched_rows = schedule_resp.get("data", [])  # type: ignore
+    if recent_form_df is None or recent_form_df.empty:
+        logger.warning("rolling: No recent_form_df provided. Cannot add rolling features.")
+        # Return a DataFrame with game_id to prevent merge errors downstream
+        return games[['game_id']].copy()
 
-    if not sched_rows:
-        logger.warning("rolling: No games found for game_ids=%s", game_ids)
-        return pd.DataFrame()
+    games_df = games.copy()
+    stats_df = recent_form_df.copy()
 
-    games_df = pd.DataFrame(sched_rows)
-    if not {"home_team_id", "away_team_id"}.issubset(games_df.columns):
-        logger.warning("rolling: schedule records missing home/away IDs")
-        return pd.DataFrame()
-
-    team_ids = pd.unique(
-        games_df[["home_team_id", "away_team_id"]]
-        .values
-        .ravel()
-    ).tolist()
-
-    # 2. Pull rolling stats for those teams
-    stats_cols = ["team_id"] + list(_BASE_FEATURE_COLS.keys())
-    stats_resp = (
-        supabase.table(_ROLLING_VIEW)
-        .select(",".join(stats_cols))
-        .in_("team_id", team_ids)
-        .execute()
-    )
-    if hasattr(stats_resp, "data"):
-        rolling_rows = stats_resp.data or []
-    else:
-        rolling_rows = stats_resp.get("data", [])  # type: ignore
-
-    stats_df = (
-        pd.DataFrame(rolling_rows)
-        if rolling_rows
-        else pd.DataFrame(columns=stats_cols)
-    )
+    # --- The original logic from Step 3 onwards is preserved ---
+    # It now operates on the DataFrames passed into the function.
 
     # 3. Compute any derived columns locally
     for new_col, (num_col, den_col) in _DERIVED_COLS.items():
@@ -107,7 +77,7 @@ def load_rolling_features(game_ids: List[int], supabase: Client) -> pd.DataFrame
         right_on="team_id",
     )
     home_pref = prefix_columns(
-        home_join.drop(columns=["team_id"]),
+        home_join.drop(columns=["team_id"], errors="ignore"),
         "home",
         exclude=["game_id", "home_team_id", "away_team_id"],
     )
@@ -119,7 +89,7 @@ def load_rolling_features(game_ids: List[int], supabase: Client) -> pd.DataFrame
         right_on="team_id",
     )
     away_pref = prefix_columns(
-        away_join.drop(columns=["team_id"]),
+        away_join.drop(columns=["team_id"], errors="ignore"),
         "away",
         exclude=["game_id", "home_team_id", "away_team_id"],
     )
@@ -142,7 +112,6 @@ def load_rolling_features(game_ids: List[int], supabase: Client) -> pd.DataFrame
             combined[home_col] = combined[home_col].astype(float).fillna(default_val)
         if away_col in combined:
             combined[away_col] = combined[away_col].astype(float).fillna(default_val)
-    # any remaining NaNs → 0.0
     combined.fillna(0.0, inplace=True)
 
     # 6. Compute differentials
@@ -151,6 +120,10 @@ def load_rolling_features(game_ids: List[int], supabase: Client) -> pd.DataFrame
         if h in combined and a in combined:
             combined[f"{db_col}_diff"] = combined[h] - combined[a]
 
-    # 7. Return only game_id + rolling_*-prefixed columns
-    keep = ["game_id"] + [c for c in combined if c.startswith("home_rolling_") or c.startswith("away_rolling_") or c.endswith("_diff")]
-    return combined[keep].copy()
+    # 7. Return only game_id + newly created feature columns
+    keep = ["game_id"] + [c for c in combined if c.startswith(('home_rolling_', 'away_rolling_')) or c.endswith('_diff')]
+    
+    # Ensure all columns to keep actually exist
+    final_cols = [c for c in keep if c in combined.columns]
+    
+    return combined[final_cols].copy()

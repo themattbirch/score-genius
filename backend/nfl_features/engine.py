@@ -158,13 +158,13 @@ def _merge_and_log(
 # ==============================================================================
 
 class NFLFeatureEngine:
-    """Runs the full NFL feature-engineering pipeline."""
+    """Runs the full NFL feature-engineering pipeline using RPCs for data."""
 
     DEFAULT_ORDER: List[str] = [
         "situational",
         "season",
         "rest",
-        "rolling",
+        "rolling",  # Note: This module will consume 'recent_form' data
         "form",
         "momentum",
         "h2h",
@@ -188,22 +188,32 @@ class NFLFeatureEngine:
     ):
         self.execution_order = execution_order or self.DEFAULT_ORDER
         self.supabase = _safe_create_client(supabase_url, supabase_service_key)
-
         logger.info("NFLFeatureEngine initialized | order=%s", self.execution_order)
+        self._ext_tracker: Optional[List[Dict[str, Any]]] = None # Tracker for tests
 
-        # tracker for unit tests / stubs (optional)
-        self._ext_tracker: Optional[List[Dict[str, Any]]] = None
-        for fn in self.TRANSFORMS.values():
-            clo = getattr(fn, "__closure__", None)
-            if clo:
-                for cell in clo:
-                    if isinstance(cell.cell_contents, list):
-                        self._ext_tracker = cell.cell_contents
-                        break
-            if self._ext_tracker is not None:
-                break
+    # --- NEW: Private helper methods to call our bulk RPCs ---
+    def _fetch_data_via_rpc(self, rpc_name: str, params: Dict) -> pd.DataFrame:
+        logger.debug("Calling RPC '%s' with params %s", rpc_name, params)
+        try:
+            resp = self.supabase.rpc(rpc_name, params).execute()
+            return pd.DataFrame(resp.data or [])
+        except Exception as e:
+            logger.error("RPC call '%s' failed: %s", rpc_name, e)
+            return pd.DataFrame()
 
-    # ------------------------------------------------------------------ #
+    def _fetch_season_stats_via_rpc(self, season: int) -> pd.DataFrame:
+        logger.info("Fetching NFL season stats for season %d via RPC...", season)
+        return self._fetch_data_via_rpc('rpc_get_nfl_all_season_stats', {'p_season': season})
+
+    def _fetch_recent_form_via_rpc(self) -> pd.DataFrame:
+        logger.info("Fetching NFL recent form data for all teams via RPC...")
+        return self._fetch_data_via_rpc('rpc_get_nfl_all_recent_form', {})
+
+    def _fetch_advanced_stats_via_rpc(self, season: int) -> pd.DataFrame:
+        logger.info("Fetching NFL advanced stats for season %d via RPC...", season)
+        return self._fetch_data_via_rpc('rpc_get_nfl_all_advanced_stats', {'p_season': season})
+
+
     def build_features(
         self,
         games_df: pd.DataFrame,
@@ -212,7 +222,7 @@ class NFLFeatureEngine:
         historical_team_stats_df: pd.DataFrame,
         debug: bool = False,
         flag_imputations: bool = True,
-        rolling_window: int = 3,
+        rolling_window: int = 3, # Note: may be superseded by recent_form data
         form_lookback: int = 5,
         momentum_span: int = 5,
         h2h_max_games: int = 10,
@@ -220,7 +230,6 @@ class NFLFeatureEngine:
 
         if debug:
             logger.setLevel(logging.DEBUG)
-
         if games_df.empty:
             logger.warning("ENGINE: games_df is empty; nothing to do.")
             return pd.DataFrame()
@@ -228,113 +237,85 @@ class NFLFeatureEngine:
         t0 = time.time()
         logger.debug("ENGINE: build_features start | rows=%d cols=%d", *games_df.shape)
 
-        # Ensure tracker after init
-        if self._ext_tracker is None:
-            for fn in self.TRANSFORMS.values():
-                clo = getattr(fn, "__closure__", None)
-                if clo:
-                    for cell in clo:
-                        if isinstance(cell.cell_contents, list):
-                            self._ext_tracker = cell.cell_contents
-                            break
-                if self._ext_tracker is not None:
-                    break
+        # --- MODIFIED: Pre-fetch all necessary data for all seasons in the batch ---
+        all_seasons = sorted(games_df["season"].dropna().unique())
+        
+        all_season_stats_df = pd.concat(
+            [self._fetch_season_stats_via_rpc(season) for season in all_seasons],
+            ignore_index=True
+        )
+        all_recent_form_df = self._fetch_recent_form_via_rpc()
+        # Note: We are not fetching advanced_stats as it wasn't in the default execution order.
+        # If needed, you would fetch it here as well.
+        
+        _log_profile(all_season_stats_df, "all_season_stats (RPC)", debug)
+        _log_profile(all_recent_form_df, "all_recent_form (RPC)", debug)
 
+        # (Canonicalization logic remains the same)
         def _canon(df: pd.DataFrame) -> pd.DataFrame:
             out = df.copy()
-            if "home_team_norm" in out.columns:
-                out["home_team_norm"] = out["home_team_norm"].apply(normalize_team_name)
-            if "away_team_norm" in out.columns:
-                out["away_team_norm"] = out["away_team_norm"].apply(normalize_team_name)
+            if "home_team_norm" in out.columns: out["home_team_norm"] = out["home_team_norm"].apply(normalize_team_name)
+            if "away_team_norm" in out.columns: out["away_team_norm"] = out["away_team_norm"].apply(normalize_team_name)
             if "game_date" in out.columns:
                 out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce")
                 out["season"] = out["game_date"].apply(determine_season)
             return out
-
+        
         games = _canon(games_df)
         hist_games = _canon(historical_games_df)
-        hist_team_stats = historical_team_stats_df.copy()
-
-        _log_profile(games, "games_df (canon)", debug)
-        _log_profile(hist_games, "historical_games_df (canon)", debug)
-        _log_profile(hist_team_stats, "historical_team_stats_df", debug)
-
-        # 1. Precompute on historical only (advanced + drive)
+        hist_team_stats = historical_team_stats_df.copy() # Raw team game stats
+        
+        # (Precompute logic remains the same)
         if "team_id" in hist_games.columns:
             logger.debug("ENGINE: precomputing advanced & drive metrics on historical")
-            t_adv = time.time()
             hist_games = compute_advanced_metrics(hist_games)
             hist_games = compute_drive_metrics(hist_games)
-            logger.debug("ENGINE: precompute done in %.2fs | hist_games shape=%s",
-                         time.time() - t_adv, hist_games.shape)
-        else:
-            logger.debug("ENGINE: hist_games lacks team_id – skipping advanced/drive precompute")
 
         # 2. Iterate seasons to avoid leakage
         chunks: List[pd.DataFrame] = []
-
-        for season in sorted(games["season"].dropna().unique()):
+        for season_str in all_seasons:
+            season = int(season_str)
             logger.info("ENGINE: season %s start", season)
-            season_games = games.loc[games["season"] == season].copy()
+            season_games = games.loc[games["season"] == season_str].copy()
             cutoff = season_games["game_date"].min()
             past_games = hist_games.loc[hist_games["game_date"] < cutoff]
 
-            _log_profile(season_games, f"season_{season}_initial", debug)
-
             for module in self.execution_order:
                 fn = self.TRANSFORMS[module]
-                if self._ext_tracker is not None:
-                    pre_len = len(self._ext_tracker)
-
                 logger.debug("ENGINE:%s running…", module)
 
-                # Build kwargs dynamically
                 kw: Dict[str, Any] = {"flag_imputations": flag_imputations}
-                if _supports_kwarg(fn, "historical_df"):
-                    kw["historical_df"] = past_games
-                if _supports_kwarg(fn, "historical_team_stats_df"):
-                    kw["historical_team_stats_df"] = hist_team_stats
-                if module == "rolling":
-                    kw.update({
-                        "game_ids": season_games["game_id"].tolist(),
-                        "supabase": self.supabase,
-                        "window": rolling_window,
-                    })
+                if _supports_kwarg(fn, "historical_df"): kw["historical_df"] = past_games
+                
+                # --- MODIFIED: Pass pre-fetched DataFrames instead of Supabase client ---
+                if module == "season":
+                    # Pass the pre-fetched season stats for the prior season
+                    kw["season_stats_df"] = all_season_stats_df[all_season_stats_df['season'] == (season - 1)]
+                elif module == "rolling":
+                    # The 'rolling' module is now responsible for consuming 'recent form' data
+                    kw["recent_form_df"] = all_recent_form_df
+                    kw["window"] = rolling_window # Can keep passing config like this
                 elif module == "form":
                     kw["lookback_window"] = form_lookback
                 elif module == "momentum":
                     kw["span"] = momentum_span
                 elif module == "h2h":
                     kw["max_games"] = h2h_max_games
+                
+                # The raw historical_team_stats_df might still be needed by some modules
+                if _supports_kwarg(fn, "historical_team_stats_df"):
+                    kw["historical_team_stats_df"] = hist_team_stats
 
-                m_start = time.time()
-                if module == "rolling":
-                    mod_out = fn(**kw)
-                else:
-                    mod_out = fn(season_games, **kw)
-                m_time = time.time() - m_start
+                # The call to the transform function itself
+                mod_out = fn(season_games, **kw)
 
-                if self._ext_tracker is not None and len(self._ext_tracker) == pre_len:
-                    self._ext_tracker.append({"name": module})
-
+                # (Merge logic remains the same)
                 if mod_out.empty:
                     logger.warning("ENGINE:%s returned empty DF – skipped", module.upper())
                     continue
+                
+                season_games = _merge_and_log(season_games, mod_out, "game_id", "left", module, debug)
 
-                # Merge & diagnostics
-                before_shape = season_games.shape
-                if module == "rolling":
-                    season_games = _merge_and_log(season_games, mod_out, "game_id", "left", module, debug)
-                else:
-                    merge_cols = [c for c in mod_out.columns if c != "game_id"]
-                    season_games = _merge_and_log(season_games, mod_out[["game_id"] + merge_cols],
-                                                  "game_id", "left", module, debug)
-                after_shape = season_games.shape
-
-                logger.debug("ENGINE:%s took %.3fs | shape %s → %s",
-                             module, m_time, before_shape, after_shape)
-
-            _log_profile(season_games, f"season_{season}_final", debug)
             chunks.append(season_games)
 
         if not chunks:
@@ -342,14 +323,8 @@ class NFLFeatureEngine:
             return pd.DataFrame()
 
         final = pd.concat(chunks, ignore_index=True)
-
-        # Drop helper cols
-        helper_cols = [c for c in final.columns if c.startswith("_")]
-        if helper_cols and debug:
-            logger.debug("ENGINE: dropping helper cols: %s", helper_cols)
-        final.drop(columns=helper_cols, inplace=True, errors="ignore")
-
+        final.drop(columns=[c for c in final.columns if c.startswith("_")], inplace=True, errors="ignore")
+        
         _log_profile(final, "FINAL_FEATURES", debug)
-
         logger.info("ENGINE: complete in %.2fs | final shape=%s", time.time() - t0, final.shape)
         return final

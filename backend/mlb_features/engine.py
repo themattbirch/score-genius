@@ -42,6 +42,8 @@ def _supports_kwarg(func: Any, kw: str) -> bool:
 def run_mlb_feature_pipeline(
     df: pd.DataFrame,
     *,
+    # --- MODIFIED --- Added new argument for pre-fetched rolling features
+    precomputed_rolling_features_df: Optional[pd.DataFrame] = None,
     mlb_historical_games_df: Optional[pd.DataFrame] = None,
     mlb_historical_team_stats_df: Optional[pd.DataFrame] = None,
     rolling_window_sizes: List[int] = [15, 30, 60, 100],
@@ -71,13 +73,7 @@ def run_mlb_feature_pipeline(
             df_ref['away_team_norm'] = df_ref['away_team_id'].apply(normalize_team_name)
         if 'team_id' in df_ref.columns:
             df_ref['team_norm'] = df_ref['team_id'].apply(normalize_team_name)
-        source_date_col = None
-        if 'game_date_et' in df_ref.columns:
-            source_date_col = 'game_date_et'
-        elif 'game_date_time_utc' in df_ref.columns:
-            source_date_col = 'game_date_time_utc'
-        elif 'game_date' in df_ref.columns:
-            source_date_col = 'game_date'
+        source_date_col = next((col for col in ['game_date_et', 'game_date_time_utc', 'game_date'] if col in df_ref.columns), None)
         if source_date_col:
             dt_series = pd.to_datetime(df_ref[source_date_col], errors='coerce')
             if dt_series.dt.tz is None:
@@ -105,6 +101,60 @@ def run_mlb_feature_pipeline(
     processed_chunks: List[pd.DataFrame] = []
 
     for season in sorted(working_df["season"].dropna().unique().astype(int)):
+        logger.info(f"ENGINE: Processing season {season}...")
+        season_df = working_df[working_df["season"] == season].copy()
+
+        season_start = season_df["game_date_et"].min()
+        raw_hist_games = (
+            hist_games[hist_games["game_date_et"] < season_start]
+            if not hist_games.empty else pd.DataFrame()
+        )
+
+        for module_name in execution_order:
+            fn = TRANSFORMS.get(module_name)
+            if fn is None: continue
+
+            kwargs: Dict[str, Any] = {}
+            if _supports_kwarg(fn, "debug"): kwargs["debug"] = debug
+            if _supports_kwarg(fn, "flag_imputations"): kwargs["flag_imputations"] = flag_imputations
+
+            input_df = season_df
+
+            if module_name in ("rest", "rolling"):
+                input_df = pd.concat([raw_hist_games, season_df], ignore_index=True)
+                if module_name == "rolling":
+                    kwargs["window_sizes"] = rolling_window_sizes
+                    # --- MODIFIED --- Pass the pre-computed rolling features DataFrame to the rolling module
+                    if precomputed_rolling_features_df is not None:
+                        kwargs["precomputed_rolling_features_df"] = precomputed_rolling_features_df
+                if module_name == "rest":
+                    kwargs["historical_df"] = raw_hist_games
+            elif module_name in ("h2h", "form"):
+                kwargs["historical_df"] = raw_hist_games
+                if module_name == "h2h": kwargs["max_games"] = h2h_max_games
+                if module_name == "form": kwargs["num_form_games"] = num_form_games
+            elif module_name == "season":
+                kwargs["historical_team_stats_df"] = team_stats[team_stats["season"] == (season - 1)].copy() if not team_stats.empty else pd.DataFrame()
+            elif module_name == "advanced":
+                kwargs["precomputed_stats"] = precomputed_adv_stats
+            elif module_name == "handedness_for_display":
+                kwargs["historical_team_stats_df"] = (team_stats[team_stats["season"] == season] if not team_stats.empty else pd.DataFrame())
+
+            output_df = fn(input_df, **kwargs)
+
+            if module_name in ("rest", "rolling"):
+                season_df = output_df[output_df["game_id"].isin(season_df["game_id"])].copy()
+            else:
+                produced = [c for c in output_df.columns if c not in season_df.columns and c != "game_id"]
+                if produced:
+                    season_df = season_df.merge(
+                        output_df[["game_id", *produced]].drop_duplicates(subset="game_id"),
+                        on="game_id", how="left"
+                    )
+
+            if module_name == "advanced" and not keep_display_only_features:
+                season_df.drop(columns=["h_team_off_avg_runs_vs_opp_hand"], inplace=True, errors="ignore")
+
         logger.info(f"ENGINE: Processing season {season}...")
         season_df = working_df[working_df["season"] == season].copy()
 
