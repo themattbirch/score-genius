@@ -4,7 +4,8 @@ import { HelpCircle, Play, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useTour } from "@/contexts/tour_context";
 import SnapshotModal from "@/components/games/snapshot_modal";
-
+import { useOnline } from "@/contexts/online_context";
+import OfflineBanner from "@/components/offline_banner";
 /**
  * Simple “ghost” pill button for inline examples
  */
@@ -26,6 +27,11 @@ const GhostPill: React.FC<
 );
 
 const HowToUseScreen: React.FC = () => {
+  // 👇 detect offline
+  const online = useOnline();
+  if (!online) {
+    return <OfflineBanner message="You’re offline — help is unavailable" />;
+  }
   const { start, setRun, setStepIndex } = useTour();
   const navigate = useNavigate();
   const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);

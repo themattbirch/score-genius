@@ -42,7 +42,7 @@ def _supports_kwarg(func: Any, kw: str) -> bool:
 def run_mlb_feature_pipeline(
     df: pd.DataFrame,
     *,
-    # --- MODIFIED --- Added new argument for pre-fetched rolling features
+    seasonal_splits_data: Optional[pd.DataFrame] = None,
     precomputed_rolling_features_df: Optional[pd.DataFrame] = None,
     mlb_historical_games_df: Optional[pd.DataFrame] = None,
     mlb_historical_team_stats_df: Optional[pd.DataFrame] = None,
@@ -62,6 +62,7 @@ def run_mlb_feature_pipeline(
     hist_games = mlb_historical_games_df.copy() if mlb_historical_games_df is not None else pd.DataFrame()
     team_stats = mlb_historical_team_stats_df.copy() if mlb_historical_team_stats_df is not None else pd.DataFrame()
     working_df = df.copy()
+
 
     logger.info("ENGINE: Normalizing team identifiers and dates in all dataframes...")
     for df_ref in [hist_games, team_stats, working_df]:

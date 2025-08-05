@@ -20,6 +20,8 @@ import {
 
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { useTour } from "@/contexts/tour_context";
+import { useOnline } from "@/contexts/online_context";
+import OfflineBanner from "@/components/offline_banner";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
@@ -100,6 +102,14 @@ const ActionRow: React.FC<ActionRowProps> = ({
 /* Screen                                                              */
 /* ------------------------------------------------------------------ */
 const MoreScreen: React.FC = () => {
+  // 1️⃣ offline fallback
+  const online = useOnline();
+  if (!online) {
+    return (
+      <OfflineBanner message="You’re offline — this section is unavailable" />
+    );
+  }
+
   const { start } = useTour();
 
   // Optional: detect/build version from env if you inject it
