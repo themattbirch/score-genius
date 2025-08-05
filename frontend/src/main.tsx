@@ -29,7 +29,24 @@ if ("serviceWorker" in navigator && !import.meta.env.DEV) {
         registration.scope
       );
 
-      // ─── Auto-reload on new SW activation ──────────────────────────────
+      // If there's already a waiting SW, tell it to activate immediately
+      if (registration.waiting) {
+        registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      }
+
+      // Listen for new SW installations and skip waiting as soon as they're installed
+      registration.addEventListener("updatefound", () => {
+        const newSW = registration.installing;
+        if (newSW) {
+          newSW.addEventListener("statechange", () => {
+            if (newSW.state === "installed") {
+              newSW.postMessage({ type: "SKIP_WAITING" });
+            }
+          });
+        }
+      });
+
+      // Auto-reload the page when the new SW takes control
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         window.location.reload();
       });
