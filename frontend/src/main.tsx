@@ -24,11 +24,15 @@ if ("serviceWorker" in navigator && !import.meta.env.DEV) {
         "/app/app-sw.js",
         { scope: "/app/" }
       );
-      // ... update handling logic ...
       console.log(
         "✅ Service worker registered with scope:",
         registration.scope
       );
+
+      // ─── Auto-reload on new SW activation ──────────────────────────────
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        window.location.reload();
+      });
     } catch (err) {
       console.error("⚠️ SW registration failed:", err);
     }
