@@ -370,8 +370,8 @@ export const fetchMlbAllTeamStatsBySeason = async (seasonYear) => {
   return data || [];
 };
 
-export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
-  const cacheKey = `mlb_advanced_rpc_stats_${seasonYearStr}`;
+export const fetchMlbSeasonalSplits = async (seasonYearStr) => {
+  const cacheKey = `mlb_seasonal_splits_rpc_${seasonYearStr}`;
   const ttl = 86400; // Cache for 1 day
   const cached = cache.get(cacheKey);
   if (cached !== undefined) {
@@ -380,43 +380,42 @@ export const fetchMlbAdvancedTeamStatsFromRPC = async (seasonYearStr) => {
   }
 
   const seasonYear = parseInt(seasonYearStr, 10);
-  if (isNaN(seasonYear) || String(seasonYearStr).length !== 4) {
-    console.error(
-      "Invalid season year string passed to RPC service fn:",
-      seasonYearStr
-    );
-    return [];
+  if (isNaN(seasonYear)) {
+    throw new Error("Invalid season year provided to fetchMlbSeasonalSplits");
   }
 
   console.log(
-    `CACHE MISS: ${cacheKey}. Calling RPC get_mlb_advanced_team_stats for season ${seasonYear}...`
+    `CACHE MISS: ${cacheKey}. Calling RPC rpc_get_mlb_all_seasonal_splits for season ${seasonYear}...`
   );
   try {
-    // Call the Supabase RPC function
-    const { data, error } = await supabase.rpc("get_mlb_advanced_team_stats", {
-      p_season: seasonYear, // Pass the integer year as the argument
-    });
+    // --- MODIFIED: Calling the new, correct bulk RPC ---
+    const { data, error } = await supabase.rpc(
+      "rpc_get_mlb_all_seasonal_splits",
+      {
+        p_season: seasonYear,
+      }
+    );
 
     if (error) {
-      console.error("Supabase RPC error fetching MLB advanced stats:", error);
-      throw error; // Let controller handle
+      console.error("Supabase RPC error fetching MLB seasonal splits:", error);
+      throw error;
     }
 
     const resultData = data || [];
-    // Note: RPC directly returns the calculated fields named as defined in RETURNS TABLE (...)
     console.log(
-      `RPC returned ${resultData.length} advanced stat records for ${seasonYear}. Caching ${ttl}s.`
+      `RPC returned ${resultData.length} seasonal split records for ${seasonYear}. Caching for ${ttl}s.`
     );
     cache.set(cacheKey, resultData, ttl);
     return resultData;
   } catch (err) {
     console.error(
-      `Error calling RPC get_mlb_advanced_team_stats for season ${seasonYearStr}:`,
+      `Error calling RPC for MLB seasonal splits for season ${seasonYearStr}:`,
       err
     );
-    throw err; // Re-throw to controller
+    throw err; // Re-throw to the controller
   }
 };
+
 export async function fetchMlbSnapshotData(gameId) {
   if (cache.has(gameId)) {
     console.log(`Service: CACHE HIT for MLB snapshot ${gameId}`);

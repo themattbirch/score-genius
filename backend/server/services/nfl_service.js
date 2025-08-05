@@ -461,23 +461,25 @@ export async function fetchNflGameById(gameId) {
 }
 
 /**
- * Fetches advanced team stats (SRS, SOS, etc.) from the materialized view.
+ * Fetches advanced team stats for a given season using an RPC.
  */
 export async function fetchNflAdvancedStats({ season }) {
-  const cacheKey = `nfl-advanced-stats:${season}`;
+  const cacheKey = `nfl-advanced-stats-rpc:${season}`; // Updated cache key
   const cached = cache.get(cacheKey);
   if (cached !== undefined) {
     return cached;
   }
 
-  const { data, error, status } = await supabase
-    .from(ADVANCED_STATS_VIEW)
-    .select("*")
-    .eq("season", season)
-    .order("team_name", { ascending: true });
+  // --- MODIFIED: Switched from .from() to our new bulk .rpc() call ---
+  const { data, error, status } = await supabase.rpc(
+    "rpc_get_nfl_all_advanced_stats",
+    { p_season: season }
+  );
 
   if (error) {
-    const e = new Error(error.message || "Error fetching advanced stats");
+    const e = new Error(
+      error.message || "Error fetching advanced stats via RPC"
+    );
     e.status = status;
     throw e;
   }
@@ -486,40 +488,57 @@ export async function fetchNflAdvancedStats({ season }) {
   cache.set(cacheKey, result, DEFAULT_CACHE_TTL);
   return result;
 }
+
 export async function fetchNflSeasonStats({
   season,
   teamIds,
   conference,
   division,
 }) {
-  // Reuse generic view fetch pattern manually here
-  const cacheKey = buildViewKey("mv_nfl_season_stats", {
-    season,
-    teamIds,
-    conference,
-    division,
-  });
+  // Cache key now only depends on season, as we fetch all and filter locally
+  const cacheKey = `nfl-season-stats-rpc:${season}`;
   const cached = cache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  let allSeasonData;
 
-  let query = supabase
-    .from("mv_nfl_season_stats")
-    .select("*")
-    .eq("season", season);
-  if (teamIds?.length) query = query.in("team_id", teamIds);
-  if (conference) query = query.eq("conference", conference);
-  if (division) query = query.eq("division", division);
+  if (cached !== undefined) {
+    allSeasonData = cached;
+  } else {
+    // --- MODIFIED: Switched from .from() to our new bulk .rpc() call ---
+    const { data, error, status } = await supabase.rpc(
+      "rpc_get_nfl_all_season_stats",
+      { p_season: season }
+    );
 
-  const { data, error, status } = await query;
-  if (error) {
-    const e = new Error(error.message || "Error fetching season stats");
-    e.status = status || 503;
-    throw e;
+    if (error) {
+      const e = new Error(
+        error.message || "Error fetching season stats via RPC"
+      );
+      e.status = status || 503;
+      throw e;
+    }
+    allSeasonData = Array.isArray(data) ? data : [];
+    cache.set(cacheKey, allSeasonData, DEFAULT_CACHE_TTL);
   }
-  const result = Array.isArray(data) ? data : [];
-  cache.set(cacheKey, result, DEFAULT_CACHE_TTL);
-  return result;
+
+  // --- NEW: Apply filters locally on the fetched/cached data ---
+  let filteredResult = allSeasonData;
+  if (teamIds?.length) {
+    // Ensure consistent type for comparison (e.g., string or number)
+    const teamIdSet = new Set(teamIds.map(String));
+    filteredResult = filteredResult.filter((r) =>
+      teamIdSet.has(String(r.team_id))
+    );
+  }
+  if (conference) {
+    filteredResult = filteredResult.filter((r) => r.conference === conference);
+  }
+  if (division) {
+    filteredResult = filteredResult.filter((r) => r.division === division);
+  }
+
+  return filteredResult;
 }
+
 export const fetchNflInjuries = async (date) => {
   // The 'date' parameter is no longer used but we can leave it for future compatibility
   console.log("→ [fetchNflInjuries] querying ALL active injuries...");

@@ -1,9 +1,5 @@
 // backend/server/controllers/mlb_controller.js
 import * as mlbService from "../services/mlb_service.js";
-import {
-  fetchMlbSnapshotData,
-  fetchMlbSnapshotsByIds,
-} from "../services/mlb_service.js";
 import { spawnSync } from "child_process";
 /* --------------------------------------------------------------
  * GET /api/v1/mlb/schedule?date=YYYY-MM-DD
@@ -165,9 +161,7 @@ export const getMlbAdvancedTeamStats = async (req, res, next) => {
     }
 
     // Call the service function using the mlbService object ***
-    const advancedTeamStats = await mlbService.fetchMlbAdvancedTeamStatsFromRPC(
-      season
-    );
+    const advancedTeamStats = await mlbService.fetchMlbSeasonalSplits(season);
 
     // Send response
     res.status(200).json({
@@ -205,7 +199,7 @@ export async function getMlbSnapshot(req, res, next) {
 
   try {
     const start = Date.now();
-    const snapshot = await fetchMlbSnapshotData(gameId); // This fetches a single snapshot
+    const snapshot = await mlbService.fetchMlbSnapshotData(gameId);
     console.log(`getMlbSnapshot(${gameId}) → ${Date.now() - start}ms`);
     return res.json(snapshot); // 🚩 send it back immediately
   } catch (err) {
@@ -282,8 +276,7 @@ export async function getMlbSnapshots(req, res, next) {
       return res.status(400).json({ message: "No gameIds provided." });
     }
 
-    const snapshots = await fetchMlbSnapshotsByIds(ids); // Call the new service function for batch fetching
-
+    const snapshots = await mlbService.fetchMlbSnapshotsByIds(ids);
     // For batch fetching, we return what's found.
     // The single /:gameId route (getMlbSnapshot) handles on-demand generation for individual missing games.
     // The frontend should handle missing data for specific games.

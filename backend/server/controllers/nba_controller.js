@@ -1,11 +1,5 @@
 // backend/server/controllers/nba_controller.js
 import * as nbaService from "../services/nba_service.js";
-import {
-  getSchedule,
-  fetchNbaSnapshotData,
-  fetchNbaSnapshotsByIds,
-} from "../services/nba_service.js";
-
 import { spawnSync } from "child_process";
 
 // Controller to handle GET /api/v1/nba/schedule
@@ -23,7 +17,7 @@ export const getNbaSchedule = async (req, res, next) => {
 
     // 3. Call the CORRECT service function that filters by date
     //    This function already handles formatting the response columns.
-    const scheduleData = await getSchedule(date); // Using direct import
+    const scheduleData = nbaService.getSchedule(date); // Using direct import
 
     // 4. Send the response (formatted like your MLB response for consistency)
     res.status(200).json({
@@ -316,9 +310,9 @@ export async function getNbaSnapshot(req, res, next) {
 
   try {
     const start = Date.now();
-    const snapshot = await fetchNbaSnapshotData(gameId);
+    const snapshot = nbaService.fetchNbaSnapshotData(gameId);
     console.log(`getNbaSnapshot(${gameId}) → ${Date.now() - start}ms`);
-    return res.json(snapshot); // 🚩 send it back immediately
+    return res.json(snapshot); //  send it back immediately
   } catch (err) {
     // only regenerate on a 404 “not found”
     if (err.status === 404) {
@@ -393,7 +387,7 @@ export async function getNbaSnapshots(req, res, next) {
       return res.status(400).json({ message: "No gameIds provided." });
     }
 
-    const snapshots = await fetchNbaSnapshotsByIds(ids); // Call the new service function
+    const snapshots = nbaService.fetchNbaSnapshotsByIds(ids); // Call the new service function
 
     // For batch fetching, we return what's found.
     // The single /:gameId route (getNbaSnapshot) handles on-demand generation for individual missing games.

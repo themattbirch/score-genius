@@ -1,21 +1,6 @@
 // backend/server/controllers/nfl_controller.js
 
-import {
-  fetchNflTeamSeasonFull,
-  fetchNflTeamSeasonRegOnly,
-  fetchNflScheduleData,
-  fetchNflSnapshotData,
-  fetchNflSnapshotsByIds,
-  buildCacheHeader,
-  fetchNflDashboardCards,
-  fetchNflSos,
-  fetchNflSrs,
-  checkCronHealth,
-  validateTeamAgg,
-  fetchNflAdvancedStats,
-  fetchNflSeasonStats,
-  fetchNflInjuries,
-} from "../services/nfl_service.js";
+import * as nflService from "../services/nfl_service.js";
 import {
   NFL_ALLOWED_CONFERENCES,
   NFL_ALLOWED_DIVISIONS,
@@ -47,7 +32,7 @@ export async function getNflTeamSeasonFull(req, res, next) {
     const includeRaw =
       req.query.includeRaw === "1" || req.query.includeRaw === "true";
 
-    const data = await fetchNflTeamSeasonFull({
+    const data = await nflService.fetchNflTeamSeasonFull({
       season,
       teamIds,
       conference: conf,
@@ -55,7 +40,7 @@ export async function getNflTeamSeasonFull(req, res, next) {
       includeRaw,
     });
 
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json(data);
   } catch (err) {
     next(err);
@@ -84,7 +69,7 @@ export async function getNflTeamSeasonRegOnly(req, res, next) {
     const includeRaw =
       req.query.includeRaw === "1" || req.query.includeRaw === "true";
 
-    const data = await fetchNflTeamSeasonRegOnly({
+    const data = await nflService.fetchNflTeamSeasonRegOnly({
       season,
       teamIds,
       conference: conf,
@@ -92,7 +77,7 @@ export async function getNflTeamSeasonRegOnly(req, res, next) {
       includeRaw,
     });
 
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json(data);
   } catch (err) {
     next(err);
@@ -110,7 +95,7 @@ export async function getNflSchedule(req, res, next) {
         .json({ message: "Invalid or missing date (YYYY-MM-DD)." });
     }
 
-    const rows = await fetchNflScheduleData(date);
+    const rows = await nflService.fetchNflScheduleData(date);
 
     // Ensure predicted fields (and timestamp) are always present
     const data = rows.map((g) => ({
@@ -120,7 +105,7 @@ export async function getNflSchedule(req, res, next) {
       predictionUtc: g.predictionUtc ?? g.prediction_utc ?? null, // handle snake/camel just in case
     }));
 
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json({
       message: `NFL schedule for ${date}`,
       retrieved: data.length,
@@ -135,7 +120,7 @@ export async function getNflSchedule(req, res, next) {
 export async function getNflSnapshot(req, res, next) {
   const { gameId } = req.params;
   try {
-    const snapshot = await fetchNflSnapshotData(gameId);
+    const snapshot = await nflService.fetchNflSnapshotData(gameId);
     return res.json(snapshot);
   } catch (err) {
     if (err.status === 404) {
@@ -155,7 +140,7 @@ export async function getNflSnapshots(req, res, next) {
     if (!ids.length) {
       return res.status(400).json({ message: "No gameIds provided." });
     }
-    const snapshots = await fetchNflSnapshotsByIds(ids);
+    const snapshots = await nflService.fetchNflSnapshotsByIds(ids);
     return res.json(snapshots);
   } catch (err) {
     next(err);
@@ -174,14 +159,14 @@ export async function getNflDashboard(req, res, next) {
     const div = normDiv(req.query.division);
     if (req.query.division && !div) return badParam(res, "Invalid division.");
 
-    const data = await fetchNflDashboardCards({
+    const data = await nflService.fetchNflDashboardCards({
       season,
       teamIds,
       conference: conf,
       division: div,
     });
 
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json({ season, retrieved: data.length, data });
   } catch (err) {
     next(err);
@@ -200,13 +185,13 @@ export async function getNflSos(req, res, next) {
     const div = normDiv(req.query.division);
     if (req.query.division && !div) return badParam(res, "Invalid division.");
 
-    const data = await fetchNflSos({
+    const data = await nflService.fetchNflSos({
       season,
       teamIds,
       conference: conf,
       division: div,
     });
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json({ season, retrieved: data.length, data });
   } catch (err) {
     next(err);
@@ -226,13 +211,13 @@ export async function getNflSrs(req, res, next) {
     const div = normDiv(req.query.division);
     if (req.query.division && !div) return badParam(res, "Invalid division.");
 
-    const data = await fetchNflSrs({
+    const data = await nflService.fetchNflSrs({
       season,
       teamIds,
       conference: conf,
       division: div,
     });
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json({ season, retrieved: data.length, data });
   } catch (err) {
     next(err);
@@ -241,8 +226,8 @@ export async function getNflSrs(req, res, next) {
 // GET /api/v1/nfl/health/cron
 export async function getNflCronHealth(req, res, next) {
   try {
-    const result = await checkCronHealth();
-    res.set(buildCacheHeader());
+    const result = await nflService.checkCronHealth();
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -252,8 +237,8 @@ export async function getNflCronHealth(req, res, next) {
 // GET /api/v1/nfl/health/validate
 export async function getNflValidation(req, res, next) {
   try {
-    const result = await validateTeamAgg();
-    res.set(buildCacheHeader());
+    const result = await nflService.validateTeamAgg();
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -265,7 +250,7 @@ export async function getNflGameById(req, res, next) {
     const gameId = Number.parseInt(req.params.id, 10);
     if (Number.isNaN(gameId)) return badParam(res, "Invalid game id.");
 
-    const game = await fetchNflGameById(gameId); // implement in nfl_service.js
+    const game = await nflService.fetchNflGameById(gameId); // implement in nfl_service.js
 
     if (!game) return res.status(404).json({ message: "Game not found." });
 
@@ -276,7 +261,7 @@ export async function getNflGameById(req, res, next) {
       predictionUtc: game.predictionUtc ?? game.prediction_utc ?? null,
     };
 
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json(payload);
   } catch (err) {
     next(err);
@@ -293,10 +278,10 @@ export async function getNflAdvancedStats(req, res, next) {
     }
 
     // 2. Call the service layer to fetch the data
-    const data = await fetchNflAdvancedStats({ season });
+    const data = await nflService.fetchNflAdvancedStats({ season });
 
     // 3. Set cache headers and send the successful response
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json({
       season,
       retrieved: data.length,
@@ -317,10 +302,10 @@ export async function getNflTeamStatsSummary(req, res, next) {
 
     // Parallel fetches of the components
     const [advancedRaw, srsRaw, sosRaw, seasonStats] = await Promise.all([
-      fetchNflAdvancedStats({ season }),
-      fetchNflSrs({ season }),
-      fetchNflSos({ season }),
-      fetchNflSeasonStats({
+      nflService.fetchNflAdvancedStats({ season }),
+      nflService.fetchNflSrs({ season }),
+      nflService.fetchNflSos({ season }),
+      nflService.fetchNflSeasonStats({
         season,
         teamIds: [],
         conference: null,
@@ -375,7 +360,7 @@ export async function getNflTeamStatsSummary(req, res, next) {
 
     const data = Object.values(indexed);
 
-    res.set(buildCacheHeader());
+    res.set(nflService.buildCacheHeader());
     return res.status(200).json({
       season,
       retrieved: data.length,
@@ -391,7 +376,7 @@ export const getNflInjuries = async (req, res, next) => {
 
   try {
     // This service function will be created in the next step
-    const injuriesData = await fetchNflInjuries(date);
+    const injuriesData = await nflService.fetchNflInjuries(date);
 
     return res.status(200).json({
       message: "NFL injuries fetched successfully",
