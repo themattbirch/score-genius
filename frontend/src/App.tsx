@@ -1,5 +1,6 @@
 // frontend/src/App.tsx
 import React, { Suspense, memo } from "react";
+import OfflineBoundary from "./components/offline_boundary";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 
 // ——————————————————————————————————————————————————————————————
@@ -51,54 +52,56 @@ const App: React.FC = () => (
     <SportProvider>
       <DateProvider>
         <TourProvider>
-          <Suspense fallback={<Loader />}>
-            <Routes>
-              <Route element={<Layout />}>
-                {/* redirect root → /games */}
-                <Route index element={<Navigate to="/games" replace />} />
+          <OfflineBoundary>
+            <Suspense fallback={<Loader />}>
+              <Routes>
+                <Route element={<Layout />}>
+                  {/* redirect root → /games */}
+                  <Route index element={<Navigate to="/games" replace />} />
 
-                {/* GAMES: eager, no suspense delay */}
-                <Route path="games" element={<GamesScreen />} />
+                  {/* GAMES: eager, no suspense delay */}
+                  <Route path="games" element={<GamesScreen />} />
 
-                {/* everything else wrapped in its own Suspense */}
-                <Route
-                  path="games/:gameId"
-                  element={
-                    <Suspense fallback={<Loader message="Loading game…" />}>
-                      <GameDetailScreen />
-                    </Suspense>
-                  }
-                />
-                <Route
-                  path="stats"
-                  element={
-                    <Suspense fallback={<Loader message="Loading stats…" />}>
-                      <StatsScreen />
-                    </Suspense>
-                  }
-                />
-                <Route
-                  path="more"
-                  element={
-                    <Suspense fallback={<Loader message="Loading more…" />}>
-                      <MoreScreen />
-                    </Suspense>
-                  }
-                />
-                <Route
-                  path="how-to-use"
-                  element={
-                    <Suspense fallback={<Loader message="Loading help…" />}>
-                      <HowToUseScreen />
-                    </Suspense>
-                  }
-                />
-              </Route>
+                  {/* everything else wrapped in its own Suspense */}
+                  <Route
+                    path="games/:gameId"
+                    element={
+                      <Suspense fallback={<Loader message="Loading game…" />}>
+                        <GameDetailScreen />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="stats"
+                    element={
+                      <Suspense fallback={<Loader message="Loading stats…" />}>
+                        <StatsScreen />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="more"
+                    element={
+                      <Suspense fallback={<Loader message="Loading more…" />}>
+                        <MoreScreen />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="how-to-use"
+                    element={
+                      <Suspense fallback={<Loader message="Loading help…" />}>
+                        <HowToUseScreen />
+                      </Suspense>
+                    }
+                  />
+                </Route>
 
-              {/* catch‑all → back to /games */}
-              <Route path="*" element={<Navigate to="/games" replace />} />
-            </Routes>
-          </Suspense>
+                {/* catch‑all → back to /games */}
+                <Route path="*" element={<Navigate to="/games" replace />} />
+              </Routes>
+            </Suspense>
+          </OfflineBoundary>
         </TourProvider>
       </DateProvider>
     </SportProvider>

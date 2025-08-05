@@ -358,6 +358,39 @@ def load_data_source(source_type: str, lookback_days: int, args: argparse.Namesp
     logger.info(f"Data loading complete. Historical: {len(hist_df)} rows, Team Stats: {len(team_stats_df)} rows.")
     return hist_df, team_stats_df
 
+def load_nba_seasonal_splits_data(supabase_client: Client, seasons: List[int]) -> pd.DataFrame:
+    """Fetches NBA seasonal splits for a list of seasons using the bulk RPC."""
+    if not supabase_client or not seasons:
+        return pd.DataFrame()
+
+    logger.info(f"Fetching NBA seasonal splits via RPC for seasons: {seasons}...")
+    all_splits_data = []
+    for season in seasons:
+        try:
+            # --- THE FIX IS HERE ---
+            # Explicitly cast the season to a standard Python `int` before sending.
+            p_season_int = int(season)
+
+            # Call the bulk RPC for each season
+            resp = supabase_client.rpc(
+                'rpc_get_nba_all_seasonal_splits',
+                {'p_season': p_season_int}  # Use the corrected integer
+            ).execute()
+
+            if resp.data:
+                all_splits_data.extend(resp.data)
+        except Exception as e:
+            logger.error(f"Failed to fetch splits for season {season}: {e}")
+            # This is the line that produced your error log
+    
+    if not all_splits_data:
+        logger.warning("No seasonal splits data returned from any RPC call.")
+        return pd.DataFrame()
+    
+    logger.info(f"Successfully fetched {len(all_splits_data)} total rows of seasonal splits data.")
+    return pd.DataFrame(all_splits_data)
+
+
 # ==============================================================================
 # Utilities
 # ==============================================================================
@@ -1455,63 +1488,61 @@ def run_training_pipeline(args: argparse.Namespace):
     if args.debug:
         logger.setLevel(logging.DEBUG)
         for handler in logging.root.handlers:
-             handler.setLevel(logging.DEBUG)
+            handler.setLevel(logging.DEBUG)
         logger.debug("DEBUG logging enabled.")
 
     logger.info("--- Starting NBA Model Tuning & Training Pipeline ---")
     logger.info(f"Run Arguments: {vars(args)}")
 
-    # Check if local modules were imported correctly
-    # This check now implicitly covers run_feature_pipeline availability
     if not LOCAL_MODULES_AVAILABLE and not args.allow_dummy:
-        logger.critical("Required local modules (including feature pipeline) not found and --allow-dummy not set. Exiting.")
-        sys.exit(1)
-    # Keep config check
-    if not config and not args.allow_dummy:
-        logger.critical("Config module missing or failed to import and --allow-dummy not set. Exiting.")
+        logger.critical("Required local modules not found and --allow-dummy not set. Exiting.")
         sys.exit(1)
 
-    # --- Initialize Clients ---
-    supabase_client = get_supabase_client() # Assuming this helper function exists
-
-    # --- Load Data ---
+    # --- Initialize Clients & Load Base Data ---
+    supabase_client = get_supabase_client()
     historical_df, team_stats_df = load_data_source(
-        args.data_source, args.lookback_days, args, supabase_client # Assuming this helper exists
+        args.data_source, args.lookback_days, args, supabase_client
     )
     if historical_df.empty:
         logger.error("Failed to load historical data. Exiting.")
         sys.exit(1)
-    if team_stats_df is not None and team_stats_df.empty: # Check if not None before logging warning
-        logger.warning("Team stats data is empty or failed to load. Context features might be limited.")
 
-    # --- Feature Engineering ---
-    # REMOVED FeatureEngine Initialization block
+    # --- NEW: Fetch Advanced Splits Data using our RPC ---
+    # Determine the range of seasons we need to fetch splits for
+    seasons_to_fetch = sorted(historical_df['game_date'].dt.year.unique())
+    # The feature engine looks up the *previous* season, so we need to ensure we fetch that data too
+    if seasons_to_fetch:
+        seasons_to_fetch.insert(0, seasons_to_fetch[0] - 1)
+    
+    seasonal_splits_df = load_nba_seasonal_splits_data(supabase_client, seasons_to_fetch)
+    if seasonal_splits_df.empty:
+        logger.warning("Could not fetch seasonal splits data; advanced features will be imputed.")
+    # --- END NEW ---
 
     logger.info("Generating features for ALL historical data using modular pipeline...")
-    # Parse rolling windows argument
-    rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10, 20] # Default if not provided
+    rolling_windows_list = [int(w) for w in args.rolling_windows.split(',')] if args.rolling_windows else [5, 10, 20]
     logger.info(f"Using rolling windows: {rolling_windows_list}")
     logger.info(f"Using H2H window: {args.h2h_window}")
 
     try:
-        # Call the imported run_feature_pipeline function directly
+        # --- MODIFIED: Updated the call to the feature pipeline ---
         features_df = run_feature_pipeline(
             df=historical_df.copy(),
-            db_conn=supabase_client,
+            seasonal_splits_data=seasonal_splits_df,  # Pass the new DataFrame
+            # db_conn is no longer needed for these features, so it's removed
             rolling_windows=rolling_windows_list,
             h2h_lookback=args.h2h_window,
             debug=args.debug
         )
-    # Keep general exception handling for the pipeline call
     except Exception as fe_gen_e:
-         logger.error(f"Feature generation pipeline failed: {fe_gen_e}", exc_info=True)
-         sys.exit(1)
+        logger.error(f"Feature generation pipeline failed: {fe_gen_e}", exc_info=True)
+        sys.exit(1)
 
-    # --- Validation after Feature Generation ---
     if features_df is None or features_df.empty:
-        logger.error("Feature generation pipeline returned an empty or None DataFrame. Exiting.")
+        logger.error("Feature generation pipeline returned an empty DataFrame. Exiting.")
         sys.exit(1)
     logger.info(f"Feature generation completed. Shape: {features_df.shape}")
+
 
     # --- Feature Cleaning & Pre-selection ---
     if features_df.columns.duplicated().any():
