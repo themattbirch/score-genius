@@ -1,5 +1,7 @@
 // frontend/src/screens/game_screen.tsx
 import React, { memo, useMemo } from "react";
+import { useOnline } from "@/contexts/online_context";
+import OfflineBanner from "@/components/offline_banner";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
@@ -23,10 +25,20 @@ import { isGameStale } from "@/game";
 /* ------------------------------------------------------------ */
 /* Hook selector                                                */
 /* ------------------------------------------------------------ */
-const useGamesForSport = (sport: "NBA" | "MLB" | "NFL", apiDate: string) => {
-  const nfl = useNFLSchedule(apiDate, { enabled: sport === "NFL" });
-  const mlb = useMLBSchedule(apiDate, { enabled: sport === "MLB" });
-  const nba = useNBASchedule(apiDate, { enabled: sport === "NBA" });
+const useGamesForSport = (
+  sport: "NBA" | "MLB" | "NFL",
+  apiDate: string,
+  options: { enabled: boolean }
+) => {
+  const nfl = useNFLSchedule(apiDate, {
+    enabled: sport === "NFL" && options.enabled,
+  });
+  const mlb = useMLBSchedule(apiDate, {
+    enabled: sport === "MLB" && options.enabled,
+  });
+  const nba = useNBASchedule(apiDate, {
+    enabled: sport === "NBA" && options.enabled,
+  });
 
   switch (sport) {
     case "NFL":
@@ -44,15 +56,24 @@ const useGamesForSport = (sport: "NBA" | "MLB" | "NFL", apiDate: string) => {
 /* Screen component                                             */
 /* ------------------------------------------------------------ */
 const GamesScreen: React.FC = () => {
+  const online = useOnline();
   const { sport } = useSport();
   const { date, setDate } = useDate();
-
   const apiDate = getLocalYYYYMMDD(date);
+
+  // Early return if offline
+  if (!online) {
+    return (
+      <OfflineBanner message="You’re offline – please reconnect to see games" />
+    );
+  }
+
+  // Only fetch when online
   const {
     data: games = [],
     isLoading,
     isError,
-  } = useGamesForSport(sport, apiDate);
+  } = useGamesForSport(sport, apiDate, { enabled: online });
 
   const visibleGames = useMemo(
     () => games.filter((g) => !isGameStale(g)),

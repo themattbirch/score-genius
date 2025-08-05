@@ -36,10 +36,7 @@ self.skipWaiting();
 
 self.addEventListener("install", () => self.skipWaiting());
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(self.registration.navigationPreload.enable()); // speed up first load
-  self.clients.claim();
-});
+self.addEventListener("activate", () => self.clients.claim());
 
 // -----------------------------------------------------------------------------
 // Navigation requests → NetworkFirst → cached shell → offline fallback
@@ -94,6 +91,14 @@ registerRoute(
         maxEntries: 50,
         maxAgeSeconds: 5 * 60,
       }),
+      {
+        handlerDidError: async ({ request }) => {
+          // serve last good response if we have one
+          const cache = await caches.open("api-data-cache-v1");
+          const cached = await cache.match(request);
+          return cached || Response.error();
+        },
+      },
     ],
   })
 );

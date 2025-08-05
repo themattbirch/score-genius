@@ -8,6 +8,8 @@ import React, { useMemo, useState, useEffect } from "react";
 import { useSport } from "@/contexts/sport_context";
 import { useDate } from "@/contexts/date_context";
 import { useNetworkStatus } from "@/hooks/use_network_status";
+import { useOnline } from "@/contexts/online_context";
+import OfflineBanner from "@/components/offline_banner";
 
 import { useTeamStats } from "@/api/use_team_stats";
 import { usePlayerStats } from "@/api/use_player_stats";
@@ -165,6 +167,9 @@ const StatsScreen: React.FC = () => {
   const { sport } = useSport();
   const { date } = useDate();
   const online = useNetworkStatus();
+  if (!online) {
+    return <OfflineBanner message="You’re offline — stats unavailable" />;
+  }
 
   /* ───── season logic ────────────────────────────────────────────────── */
   const defaultSeason = useMemo(() => {

@@ -27,6 +27,7 @@ import { SportProvider } from "./contexts/sport_context";
 import { DateProvider } from "@/contexts/date_context";
 import { ThemeProvider } from "./contexts/theme_context";
 import { TourProvider } from "@/components/ui/joyride_tour";
+import { OnlineProvider } from "./contexts/online_context";
 
 // Memoized wrapper to avoid needless re‑renders
 const Layout: React.FC = memo(() => (
@@ -49,62 +50,66 @@ const Loader: React.FC<{ message?: string }> = ({ message = "Loading…" }) => (
 
 const App: React.FC = () => (
   <ThemeProvider>
-    <SportProvider>
-      <DateProvider>
-        <TourProvider>
-          <OfflineBoundary>
-            <Suspense fallback={<Loader />}>
-              <Routes>
-                <Route element={<Layout />}>
-                  {/* redirect root → /games */}
-                  <Route index element={<Navigate to="/games" replace />} />
+    <OnlineProvider>
+      <SportProvider>
+        <DateProvider>
+          <TourProvider>
+            <OfflineBoundary>
+              <Suspense fallback={<Loader />}>
+                <Routes>
+                  <Route element={<Layout />}>
+                    {/* redirect root → /games */}
+                    <Route index element={<Navigate to="/games" replace />} />
 
-                  {/* GAMES: eager, no suspense delay */}
-                  <Route path="games" element={<GamesScreen />} />
+                    {/* GAMES: eager, no suspense delay */}
+                    <Route path="games" element={<GamesScreen />} />
 
-                  {/* everything else wrapped in its own Suspense */}
-                  <Route
-                    path="games/:gameId"
-                    element={
-                      <Suspense fallback={<Loader message="Loading game…" />}>
-                        <GameDetailScreen />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="stats"
-                    element={
-                      <Suspense fallback={<Loader message="Loading stats…" />}>
-                        <StatsScreen />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="more"
-                    element={
-                      <Suspense fallback={<Loader message="Loading more…" />}>
-                        <MoreScreen />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="how-to-use"
-                    element={
-                      <Suspense fallback={<Loader message="Loading help…" />}>
-                        <HowToUseScreen />
-                      </Suspense>
-                    }
-                  />
-                </Route>
+                    {/* everything else wrapped in its own Suspense */}
+                    <Route
+                      path="games/:gameId"
+                      element={
+                        <Suspense fallback={<Loader message="Loading game…" />}>
+                          <GameDetailScreen />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="stats"
+                      element={
+                        <Suspense
+                          fallback={<Loader message="Loading stats…" />}
+                        >
+                          <StatsScreen />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="more"
+                      element={
+                        <Suspense fallback={<Loader message="Loading more…" />}>
+                          <MoreScreen />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="how-to-use"
+                      element={
+                        <Suspense fallback={<Loader message="Loading help…" />}>
+                          <HowToUseScreen />
+                        </Suspense>
+                      }
+                    />
+                  </Route>
 
-                {/* catch‑all → back to /games */}
-                <Route path="*" element={<Navigate to="/games" replace />} />
-              </Routes>
-            </Suspense>
-          </OfflineBoundary>
-        </TourProvider>
-      </DateProvider>
-    </SportProvider>
+                  {/* catch‑all → back to /games */}
+                  <Route path="*" element={<Navigate to="/games" replace />} />
+                </Routes>
+              </Suspense>
+            </OfflineBoundary>
+          </TourProvider>
+        </DateProvider>
+      </SportProvider>
+    </OnlineProvider>
   </ThemeProvider>
 );
 
