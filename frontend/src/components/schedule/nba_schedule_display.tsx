@@ -66,10 +66,18 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
 
   /* ── schedule query ───────────────────────────────────── */
   const {
-    data: games = [],
+    data: rawGamesData, // Fetched data can be non-array
     isLoading: isLoadingGames,
     isError: gamesError,
   } = useNBASchedule(isoDate);
+
+  // --- NEW FIX ---
+  // Ensure `games` is always an array. If the API returns an empty object {} or something else, default to [].
+  const games: UnifiedGame[] = useMemo(
+    () => (Array.isArray(rawGamesData) ? rawGamesData : []),
+    [rawGamesData]
+  );
+  // --- END FIX ---
 
   /* ── injuries query ───────────────────────────────────── */
   const {
@@ -154,7 +162,7 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
   return (
     <div className="pt-4 space-y-8">
       {/* ── games list ── */}
-      {filteredGames.length ? (
+      {filteredGames.length > 0 ? (
         <Suspense
           fallback={
             <div className="space-y-4">
@@ -183,12 +191,9 @@ const NBAScheduleDisplay: React.FC<ScheduleDisplayProps> = ({}) => {
       {/* ── Injury Report ─────────────────────────────────────── */}
       {games.length > 0 && (
         <div className="mt-8 border-t border-border pt-6">
-          {/* static header */}
           <h2 className="mb-3 text-left text-lg font-semibold text-slate-800 dark:text-text-primary">
             Daily Injury Report
           </h2>
-
-          {/* body is lazy-loaded / skeleton-swapped */}
           <Suspense
             fallback={
               <div className="space-y-4">
