@@ -40,6 +40,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
 import inspect
 from inspect import signature
+import math
 
 # --- Third-Party Imports ---
 import joblib
@@ -371,7 +372,10 @@ def load_mlb_seasonal_splits_data(supabase_client: Client, seasons: List[int]) -
 
 
 def load_mlb_rolling_features_data(supabase_client: Client, historical_games_df: pd.DataFrame) -> pd.DataFrame:
-    """Fetches all rolling 10-game features for a historical set of games using a bulk RPC."""
+    """
+    Fetches all rolling 10-game features for a historical set of games
+    using a bulk RPC **in batches** to prevent timeouts.
+    """
     if not supabase_client or historical_games_df.empty:
         return pd.DataFrame()
     
@@ -392,19 +396,34 @@ def load_mlb_rolling_features_data(supabase_client: Client, historical_games_df:
         logger.warning("No valid keys to fetch rolling features.")
         return pd.DataFrame()
 
-    logger.info(f"Loading rolling features for {len(historical_games_df)} games via RPC...")
-    try:
-        resp = supabase_client.rpc(
-            'rpc_get_mlb_rolling_features_for_games',
-            {'p_keys': rpc_keys}
-        ).execute()
-        if not resp.data:
-            logger.warning("No MLB rolling features data returned from RPC.")
-            return pd.DataFrame()
-        return pd.DataFrame(resp.data)
-    except Exception as e:
-        logger.error(f"Error loading MLB rolling features via RPC: {e}", exc_info=True)
+    # --- NEW: Batching logic to prevent timeouts ---
+    batch_size = 500  # Process 500 key lookups per RPC call
+    all_features_data = []
+    num_keys = len(rpc_keys)
+    num_batches = math.ceil(num_keys / batch_size)
+    
+    logger.info(f"Loading rolling features for {num_keys} total keys in {num_batches} batches of {batch_size}...")
+
+    for i in range(0, num_keys, batch_size):
+        batch_keys = rpc_keys[i : i + batch_size]
+        logger.debug(f"Fetching batch {i // batch_size + 1} of {num_batches}...")
+        try:
+            resp = supabase_client.rpc(
+                'rpc_get_mlb_rolling_features_for_games',
+                {'p_keys': batch_keys}
+            ).execute()
+            if resp.data:
+                all_features_data.extend(resp.data)
+        except Exception as e:
+            # Log the specific batch that failed, but continue processing others
+            logger.error(f"Error loading MLB rolling features for batch starting at index {i}: {e}")
+    
+    if not all_features_data:
+        logger.warning("No MLB rolling features data was returned from any RPC batch.")
         return pd.DataFrame()
+
+    logger.info(f"Successfully fetched a total of {len(all_features_data)} rolling feature rows.")
+    return pd.DataFrame(all_features_data)
 
 def make_sample_weights(dates, method, half_life):
     """
