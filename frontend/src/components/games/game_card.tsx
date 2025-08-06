@@ -328,7 +328,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
 
   // tour-aware expansion
   useEffect(() => {
-    const TOUR_STEPS_REQUIRING_EXPANSION = [2, 3, 4];
+    const TOUR_STEPS_REQUIRING_EXPANSION = [1, 2, 3];
     const needsExpansion =
       isTourRunning &&
       sport !== "NFL" &&

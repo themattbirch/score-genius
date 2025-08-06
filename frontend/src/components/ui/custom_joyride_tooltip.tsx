@@ -1,11 +1,8 @@
+// frontend/src/components/ui/custom_joyride_tooltip.tsx
 import React from "react";
 import type { TooltipRenderProps } from "react-joyride";
 import { useTour } from "@/contexts/tour_context";
 
-/* -------------------------------------------------- */
-/* tiny helper – wait until selector is in the DOM    */
-/* (and has non-zero dimensions)                      */
-/* -------------------------------------------------- */
 const waitForElement = (
   selector: string,
   timeout = 3_000,
@@ -23,20 +20,15 @@ const waitForElement = (
           `[Joyride] waited ${timeout} ms – element not found`,
           selector
         );
-        return resolve(); // fail-soft: advance anyway
+        return resolve();
       }
       setTimeout(check, poll);
     };
     check();
   });
 
-/**
- * Mapping of **current** stepIndex  →  selector that must exist *before* we
- * advance to the **next** step. (Step order is defined in joyride_tour.tsx.)
- */
 const STEP_READINESS: Record<number, string | null> = {
-  1: null, // keep 300 ms synthetic delay
-  2: '[data-tour="snapshot-button"]', // H2H Stats button
+  1: '[data-tour="snapshot-button"]', // When on step 1 (Game Card), wait for H2H button
 };
 
 export const CustomJoyrideTooltip: React.FC<TooltipRenderProps> = ({
@@ -47,22 +39,12 @@ export const CustomJoyrideTooltip: React.FC<TooltipRenderProps> = ({
 }) => {
   const { setStepIndex, setRun, currentStepIndex } = useTour();
 
-  /* ------------------------- NAV HELPERS -------------------------- */
   const advance = async () => {
     const nextIndex = currentStepIndex + 1;
-
-    // synthetic delay for calendar step if needed
-    if (currentStepIndex === 1) {
-      setTimeout(() => setStepIndex(nextIndex), 300);
-      return;
-    }
-
-    // readiness gate (if any)
     const selector = STEP_READINESS[currentStepIndex];
     if (selector) {
       await waitForElement(selector);
     }
-
     setStepIndex(nextIndex);
   };
 
@@ -76,15 +58,15 @@ export const CustomJoyrideTooltip: React.FC<TooltipRenderProps> = ({
     setStepIndex(0);
   };
 
-  /* ------------------ MVP "no games scheduled" fallback ------------- */
   const noGameCardPresent = !document.querySelector('[data-tour="game-card"]');
-  const isOnGameCardStep = currentStepIndex === 2;
+  // The Game Card step is now at index 1
+  const isOnGameCardStep = currentStepIndex === 1;
   const showFallback = isOnGameCardStep && noGameCardPresent;
 
   const fallbackContent = (
     <>
       <div className="font-medium mb-2">
-        No games scheduled for that date/sport.
+        No games scheduled for this date/sport.
       </div>
       <div className="text-xs mb-3">
         To continue the tour, pick a different date or switch to a sport that
@@ -96,7 +78,6 @@ export const CustomJoyrideTooltip: React.FC<TooltipRenderProps> = ({
     </>
   );
 
-  /* --------------------------- UI -------------------------------- */
   return (
     <div
       {...tooltipProps}
@@ -107,7 +88,6 @@ export const CustomJoyrideTooltip: React.FC<TooltipRenderProps> = ({
       </div>
 
       <div className="flex justify-between items-center pt-3 mt-2 border-t border-slate-200 dark:border-slate-600">
-        {/* SKIP / FINISH */}
         <button
           onClick={stopTour}
           className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
