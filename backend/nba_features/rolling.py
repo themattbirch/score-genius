@@ -1,9 +1,4 @@
 # backend/nba_features/rolling.py
-"""
-Calculates leakage-free rolling mean and standard deviation features for team statistics.
--- MODIFIED to accept a pre-computed DataFrame of rolling features. --
-"""
-
 from __future__ import annotations
 import logging
 from typing import Sequence, Optional
@@ -17,18 +12,13 @@ __all__ = ["transform"]
 
 
 def _lagged_rolling_stat(s: pd.Series, window: int, min_periods: int, stat_func: str) -> pd.Series:
-    """
-    Compute a leakage-free rolling statistic (mean or std) for series `s`.
-    (Original helper function remains unchanged)
-    """
+    # (This original helper function is preserved)
     if s.empty:
         return s.copy()
-
     shifted = s.shift(1)
     if shifted.index.has_duplicates:
         is_duplicated_date_in_shifted_index = shifted.index.duplicated(keep='first')
         shifted.loc[is_duplicated_date_in_shifted_index] = np.nan
-
     if stat_func == 'mean':
         primary = shifted.rolling(window=window, min_periods=min_periods).mean()
         fallback = shifted.rolling(window=window, min_periods=1).mean()
@@ -37,14 +27,13 @@ def _lagged_rolling_stat(s: pd.Series, window: int, min_periods: int, stat_func:
         fallback = shifted.rolling(window=window, min_periods=1).std()
     else:
         raise ValueError(f"Unsupported stat_func: {stat_func}")
-    
     return pd.Series(primary.fillna(fallback).values, index=s.index, name=s.name)
 
 
 def transform(
     df: pd.DataFrame,
     *,
-    # --- MODIFIED --- Added new argument to accept the pre-fetched DataFrame
+    # --- MODIFIED: Added our new argument ---
     precomputed_rolling_features_df: Optional[pd.DataFrame] = None,
     window_sizes: Sequence[int] = (5, 10, 20),
     flag_imputation: bool = True,
@@ -57,7 +46,6 @@ def transform(
     orig_level = logger.level
     if debug:
         logger.setLevel(logging.DEBUG)
-        logger.debug(f"rolling.transform: Input df shape: {df.shape}")
 
     try:
         if df.empty:
@@ -71,44 +59,25 @@ def transform(
             out = df.copy()
             features = precomputed_rolling_features_df.copy()
 
-            # The feature engine should have already normalized team names
             if 'home_norm' not in out.columns:
                 out['home_norm'] = out['home_team'].astype(str).map(normalize_team_name)
             if 'away_norm' not in out.columns:
                 out['away_norm'] = out['away_team'].astype(str).map(normalize_team_name)
             
-            # The RPC returns 'team_id' which is the normalized name (e.g., 'ATL')
             features = features.rename(columns={'team_id': 'team_norm'})
-
-            # Isolate just the feature columns and prepare them for merging
             feature_cols = [col for col in features.columns if col.startswith('rolling_')]
             
-            # Merge for the home team
             home_features_to_merge = features[['team_norm'] + feature_cols].add_prefix('home_')
-            out = pd.merge(
-                out,
-                home_features_to_merge,
-                left_on='home_norm',
-                right_on='home_team_norm',
-                how='left'
-            )
+            out = pd.merge(out, home_features_to_merge, left_on='home_norm', right_on='home_team_norm', how='left')
 
-            # Merge for the away team
             away_features_to_merge = features[['team_norm'] + feature_cols].add_prefix('away_')
-            out = pd.merge(
-                out,
-                away_features_to_merge,
-                left_on='away_norm',
-                right_on='away_team_norm',
-                how='left'
-            )
+            out = pd.merge(out, away_features_to_merge, left_on='away_norm', right_on='away_team_norm', how='left')
             
-            # Clean up and return
             logger.debug(f"Successfully merged pre-computed NBA rolling features. Final shape: {out.shape}")
             return out.drop(columns=['home_team_norm', 'away_team_norm'], errors='ignore')
-        # --- END of new logic ---
+        # --- End of new logic ---
 
-        # --- ORIGINAL LOGIC (now serves as a fallback) ---
+        # --- ORIGINAL LOGIC (now serves as a fallback, preserved from your file) ---
         else:
             logger.info("No pre-computed NBA rolling features provided. Calculating from scratch...")
             out = df.copy()
@@ -120,8 +89,9 @@ def transform(
             }
             needed_cols = {'game_id', 'game_date', 'home_team', 'away_team'}.union(*stat_mapping.keys())
             
-            if not needed_cols.issubset(out.columns):
-                logger.error(f"rolling.transform: missing required columns {needed_cols - set(out.columns)}, skipping.")
+            missing = needed_cols - set(out.columns)
+            if missing:
+                logger.error(f"rolling.transform: missing required columns {missing}, skipping.")
                 return out
 
             out['game_date'] = pd.to_datetime(out['game_date'], errors='coerce').dt.tz_localize(None)
@@ -134,21 +104,24 @@ def transform(
             records = []
             for _, row in out.iterrows():
                 for (h_col, a_col), stat_name in stat_mapping.items():
-                    if pd.notna(row.get(h_col)) and pd.notna(row['home_norm']):
-                        records.append({'game_id': row['game_id'], 'team': row['home_norm'], 'game_date': row['game_date'], 'stat': stat_name, 'val': row[h_col]})
-                    if pd.notna(row.get(a_col)) and pd.notna(row['away_norm']):
-                        records.append({'game_id': row['game_id'], 'team': row['away_norm'], 'game_date': row['game_date'], 'stat': stat_name, 'val': row[a_col]})
+                    home_val = pd.to_numeric(row.get(h_col), errors='coerce')
+                    if pd.notna(home_val) and pd.notna(row['home_norm']):
+                        records.append({'game_id': row['game_id'], 'team': row['home_norm'], 'game_date': row['game_date'], 'stat': stat_name, 'val': home_val})
+                    
+                    away_val = pd.to_numeric(row.get(a_col), errors='coerce')
+                    if pd.notna(away_val) and pd.notna(row['away_norm']):
+                        records.append({'game_id': row['game_id'], 'team': row['away_norm'], 'game_date': row['game_date'], 'stat': stat_name, 'val': away_val})
             
-            if not records: return out.drop(columns=['home_norm', 'away_norm'], errors='ignore')
+            if not records:
+                return out.drop(columns=[c for c in ['home_norm', 'away_norm'] if c in out.columns], errors='ignore')
 
             long_df = pd.DataFrame.from_records(records)
-            long_df['val'] = pd.to_numeric(long_df['val'], errors='coerce')
             long_df = long_df.set_index('game_date').sort_values(['team', 'stat', 'game_date', 'game_id'])
 
-            default_means = {s: DEFAULTS.get(s, 0.0) for s in long_df['stat'].unique()}
-            default_stds = {s: DEFAULTS.get(f"{s}_std", 0.0) for s in long_df['stat'].unique()}
+            unique_stats = long_df['stat'].unique()
+            default_means = {s: DEFAULTS.get(s, 0.0) for s in unique_stats}
+            default_stds = {s: DEFAULTS.get(f"{s}_std", 0.0) for s in unique_stats}
 
-            # (The rest of the original calculation logic continues here, unchanged)
             window_feature_pieces = []
             for w_size in window_sizes:
                 min_p = max(1, w_size // 2)
@@ -172,24 +145,45 @@ def transform(
                     current_piece = pd.concat([current_piece, imp_mean_pivot, imp_std_pivot], axis=1)
                 window_feature_pieces.append(current_piece.reset_index())
             
-            if not window_feature_pieces: return out.drop(columns=['home_norm', 'away_norm'], errors='ignore')
-            
+            if not window_feature_pieces:
+                 return out.drop(columns=[c for c in ['home_norm', 'away_norm'] if c in out.columns], errors='ignore')
+
             wide_features_df = window_feature_pieces[0]
             for piece in window_feature_pieces[1:]:
                 wide_features_df = wide_features_df.merge(piece, on=['game_id', 'team'], how='outer')
 
             for side in ('home', 'away'):
                 side_rename_map = {col: f'{side}_{col}' for col in wide_features_df.columns if col not in ['game_id', 'team']}
-                data_to_merge = wide_features_df.rename(columns={'team': 'merge_team_norm', **side_rename_map})
-                out = out.merge(data_to_merge, left_on=['game_id', f'{side}_norm'], right_on=['game_id', 'merge_team_norm'], how='left').drop(columns=['merge_team_norm'], errors='ignore')
-
-            # Final fillna and type coercion
+                data_to_merge_for_side = wide_features_df.rename(columns={'team': 'merge_team_norm', **side_rename_map})
+                cols_for_this_merge = ['game_id', 'merge_team_norm'] + list(side_rename_map.values())
+                out = out.merge(data_to_merge_for_side[cols_for_this_merge], left_on=['game_id', f'{side}_norm'], right_on=['game_id', 'merge_team_norm'], how='left')
+                if 'merge_team_norm' in out.columns:
+                    out = out.drop(columns=['merge_team_norm'])
+            
             all_added_rolling_cols = [col for col in out.columns if col.startswith(('home_rolling_', 'away_rolling_'))]
             for col_name in all_added_rolling_cols:
-                if col_name.endswith('_imputed'): out[col_name] = out[col_name].fillna(False).astype(bool)
-                else: out[col_name] = pd.to_numeric(out[col_name], errors='coerce').fillna(0.0)
+                if col_name.endswith('_imputed'):
+                     out[col_name] = out[col_name].fillna(False).astype(bool)
+                else:
+                    default_val_for_col = 0.0
+                    try:
+                        parts = col_name.split('_'); rolling_idx = parts.index('rolling')
+                        stat_name_parts = []; is_std_col = False
+                        for i in range(rolling_idx + 1, len(parts)):
+                            part_val = parts[i]
+                            if part_val == 'mean': break
+                            if part_val == 'std': is_std_col = True; break
+                            stat_name_parts.append(part_val)
+                        base_stat_name = "_".join(stat_name_parts)
+                        if is_std_col: default_val_for_col = default_stds.get(base_stat_name, 0.0)
+                        else: default_val_for_col = default_means.get(base_stat_name, 0.0)
+                    except (ValueError, IndexError): pass
+                    out[col_name] = pd.to_numeric(out[col_name], errors='coerce').fillna(default_val_for_col)
+                    if 'std' in col_name and not col_name.endswith('_imputed'):
+                        out[col_name] = out[col_name].clip(lower=0.0)
+                    out[col_name] = out[col_name].astype(float)
             
-            return out.drop(columns=['home_norm', 'away_norm'], errors='ignore')
+            return out.drop(columns=[c for c in ['home_norm', 'away_norm'] if c in out.columns], errors='ignore')
 
     finally:
         if debug:
