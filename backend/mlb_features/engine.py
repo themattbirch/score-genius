@@ -111,13 +111,44 @@ def run_mlb_feature_pipeline(
             if not hist_games.empty else pd.DataFrame()
         )
 
+        # ── Slice precomputed rolling features for this season ───────────
+        if precomputed_rolling_features_df is not None and not precomputed_rolling_features_df.empty:
+            roll_feats = precomputed_rolling_features_df.copy()
+            # Determine which date column to use
+            if "game_date_et" in roll_feats.columns:
+                date_col = "game_date_et"
+                roll_feats[date_col] = pd.to_datetime(roll_feats[date_col], errors="coerce")
+            elif "game_date_time_utc" in roll_feats.columns:
+                date_col = "game_date_time_utc"
+                roll_feats[date_col] = (
+                    pd.to_datetime(roll_feats[date_col], errors="coerce")
+                    .dt.tz_localize("UTC")
+                    .dt.tz_convert("America/New_York")
+                )
+            else:
+                raise KeyError(
+                    "Precomputed rolling features lack both 'game_date_et' and 'game_date_time_utc'"
+                )
+
+            # Normalize to midnight ET and extract season year
+            roll_feats[date_col] = roll_feats[date_col].dt.normalize()
+            roll_feats["season"] = roll_feats[date_col].dt.year
+
+            # Filter to just this season
+            season_roll_feats = roll_feats[roll_feats["season"] == season]
+        else:
+            season_roll_feats = None
+
         for module_name in execution_order:
             fn = TRANSFORMS.get(module_name)
-            if fn is None: continue
+            if fn is None:
+                continue
 
             kwargs: Dict[str, Any] = {}
-            if _supports_kwarg(fn, "debug"): kwargs["debug"] = debug
-            if _supports_kwarg(fn, "flag_imputations"): kwargs["flag_imputations"] = flag_imputations
+            if _supports_kwarg(fn, "debug"):
+                kwargs["debug"] = debug
+            if _supports_kwarg(fn, "flag_imputations"):
+                kwargs["flag_imputations"] = flag_imputations
 
             input_df = season_df
 
@@ -125,22 +156,10 @@ def run_mlb_feature_pipeline(
                 input_df = pd.concat([raw_hist_games, season_df], ignore_index=True)
                 if module_name == "rolling":
                     kwargs["window_sizes"] = rolling_window_sizes
-                    # --- MODIFIED --- Pass the pre-computed rolling features DataFrame to the rolling module
-                    if precomputed_rolling_features_df is not None:
-                        kwargs["precomputed_rolling_features_df"] = precomputed_rolling_features_df
+                    if season_roll_feats is not None:
+                        kwargs["precomputed_rolling_features_df"] = season_roll_feats
                 if module_name == "rest":
                     kwargs["historical_df"] = raw_hist_games
-            elif module_name in ("h2h", "form"):
-                kwargs["historical_df"] = raw_hist_games
-                if module_name == "h2h": kwargs["max_games"] = h2h_max_games
-                if module_name == "form": kwargs["num_form_games"] = num_form_games
-            elif module_name == "season":
-                kwargs["historical_team_stats_df"] = team_stats[team_stats["season"] == (season - 1)].copy() if not team_stats.empty else pd.DataFrame()
-            elif module_name == "advanced":
-                kwargs["precomputed_stats"] = precomputed_adv_stats
-            elif module_name == "handedness_for_display":
-                kwargs["historical_team_stats_df"] = (team_stats[team_stats["season"] == season] if not team_stats.empty else pd.DataFrame())
-
             output_df = fn(input_df, **kwargs)
 
             if module_name in ("rest", "rolling"):

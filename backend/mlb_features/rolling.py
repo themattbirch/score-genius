@@ -16,57 +16,39 @@ logger = logging.getLogger(__name__)
 def transform(
     df: pd.DataFrame,
     *,
-    # --- MODIFIED --- Added new argument to accept the pre-fetched DataFrame
     precomputed_rolling_features_df: Optional[pd.DataFrame] = None,
     window_sizes: List[int] = [15, 30, 60, 100],
     debug: bool = False,
     **kwargs,
 ) -> pd.DataFrame:
-    if debug:
-        logger.setLevel(logging.DEBUG)
-    if df is None or df.empty:
-        return df.copy() if df is not None else pd.DataFrame()
-
-    # --- NEW: Shortcut logic using pre-computed features from our RPC ---
     if precomputed_rolling_features_df is not None and not precomputed_rolling_features_df.empty:
-        logger.info("Using pre-computed rolling features DataFrame passed from engine.")
-        
         out = df.copy()
-        features = precomputed_rolling_features_df.copy()
+        feats = precomputed_rolling_features_df.copy()
 
-        # Ensure join keys are the same type (strings are safest for IDs)
-        out['home_team_id_str'] = out['home_team_id'].astype(str)
-        out['away_team_id_str'] = out['away_team_id'].astype(str)
-        features['team_id_str'] = features['team_id'].astype(str)
+        # Convert team_id once, downcast to smallest int
+        feats['team_id'] = pd.to_numeric(feats['team_id'], errors='coerce').dropna().astype('int16')
+        feat_cols = [c for c in feats.columns if c.startswith('rolling_')]
+        feats = feats[['team_id', *feat_cols]].drop_duplicates('team_id').set_index('team_id')
 
-        # Isolate just the feature columns and prepare them for merging
-        feature_cols = [col for col in features.columns if col.startswith('rolling_')]
-        
-        # Merge for the home team
-        home_features_to_merge = features[['team_id_str'] + feature_cols].add_prefix('home_')
-        out = pd.merge(
-            out,
-            home_features_to_merge,
-            left_on='home_team_id_str',
-            right_on='home_team_id_str',
-            how='left'
-        )
+        # Filter to only the teams present in this chunk
+        teams = pd.to_numeric(out['home_team_id'], errors='coerce').dropna().astype('int16')
+        teams = teams.append(pd.to_numeric(out['away_team_id'], errors='coerce').dropna().astype('int16'))
+        feats = feats.loc[feats.index.intersection(teams.unique())]
 
-        # Merge for the away team
-        away_features_to_merge = features[['team_id_str'] + feature_cols].add_prefix('away_')
-        out = pd.merge(
-            out,
-            away_features_to_merge,
-            left_on='away_team_id_str',
-            right_on='away_team_id_str',
-            how='left'
-        )
+        # Build home and away feature tables once
+        home_feats = feats.add_prefix('home_')
+        away_feats = feats.add_prefix('away_')
 
-        # Clean up helper columns and return
-        out = out.drop(columns=['home_team_id_str', 'away_team_id_str'], errors='ignore')
-        logger.debug(f"Successfully merged pre-computed rolling features. Final shape: {out.shape}")
+        # Ensure keys are ints
+        out['home_team_id'] = pd.to_numeric(out['home_team_id'], errors='coerce').astype('int16')
+        out['away_team_id'] = pd.to_numeric(out['away_team_id'], errors='coerce').astype('int16')
+
+        # Two fast index-joins instead of two merges
+        out = out.join(home_feats, on='home_team_id')
+        out = out.join(away_feats, on='away_team_id')
+
         return out
-    # --- END of new logic ---
+        # --- END of new logic ---
 
     # --- ORIGINAL LOGIC (now serves as a fallback) ---
     else:

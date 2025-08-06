@@ -3,7 +3,12 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 
 /** How often to ping in ms (cheap HEAD request) */
 const HEARTBEAT_MS = 5000;
-const TEST_URL = "/heartbeat.txt"; // precached asset for heartbeat
+
+/**
+ * Generate a unique URL each time to bypass SW and browser caches
+ * We'll hit a non-existent resource so we rely on network errors
+ */
+const buildHeartbeatURL = () => `/heartbeat.txt?ts=${Date.now()}`;
 
 const OnlineCtx = createContext<boolean>(true);
 export const useOnline = () => useContext(OnlineCtx);
@@ -13,7 +18,7 @@ export const OnlineProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [online, setOnline] = useState<boolean>(navigator.onLine);
 
-  // Native browser events (reliable in desktop browsers)
+  // Browser online/offline events (reliable in desktop)
   useEffect(() => {
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
@@ -27,26 +32,29 @@ export const OnlineProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  // Heartbeat ping to catch connectivity changes in WebView/TWA
+  // Heartbeat ping to catch TWA/WebView connectivity changes
   useEffect(() => {
     let isMounted = true;
 
     const heartbeat = async () => {
       try {
-        await fetch(TEST_URL, { method: "HEAD", cache: "no-store" });
+        await fetch(buildHeartbeatURL(), {
+          method: "HEAD",
+          cache: "reload",
+          mode: "no-cors",
+        });
         if (isMounted) setOnline(true);
       } catch {
         if (isMounted) setOnline(false);
       }
     };
 
-    // Initial check
+    // Initial check & recurring interval
     heartbeat();
-    const intervalId = window.setInterval(heartbeat, HEARTBEAT_MS);
-
+    const id = window.setInterval(heartbeat, HEARTBEAT_MS);
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
+      clearInterval(id);
     };
   }, []);
 
