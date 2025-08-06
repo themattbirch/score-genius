@@ -30,7 +30,8 @@ const HowToUseScreen: React.FC = () => {
   // 👇 detect offline
   const online = useOnline();
   if (!online) {
-    return <OfflineBanner message="You’re offline — help is unavailable" />;
+    window.location.href = "/app/offline.html";
+    return null;
   }
   const { start, setRun, setStepIndex } = useTour();
   const navigate = useNavigate();

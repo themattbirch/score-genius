@@ -105,9 +105,8 @@ const MoreScreen: React.FC = () => {
   // 1️⃣ offline fallback
   const online = useOnline();
   if (!online) {
-    return (
-      <OfflineBanner message="You’re offline — this section is unavailable" />
-    );
+    window.location.href = "/app/offline.html";
+    return null;
   }
 
   const { start } = useTour();

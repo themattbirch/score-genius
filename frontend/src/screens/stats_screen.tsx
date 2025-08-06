@@ -166,9 +166,10 @@ const StatsScreen: React.FC = () => {
   /* ───── context & basic state ────────────────────────────────────────── */
   const { sport } = useSport();
   const { date } = useDate();
-  const online = useNetworkStatus();
+  const online = useOnline();
   if (!online) {
-    return <OfflineBanner message="You’re offline — stats unavailable" />;
+    window.location.href = "/app/offline.html";
+    return null;
   }
 
   /* ───── season logic ────────────────────────────────────────────────── */
