@@ -17,7 +17,7 @@ export const getNbaSchedule = async (req, res, next) => {
 
     // 3. Call the CORRECT service function that filters by date
     //    This function already handles formatting the response columns.
-    const scheduleData = nbaService.getSchedule(date); // Using direct import
+    const scheduleData = await nbaService.getSchedule(date); // Using direct import
 
     // 4. Send the response (formatted like your MLB response for consistency)
     res.status(200).json({

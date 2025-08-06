@@ -84,6 +84,56 @@ features = supabase.rpc(
 ).execute()
 ```
 
+### `rpc_get_nba_schedule_by_date`
+
+- **Purpose**: Fetches upcoming/scheduled NBA games for a **single**, specific date.
+- **Use Case**: Populating the "Games" screen in the PWA for today or future dates.
+- **Data Source**: `public.nba_game_schedule`
+
+**Parameters**
+
+| Name     | Type   | Description                                                       |
+| :------- | :----- | :---------------------------------------------------------------- |
+| `p_date` | `date` | The specific date to fetch the schedule for (e.g., '2025-12-25'). |
+
+**Returns**
+
+A set of rows for scheduled games on the given date, including game details, scheduled time, and predicted scores.
+
+**Example Call (Python)**
+
+````python
+# Fetches the game schedule for Christmas Day 2025
+schedule = supabase.rpc(
+    'rpc_get_nba_schedule_by_date',
+    {'p_date': '2025-12-25'}
+).execute()
+
+### `rpc_get_nba_historical_games_by_date`
+
+* **Purpose**: Fetches completed/historical NBA games with final scores for a **single**, specific date.
+* **Use Case**: Populating the "Games" screen in the PWA for past dates to show game results.
+* **Data Source**: `public.nba_historical_game_stats`
+
+**Parameters**
+
+| Name     | Type   | Description                                                          |
+| :------- | :----- | :------------------------------------------------------------------- |
+| `p_date` | `date` | The specific date to fetch historical games for (e.g., '2025-05-15'). |
+
+**Returns**
+
+A set of rows for completed games on the given date, including the final `home_score` and `away_score`.
+
+**Example Call (Python)**
+
+```python
+# Fetches historical game results for May 15, 2025
+results = supabase.rpc(
+    'rpc_get_nba_historical_games_by_date',
+    {'p_date': '2025-05-15'}
+).execute()
+
 ### `rpc_get_nba_rolling_features_for_games`
 
 - **Purpose**: Fetches the most recent 20-game rolling features for multiple teams involved in upcoming games.
@@ -109,7 +159,7 @@ bulk_features = supabase.rpc(
     'rpc_get_nba_rolling_features_for_games',
     {'p_keys': keys}
 ).execute()
-```
+````
 
 ### `rpc_get_nba_snapshot`
 
