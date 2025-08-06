@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 
 /** How often to ping in ms (cheap HEAD request) */
 const HEARTBEAT_MS = 5000;
-const TEST_URL = "/app/offline.html"; // precached asset for heartbeat
+const TEST_URL = "/heartbeat.txt"; // precached asset for heartbeat
 
 const OnlineCtx = createContext<boolean>(true);
 export const useOnline = () => useContext(OnlineCtx);
