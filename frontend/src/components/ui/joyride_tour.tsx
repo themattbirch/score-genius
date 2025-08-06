@@ -110,19 +110,6 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
   const tourSteps = useMemo(() => {
     let steps = [...baseSteps];
 
-    // RESTORED: Fallback for Game Card (now at index 1)
-    const gameCardStep = steps[1];
-    if (
-      !hasGameCard &&
-      gameCardStep &&
-      typeof gameCardStep.target === "string" &&
-      gameCardStep.target.includes("game-card")
-    ) {
-      gameCardStep.target = '[data-tour="sport-switch"]';
-      gameCardStep.content =
-        "No games scheduled. Switch sports or pick another date, then click Next.";
-    }
-
     // Sport-specific filtering
     if (sport === "NBA") {
       steps = steps.filter(

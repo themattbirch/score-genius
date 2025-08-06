@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 __all__ = ['run_feature_pipeline']
 
 DEFAULT_ORDER: List[str] = [
-    'game_advanced_metrics', 'rest', 'h2h', 'form', 'season', 'adv_splits', 'rolling'
+    'game_advanced_metrics', 'rest', 'h2h', 'season', 'form', 'adv_splits', 'rolling'
 ]
 TRANSFORMS: Dict[str, Any] = {
     'game_advanced_metrics': game_adv_transform,
