@@ -132,13 +132,15 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
   const handleJoyride = useCallback(
     (data: CallBackProps) => {
       const { status, type } = data;
-      const isTourFinished =
-        status === STATUS.FINISHED || status === STATUS.SKIPPED;
-      if (status === STATUS.ERROR) {
-        // give React time to mount the element
-        setTimeout(() => setStepIndex((i) => i + 1), 250);
+
+      // If the target isn’t mounted, skip to the next step
+      if (type === EVENTS.TARGET_NOT_FOUND) {
+        setStepIndex((i) => i + 1);
         return;
       }
+
+      const isTourFinished =
+        status === STATUS.FINISHED || status === STATUS.SKIPPED;
 
       if (isTourFinished || type === EVENTS.TOUR_END) {
         if (run) {
