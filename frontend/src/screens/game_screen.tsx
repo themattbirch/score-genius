@@ -63,9 +63,8 @@ const GamesScreen: React.FC = () => {
 
   // Early return if offline
   if (!online) {
-    return (
-      <OfflineBanner message="You’re offline – please reconnect to see games" />
-    );
+    window.location.href = "/app/offline.html"; // << always show offline shell    );
+    return null;
   }
 
   // Only fetch when online
@@ -97,6 +96,33 @@ const GamesScreen: React.FC = () => {
         (g.away_final_score != null && g.home_final_score != null);
       return !inProgress && !isFinal;
     })?.id;
+  }, [visibleGames]);
+
+  // Put upcoming games first, then in-progress, then finals
+  const sortedGames = useMemo(() => {
+    const GAME_STALE_MS = 3.5 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const rank = (g: (typeof games)[number]) => {
+      const src = g.gameTimeUTC ?? g.game_date;
+      if (!src) return 2; // push unknowns to bottom
+
+      const start = new Date(src).getTime();
+      const inProgress = now >= start && now < start + GAME_STALE_MS;
+
+      const status = (g.statusState ?? "").toLowerCase();
+      const isFinal =
+        ["final", "ended", "ft", "post-game", "postgame", "completed"].some(
+          (s) => status.includes(s)
+        ) ||
+        (g.away_final_score != null && g.home_final_score != null);
+
+      if (!inProgress && !isFinal) return 0; // upcoming
+      if (inProgress) return 1; // live
+      return 2; // final
+    };
+
+    return [...visibleGames].sort((a, b) => rank(a) - rank(b));
   }, [visibleGames]);
 
   const formattedDate = date.toLocaleDateString("en-US", {
@@ -175,7 +201,7 @@ const GamesScreen: React.FC = () => {
         ) : (
           /* responsive grid of active cards */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {visibleGames.map((g) => (
+            {sortedGames.map((g) => (
               <GameCard
                 key={g.id}
                 game={g}
