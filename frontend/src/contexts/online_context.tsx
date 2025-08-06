@@ -1,45 +1,52 @@
 // frontend/src/contexts/online_context.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-/**  How often to ping in ms (very cheap HEAD request) */
-const HEARTBEAT_MS = 5_000;
-const TEST_URL = "/app/offline.html"; // any small, precached asset
+/** How often to ping in ms (cheap HEAD request) */
+const HEARTBEAT_MS = 5000;
+const TEST_URL = "/app/offline.html"; // precached asset for heartbeat
 
-const OnlineCtx = createContext(true);
+const OnlineCtx = createContext<boolean>(true);
 export const useOnline = () => useContext(OnlineCtx);
 
 export const OnlineProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [online, setOnline] = useState(navigator.onLine);
+  const [online, setOnline] = useState<boolean>(navigator.onLine);
 
-  // Native browser events (these work on desktop)
+  // Native browser events (reliable in desktop browsers)
   useEffect(() => {
-    const handler = () => setOnline(navigator.onLine);
-    window.addEventListener("online", handler);
-    window.addEventListener("offline", handler);
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
     return () => {
-      window.removeEventListener("online", handler);
-      window.removeEventListener("offline", handler);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
-  // Heartbeat – covers TWA / WebView where events don’t always fire
+  // Heartbeat ping to catch connectivity changes in WebView/TWA
   useEffect(() => {
-    let mounted = true;
-    const tick = async () => {
+    let isMounted = true;
+
+    const heartbeat = async () => {
       try {
-        // HEAD → no body download; `cache: 'no-store'` bypasses SW cache
         await fetch(TEST_URL, { method: "HEAD", cache: "no-store" });
-        mounted && setOnline(true);
+        if (isMounted) setOnline(true);
       } catch {
-        mounted && setOnline(false);
+        if (isMounted) setOnline(false);
       }
     };
-    const id = window.setInterval(tick, HEARTBEAT_MS);
+
+    // Initial check
+    heartbeat();
+    const intervalId = window.setInterval(heartbeat, HEARTBEAT_MS);
+
     return () => {
-      mounted = false;
-      clearInterval(id);
+      isMounted = false;
+      clearInterval(intervalId);
     };
   }, []);
 
