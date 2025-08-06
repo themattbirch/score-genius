@@ -54,6 +54,17 @@ def run_mlb_feature_pipeline(
     debug: bool = False,
     keep_display_only_features: bool = False
 ) -> pd.DataFrame:
+    
+    if df is None or df.empty:
+        logger.warning("engine.run_mlb_feature_pipeline: Input DataFrame is empty. Aborting.")
+        return pd.DataFrame()
+        
+    required_df_cols = ['game_id', 'game_date_et', 'home_team_id', 'away_team_id']
+    missing_input_cols = [col for col in required_df_cols if col not in df.columns]
+    if missing_input_cols:
+        logger.error(f"engine.run_mlb_feature_pipeline: Input 'df' missing required columns: {missing_input_cols}. Aborting.")
+        return df
+
     if debug:
         logger.setLevel(logging.DEBUG)
     if df is None or df.empty:
@@ -155,7 +166,11 @@ def run_mlb_feature_pipeline(
 
             if module_name == "advanced" and not keep_display_only_features:
                 season_df.drop(columns=["h_team_off_avg_runs_vs_opp_hand"], inplace=True, errors="ignore")
-
+            
+            if season_df.empty:
+                logger.error(f"ENGINE: DataFrame became empty after module '{module_name}'. Halting pipeline for this season.")
+                break
+            
         logger.info(f"ENGINE: Processing season {season}...")
         season_df = working_df[working_df["season"] == season].copy()
 

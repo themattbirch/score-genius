@@ -11,6 +11,7 @@ import SkeletonLoader from "../ui/skeleton_loader";
 import { useTheme } from "@/contexts/theme_context";
 import { Sport, SnapshotData, PieChartDataItem } from "@/types";
 import { Info, ExternalLink } from "lucide-react";
+import { useOnline } from "@/contexts/online_context";
 
 /* Lazy‑loaded charts */
 const BarChartComponent = lazy(() => import("./charts/bar_chart_component"));
@@ -108,8 +109,29 @@ const SnapshotModal: React.FC<SnapshotModalProps> = ({
     return () => document.removeEventListener("keydown", h);
   }, [isOpen, onClose]);
 
+  const online = useOnline();
+
   /* early outs */
   if (!isOpen) return null;
+
+  // if offline, keep the page but show a quick notice in the modal
+  if (!online) {
+    return createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="bg-slate-800 text-white p-6 rounded-lg shadow-xl max-w-sm">
+          <p className="font-bold mb-2">You’re offline</p>
+          <p className="text-sm mb-4">Reconnect to load the snapshot.</p>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-700 rounded-full text-xs font-semibold"
+          >
+            Close
+          </button>
+        </div>
+      </div>,
+      document.body
+    );
+  }
 
   if (isError) {
     return (

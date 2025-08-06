@@ -222,7 +222,7 @@ class NFLFeatureEngine:
         historical_team_stats_df: pd.DataFrame,
         debug: bool = False,
         flag_imputations: bool = True,
-        rolling_window: int = 3, # Note: may be superseded by recent_form data
+        rolling_window: int = 3,
         form_lookback: int = 5,
         momentum_span: int = 5,
         h2h_max_games: int = 10,
@@ -237,33 +237,35 @@ class NFLFeatureEngine:
         t0 = time.time()
         logger.debug("ENGINE: build_features start | rows=%d cols=%d", *games_df.shape)
 
-        # --- MODIFIED: Pre-fetch all necessary data for all seasons in the batch ---
-        all_seasons = sorted(games_df["season"].dropna().unique())
-        
-        all_season_stats_df = pd.concat(
-            [self._fetch_season_stats_via_rpc(season) for season in all_seasons],
-            ignore_index=True
-        )
-        all_recent_form_df = self._fetch_recent_form_via_rpc()
-        # Note: We are not fetching advanced_stats as it wasn't in the default execution order.
-        # If needed, you would fetch it here as well.
-        
-        _log_profile(all_season_stats_df, "all_season_stats (RPC)", debug)
-        _log_profile(all_recent_form_df, "all_recent_form (RPC)", debug)
-
-        # (Canonicalization logic remains the same)
+        # --- MODIFIED: Canonicalization (which creates the 'season' column) now happens FIRST ---
         def _canon(df: pd.DataFrame) -> pd.DataFrame:
             out = df.copy()
-            if "home_team_norm" in out.columns: out["home_team_norm"] = out["home_team_norm"].apply(normalize_team_name)
-            if "away_team_norm" in out.columns: out["away_team_norm"] = out["away_team_norm"].apply(normalize_team_name)
+            if "home_team_norm" not in out.columns and "home_team_id" in out.columns:
+                 out["home_team_norm"] = out["home_team_id"].apply(normalize_team_name)
+            if "away_team_norm" not in out.columns and "away_team_id" in out.columns:
+                 out["away_team_norm"] = out["away_team_id"].apply(normalize_team_name)
             if "game_date" in out.columns:
                 out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce")
-                out["season"] = out["game_date"].apply(determine_season)
+                if "season" not in out.columns:
+                    out["season"] = out["game_date"].apply(determine_season)
             return out
         
         games = _canon(games_df)
         hist_games = _canon(historical_games_df)
-        hist_team_stats = historical_team_stats_df.copy() # Raw team game stats
+        hist_team_stats = historical_team_stats_df.copy()
+
+        # --- MODIFIED: This line can now safely access the 'season' column ---
+        all_seasons = sorted(games["season"].dropna().unique())
+        
+        # Pre-fetch all necessary data for all seasons in the batch via RPCs
+        all_season_stats_df = pd.concat(
+            [self._fetch_season_stats_via_rpc(int(season)) for season in all_seasons],
+            ignore_index=True
+        )
+        all_recent_form_df = self._fetch_recent_form_via_rpc()
+        
+        _log_profile(all_season_stats_df, "all_season_stats (RPC)", debug)
+        _log_profile(all_recent_form_df, "all_recent_form (RPC)", debug)
         
         # (Precompute logic remains the same)
         if "team_id" in hist_games.columns:
@@ -271,7 +273,7 @@ class NFLFeatureEngine:
             hist_games = compute_advanced_metrics(hist_games)
             hist_games = compute_drive_metrics(hist_games)
 
-        # 2. Iterate seasons to avoid leakage
+        # (The rest of the function remains the same...)
         chunks: List[pd.DataFrame] = []
         for season_str in all_seasons:
             season = int(season_str)
@@ -284,17 +286,14 @@ class NFLFeatureEngine:
                 fn = self.TRANSFORMS[module]
                 logger.debug("ENGINE:%s running…", module)
 
-                kw: Dict[str, Any] = {"flag_imputations": flag_imputations}
+                kw: Dict[str, Any] = {"flag_imputations": flag_imputations, "debug": debug}
                 if _supports_kwarg(fn, "historical_df"): kw["historical_df"] = past_games
                 
-                # --- MODIFIED: Pass pre-fetched DataFrames instead of Supabase client ---
                 if module == "season":
-                    # Pass the pre-fetched season stats for the prior season
                     kw["season_stats_df"] = all_season_stats_df[all_season_stats_df['season'] == (season - 1)]
                 elif module == "rolling":
-                    # The 'rolling' module is now responsible for consuming 'recent form' data
                     kw["recent_form_df"] = all_recent_form_df
-                    kw["window"] = rolling_window # Can keep passing config like this
+                    kw["window"] = rolling_window
                 elif module == "form":
                     kw["lookback_window"] = form_lookback
                 elif module == "momentum":
@@ -302,14 +301,11 @@ class NFLFeatureEngine:
                 elif module == "h2h":
                     kw["max_games"] = h2h_max_games
                 
-                # The raw historical_team_stats_df might still be needed by some modules
                 if _supports_kwarg(fn, "historical_team_stats_df"):
                     kw["historical_team_stats_df"] = hist_team_stats
 
-                # The call to the transform function itself
                 mod_out = fn(season_games, **kw)
 
-                # (Merge logic remains the same)
                 if mod_out.empty:
                     logger.warning("ENGINE:%s returned empty DF – skipped", module.upper())
                     continue
