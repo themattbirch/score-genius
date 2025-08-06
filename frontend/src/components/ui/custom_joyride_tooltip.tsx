@@ -61,7 +61,10 @@ export const CustomJoyrideTooltip: React.FC<TooltipRenderProps> = ({
   const noGameCardPresent = !document.querySelector('[data-tour="game-card"]');
   // The Game Card step is now at index 1
   const isOnGameCardStep = currentStepIndex === 1;
-  const showFallback = isOnGameCardStep && noGameCardPresent;
+  const targetSelector = typeof step.target === "string" ? step.target : "";
+  const targetMissing =
+    targetSelector && !document.querySelector(targetSelector);
+  const showFallback = isOnGameCardStep && (noGameCardPresent || targetMissing);
 
   const fallbackContent = (
     <>
