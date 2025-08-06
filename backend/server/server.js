@@ -23,7 +23,6 @@ const __dirname = path.dirname(__filename);
 
 // Define key static asset paths
 const staticRoot = path.join(__dirname, "static");
-const faviconPath = path.join(staticRoot, "public", "favicon.ico");
 
 // Load .env files from parent directories
 ["../.env", "../../.env"].forEach((rel) => {
@@ -87,6 +86,12 @@ app.get("/robots.txt", (req, res) => {
   res.setHeader("Content-Type", "text/plain");
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "robots.txt"));
+});
+
+// right after your robots.txt handler:
+app.get("/favicon.ico", (req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.sendFile(path.join(staticRoot, "public", "favicon.ico"));
 });
 
 app.get("/help", (req, res) => {

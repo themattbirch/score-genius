@@ -321,14 +321,6 @@ export async function getSchedule(date) {
   console.log(`[nba_service] Calling RPC: ${rpcName} for date ${date}`);
   const { data, error, status } = await supabase.rpc(rpcName, rpcParams);
 
-  // --- NEW LOGGING ---
-  console.log(
-    `[nba_service] RAW RPC Response: Status=${status}, Error=${
-      error ? JSON.stringify(error) : "No"
-    }, Data Rows=${data?.length ?? 0}`
-  );
-  // --- END NEW LOGGING ---
-
   if (error) {
     const dbErr = new Error(
       error.message || `Supabase RPC failed for ${rpcName}`
@@ -337,13 +329,15 @@ export async function getSchedule(date) {
     throw dbErr;
   }
 
-  if (!Array.isArray(data)) {
-    console.warn(`[nba_service] RPC ${rpcName} returned non-array:`, data);
-    return [];
-  }
+  // --- MODIFIED: More robust handling of the RPC response ---
+  // The data from a PostgREST RPC call on an empty result set can be `null`.
+  // This line ensures we always work with an array.
+  const resultData = Array.isArray(data) ? data : [];
 
-  // The mapping logic is now much cleaner as the RPCs return fewer columns
-  return data.map((row) => {
+  console.log(`[nba_service] RPC returned ${resultData.length} rows.`);
+
+  // Now, we map over the `resultData`, which is guaranteed to be an array.
+  return resultData.map((row) => {
     if (isPastDate) {
       return {
         id: String(row.game_id),
