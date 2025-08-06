@@ -8,7 +8,7 @@ const HEARTBEAT_MS = 5000;
  * Generate a unique URL each time to bypass SW and browser caches
  * We'll hit a non-existent resource so we rely on network errors
  */
-const buildHeartbeatURL = () => `/heartbeat.txt?ts=${Date.now()}`;
+const buildHeartbeatURL = () => `/favicon.ico?ts=${Date.now()}`;
 
 const OnlineCtx = createContext<boolean>(true);
 export const useOnline = () => useContext(OnlineCtx);

@@ -303,7 +303,6 @@ export const fetchNbaPlayerGameHistory = async (
 export async function getSchedule(date) {
   console.log("[nba_service getSchedule] Received date:", date);
 
-  /* ---------- 1. Past-or-future check -------------------- */
   const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
   const inputEt = DateTime.fromISO(date, { zone: ET_ZONE_IDENTIFIER });
   if (!inputEt.isValid) {
@@ -313,36 +312,37 @@ export async function getSchedule(date) {
   }
   const isPastDate = inputEt.startOf("day") < nowEt.startOf("day");
 
-  /* ---------- 2. Pick table & columns ------------------- */
-  const TABLE = isPastDate ? NBA_HISTORICAL_GAMES_TABLE : NBA_SCHEDULE_TABLE;
+  const rpcName = isPastDate
+    ? "rpc_get_nba_historical_games_by_date"
+    : "rpc_get_nba_schedule_by_date";
 
-  const columns = isPastDate
-    ? `game_id, game_date, home_team, away_team, home_score, away_score`
-    : `game_id, game_date, home_team, away_team, scheduled_time,
-       spread_clean, total_clean,
-       predicted_home_score, predicted_away_score`;
+  const rpcParams = { p_date: date };
 
-  /* ---------- 3. Supabase query ------------------------- */
-  const { data, error, status } = await supabase
-    .from(TABLE)
-    .select(columns)
-    .eq("game_date", date)
-    .order(isPastDate ? "game_date" : "scheduled_time", { ascending: true });
+  console.log(`[nba_service] Calling RPC: ${rpcName} for date ${date}`);
+  const { data, error, status } = await supabase.rpc(rpcName, rpcParams);
+
+  // --- NEW LOGGING ---
+  console.log(
+    `[nba_service] RAW RPC Response: Status=${status}, Error=${
+      error ? JSON.stringify(error) : "No"
+    }, Data Rows=${data?.length ?? 0}`
+  );
+  // --- END NEW LOGGING ---
 
   if (error) {
     const dbErr = new Error(
-      error.message || "Supabase query failed (getSchedule)"
+      error.message || `Supabase RPC failed for ${rpcName}`
     );
-    dbErr.status = status || 503; // ← key line
+    dbErr.status = status || 503;
     throw dbErr;
   }
 
-  /* ---------- 4. Map rows to unified structure ---------- */
   if (!Array.isArray(data)) {
-    console.warn("[nba_service] Supabase returned non-array:", data);
+    console.warn(`[nba_service] RPC ${rpcName} returned non-array:`, data);
     return [];
   }
 
+  // The mapping logic is now much cleaner as the RPCs return fewer columns
   return data.map((row) => {
     if (isPastDate) {
       return {
@@ -350,12 +350,6 @@ export async function getSchedule(date) {
         game_date: row.game_date,
         homeTeamName: row.home_team,
         awayTeamName: row.away_team,
-        gameTimeUTC: null,
-        statusState: "Final",
-        spreadLine: null,
-        totalLine: null,
-        predictionHome: null,
-        predictionAway: null,
         home_final_score: row.home_score,
         away_final_score: row.away_score,
         dataType: "historical",
@@ -380,8 +374,6 @@ export async function getSchedule(date) {
           : null,
         predictionHome: row.predicted_home_score,
         predictionAway: row.predicted_away_score,
-        home_final_score: null,
-        away_final_score: null,
         dataType: "schedule",
       };
     }
