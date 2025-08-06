@@ -293,18 +293,17 @@ export async function getNflAdvancedStats(req, res, next) {
   }
 }
 // GET /api/v1/nfl/team-stats/summary?season=YYYY
-// GET /api/v1/nfl/team-stats/summary?season=YYYY
 export async function getNflTeamStatsSummary(req, res, next) {
   try {
     const season = parseSeasonParam(req.query.season);
     if (season == null)
       return badParam(res, "Invalid or missing season parameter; use YYYY.");
 
-    // Parallel fetches of the components
-    const [advancedRaw, srsRaw, sosRaw, seasonStats] = await Promise.all([
+    // --- MODIFIED: Added fetchNflSos back in, removed fetchNflSrs ---
+    // We get SRS from advancedRaw, but SoS comes from its own view.
+    const [advancedRaw, sosRaw, seasonStats] = await Promise.all([
       nflService.fetchNflAdvancedStats({ season }),
-      nflService.fetchNflSrs({ season }),
-      nflService.fetchNflSos({ season }),
+      nflService.fetchNflSos({ season }), // Fetches from the working v_nfl_team_sos view
       nflService.fetchNflSeasonStats({
         season,
         teamIds: [],
@@ -313,10 +312,8 @@ export async function getNflTeamStatsSummary(req, res, next) {
       }),
     ]);
 
-    // Logging for visibility (optional)
     console.log("Summary source lengths:", {
       advanced: advancedRaw.length,
-      srs: srsRaw.length,
       sos: sosRaw.length,
       season: seasonStats.length,
     });
@@ -332,11 +329,17 @@ export async function getNflTeamStatsSummary(req, res, next) {
           team_name: row.team_name ?? row.teamName,
         };
       }
+
+      // --- MODIFIED: Handle srs and sos correctly ---
       if (source === "advanced") {
+        // Copy all advanced stats
         Object.assign(indexed[teamId], row);
-      } else if (source === "srs") {
-        indexed[teamId].srs = row.srs_lite ?? row.srs;
+        // Explicitly pull SRS from the advanced stats, naming it 'srs' for the frontend
+        if (row.srs_lite !== undefined) {
+          indexed[teamId].srs = row.srs_lite;
+        }
       } else if (source === "sos") {
+        // Add the SoS data
         indexed[teamId].sos = row.sos;
         if (row.sos_rank !== undefined) {
           indexed[teamId].sosRank = row.sos_rank;
@@ -345,8 +348,7 @@ export async function getNflTeamStatsSummary(req, res, next) {
     };
 
     advancedRaw.forEach((r) => upsert(r, "advanced"));
-    srsRaw.forEach((r) => upsert(r, "srs"));
-    sosRaw.forEach((r) => upsert(r, "sos"));
+    sosRaw.forEach((r) => upsert(r, "sos")); // Process the SoS data
 
     // Augment with winPct from season stats
     Object.entries(indexed).forEach(([teamId, existing]) => {
@@ -355,6 +357,7 @@ export async function getNflTeamStatsSummary(req, res, next) {
       );
       if (seasonRow) {
         existing.winPct = seasonRow.win_pct ?? seasonRow.wins_all_percentage;
+        existing.srs = seasonRow.srs_lite;
       }
     });
 

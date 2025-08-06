@@ -1,23 +1,17 @@
 // frontend/src/components/ui/joyride_tour.tsx
 import React, {
-  createContext,
-  useContext,
   useState,
-  ReactNode,
-  useEffect,
-  SetStateAction,
   useMemo,
   useCallback,
+  useEffect,
+  ReactNode,
 } from "react";
 import Joyride, { Step, STATUS, CallBackProps, EVENTS } from "react-joyride";
 import { useSport } from "@/contexts/sport_context";
-import { useLocation } from "react-router-dom";
 import { TourContext } from "@/contexts/tour_context";
 import { CustomJoyrideTooltip } from "./custom_joyride_tooltip";
 
-/* ------------------------------------------------------------------ */
-/* 1. Steps Definition                                                */
-/* ------------------------------------------------------------------ */
+// Base step definitions
 export const baseSteps: Step[] = [
   {
     target: '[data-tour="sport-switch"]',
@@ -26,15 +20,9 @@ export const baseSteps: Step[] = [
     placement: "bottom",
   },
   {
-    target: '[data-tour="date-picker"]',
-    content: "Use the calendar to select a game date...",
-    disableBeacon: true,
-    placement: "bottom",
-  },
-  {
     target: '[data-tour="game-card"]:first-of-type',
     content:
-      "Each card shows teams and predictions. Tap the arrow to expand for more options.",
+      "Each card shows teams and predictions. On mobile, tap to expand for more options.",
     disableBeacon: true,
     placement: "top",
   },
@@ -87,114 +75,68 @@ export const baseSteps: Step[] = [
   },
 ];
 
-/* ------------------------------------------------------------------ */
-/* 2. Provider component                                              */
-/* ------------------------------------------------------------------ */
 export const TourProvider = ({ children }: { children: ReactNode }) => {
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const { sport } = useSport();
-  const location = useLocation();
 
-  /* -------------------------------------------------- */
-  /* Track live presence of at least one game card      */
-  /* -------------------------------------------------- */
+  // Re-add state tracking for game cards
   const [hasGameCard, setHasGameCard] = useState<boolean>(() =>
     Boolean(document.querySelector('[data-tour="game-card"]'))
   );
 
+  // Re-add observer to detect when game cards appear
   useEffect(() => {
-    const updatePresence = () =>
-      setHasGameCard(
-        Boolean(document.querySelector('[data-tour="game-card"]'))
+    const updatePresence = () => {
+      const gameCardFound = Boolean(
+        document.querySelector('[data-tour="game-card"]')
       );
-
-    // Initial check
+      setHasGameCard(gameCardFound);
+    };
     updatePresence();
-
-    // Observe DOM mutations for game‑card additions/removals
-    const mo = new MutationObserver(updatePresence);
-    mo.observe(document.body, { childList: true, subtree: true });
-    return () => mo.disconnect();
+    const observer = new MutationObserver(updatePresence);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
-  // unified scroll unlock helper
-  const unlockScroll = useCallback(() => {
-    ["body", "html", "main"].forEach((sel) => {
-      const el = document.querySelector<HTMLElement>(sel);
-      if (el) {
-        el.style.overflow = "";
-        el.style.position = "";
-        el.style.paddingRight = "";
-        el.style.top = "";
-      }
-    });
-    document
-      .querySelectorAll<HTMLElement>(".react-joyride__scroll-parent")
-      .forEach((el) => {
-        el.style.overflow = "";
-        el.style.paddingRight = "";
-      });
-  }, []);
-
-  const scrub = useCallback(() => {
-    unlockScroll();
-  }, [unlockScroll]);
-
-  // teardown helper
   const cleanUpArtifacts = useCallback(() => {
-    unlockScroll();
-    document
-      .querySelectorAll(
-        ".react-joyride__overlay, .react-joyride__mask, .react-joyride__spotlight"
-      )
-      .forEach((n) => n.remove());
     document.documentElement.style.overflow = "auto";
     document.body.style.overflow = "auto";
-  }, [unlockScroll]);
+    document
+      .querySelectorAll(".react-joyride__overlay, .react-joyride__spotlight")
+      .forEach((n) => n.remove());
+  }, []);
 
-  // observer to keep DOM from locking scroll via mutation churn
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      scrub();
-    });
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      childList: true,
-      subtree: true,
-      attributeFilter: ["style", "class"],
-    });
-
-    return () => observer.disconnect();
-  }, [scrub]);
-
-  // reset scroll when location changes
-  useEffect(() => {
-    unlockScroll();
-  }, [location.pathname, unlockScroll]);
-
-  /* -------------------------------------------------- */
-  /* Dynamically build steps, swapping in fallback      */
-  /* -------------------------------------------------- */
   const tourSteps = useMemo(() => {
-    // base list cloned so we never mutate source
-    const steps: Step[] =
-      sport === "NBA"
-        ? baseSteps
-            .filter((s) => s.target !== '[data-tour="weather-badge"]')
-            .map((s) => ({ ...s }))
-        : baseSteps.map((s) => ({ ...s }));
+    let steps = [...baseSteps];
 
-    // game‑card step is index 2
-    if (!hasGameCard && steps[2]) {
-      steps[2] = {
-        target: '[data-tour="date-picker"]',
-        content:
-          "No games are scheduled for this date or sport. Pick another date or switch sport, then click **Next** to continue the tour.",
-        disableBeacon: true,
-        placement: "bottom",
-      } as Step;
+    // RESTORED: Fallback for Game Card (now at index 1)
+    const gameCardStep = steps[1];
+    if (
+      !hasGameCard &&
+      gameCardStep &&
+      typeof gameCardStep.target === "string" &&
+      gameCardStep.target.includes("game-card")
+    ) {
+      gameCardStep.target = '[data-tour="sport-switch"]';
+      gameCardStep.content =
+        "No games scheduled. Switch sports or pick another date, then click Next.";
+    }
+
+    // Sport-specific filtering
+    if (sport === "NBA") {
+      steps = steps.filter(
+        (step) => step.target !== '[data-tour="weather-badge"]'
+      );
+    }
+
+    // UPDATED: NFL has a different stats screen layout
+    if (sport === "NFL") {
+      steps = steps.filter(
+        (step) =>
+          step.target !== '[data-tour="stats-subtab-advanced"]' &&
+          step.target !== '[data-tour="stats-column-winpct"]'
+      );
     }
 
     return steps;
@@ -203,12 +145,6 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
   const handleJoyride = useCallback(
     (data: CallBackProps) => {
       const { status, type } = data;
-
-      console.debug("Joyride callback:", data);
-
-      // always ensure scroll is unlocked on every callback
-      unlockScroll();
-
       const isTourFinished =
         status === STATUS.FINISHED ||
         status === STATUS.SKIPPED ||
@@ -219,18 +155,16 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
           setRun(false);
           setStepIndex(0);
         }
-
         setTimeout(cleanUpArtifacts, 50);
       }
     },
-    [run, cleanUpArtifacts, unlockScroll]
+    [run, cleanUpArtifacts]
   );
 
   const start = () => {
-    // force-remount Joyride by toggling run OFF → ON on the next tick
     setRun(false);
     setStepIndex(0);
-    setTimeout(() => setRun(true), 0); // next macrotask
+    setTimeout(() => setRun(true), 0);
   };
 
   const contextValue = {
@@ -246,7 +180,6 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
       {children}
       {run && (
         <Joyride
-          key={`tour-${stepIndex}`}
           steps={tourSteps}
           run={run}
           stepIndex={stepIndex}
