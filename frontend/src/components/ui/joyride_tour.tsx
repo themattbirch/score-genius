@@ -146,9 +146,12 @@ export const TourProvider = ({ children }: { children: ReactNode }) => {
     (data: CallBackProps) => {
       const { status, type } = data;
       const isTourFinished =
-        status === STATUS.FINISHED ||
-        status === STATUS.SKIPPED ||
-        status === STATUS.ERROR;
+        status === STATUS.FINISHED || status === STATUS.SKIPPED;
+      if (status === STATUS.ERROR) {
+        // give React time to mount the element
+        setTimeout(() => setStepIndex((i) => i + 1), 250);
+        return;
+      }
 
       if (isTourFinished || type === EVENTS.TOUR_END) {
         if (run) {
