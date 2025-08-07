@@ -58,11 +58,17 @@ def run_mlb_feature_pipeline(
     if df is None or df.empty:
         logger.warning("engine.run_mlb_feature_pipeline: Input DataFrame is empty. Aborting.")
         return pd.DataFrame()
-        
-    required_df_cols = ['game_id', 'game_date_et', 'home_team_id', 'away_team_id']
-    missing_input_cols = [col for col in required_df_cols if col not in df.columns]
-    if missing_input_cols:
-        logger.error(f"engine.run_mlb_feature_pipeline: Input 'df' missing required columns: {missing_input_cols}. Aborting.")
+            
+    required_base_cols = {'game_id', 'home_team_id', 'away_team_id'}
+    date_cols = {'game_date_et', 'game_date', 'game_date_time_utc'}
+
+    missing_base = required_base_cols - set(df.columns)
+    if missing_base:
+        logger.error(f"engine.run_mlb_feature_pipeline: Input 'df' missing required base columns: {list(missing_base)}. Aborting.")
+        return df
+
+    if not any(col in df.columns for col in date_cols):
+        logger.error(f"engine.run_mlb_feature_pipeline: Input 'df' missing a required date column (e.g., game_date_et or game_date). Aborting.")
         return df
 
     if debug:

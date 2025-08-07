@@ -74,7 +74,7 @@ UTC = ZoneInfo("UTC")
 
 # Odds API
 PREFERRED_BOOKMAKER_KEY = "draftkings"
-ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
+ODDS_API_BASE = ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl_preseason/odds"
 
 # --- Load Local Stadium Data ---
 BASE_DIR = os.path.dirname(__file__)
@@ -256,11 +256,7 @@ def fetch_betting_odds(days_window: int) -> List[Dict[str, Any]]:
     }
     print(f"Fetching NFL preseason odds from The Odds API between {c_from} and {c_to}")
     try:
-        resp = requests.get(
-            "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds",
-            params=params,
-            timeout=15,
-        )
+        resp = requests.get(ODDS_API_BASE, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         print(f"Fetched {len(data)} odds events.")

@@ -60,6 +60,7 @@ export function mapScheduleRow(raw, isPast) {
 
   return {
     ...base,
+    moneyline_clean: raw.moneyline_clean,
     spreadLine: raw.spread_clean
       ? parseFloat((raw.spread_clean.match(/-?\d+(\.\d+)?/) || ["0"])[0])
       : null,
@@ -233,7 +234,7 @@ export async function fetchNflScheduleData(date) {
   // 👇 Selects the correct columns for each table
   const cols = isPast
     ? "game_id, game_date, game_timestamp, home_team_name, away_team_name, home_team_id, away_team_id, home_score, away_score"
-    : "game_id, game_date, scheduled_time, home_team, away_team, home_team_id, away_team_id, status, spread_clean, total_clean, predicted_home_score, predicted_away_score";
+    : "game_id, game_date, scheduled_time, home_team, away_team, home_team_id, away_team_id, status, moneyline_clean, spread_clean, total_clean, predicted_home_score, predicted_away_score";
 
   const { data, error, status } = await supabase
     .from(table)

@@ -56,6 +56,9 @@ export interface UnifiedGame {
   moneylineAway?: string | number | null;
   spreadLine?: number | null; // Check type from backend mapping
   totalLine?: number | null; // Check type from backend mapping
+  moneyline_clean?: string | null;
+  spread_clean?: string | null;
+  total_clean?: string | null;
 
   // NBA Predictions
   predictionHome?: number | null;

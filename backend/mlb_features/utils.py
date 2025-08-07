@@ -107,7 +107,7 @@ MLB_TEAM_MAP: Mapping[str, str] = {
     "san diego padres": "padres", "san diego": "padres", "sd": "padres",
     "san francisco giants": "giants", "san francisco": "giants", "sf": "giants",
     "seattle mariners": "mariners", "seattle": "mariners", "sea": "mariners",
-    "st. louis cardinals": "cardinals", "st louis cardinals": "cardinals", "stl": "cardinals",
+    "st. louis cardinals": "cardinals", "st louis cardinals": "cardinals", "st.louis cardinals": "cardinals", "stl": "cardinals",
     "tampa bay rays": "rays", "tampa bay": "rays", "tb": "rays", "devil rays": "rays",
     "texas rangers": "rangers", "texas": "rangers", "tex": "rangers",
     "toronto blue jays": "bluejays", "toronto": "bluejays", "tor": "bluejays", "blue jays": "bluejays",

@@ -36,7 +36,9 @@ const OddsDisplay: React.FC<OddsDisplayProps> = ({
         </>
       )}
       <span className="mx-1 select-none">|</span>
-      <span className="whitespace-nowrap">O/U: {formatOdd(totalLine)}</span>
+      <span className="whitespace-nowrap">
+        O/U: {totalLine != null ? String(totalLine) : "N/A"}
+      </span>
     </div>
   );
 };
