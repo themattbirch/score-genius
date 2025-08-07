@@ -51,6 +51,81 @@ const useIsDesktop = (bp = 1024): boolean => {
   return isDesk;
 };
 
+// robust JSON parser—handles object, single‐encode, or double‐encode
+// robust JSON parser—handles object, single‐encode, or double‐encode
+const robustParse = <T,>(
+  src: T | string | null | undefined,
+  fallback: T
+): T => {
+  if (src !== null && src !== undefined && typeof src === "object") {
+    return src as T;
+  }
+  if (typeof src !== "string") {
+    return fallback;
+  }
+  try {
+    let parsed = JSON.parse(src);
+    // if the first parse still gave you a string, parse again
+    if (typeof parsed === "string") {
+      parsed = JSON.parse(parsed);
+    }
+    return parsed as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const deriveOdds = (game: UnifiedGame) => {
+  /* ---------- MONEYLINE ---------- */
+  // 1️⃣ First, try explicit home/away props (MLB already has them)
+  let moneylineHome: string | number | null = game.moneylineHome ?? null;
+  let moneylineAway: string | number | null = game.moneylineAway ?? null;
+
+  // 2️⃣ Next, try the JSON-clean column (snake_case or camelCase)
+  const rawML =
+    (game as any).moneyline_clean ?? (game as any).moneylineClean ?? null;
+  const mlClean = robustParse<{
+    home?: string | number;
+    away?: string | number;
+  }>(rawML, {});
+  if (moneylineHome == null) moneylineHome = mlClean.home ?? null;
+  if (moneylineAway == null) moneylineAway = mlClean.away ?? null;
+
+  // 3️⃣ Finally, fall back to the generic `moneyline` object keyed by team names
+  if (moneylineHome == null || moneylineAway == null) {
+    const mlObj = (game as any).moneyline as
+      | Record<string, string | number>
+      | undefined;
+    const hName = (game as any).homeTeam ?? (game as any).home_team;
+    const aName = (game as any).awayTeam ?? (game as any).away_team;
+    if (mlObj && hName && aName) {
+      // team names in the object are Title Case exactly as stored
+      moneylineHome ??= mlObj[hName] ?? null;
+      moneylineAway ??= mlObj[aName] ?? null;
+    }
+  }
+
+  /* ---------- SPREAD ---------- */
+  const rawSpread =
+    (game as any).spread_clean ?? (game as any).spreadClean ?? null;
+  const spreadClean = robustParse<{ home?: { line?: number } }>(rawSpread, {
+    home: {},
+  });
+  const spreadLine = game.spreadLine ?? spreadClean.home?.line ?? null;
+
+  /* ---------- TOTAL ---------- */
+  const rawTotal =
+    (game as any).total_clean ?? (game as any).totalClean ?? null;
+  const totalClean = robustParse<{ line?: number; over?: number }>(
+    rawTotal,
+    {}
+  );
+  const totalLine =
+    game.totalLine ?? totalClean.line ?? totalClean.over ?? null;
+
+  return { moneylineHome, moneylineAway, spreadLine, totalLine };
+};
+
 // Lazy load injury components
 const InjuriesChipButton = lazy(
   () => import("@/components/ui/injuries_chip_button")
@@ -455,15 +530,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
           )}
 
           {/* Odds Display: Show for ANY non-final game in compact view */}
-          {!isFinal && (
-            <OddsDisplay
-              sport={sport}
-              moneylineHome={game.moneylineHome}
-              moneylineAway={game.moneylineAway}
-              spreadLine={game.spreadLine}
-              totalLine={game.totalLine}
-            />
-          )}
+          {!isFinal && <OddsDisplay sport={sport} {...deriveOdds(game)} />}
         </div>
 
         {/* We conditionally render a different layout for the right side based on the sport */}
