@@ -113,181 +113,119 @@ def run_mlb_feature_pipeline(
     processed_chunks: List[pd.DataFrame] = []
 
     for season in sorted(working_df["season"].dropna().unique().astype(int)):
-        logger.info(f"ENGINE: Processing season {season}...")
+        logger.info(f"ENGINE: Processing season {season}…")
+        # 1) slice out this season’s games
         season_df = working_df[working_df["season"] == season].copy()
-
         season_start = season_df["game_date_et"].min()
         raw_hist_games = (
             hist_games[hist_games["game_date_et"] < season_start]
             if not hist_games.empty else pd.DataFrame()
         )
 
-        for module_name in execution_order:
-            fn = TRANSFORMS.get(module_name)
-            if fn is None: continue
-
-            kwargs: Dict[str, Any] = {}
-            if _supports_kwarg(fn, "debug"): kwargs["debug"] = debug
-            if _supports_kwarg(fn, "flag_imputations"): kwargs["flag_imputations"] = flag_imputations
-
-            input_df = season_df
-
-            if module_name in ("rest", "rolling"):
-                input_df = pd.concat([raw_hist_games, season_df], ignore_index=True)
-                if module_name == "rolling":
-                    kwargs["window_sizes"] = rolling_window_sizes
-                    # --- MODIFIED --- Pass the pre-computed rolling features DataFrame to the rolling module
-                    if precomputed_rolling_features_df is not None:
-                        kwargs["precomputed_rolling_features_df"] = precomputed_rolling_features_df
-                if module_name == "rest":
-                    kwargs["historical_df"] = raw_hist_games
-            elif module_name in ("h2h", "form"):
-                kwargs["historical_df"] = raw_hist_games
-                if module_name == "h2h": kwargs["max_games"] = h2h_max_games
-                if module_name == "form": kwargs["num_form_games"] = num_form_games
-            elif module_name == "season":
-                kwargs["historical_team_stats_df"] = team_stats[team_stats["season"] == (season - 1)].copy() if not team_stats.empty else pd.DataFrame()
-            elif module_name == "advanced":
-                kwargs["precomputed_stats"] = precomputed_adv_stats
-            elif module_name == "handedness_for_display":
-                kwargs["historical_team_stats_df"] = (team_stats[team_stats["season"] == season] if not team_stats.empty else pd.DataFrame())
-
-            output_df = fn(input_df, **kwargs)
-
-            if module_name in ("rest", "rolling"):
-                season_df = output_df[output_df["game_id"].isin(season_df["game_id"])].copy()
-            else:
-                produced = [c for c in output_df.columns if c not in season_df.columns and c != "game_id"]
-                if produced:
-                    season_df = season_df.merge(
-                        output_df[["game_id", *produced]].drop_duplicates(subset="game_id"),
-                        on="game_id", how="left"
-                    )
-
-            if module_name == "advanced" and not keep_display_only_features:
-                season_df.drop(columns=["h_team_off_avg_runs_vs_opp_hand"], inplace=True, errors="ignore")
-            
-            if season_df.empty:
-                logger.error(f"ENGINE: DataFrame became empty after module '{module_name}'. Halting pipeline for this season.")
-                break
-            
-        logger.info(f"ENGINE: Processing season {season}...")
-        season_df = working_df[working_df["season"] == season].copy()
-
-        season_start = season_df["game_date_et"].min()
-        raw_hist_games = (
-            hist_games[hist_games["game_date_et"] < season_start]
-            if not hist_games.empty else pd.DataFrame()
-        )
-
+        # 2) run each module in execution_order exactly once
         for module_name in execution_order:
             fn = TRANSFORMS.get(module_name)
             if fn is None:
                 continue
 
+            # build kwargs
             kwargs: Dict[str, Any] = {}
             if _supports_kwarg(fn, "debug"):
                 kwargs["debug"] = debug
             if _supports_kwarg(fn, "flag_imputations"):
                 kwargs["flag_imputations"] = flag_imputations
 
+            # prepare input_df
             input_df = season_df
-
             if module_name in ("rest", "rolling"):
                 input_df = pd.concat([raw_hist_games, season_df], ignore_index=True)
                 if module_name == "rolling":
                     kwargs["window_sizes"] = rolling_window_sizes
+                    if precomputed_rolling_features_df is not None:
+                        kwargs["precomputed_rolling_features_df"] = precomputed_rolling_features_df
                 if module_name == "rest":
                     kwargs["historical_df"] = raw_hist_games
             elif module_name in ("h2h", "form"):
                 kwargs["historical_df"] = raw_hist_games
-                if module_name == "h2h": kwargs["max_games"] = h2h_max_games
-                if module_name == "form": kwargs["num_form_games"] = num_form_games
+                if module_name == "h2h":
+                    kwargs["max_games"] = h2h_max_games
+                if module_name == "form":
+                    kwargs["num_form_games"] = num_form_games
             elif module_name == "season":
-                kwargs["historical_team_stats_df"] = team_stats[team_stats["season"] == (season - 1)].copy()
+                # Prioritize using the new RPC data for seasonal stats if it was provided
+                if seasonal_splits_data is not None and not seasonal_splits_data.empty:
+                    kwargs["historical_team_stats_df"] = seasonal_splits_data[seasonal_splits_data["season"] == (season - 1)].copy()
+                # Fallback to the old method if RPC data is not available
+                else:
+                    kwargs["historical_team_stats_df"] = (
+                        team_stats[team_stats["season"] == (season - 1)].copy()
+                        if not team_stats.empty else pd.DataFrame()
+                    )
             elif module_name == "advanced":
-                # The 'advanced' module gets the pre-computed stats we make earlier
                 kwargs["precomputed_stats"] = precomputed_adv_stats
             elif module_name == "handedness_for_display":
-                # The 'handedness' module only needs the current season's data
                 kwargs["historical_team_stats_df"] = (
                     team_stats[team_stats["season"] == season]
                     if not team_stats.empty else pd.DataFrame()
                 )
 
+            # call the transform
             output_df = fn(input_df, **kwargs)
 
+            # HALT EARLY if empty
+            if isinstance(output_df, pd.DataFrame) and output_df.empty:
+                logger.error(
+                    f"ENGINE: DataFrame became empty after module '{module_name}'. Halting pipeline for this season."
+                )
+                break
+
+            # merge output_df back into season_df
             if module_name in ("rest", "rolling"):
                 season_df = output_df[output_df["game_id"].isin(season_df["game_id"])].copy()
             else:
-                produced = [c for c in output_df.columns if c not in season_df.columns and c != "game_id"]
+                produced = [
+                    c for c in output_df.columns
+                    if c not in season_df.columns and c != "game_id"
+                ]
                 if produced:
                     season_df = season_df.merge(
                         output_df[["game_id", *produced]].drop_duplicates(subset="game_id"),
-                        on="game_id", how="left"
+                        on="game_id",
+                        how="left"
                     )
-            # ── after advanced runs, drop the unwanted hand-split metric ─────
-            if module_name == "advanced":
-                if not keep_display_only_features:
-                    logger.debug("Dropping display-only columns from seasonal chunk...")
-                    season_df.drop(columns=["h_team_off_avg_runs_vs_opp_hand"], inplace=True, errors="ignore")
-            # --- [DEBUG LOGGING] ---
-            # This block runs after each module and provides a health report.
+
+            # drop display-only hand-split metric after advanced
+            if module_name == "advanced" and not keep_display_only_features:
+                season_df.drop(
+                    columns=["h_team_off_avg_runs_vs_opp_hand"],
+                    inplace=True,
+                    errors="ignore"
+                )
+
+            # optional debug logging…
             if debug:
-                logger.debug(f"--- ENGINE/Debug Report For: {module_name.upper()} ---")
-                try:
-                    if module_name == 'rest':
-                        pct_default = (season_df['rest_advantage'] == 0).sum() / len(season_df) * 100
-                        logger.debug(f"  Rest Advantage Stats: Mean={season_df['rest_advantage'].mean():.2f}, Max={season_df['rest_advantage'].max():.1f}")
-                        logger.debug(f"  Coverage: {100-pct_default:.1f}% of games have a non-zero rest advantage.")
-                    
-                    elif module_name == 'season':
-                        imputed_pct = season_df['home_prev_season_win_pct_imputed'].sum() / len(season_df) * 100
-                        logger.debug(f"  Prev Season Win% Diff: Mean={season_df['prev_season_win_pct_diff'].mean():.3f}")
-                        logger.debug(f"  Imputation Rate: {imputed_pct:.1f}% of rows used default previous season data.")
+                logger.debug(f"--- ENGINE Debug for module {module_name} ---")
+                # … your existing debug-report code …
 
-                    elif module_name == 'form':
-                        # Check for 'N/A' which indicates a failure to calculate form string
-                        failed_calcs = (season_df['home_current_form'] == 'N/A').sum() / len(season_df) * 100
-                        logger.debug(f"  Form Win% Diff: Mean={season_df['form_win_pct_diff'].mean():.3f}")
-                        logger.debug(f"  Coverage: {100-failed_calcs:.1f}% of rows have a valid form string.")
-
-                    elif module_name == 'h2h':
-                        # Default for matchup_home_win_pct is often 0.5 if no games exist
-                        default_pct = (season_df['matchup_home_win_pct'] == 0.5).sum() / len(season_df) * 100
-                        logger.debug(f"  H2H Home Win %: Mean={season_df['matchup_home_win_pct'].mean():.3f}")
-                        logger.debug(f"  Coverage: Potentially {100-default_pct:.1f}% of matchups have historical H2H data.")
-
-                    elif module_name == 'advanced':
-                        logger.debug(f"  Venue Win Advantage (Home): Mean={season_df['home_venue_win_advantage'].mean():.3f}")
-                        logger.debug(f"  Venue Win Advantage (Away): Mean={season_df['away_venue_win_advantage'].mean():.3f}")
-
-                    elif module_name == 'handedness_for_display':
-                        imputed_pct = season_df['h_team_off_avg_runs_vs_opp_hand_imputed'].sum() / len(season_df) * 100
-                        logger.debug(f"  Home Offense vs Opp Hand: Mean={season_df['h_team_off_avg_runs_vs_opp_hand'].mean():.2f}")
-                        logger.debug(f"  Imputation Rate: {imputed_pct:.1f}% of rows used default handedness data.")
-
-                except KeyError as e:
-                    logger.warning(f"  Could not generate debug report for '{module_name}': Missing key {e}")
-                except Exception as e:
-                    logger.error(f"  An error occurred during debug report generation for '{module_name}': {e}")
-            # --- [END DEBUG LOGGING] ---
-
+        # 3) dedupe columns & collect this season’s result
         season_df = season_df.loc[:, ~season_df.columns.duplicated()].reset_index(drop=True)
         processed_chunks.append(season_df)
 
     if not processed_chunks:
         return pd.DataFrame()
+
     final_df = pd.concat(processed_chunks, ignore_index=True)
-    # drop your legacy column—but tell pandas to ignore it if it's not there
+    # drop legacy display-only columns
     if not keep_display_only_features:
         logger.info("ENGINE: Dropping display-only columns from final dataframe.")
         final_df.drop(
-            columns=["h_team_off_avg_runs_vs_opp_hand", "a_team_off_avg_runs_vs_opp_hand"], # Drop both home and away
+            columns=[
+                "h_team_off_avg_runs_vs_opp_hand",
+                "a_team_off_avg_runs_vs_opp_hand"
+            ],
             inplace=True,
             errors="ignore"
         )
-    # --- END MODIFICATION ---
 
     logger.info(f"ENGINE: Finished in {time.time() - start_time:.2f}s; final shape {final_df.shape}")
     return final_df

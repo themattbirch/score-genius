@@ -163,7 +163,7 @@ def transform(
             all_added_rolling_cols = [col for col in out.columns if col.startswith(('home_rolling_', 'away_rolling_'))]
             for col_name in all_added_rolling_cols:
                 if col_name.endswith('_imputed'):
-                     out[col_name] = out[col_name].fillna(False).astype(bool)
+                     out[col_name] = out[col_name].fillna(False).astype(object)
                 else:
                     default_val_for_col = 0.0
                     try:

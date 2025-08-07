@@ -85,7 +85,7 @@ def transform(
         for feat, dval in default_map.items():
             col = f"{side}_{feat}"
             if flag_imputations:
-                res[f"{col}_imputed"] = res[col].isna().astype(int)
+                res[f"{col}_imputed"] = res[col].isna().astype(bool)
             res[col] = res[col].fillna(dval)
 
     # Derived differences

@@ -120,6 +120,11 @@ app.get("/disclaimer", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "disclaimer.html"));
 });
 
+app.get("/disclaimer", (req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.sendFile(path.join(staticRoot, "public", "about.html"));
+});
+
 app.get("/terms", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "terms.html"));

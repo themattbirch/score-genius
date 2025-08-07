@@ -17,7 +17,7 @@ except ImportError:
 
 __all__ = ["transform"]
 
-def _calculate_form_metrics(
+def _calculate_form_metrics_single(
     team_games: pd.DataFrame, team_norm: str, num_form_games: int
 ) -> dict:
     # Drop rows missing scores
@@ -116,8 +116,8 @@ def transform(
             & (hist["game_date_et"] < game_date)
         ]
 
-        home_metrics = _calculate_form_metrics(home_hist, home_team, num_form_games)
-        away_metrics = _calculate_form_metrics(away_hist, away_team, num_form_games)
+        home_metrics = _calculate_form_metrics_single(home_hist, home_team, num_form_games)
+        away_metrics = _calculate_form_metrics_single(away_hist, away_team, num_form_games)
 
         all_form_metrics.append({
             "game_id": game_row["game_id"],
