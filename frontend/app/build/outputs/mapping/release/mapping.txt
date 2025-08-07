@@ -3,8 +3,8 @@
 # min_api: 21
 # common_typos_disable
 # {"id":"com.android.tools.r8.mapping","version":"2.2"}
-# pg_map_id: 46aab4d
-# pg_map_hash: SHA-256 46aab4dfcd9d18d8532e116b8d4c089fc3bcafc6eaed0f2eed07010058226900
+# pg_map_id: bd73603
+# pg_map_hash: SHA-256 bd73603855754d3c86cc9adefef5e74687e7f8ddfd92f09227d4e5362ba14299
 android.support.customtabs.ICustomTabsCallback -> a.a:
 # {"id":"sourceFile","fileName":"ICustomTabsCallback.java"}
     java.lang.String DESCRIPTOR -> a
@@ -24617,11 +24617,9 @@ io.scoregenius.app.DelegationService -> io.scoregenius.app.DelegationService:
 io.scoregenius.app.LauncherActivity -> io.scoregenius.app.LauncherActivity:
 # {"id":"sourceFile","fileName":"LauncherActivity.java"}
     1:4:void <init>():23:23 -> <init>
-    1:5:android.net.Uri getLaunchingUrl():43:43 -> i
-    1:3:void onCreate(android.os.Bundle):28:28 -> onCreate
-    4:10:void onCreate(android.os.Bundle):33:33 -> onCreate
-    11:14:void onCreate(android.os.Bundle):34:34 -> onCreate
-    15:18:void onCreate(android.os.Bundle):36:36 -> onCreate
+    1:5:android.net.Uri getLaunchingUrl():39:39 -> i
+    1:4:void onCreate(android.os.Bundle):27:27 -> onCreate
+    5:8:void onCreate(android.os.Bundle):33:33 -> onCreate
 kotlin.Lazy -> N.a:
 # {"id":"sourceFile","fileName":"Lazy.kt"}
     java.lang.Object getValue() -> getValue
