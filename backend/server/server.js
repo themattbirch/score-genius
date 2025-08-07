@@ -94,11 +94,6 @@ app.get("/favicon.ico", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "favicon.ico"));
 });
 
-app.get("/help", (req, res) => {
-  res.setHeader("Cache-Control", "public, max-age=3600");
-  res.sendFile(path.join(staticRoot, "public", "help.html"));
-});
-
 // Add the missing handler for /support
 app.get("/support", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=3600");
@@ -120,14 +115,14 @@ app.get("/disclaimer", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "disclaimer.html"));
 });
 
-app.get("/disclaimer", (req, res) => {
-  res.setHeader("Cache-Control", "public, max-age=3600");
-  res.sendFile(path.join(staticRoot, "public", "about.html"));
-});
-
 app.get("/terms", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "public", "terms.html"));
+});
+
+app.get("/about", (req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.sendFile(path.join(staticRoot, "public", "about.html"));
 });
 
 // 2. PWA-specific assets
