@@ -126,16 +126,26 @@ jobs:
         shell: pwsh
         run: |
           $binRoot = 'C:\Program Files (x86)\Windows Kits\10\bin\'
-          $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Sort-Object FullName -Descending | Select-Object -First 1
+
+          # Prefer x64 for both tools
+          $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeappx) {
+            # Fallback if no x64 makeappx is present
+            $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Sort-Object FullName -Descending | Select-Object -First 1
+          }
+
           $signtool = Get-ChildItem $binRoot -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+
           if (-not $makeappx) { throw "MakeAppx.exe not found." }
           if (-not $signtool) { throw "signtool.exe (x64) not found." }
+
           echo "MAKEAPPX=$($makeappx.FullName)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           echo "SIGNTOOL=$($signtool.FullName)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+
           "Using MakeAppx: $($makeappx.FullName)"
           "Using SignTool: $($signtool.FullName)"
-          & $signtool.FullName | Select-Object -First 1 | Out-Null
-          "SignTool ready."
+          "MakeAppx version: $((Get-Item $makeappx.FullName).VersionInfo.FileVersion)"
+          "SignTool version: $((Get-Item $signtool.FullName).VersionInfo.FileVersion)"
 
       - name: Pack, sign .appx; bundle, sign .appxbundle; verify
         shell: pwsh
