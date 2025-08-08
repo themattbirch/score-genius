@@ -5,8 +5,6 @@ import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 
 export default defineConfig({
-  base: "/app/",
-
   plugins: [
     react(),
     VitePWA({
@@ -15,30 +13,18 @@ export default defineConfig({
       filename: "app-sw.ts",
       injectRegister: false,
       includeAssets: ["offline.html", "icons/*"],
-      injectManifest: {
-        globIgnores: [
-          "**/*.appxbundle",
-          "**/*.msixbundle",
-          "**/*.appinstaller",
-        ],
-      },
-      workbox: {
-        navigateFallbackDenylist: [
-          /\/app\/.*\.(appxbundle|msixbundle|appinstaller)$/i,
-        ],
-      },
       manifest: {
         name: "ScoreGenius",
         short_name: "ScoreGenius",
         description:
           "ScoreGenius: Powerful predictive stats for passionate fans",
-        id: "/app",
-        scope: "/app/",
-        start_url: "/app/",
+        scope: "/app",
+        start_url: "/app",
         theme_color: "#1F2937",
         background_color: "#ffffff",
         display: "standalone",
-        orientation: "any",
+        display_override: ["fullscreen", "standalone", "minimal-ui"],
+        //splash_pages: ["splash_screen.html"],
         icons: [
           {
             src: "/icons/football-icon-192.png",
@@ -72,7 +58,7 @@ export default defineConfig({
   },
 
   server: {
-    open: "/app/",
+    open: "/app",
     port: 5173,
     strictPort: true,
     proxy: {
@@ -87,9 +73,26 @@ export default defineConfig({
   build: {
     outDir: "dist",
     target: "es2022",
-    assetsDir: "assets",
-    // ❌ NO rollupOptions.input here — let Vite use root index.html
+    rollupOptions: {
+      input: {
+        index: resolve(__dirname, "public/index.html"),
+        app: resolve(__dirname, "app.html"),
+      },
+      output: {
+        entryFileNames: "assets/[name].[hash].js",
+        chunkFileNames: "assets/[name].[name].[hash].js",
+        assetFileNames: "assets/[name].[hash].[ext]",
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            const pkg = id.split("node_modules/")[1].split("/")[0];
+            return `vendor-${pkg.replace("@", "")}`;
+          }
+        },
+      },
+    },
   },
 
-  preview: { port: 3000 },
+  preview: {
+    port: 3000,
+  },
 });
