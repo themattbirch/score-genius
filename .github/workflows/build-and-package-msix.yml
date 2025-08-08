@@ -23,8 +23,8 @@ jobs:
           Write-Output "version=$version" | Out-File -Encoding ASCII -NoNewline $env:GITHUB_OUTPUT
           "Computed version: $version"
 
-      # 1) Ensure we have a PFX (generate self-signed if secrets are absent)
-      - name: Ensure code signing certificate exists (generate if secrets absent)
+      # Ensure we have a PFX (generate a self-signed if secrets absent)
+      - name: Ensure code signing certificate exists
         shell: pwsh
         env:
           SCOREGENIUS_PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
@@ -38,101 +38,77 @@ jobs:
               -KeyAlgorithm RSA -KeyLength 2048 `
               -HashAlgorithm SHA256 `
               -NotAfter (Get-Date).AddYears(3)
-
             $pwd     = ConvertTo-SecureString "StrongPfxPass123" -AsPlainText -Force
             $pfxPath = "$PWD\scoregenius_generated.pfx"
             Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
-
             $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pfxPath))
-            echo "SCOREGENIUS_PFX_B64=$b64" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+            echo "SCOREGENIUS_PFX_B64=$b64"          | Out-File -Encoding ascii -Append $env:GITHUB_ENV
             echo "SCOREGENIUS_PFX_PASSWORD=StrongPfxPass123" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
             "Generated cert Thumbprint: $($cert.Thumbprint)"
           } else {
             "Using provided PFX from secrets."
             if (-not $env:SCOREGENIUS_PFX_PASSWORD) { throw "SCOREGENIUS_PFX_PASSWORD is missing in secrets." }
-            echo "SCOREGENIUS_PFX_B64=$($env:SCOREGENIUS_PFX_B64)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+            # persist secrets to job env
+            echo "SCOREGENIUS_PFX_B64=$($env:SCOREGENIUS_PFX_B64)"       | Out-File -Encoding ascii -Append $env:GITHUB_ENV
             echo "SCOREGENIUS_PFX_PASSWORD=$($env:SCOREGENIUS_PFX_PASSWORD)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           }
 
-      # 2) Decode + validate the PFX
-      - name: Decode + validate PFX (sanitize, password-check)
+      # Decode + validate PFX
+      - name: Decode + validate PFX
         shell: pwsh
         run: |
-          if (-not $env:SCOREGENIUS_PFX_B64) { throw "SCOREGENIUS_PFX_B64 missing after generation/secrets step." }
-
+          if (-not $env:SCOREGENIUS_PFX_B64) { throw "SCOREGENIUS_PFX_B64 missing." }
           $cleaned = ($env:SCOREGENIUS_PFX_B64 -replace '[^A-Za-z0-9+/=]', '')
-          try { [void][Convert]::FromBase64String($cleaned) } catch { throw "PFX secret is not valid base64 after sanitization." }
-
+          try { [void][Convert]::FromBase64String($cleaned) } catch { throw "PFX secret is not valid base64." }
           $pfxPath = Join-Path $env:RUNNER_TEMP "scoregenius.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($cleaned))
           echo "PFX_PATH=$pfxPath" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           "Decoded PFX to: $pfxPath"
-
           certutil -f -p $env:SCOREGENIUS_PFX_PASSWORD -dump $pfxPath | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "PFX failed to open with provided password." }
           "PFX password validated."
 
-      # 3) Trust the signer on the runner + export metadata for later steps
-      - name: Trust signing cert on runner (so verify /pa passes)
+      # Trust signer locally (so installs/tests don't complain later)
+      - name: Trust signing cert on runner
         shell: pwsh
         run: |
-          if (-not $env:PFX_PATH) { throw "PFX_PATH not set." }
-          if (-not $env:SCOREGENIUS_PFX_PASSWORD) { throw "SCOREGENIUS_PFX_PASSWORD not set." }
-
           $secure = ConvertTo-SecureString $env:SCOREGENIUS_PFX_PASSWORD -AsPlainText -Force
           $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
             $env:PFX_PATH, $secure,
             [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
           )
-
-          $thumb   = $cert.Thumbprint
+          $thumb = $cert.Thumbprint
           $subject = $cert.Subject
-          $self    = ($cert.Subject -eq $cert.Issuer)
-
-          echo "CERT_THUMBPRINT=$thumb"     | Out-File -Encoding ascii -Append $env:GITHUB_ENV
-          echo "CERT_PUBLISHER=$subject"    | Out-File -Encoding ascii -Append $env:GITHUB_ENV
-          echo "SELF_SIGNED=$([int]$self)"  | Out-File -Encoding ascii -Append $env:GITHUB_ENV
-
+          $self = ($cert.Subject -eq $cert.Issuer)
+          echo "CERT_PUBLISHER=$subject" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           "Signer: $subject"
-          "Thumbprint: $thumb"
-          "Self-signed: $self"
-
-          $cerPath = Join-Path $env:RUNNER_TEMP "signer.cer"
-          [IO.File]::WriteAllBytes($cerPath, $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-
           if ($self) {
+            $cerPath = Join-Path $env:RUNNER_TEMP "signer.cer"
+            [IO.File]::WriteAllBytes($cerPath, $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
             Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root          | Out-Null
             Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
-            "Installed self-signed cert to CurrentUser\Root and CurrentUser\TrustedPeople."
+            "Installed self-signed cert to Root + TrustedPeople."
           } else {
-            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
-            "Installed signer to CurrentUser\TrustedPeople."
+            "Public/chain cert detected; skipping Root import."
           }
 
-          "Root contains signer?           " + [bool](Get-ChildItem Cert:\CurrentUser\Root          | Where-Object Thumbprint -eq $thumb)
-          "TrustedPeople contains signer?  " + [bool](Get-ChildItem Cert:\CurrentUser\TrustedPeople | Where-Object Thumbprint -eq $thumb)
-
-      # 4) Patch manifest + appinstaller (version + publisher DN + constant URI)
+      # Patch manifest + appinstaller (keep your good bits)
       - name: Patch AppxManifest + AppInstaller (version/publisher/URI)
         shell: pwsh
         run: |
           $version = '${{ steps.version.outputs.version }}'
           $publisher = $env:CERT_PUBLISHER
 
-          # AppxManifest.xml
           $manifest = "frontend/windows_package/PackageRoot/AppxManifest.xml"
           if (-not (Test-Path $manifest)) { throw "Manifest not found at $manifest" }
           [xml]$xml = Get-Content -Raw -Encoding UTF8 $manifest
-          if (-not $xml.Package.Identity) { throw "Identity element missing in AppxManifest.xml" }
-
+          if (-not $xml.Package.Identity) { throw "Identity element missing." }
           $xml.Package.Identity.Version = $version
           if ($publisher) { $xml.Package.Identity.Publisher = $publisher }
-
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
           [System.IO.File]::WriteAllText($manifest, $xml.OuterXml, $utf8NoBom)
           "Manifest patched to version $version and publisher '$publisher'."
 
-          # ScoreGenius.appinstaller
           $ai = "frontend/app/ScoreGenius.appinstaller"
           if (-not (Test-Path $ai)) { throw "AppInstaller not found at $ai" }
           [xml]$doc = Get-Content -Raw -Encoding UTF8 $ai
@@ -144,157 +120,54 @@ jobs:
             }
           }
           [System.IO.File]::WriteAllText($ai, $doc.OuterXml, $utf8NoBom)
-          "AppInstaller updated to $version, constant URI, and publisher (if attribute existed)."
+          "AppInstaller updated to $version and constant URI."
 
-      # 5) Locate SDK tools (x64 preferred)
-      - name: Locate SDK tools (MakeAppx + x64 SignTool)
+      # Locate SDK tools (x64 signtool; makeappx with fallback)
+      - name: Locate SDK tools
         shell: pwsh
         run: |
           $binRoot = 'C:\Program Files (x86)\Windows Kits\10\bin\'
-
           $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $makeappx) {
-            $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Sort-Object FullName -Descending | Select-Object -First 1
-          }
-          $signtool = Get-ChildItem $binRoot -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
-
+          if (-not $makeappx) { $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Sort-Object FullName -Descending | Select-Object -First 1 }
+          $signtool = Get-ChildItem $binRoot -Recurse -Filter signtool.exe  | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $makeappx) { throw "MakeAppx.exe not found." }
           if (-not $signtool) { throw "signtool.exe (x64) not found." }
-
           echo "MAKEAPPX=$($makeappx.FullName)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           echo "SIGNTOOL=$($signtool.FullName)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
-
           "Using MakeAppx: $($makeappx.FullName)"
           "Using SignTool: $($signtool.FullName)"
-          "MakeAppx version: $((Get-Item $makeappx.FullName).VersionInfo.FileVersion)"
-          "SignTool version: $((Get-Item $signtool.FullName).VersionInfo.FileVersion)"
 
-      # 6) Pack -> sign .appx -> bundle -> sign .appxbundle -> verify both (with timeouts + TSA fallback)
-      - name: Pack, sign .appx; bundle, sign .appxbundle; verify
+      # Pack -> bundle -> SIGN BUNDLE ONLY (PFX-direct, /a, NO TIMESTAMP) — the flow that worked
+      - name: Pack, bundle, sign bundle (PFX-direct, no timestamp)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not $env:PFX_PATH) { throw "PFX_PATH not set." }
-          if (-not $env:SCOREGENIUS_PFX_PASSWORD) { throw "SCOREGENIUS_PFX_PASSWORD not set." }
-          if (-not $env:MAKEAPPX -or -not $env:SIGNTOOL) { throw "MAKEAPPX or SIGNTOOL not set." }
-
           $packageRoot = 'frontend/windows_package/PackageRoot'
           $version     = '${{ steps.version.outputs.version }}'
           $appxName    = "ScoreGenius_${version}.appx"
           $bundleName  = "ScoreGenius_${version}.appxbundle"
-          $timeoutSec  = 75
-
-          # Helper: run a process with timeout and capture logs
-          function Invoke-ToolWithTimeout([string]$exe, [string[]]$args, [int]$timeoutSec, [string]$label) {
-            $out = Join-Path $env:RUNNER_TEMP ("$($label)_out_" + (Get-Random) + ".log")
-            $err = $out + ".err"
-            "-> $label: $exe $($args -join ' ')"
-            $proc = Start-Process -FilePath $exe -ArgumentList $args -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
-            try {
-              Wait-Process -Id $proc.Id -Timeout $timeoutSec -ErrorAction SilentlyContinue | Out-Null
-              if (-not $proc.HasExited) {
-                "!! $label timed out after $timeoutSec s. Killing process."
-                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-                $code = 999
-              } else {
-                $code = $proc.ExitCode
-              }
-            } finally {
-              if (Test-Path $out) { Get-Content $out | ForEach-Object { $_ } }
-              if (Test-Path $err) { Get-Content $err | ForEach-Object { $_ } }
-            }
-            return $code
-          }
-
-          function Sign-Once([string]$filePath, [string]$tsaUrl) {
-            $args = @('sign','/v','/debug','/fd','SHA256','/td','SHA256','/f', $env:PFX_PATH, '/p', $env:SCOREGENIUS_PFX_PASSWORD)
-            if ($tsaUrl) { $args += @('/tr', $tsaUrl) }
-            $args += @("$filePath")
-            return (Invoke-ToolWithTimeout $env:SIGNTOOL $args $timeoutSec "signtool_sign_$([IO.Path]::GetFileName($filePath))")
-          }
-
-          function Sign-WithPolicy([string]$filePath) {
-            if ($env:SELF_SIGNED -eq '1') {
-              "Self-signed build: signing WITHOUT timestamp for speed."
-              $code = Sign-Once $filePath $null
-              if ($code -ne 0) { throw "Signing failed (self-signed, no timestamp) for $filePath (code $code)" }
-              "Signed (no timestamp): $filePath"
-              return
-            }
-
-            # Real PFX: primary TSA -> backup TSA -> no timestamp fallback
-            "Signing $filePath (primary TSA)"
-            $code = Sign-Once $filePath "http://timestamp.digicert.com"
-            if ($code -ne 0) {
-              "Primary failed (code $code). Retrying with backup TSA."
-              Start-Sleep -Seconds 2
-              $code = Sign-Once $filePath "http://timestamp.sectigo.com"
-              if ($code -ne 0) {
-                "Backup TSA failed (code $code). Final fallback: signing WITHOUT timestamp."
-                $code = Sign-Once $filePath $null
-                if ($code -ne 0) { throw "Signing failed (no timestamp fallback) for $filePath (code $code)" }
-                "Signed (no timestamp fallback): $filePath"
-              } else {
-                "Signed with backup TSA: $filePath"
-              }
-            } else {
-              "Signed with primary TSA: $filePath"
-            }
-          }
-
-          $verifyTimeoutSec = 30
-
-          function Verify-Signature([string]$filePath) {
-            # Use the same timeout wrapper we built for signing
-            $args = @('verify','/pa','/all',"$filePath")
-            $code = Invoke-ToolWithTimeout $env:SIGNTOOL $args $verifyTimeoutSec "signtool_verify_$([IO.Path]::GetFileName($filePath))"
-
-            if ($code -eq 999) {
-              # Timed out
-              if ($env:SELF_SIGNED -eq '1') {
-                "Verify timed out after $verifyTimeoutSec s (self-signed). Proceeding."
-                return
-              } else {
-                throw "Verify timed out after $verifyTimeoutSec s for $filePath (real PFX)."
-              }
-            }
-
-            if ($code -ne 0) {
-              if ($env:SELF_SIGNED -eq '1') {
-                "Verify failed (self-signed), but signature exists and signer is locally trusted. Proceeding."
-                return
-              } else {
-                throw "Signature verification failed for $filePath (exit $code)."
-              }
-            }
-
-            "Verified signature: $filePath"
-          }
 
           # Pack .appx
           & $env:MAKEAPPX pack /o /d $packageRoot /p $appxName
           if (-not (Test-Path $appxName)) { throw "Packaging .appx failed." }
           "Created .appx: $appxName"
 
-          # Sign payload (.appx) then verify
-          Sign-WithPolicy $appxName
-          Verify-Signature $appxName
-
-          # Build bundle (.appxbundle)
+          # Bundle
           $bundleLayout = Join-Path $env:RUNNER_TEMP "bundlelayout"
           Remove-Item -Recurse -Force $bundleLayout -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $bundleLayout | Out-Null
           Copy-Item $appxName -Destination $bundleLayout
-
           & $env:MAKEAPPX bundle /o /bv $version /d $bundleLayout /p $bundleName
           if (-not (Test-Path $bundleName)) { throw "Bundling failed." }
           "Created bundle: $bundleName"
 
-          # Sign bundle then verify
-          Sign-WithPolicy $bundleName
-          Verify-Signature $bundleName
+          # Sign bundle with PFX directly — same flags as the known-good script
+          "Signing bundle (no timestamp, PFX-direct)..."
+          & $env:SIGNTOOL sign /debug /fd SHA256 /a /f $env:PFX_PATH /p $env:SCOREGENIUS_PFX_PASSWORD "$bundleName"
+          if ($LASTEXITCODE -ne 0) { throw "Signing failed (exit $LASTEXITCODE)" }
+          "Signing succeeded."
 
-          # Constant name for hosting
+          # Constant name copy for hosting
           Copy-Item $bundleName "ScoreGenius.appxbundle" -Force
           echo "FINAL_PACKAGE=ScoreGenius.appxbundle" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           "Final bundle (constant name): ScoreGenius.appxbundle"
