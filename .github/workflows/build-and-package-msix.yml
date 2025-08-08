@@ -144,18 +144,18 @@ jobs:
           # Expose final package for downstream steps
           echo "FINAL_PACKAGE=$bundleName" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: scoregenius-package
-          path: ${{ env.FINAL_PACKAGE }}
+      #- name: Upload artifact
+      # uses: actions/upload-artifact@v4
+      # with:
+      #  name: scoregenius-package
+      #  path: ${{ env.FINAL_PACKAGE }}
 
-      - name: Draft GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "v${{ steps.version.outputs.version }}"
-          name: "ScoreGenius v${{ steps.version.outputs.version }}"
-          draft: true
-          files: ${{ env.FINAL_PACKAGE }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #- name: Draft GitHub Release
+      # uses: softprops/action-gh-release@v2
+      # with:
+      # tag_name: "v${{ steps.version.outputs.version }}"
+      # name: "ScoreGenius v${{ steps.version.outputs.version }}"
+      # draft: true
+      # files: ${{ env.FINAL_PACKAGE }}
+      # env:
+      # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
