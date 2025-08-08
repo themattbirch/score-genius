@@ -48,12 +48,14 @@ jobs:
             "Generated cert Thumbprint: $($cert.Thumbprint)"
           } else {
             "Using provided PFX from secrets."
+            # Persist secrets to later steps via GITHUB_ENV
+            if (-not $env:SCOREGENIUS_PFX_PASSWORD) { throw "SCOREGENIUS_PFX_PASSWORD is missing in secrets." }
+            echo "SCOREGENIUS_PFX_B64=$($env:SCOREGENIUS_PFX_B64)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+            echo "SCOREGENIUS_PFX_PASSWORD=$($env:SCOREGENIUS_PFX_PASSWORD)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           }
 
-      # 🔧 Replace this step
       - name: Decode + validate PFX (sanitize, password-check)
         shell: pwsh
-        # ❌ remove the env: block – it was clobbering the values
         run: |
           if (-not $env:SCOREGENIUS_PFX_B64) { throw "SCOREGENIUS_PFX_B64 missing after generation step." }
 
@@ -69,7 +71,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "PFX failed to open with provided password." }
           "PFX password validated."
 
-      # 🔧 Replace this step
       - name: Read cert Subject DN (for Publisher alignment)
         shell: pwsh
         run: |
@@ -82,8 +83,6 @@ jobs:
 
       - name: Patch manifest version & publisher; patch AppInstaller
         shell: pwsh
-        env:
-          CERT_PUBLISHER: ${{ env.CERT_PUBLISHER }}
         run: |
           $version = '${{ steps.version.outputs.version }}'
 
@@ -113,15 +112,16 @@ jobs:
           # keep hosted filename constant
           $doc.AppInstaller.MainPackage.Uri = "https://scoregenius.io/app/ScoreGenius.appxbundle"
 
-          # If the schema includes Name/Publisher attributes, align Publisher
-          if ($doc.AppInstaller.MainPackage -and $doc.AppInstaller.MainPackage.GetAttribute("Publisher")) {
-            $doc.AppInstaller.MainPackage.Publisher = $env:CERT_PUBLISHER
+          # If the schema includes Name/Publisher attributes, align Publisher safely
+          if ($doc.AppInstaller.MainPackage -and ($doc.AppInstaller.MainPackage | Get-Member -Name SetAttribute)) {
+            if ($doc.AppInstaller.MainPackage.HasAttribute("Publisher")) {
+              $doc.AppInstaller.MainPackage.SetAttribute("Publisher", $env:CERT_PUBLISHER)
+            }
           }
 
           [System.IO.File]::WriteAllText($ai, $doc.OuterXml, $utf8NoBom)
           "AppInstaller updated to $version, constant URI, and publisher (if attribute existed)."
 
-      # 🔧 Replace this step
       - name: Locate SDK tools (MakeAppx + x64 SignTool)
         shell: pwsh
         run: |
@@ -134,11 +134,11 @@ jobs:
           echo "SIGNTOOL=$($signtool.FullName)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           "Using MakeAppx: $($makeappx.FullName)"
           "Using SignTool: $($signtool.FullName)"
+          & $signtool.FullName | Select-Object -First 1 | Out-Null
+          "SignTool ready."
 
-      # 🔧 Replace this step
       - name: Pack, sign .appx; bundle, sign .appxbundle; verify
         shell: pwsh
-        # ❌ remove env: block; just read from $env: that prior steps populated
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not $env:PFX_PATH) { throw "PFX_PATH not set." }
@@ -173,9 +173,11 @@ jobs:
             "Verified signature: $filePath"
           }
 
+          # Sign payload first
           Sign-WithRetry $appxName
           Verify-Signature $appxName
 
+          # Bundle
           $bundleLayout = Join-Path $env:RUNNER_TEMP "bundlelayout"
           Remove-Item -Recurse -Force $bundleLayout -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $bundleLayout | Out-Null
@@ -185,9 +187,11 @@ jobs:
           if (-not (Test-Path $bundleName)) { throw "Bundling failed." }
           "Created bundle: $bundleName"
 
+          # Sign bundle
           Sign-WithRetry $bundleName
           Verify-Signature $bundleName
 
+          # Constant name for hosting
           Copy-Item $bundleName "ScoreGenius.appxbundle" -Force
           echo "FINAL_PACKAGE=ScoreGenius.appxbundle" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           "Final bundle (constant name): ScoreGenius.appxbundle"
