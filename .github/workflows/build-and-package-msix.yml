@@ -112,6 +112,7 @@ jobs:
           }
 
       - name: Package Appxbundle and sign (with secret sanitization)
+        id: bundle
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -193,7 +194,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scoregenius-package
-          path: ${{ env.FINAL_PACKAGE }}
+          path: |
+            ${{ steps.bundle.outputs.final_package }}
+            frontend/app/ScoreGenius.appinstaller
 
       - name: Draft GitHub Release
         uses: softprops/action-gh-release@v2
@@ -201,6 +204,6 @@ jobs:
           tag_name: "v${{ steps.version.outputs.version }}"
           name: "ScoreGenius v${{ steps.version.outputs.version }}"
           draft: true
-          files: ${{ env.FINAL_PACKAGE }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            ${{ steps.bundle.outputs.final_package }}
+            frontend/app/ScoreGenius.appinstaller
