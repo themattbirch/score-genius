@@ -88,6 +88,9 @@ COPY --from=builder /app/frontend/dist/app-sw.* backend/server/static/app/app-sw
 COPY --from=builder /app/frontend/dist/workbox-*.js backend/server/static/app/
 COPY --from=builder /app/frontend/dist/sitemap.xml backend/server/static/sitemap.xml
 
+# host the Windows installer files (these must exist in the build context)
+COPY frontend/app/ScoreGenius.appinstaller      backend/server/static/app/ScoreGenius.appinstaller
+
 # Final sanity check for the service worker
 RUN test -f backend/server/static/app/app-sw.js || (echo "Service Worker missing!" && ls -lR backend/server/static/app && exit 1)
 
