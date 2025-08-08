@@ -34,7 +34,7 @@ from supabase import Client, create_client
 # Project imports
 try:
     from backend import config
-    from backend.nfl_features.engine import run_nfl_feature_pipeline
+    from backend.nfl_features.engine import NFLFeatureEngine
     from backend.nfl_score_prediction.data import NFLDataFetcher
     from backend.nfl_score_prediction.ensemble import NFLEnsemble
     from backend.nfl_score_prediction.models import MODEL_DIR, derive_scores_from_predictions
@@ -178,7 +178,6 @@ def generate_predictions(
         return []
 
     fetcher = NFLDataFetcher(sb)
-
     upcoming_df = fetcher.fetch_upcoming_games(days_window)
     if upcoming_df.empty:
         logger.info("No upcoming games in window.")
@@ -191,15 +190,22 @@ def generate_predictions(
     _log_df(games_hist,  "games_hist",  debug_mode)
     _log_df(stats_hist,  "stats_hist",  debug_mode)
 
-    # Features
+    # --- MODIFIED: Use the new NFLFeatureEngine class ---
     logger.info("Building features for %d games…", len(upcoming_df))
     feat_t = time.time()
-    features_df = run_nfl_feature_pipeline(
+    
+    nfl_engine = NFLFeatureEngine(
+        supabase_url=config.SUPABASE_URL,
+        supabase_service_key=config.SUPABASE_SERVICE_KEY
+    )
+    
+    features_df = nfl_engine.build_features(
         games_df=upcoming_df,
         historical_games_df=games_hist,
         historical_team_game_stats_df=stats_hist,
         debug=debug_mode,
     )
+
     logger.info("Feature pipeline done in %.2fs", time.time() - feat_t)
     _log_df(features_df, "features_df", debug_mode)
 

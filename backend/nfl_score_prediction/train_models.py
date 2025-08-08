@@ -45,7 +45,7 @@ from supabase import Client, create_client
 # ---- Project imports ----
 try:
     from backend import config
-    from backend.nfl_features.engine import run_nfl_feature_pipeline
+    from backend.nfl_features.engine import NFLFeatureEngine
     from backend.nfl_score_prediction.data import NFLDataFetcher
     from backend.nfl_score_prediction.models import (
         BaseNFLPredictor,
@@ -310,7 +310,7 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     logger.info("--- NFL Training Pipeline ---")
     logger.info("Args: %s", vars(args))
 
-    # 1. Data
+    # 1. Data Loading (this part is correct)
     sb = get_supabase_client()
     if not sb:
         sys.exit(1)
@@ -325,11 +325,26 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     _log_df(games_df, "games_df_raw", args.debug)
     _log_df(stats_df, "stats_df_raw", args.debug)
 
-    # 2. Features
-    logger.info("Generating features...")
+    # 2. Instantiate and run the refactored feature engine
+    logger.info("Initializing and running the refactored NFLFeatureEngine...")
     feat_t0 = time.time()
-    features = run_nfl_feature_pipeline(games_df, stats_df, debug=args.debug)
+
+    # The engine is now created as a class instance
+    nfl_engine = NFLFeatureEngine(
+        supabase_url=config.SUPABASE_URL,
+        supabase_service_key=config.SUPABASE_SERVICE_KEY
+    )
+
+    # Call the build_features method
+    features = nfl_engine.build_features(
+        games_df=games_df,
+        historical_games_df=games_df, # Pass the same df for history context
+        historical_team_stats_df=stats_df,
+        debug=args.debug
+    )
+
     logger.info("Feature pipeline complete in %.2fs | shape=%s", time.time() - feat_t0, features.shape)
+    _log_df(features, "features_full", args.debug)
     _log_df(features, "features_full", args.debug)
 
     # targets
