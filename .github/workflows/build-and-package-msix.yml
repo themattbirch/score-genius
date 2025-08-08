@@ -50,7 +50,6 @@ jobs:
           } else {
             "Using provided PFX from secrets."
             if (-not $env:SCOREGENIUS_PFX_PASSWORD) { throw "SCOREGENIUS_PFX_PASSWORD is missing in secrets." }
-            # Persist to job env for later steps
             echo "SCOREGENIUS_PFX_B64=$($env:SCOREGENIUS_PFX_B64)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
             echo "SCOREGENIUS_PFX_PASSWORD=$($env:SCOREGENIUS_PFX_PASSWORD)" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           }
@@ -110,8 +109,8 @@ jobs:
             "Installed signer to CurrentUser\TrustedPeople."
           }
 
-          "Root contains signer?       " + [bool](Get-ChildItem Cert:\CurrentUser\Root          | Where-Object Thumbprint -eq $thumb)
-          "TrustedPeople contains signer? " + [bool](Get-ChildItem Cert:\CurrentUser\TrustedPeople | Where-Object Thumbprint -eq $thumb)
+          "Root contains signer?           " + [bool](Get-ChildItem Cert:\CurrentUser\Root          | Where-Object Thumbprint -eq $thumb)
+          "TrustedPeople contains signer?  " + [bool](Get-ChildItem Cert:\CurrentUser\TrustedPeople | Where-Object Thumbprint -eq $thumb)
 
       # 4) Patch manifest + appinstaller (version + publisher DN + constant URI)
       - name: Patch AppxManifest + AppInstaller (version/publisher/URI)
@@ -139,7 +138,6 @@ jobs:
           [xml]$doc = Get-Content -Raw -Encoding UTF8 $ai
           $doc.AppInstaller.Version = $version
           $doc.AppInstaller.MainPackage.Uri = "https://scoregenius.io/app/ScoreGenius.appxbundle"
-          # If schema exposes Publisher attribute on MainPackage, set it
           if ($doc.AppInstaller.MainPackage -and ($doc.AppInstaller.MainPackage | Get-Member -Name SetAttribute)) {
             if ($doc.AppInstaller.MainPackage.HasAttribute("Publisher") -and $publisher) {
               $doc.AppInstaller.MainPackage.SetAttribute("Publisher", $publisher)
@@ -154,7 +152,6 @@ jobs:
         run: |
           $binRoot = 'C:\Program Files (x86)\Windows Kits\10\bin\'
 
-          # Prefer x64 MakeAppx if present
           $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $makeappx) {
             $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Sort-Object FullName -Descending | Select-Object -First 1
@@ -172,7 +169,7 @@ jobs:
           "MakeAppx version: $((Get-Item $makeappx.FullName).VersionInfo.FileVersion)"
           "SignTool version: $((Get-Item $signtool.FullName).VersionInfo.FileVersion)"
 
-      # 6) Pack -> sign .appx -> bundle -> sign .appxbundle -> verify both
+      # 6) Pack -> sign .appx -> bundle -> sign .appxbundle -> verify both (with timeouts + TSA fallback)
       - name: Pack, sign .appx; bundle, sign .appxbundle; verify
         shell: pwsh
         run: |
@@ -185,24 +182,64 @@ jobs:
           $version     = '${{ steps.version.outputs.version }}'
           $appxName    = "ScoreGenius_${version}.appx"
           $bundleName  = "ScoreGenius_${version}.appxbundle"
+          $timeoutSec  = 75
 
-          & $env:MAKEAPPX pack /o /d $packageRoot /p $appxName
-          if (-not (Test-Path $appxName)) { throw "Packaging .appx failed." }
-          "Created .appx: $appxName"
-
-          function Sign-WithRetry([string]$filePath) {
-            $primaryTs = "http://timestamp.digicert.com"
-            $backupTs  = "http://timestamp.sectigo.com"
-
-            "Signing $filePath (primary timestamp)..."
-            & $env:SIGNTOOL sign /v /debug /fd SHA256 /td SHA256 /f $env:PFX_PATH /p $env:SCOREGENIUS_PFX_PASSWORD /tr $primaryTs "$filePath"
-            if ($LASTEXITCODE -ne 0) {
-              "Primary timestamp failed ($LASTEXITCODE). Retrying with backup timestamp..."
-              Start-Sleep -Seconds 2
-              & $env:SIGNTOOL sign /v /debug /fd SHA256 /td SHA256 /f $env:PFX_PATH /p $env:SCOREGENIUS_PFX_PASSWORD /tr $backupTs "$filePath"
-              if ($LASTEXITCODE -ne 0) { throw "Signing failed for $filePath ($LASTEXITCODE)" }
+          # Helper: run a process with timeout and capture logs
+          function Invoke-ToolWithTimeout([string]$exe, [string[]]$args, [int]$timeoutSec, [string]$label) {
+            $out = Join-Path $env:RUNNER_TEMP ("$($label)_out_" + (Get-Random) + ".log")
+            $err = $out + ".err"
+            "-> $label: $exe $($args -join ' ')"
+            $proc = Start-Process -FilePath $exe -ArgumentList $args -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+            try {
+              Wait-Process -Id $proc.Id -Timeout $timeoutSec -ErrorAction SilentlyContinue | Out-Null
+              if (-not $proc.HasExited) {
+                "!! $label timed out after $timeoutSec s. Killing process."
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                $code = 999
+              } else {
+                $code = $proc.ExitCode
+              }
+            } finally {
+              if (Test-Path $out) { Get-Content $out | ForEach-Object { $_ } }
+              if (Test-Path $err) { Get-Content $err | ForEach-Object { $_ } }
             }
-            "Signed: $filePath"
+            return $code
+          }
+
+          function Sign-Once([string]$filePath, [string]$tsaUrl) {
+            $args = @('sign','/v','/debug','/fd','SHA256','/td','SHA256','/f', $env:PFX_PATH, '/p', $env:SCOREGENIUS_PFX_PASSWORD)
+            if ($tsaUrl) { $args += @('/tr', $tsaUrl) }
+            $args += @("$filePath")
+            return (Invoke-ToolWithTimeout $env:SIGNTOOL $args $timeoutSec "signtool_sign_$([IO.Path]::GetFileName($filePath))")
+          }
+
+          function Sign-WithPolicy([string]$filePath) {
+            if ($env:SELF_SIGNED -eq '1') {
+              "Self-signed build: signing WITHOUT timestamp for speed."
+              $code = Sign-Once $filePath $null
+              if ($code -ne 0) { throw "Signing failed (self-signed, no timestamp) for $filePath (code $code)" }
+              "Signed (no timestamp): $filePath"
+              return
+            }
+
+            # Real PFX: primary TSA -> backup TSA -> no timestamp fallback
+            "Signing $filePath (primary TSA)"
+            $code = Sign-Once $filePath "http://timestamp.digicert.com"
+            if ($code -ne 0) {
+              "Primary failed (code $code). Retrying with backup TSA."
+              Start-Sleep -Seconds 2
+              $code = Sign-Once $filePath "http://timestamp.sectigo.com"
+              if ($code -ne 0) {
+                "Backup TSA failed (code $code). Final fallback: signing WITHOUT timestamp."
+                $code = Sign-Once $filePath $null
+                if ($code -ne 0) { throw "Signing failed (no timestamp fallback) for $filePath (code $code)" }
+                "Signed (no timestamp fallback): $filePath"
+              } else {
+                "Signed with backup TSA: $filePath"
+              }
+            } else {
+              "Signed with primary TSA: $filePath"
+            }
           }
 
           function Verify-Signature([string]$filePath) {
@@ -217,8 +254,13 @@ jobs:
             "Verified signature: $filePath"
           }
 
+          # Pack .appx
+          & $env:MAKEAPPX pack /o /d $packageRoot /p $appxName
+          if (-not (Test-Path $appxName)) { throw "Packaging .appx failed." }
+          "Created .appx: $appxName"
+
           # Sign payload (.appx) then verify
-          Sign-WithRetry $appxName
+          Sign-WithPolicy $appxName
           Verify-Signature $appxName
 
           # Build bundle (.appxbundle)
@@ -232,7 +274,7 @@ jobs:
           "Created bundle: $bundleName"
 
           # Sign bundle then verify
-          Sign-WithRetry $bundleName
+          Sign-WithPolicy $bundleName
           Verify-Signature $bundleName
 
           # Constant name for hosting
