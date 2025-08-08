@@ -72,51 +72,52 @@ jobs:
             "Using provided PFX"
           }
 
-      - name: Package Appxbundle and sign (same flow as before)
+      - name: Package Appxbundle and sign (store-import + thumbprint)
         shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCOREGENIUS_PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
           SCOREGENIUS_PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $packageRoot = 'frontend/windows_package/PackageRoot'
           $version = '${{ steps.version.outputs.version }}'
           $appxName = "ScoreGenius_${version}.appx"
           $bundleName = "ScoreGenius_${version}.appxbundle"
 
-          if ($env:SCOREGENIUS_PFX_B64) {
-            $cleaned = ($env:SCOREGENIUS_PFX_B64 -replace '[^A-Za-z0-9+/=]', '')
-            [Convert]::FromBase64String($cleaned) | Out-Null
-            $pfxPath = Join-Path $env:RUNNER_TEMP "scoregenius.pfx"
-            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($cleaned))
-            certutil -f -p $env:SCOREGENIUS_PFX_PASSWORD -dump $pfxPath | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "PFX failed to load" }
-          } else { $pfxPath = $null }
-
+          # --- tools
           $binRoot = 'C:\Program Files (x86)\Windows Kits\10\bin\'
           $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Sort-Object FullName -Descending | Select-Object -First 1
           $signtool = Get-ChildItem $binRoot -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $makeappx) { throw "MakeAppx.exe not found." }
+          if (-not $signtool) { throw "signtool.exe not found." }
 
-          & $makeappx.FullName pack /d $packageRoot /p $appxName
-          if (-not (Test-Path $appxName)) { throw "Packaging .appx failed." }
-
+          # --- pack + bundle
+          & $makeappx.FullName pack /o /d $packageRoot /p $appxName
+          Test-Path $appxName | Out-Null
           $bundleLayout = Join-Path $env:RUNNER_TEMP "bundlelayout"
           Remove-Item -Recurse -Force $bundleLayout -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $bundleLayout | Out-Null
           Copy-Item $appxName -Destination $bundleLayout
+          & $makeappx.FullName bundle /o /bv $version /d $bundleLayout /p $bundleName
+          Test-Path $bundleName | Out-Null
 
-          & $makeappx.FullName bundle /bv $version /d $bundleLayout /p $bundleName
-          if (-not (Test-Path $bundleName)) { throw "Bundling failed." }
+          # --- decode + import PFX into CurrentUser\My, sign by thumbprint (avoids 0x8007000b)
+          if (-not $env:SCOREGENIUS_PFX_B64) { throw "Missing SCOREGENIUS_PFX_B64" }
+          $cleaned = ($env:SCOREGENIUS_PFX_B64 -replace '[^A-Za-z0-9+/=]', '')
+          $pfxPath = Join-Path $env:RUNNER_TEMP "scoregenius.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($cleaned))
+          $pwd = ConvertTo-SecureString $env:SCOREGENIUS_PFX_PASSWORD -AsPlainText -Force
 
-          if ($signtool -and $pfxPath) {
-            & $signtool.FullName sign /debug /fd SHA256 /a /f $pfxPath /p $env:SCOREGENIUS_PFX_PASSWORD $bundleName
-            if ($LASTEXITCODE -ne 0) { throw "Signing failed ($LASTEXITCODE)" }
-          } else {
-            "Skipping signing."
-          }
+          # Import to user store (important)
+          $import = Import-PfxCertificate -FilePath $pfxPath -Password $pwd -CertStoreLocation Cert:\CurrentUser\My
+          if (-not $import) { throw "Import-PfxCertificate failed" }
+          $thumb = $import.Thumbprint
 
-          # constant name copy for hosting under /app/
+          # RFC3161 timestamp (Digicert)
+          & $signtool.FullName sign /v /debug /fd SHA256 /td SHA256 /sha1 $thumb /tr http://timestamp.digicert.com "$bundleName"
+          if ($LASTEXITCODE -ne 0) { throw "Signing failed ($LASTEXITCODE)" }
+
+          # constant name copy for hosting
           Copy-Item $bundleName "ScoreGenius.appxbundle" -Force
           echo "FINAL_PACKAGE=ScoreGenius.appxbundle" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
 
