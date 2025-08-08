@@ -1,13 +1,17 @@
 <!-- /app/ScoreGenius.appinstaller -->
-<AppInstaller Uri="https://scoregenius.io/app/ScoreGenius.appinstaller"
-  Version="1.1.2.0"
+<AppInstaller
+  Uri="https://scoregenius.io/app/ScoreGenius.appinstaller"
+  Version="1.12.37.0"
   xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2">
-  <MainPackage
-    Name="com.scoregenius.app"
-    Publisher="CN=ScoreGenius, O=ScoreGenius LLC"
-    Version="1.1.2.0"
+
+  <MainBundle
+    Name="mattbwebdev.ScoreGenius"
+    Publisher="CN=F55BAB6B-31B3-48DF-AEF9-64E278573516"
+    Version="1.12.37.0"
     Uri="https://scoregenius.io/app/ScoreGenius.appxbundle" />
+
   <UpdateSettings>
-    <OnLaunch HoursBetweenUpdateChecks="24"/>
+    <!-- Check once per day on launch; set to 0 if you want every launch -->
+    <OnLaunch HoursBetweenUpdateChecks="24" />
   </UpdateSettings>
 </AppInstaller>
