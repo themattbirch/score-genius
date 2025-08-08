@@ -141,6 +141,15 @@ jobs:
           Copy-Item $bundleName "ScoreGenius.appxbundle" -Force
           echo "FINAL_PACKAGE=ScoreGenius.appxbundle" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
 
+      - name: Upload appxbundle to server
+        if: success()
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: ${{ env.FINAL_PACKAGE }}
+          target: /var/www/scoregenius/static/app/
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

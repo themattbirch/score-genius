@@ -64,23 +64,19 @@ COPY frontend/public/.well-known/assetlinks.json          backend/server/static/
 # ─── /app (SPA + PWA + Windows installer artifacts) ───────────────────────────
 RUN mkdir -p backend/server/static/app
 
-# SPA from builder (note: base='/app/')
+# SPA from builder
 COPY --from=builder /app/frontend/dist/index.html                 backend/server/static/app/index.html
 COPY --from=builder /app/frontend/dist/assets/                    backend/server/static/app/assets/
 COPY --from=builder /app/frontend/dist/app-sw.js                  backend/server/static/app/app-sw.js
 COPY --from=builder /app/frontend/dist/manifest.webmanifest       backend/server/static/app/manifest.webmanifest
-
-# Optional asset folders produced by your build/copy
 COPY --from=builder /app/frontend/dist/icons/                     backend/server/static/app/icons/
 COPY --from=builder /app/frontend/dist/images/                    backend/server/static/app/images/
 COPY --from=builder /app/frontend/dist/screenshots/               backend/server/static/app/screenshots/
-# sitemap at site root (keep where you want it served)
 COPY --from=builder /app/frontend/dist/sitemap.xml                backend/server/static/sitemap.xml
 
 # Windows installer files (hosted, not built here)
 # If these don't exist in the build context, comment these COPY lines or ensure CI drops them in place.
 COPY frontend/app/ScoreGenius.appinstaller                        backend/server/static/app/ScoreGenius.appinstaller
-COPY windows_package/out/ScoreGenius.appxbundle                   backend/server/static/app/ScoreGenius.appxbundle
 
 # Final sanity: SW present
 RUN test -f backend/server/static/app/app-sw.js || (echo "Service Worker missing!" && ls -lR backend/server/static/app && exit 1)
