@@ -16,34 +16,50 @@
   </Properties>
 
   <Resources>
-    <Resource Language="en-us"/>
+    <Resource Language="en-us" />
   </Resources>
 
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop"
                         MinVersion="10.0.19041.0"
-                        MaxVersionTested="10.0.19045.0"/>
+                        MaxVersionTested="10.0.19045.0" />
   </Dependencies>
 
   <Capabilities>
-    <Capability Name="internetClient"/>
+    <Capability Name="internetClient" />
   </Capabilities>
 
   <Applications>
-    <Application Id="App" StartPage="loader.html">
+    <Application Id="App" StartPage="ms-appx-web:///loader.html">
       <uap:VisualElements DisplayName="ScoreGenius"
                           Description="Predict the game. Not the noise."
                           BackgroundColor="#000000"
                           Square44x44Logo="assets/Square44x44.png"
                           Square150x150Logo="assets/Square150x150Logo.png">
-        <uap:SplashScreen Image="assets/SplashScreen.png"/>
+        <uap:SplashScreen Image="assets/SplashScreen.png" />
       </uap:VisualElements>
+
+      <!-- Allow hosted content + common CDNs/services used by modern PWAs -->
       <uap:ApplicationContentUriRules>
-        <uap:Rule Type="include" Match="https://scoregenius.io/*"/>
-        <uap:Rule Type="include" Match="https://www.scoregenius.io/*"/>
-        <uap:Rule Type="include" Match="https://fonts.googleapis.com/*"/>
-        <uap:Rule Type="include" Match="https://fonts.gstatic.com/*"/>
-        <!-- Add any additional external domains -->
+        <!-- Primary app domain(s) -->
+        <uap:Rule Type="include" Match="https://scoregenius.io/*" />
+        <uap:Rule Type="include" Match="https://www.scoregenius.io/*" />
+        <uap:Rule Type="include" Match="https://*.scoregenius.io/*" />
+
+        <!-- Fonts & Google services -->
+        <uap:Rule Type="include" Match="https://fonts.googleapis.com/*" />
+        <uap:Rule Type="include" Match="https://fonts.gstatic.com/*" />
+        <uap:Rule Type="include" Match="https://*.gstatic.com/*" />
+        <uap:Rule Type="include" Match="https://www.googletagmanager.com/*" />
+        <uap:Rule Type="include" Match="https://www.google-analytics.com/*" />
+        <uap:Rule Type="include" Match="https://*.googleapis.com/*" />
+
+        <!-- Common CDNs (keep the ones you actually use; harmless if unused) -->
+        <uap:Rule Type="include" Match="https://cdn.jsdelivr.net/*" />
+        <uap:Rule Type="include" Match="https://cdnjs.cloudflare.com/*" />
+        <uap:Rule Type="include" Match="https://unpkg.com/*" />
+        <uap:Rule Type="include" Match="https://cdn.skypack.dev/*" />
+        <uap:Rule Type="include" Match="https://cdn.cloudflare.com/*" />
       </uap:ApplicationContentUriRules>
     </Application>
   </Applications>

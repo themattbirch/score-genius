@@ -285,10 +285,15 @@ class NFLFeatureEngine:
             for module in self.execution_order:
                 fn = self.TRANSFORMS[module]
                 logger.debug("ENGINE:%s running…", module)
-
-                kw: Dict[str, Any] = {"flag_imputations": flag_imputations, "debug": debug}
-                if _supports_kwarg(fn, "historical_df"): kw["historical_df"] = past_games
                 
+                kw: Dict[str, Any] = {}
+                if _supports_kwarg(fn, "debug"):
+                    kw["debug"] = debug
+                if _supports_kwarg(fn, "flag_imputations"):
+                    kw["flag_imputations"] = flag_imputations
+                if _supports_kwarg(fn, "historical_df"):
+                    kw["historical_df"] = past_games
+       
                 if module == "season":
                     kw["season_stats_df"] = all_season_stats_df[all_season_stats_df['season'] == (season - 1)]
                 elif module == "rolling":

@@ -60,7 +60,7 @@ def _append_differentials(df: pd.DataFrame) -> pd.DataFrame:
 def transform(
     games: pd.DataFrame,
     *,
-    historical_team_stats_df: Optional[pd.DataFrame] = None,
+    season_stats_df: Optional[pd.DataFrame] = None,
     flag_imputations: bool = True,
     debug: bool = False,
 ) -> pd.DataFrame:
@@ -89,7 +89,7 @@ def transform(
         "prev_season_srs_lite": DEFAULTS["srs_lite"],
     }
 
-    if historical_team_stats_df is None or historical_team_stats_df.empty:
+    if season_stats_df is None or season_stats_df.empty:
         logger.warning("season: no historical stats provided – applying league defaults")
         for side in ("home", "away"):
             for feat, dval in default_vals.items():
@@ -99,7 +99,7 @@ def transform(
                     out[f"{col}_imputed"] = 1
         return _append_differentials(out)
 
-    hts = historical_team_stats_df.copy()
+    hts = season_stats_df.copy()
     if "team_norm" not in hts.columns:
         hts["team_norm"] = hts["team_id"].apply(normalize_team_name)
 
