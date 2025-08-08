@@ -1,0 +1,13 @@
+<!-- /app/ScoreGenius.appinstaller -->
+<AppInstaller Uri="https://scoregenius.io/app/ScoreGenius.appinstaller"
+  Version="1.1.2.0"
+  xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2">
+  <MainPackage
+    Name="com.scoregenius.app"
+    Publisher="CN=ScoreGenius, O=ScoreGenius LLC"
+    Version="1.1.2.0"
+    Uri="https://scoregenius.io/app/ScoreGenius.appxbundle" />
+  <UpdateSettings>
+    <OnLaunch HoursBetweenUpdateChecks="24"/>
+  </UpdateSettings>
+</AppInstaller>
