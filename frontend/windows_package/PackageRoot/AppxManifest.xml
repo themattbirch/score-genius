@@ -6,7 +6,7 @@
 
   <Identity Name="mattbwebdev.ScoreGenius"
             Publisher="CN=F55BAB6B-31B3-48DF-AEF9-64E278573516"
-            Version="1.10.0.0" />
+            Version="1.12.0.0" />
 
   <Properties>
     <DisplayName>ScoreGenius</DisplayName>
@@ -27,25 +27,23 @@
 
   <Capabilities>
     <Capability Name="internetClient"/>
-    <Capability Name="internetClientServer"/>
   </Capabilities>
 
   <Applications>
-    <Application
-      Id="App"
-      StartPage="https://scoregenius.com/app">
-      <uap:VisualElements
-        DisplayName="ScoreGenius"
-        Description="Predict the game. Not the noise."
-        BackgroundColor="#000000"
-        Square44x44Logo="assets/Square44x44.png"
-        Square150x150Logo="assets/Square150x150Logo.png">
+    <Application Id="App" StartPage="loader.html">
+      <uap:VisualElements DisplayName="ScoreGenius"
+                          Description="Predict the game. Not the noise."
+                          BackgroundColor="#000000"
+                          Square44x44Logo="assets/Square44x44.png"
+                          Square150x150Logo="assets/Square150x150Logo.png">
         <uap:SplashScreen Image="assets/SplashScreen.png"/>
       </uap:VisualElements>
-
-      <!-- Allow the app to load any path under your domain -->
       <uap:ApplicationContentUriRules>
-        <uap:Rule Type="include" Match="https://scoregenius.com/*"/>
+        <uap:Rule Type="include" Match="https://scoregenius.io/*"/>
+        <uap:Rule Type="include" Match="https://www.scoregenius.io/*"/>
+        <uap:Rule Type="include" Match="https://fonts.googleapis.com/*"/>
+        <uap:Rule Type="include" Match="https://fonts.gstatic.com/*"/>
+        <!-- Add any additional external domains -->
       </uap:ApplicationContentUriRules>
     </Application>
   </Applications>

@@ -14,7 +14,9 @@ jobs:
 
       - name: Compute dynamic version
         id: version
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $base = "1.10"
           $runnum = $env:GITHUB_RUN_NUMBER
           $version = "$base.$runnum.0"
@@ -23,6 +25,7 @@ jobs:
       - name: Patch manifest version
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $manifest = "frontend/windows_package/PackageRoot/AppxManifest.xml"
           if (-not (Test-Path $manifest)) { throw "Manifest not found at $manifest" }
           $version = '${{ steps.version.outputs.version }}'
@@ -32,6 +35,29 @@ jobs:
           [System.IO.File]::WriteAllText($manifest, $xml.OuterXml, $utf8NoBom)
           Write-Output "Manifest patched to version $version"
 
+      - name: Patch AppInstaller version + URI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ai = "frontend/app/ScoreGenius.appinstaller"
+          if (-not (Test-Path $ai)) { throw "AppInstaller not found at $ai" }
+          $version = '${{ steps.version.outputs.version }}'
+          [xml]$doc = Get-Content -Raw -Encoding UTF8 $ai
+          $doc.AppInstaller.Version = $version
+          # Keep constant filename for hosting
+          $doc.AppInstaller.MainPackage.Uri = "https://scoregenius.io/app/ScoreGenius.appxbundle"
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText($ai, $doc.OuterXml, $utf8NoBom)
+          Write-Output "Patched AppInstaller to $version with constant URI"
+
+      - name: Ensure loader.html exists in PackageRoot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $loaderPath = "frontend/windows_package/PackageRoot/loader.html"
+          if (-not (Test-Path $loaderPath)) { throw "loader.html missing from PackageRoot" }
+          Write-Output "Confirmed loader.html present."
+
       - name: Ensure code signing certificate exists
         shell: pwsh
         env:
@@ -39,6 +65,7 @@ jobs:
           SCOREGENIUS_PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
           SCOREGENIUS_PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
         run: |
+          $ErrorActionPreference = 'Stop'
           if (-not $env:SCOREGENIUS_PFX_B64) {
             Write-Output "No external PFX provided; generating fresh RSA-2048 code-signing cert."
             $cert = New-SelfSignedCertificate `
@@ -50,27 +77,23 @@ jobs:
 
             $pwd     = ConvertTo-SecureString "StrongPfxPass123" -AsPlainText -Force
             $pfxPath = "$PWD\scoregenius_generated.pfx"
-
             Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
 
-            # Debug: show cert details
             Get-PfxCertificate $pfxPath | Format-List Subject,Thumbprint,NotAfter
 
             $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pfxPath))
-            Write-Output "Generated PFX base64 prefix: $($b64.Substring(0,80))..."
-            Write-Output "Generated cert thumbprint: $($cert.Thumbprint)"
-
             echo "SCOREGENIUS_PFX_B64=$b64" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
             echo "SCOREGENIUS_PFX_PASSWORD=StrongPfxPass123" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
           } else {
             Write-Output "External PFX provided; will sanitize and use it."
           }
 
-      - name: Package Appxbundle and sign (with secret sanitization)
+      - name: Package Appxbundle and sign
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $packageRoot = 'frontend/windows_package/PackageRoot'
           $version = '${{ steps.version.outputs.version }}'
           $appxName = "ScoreGenius_${version}.appx"
@@ -79,23 +102,11 @@ jobs:
           # --- sanitize and validate base64 PFX secret ---
           if ($env:SCOREGENIUS_PFX_B64) {
             $cleaned = ($env:SCOREGENIUS_PFX_B64 -replace '[^A-Za-z0-9+/=]', '')
-            try {
-              [Convert]::FromBase64String($cleaned) | Out-Null
-            } catch {
-              Write-Error "PFX secret is not valid base64 after sanitization."
-              exit 1
-            }
+            [Convert]::FromBase64String($cleaned) | Out-Null
             $pfxPath = Join-Path $env:RUNNER_TEMP "scoregenius.pfx"
             [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($cleaned))
-            Write-Output "Decoded and sanitized .pfx to $pfxPath"
-
-            # Validate PFX loads with password
             certutil -f -p $env:SCOREGENIUS_PFX_PASSWORD -dump $pfxPath | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "PFX failed to load; bad password or corrupted content."
-              exit 1
-            }
-            Write-Output "PFX validated."
+            if ($LASTEXITCODE -ne 0) { throw "PFX failed to load; bad password or corrupted content." }
           } else {
             Write-Output "No PFX base64 provided; signing will be skipped."
             $pfxPath = $null
@@ -103,20 +114,13 @@ jobs:
 
           # Locate tools
           $binRoot = 'C:\Program Files (x86)\Windows Kits\10\bin\'
-          $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe |
-                      Sort-Object FullName -Descending | Select-Object -First 1
-          $signtool = Get-ChildItem $binRoot -Recurse -Filter signtool.exe |
-                      Where-Object { $_.FullName -match '\\x64\\' } |
-                      Sort-Object FullName -Descending | Select-Object -First 1
-
+          $makeappx = Get-ChildItem $binRoot -Recurse -Filter MakeAppx.exe | Sort-Object FullName -Descending | Select-Object -First 1
+          $signtool = Get-ChildItem $binRoot -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $makeappx) { throw "MakeAppx.exe not found." }
-          Write-Output "Using MakeAppx: $($makeappx.FullName)"
-          if ($signtool) { Write-Output "Using SignTool: $($signtool.FullName)" }
 
           # Step 1: Pack .appx
-          & $makeappx.FullName pack /d $packageRoot /p $appxName
+          & $makeappx.FullName pack /o /d $packageRoot /p $appxName
           if (-not (Test-Path $appxName)) { throw "Packaging .appx failed." }
-          Write-Output "Created .appx: $appxName"
 
           # Step 2: Bundle into .appxbundle (single-arch)
           $bundleLayout = Join-Path $env:RUNNER_TEMP "bundlelayout"
@@ -124,38 +128,35 @@ jobs:
           New-Item -ItemType Directory -Path $bundleLayout | Out-Null
           Copy-Item $appxName -Destination $bundleLayout
 
-          & $makeappx.FullName bundle /bv $version /d $bundleLayout /p $bundleName
+          & $makeappx.FullName bundle /o /bv $version /d $bundleLayout /p $bundleName
           if (-not (Test-Path $bundleName)) { throw "Bundling failed." }
-          Write-Output "Created bundle: $bundleName"
 
           # Step 3: Sign the bundle
           if ($signtool -and $pfxPath) {
-            Write-Output "Signing .appxbundle with debug output..."
             & $signtool.FullName sign /debug /fd SHA256 /a /f $pfxPath /p $env:SCOREGENIUS_PFX_PASSWORD $bundleName
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Signing failed with code $LASTEXITCODE"
-              exit $LASTEXITCODE
-            }
-            Write-Output "Signing succeeded."
-          } else {
-            Write-Output "Skipping signing (missing signtool or PFX)."
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed with code $LASTEXITCODE" }
           }
 
-          # Expose final package for downstream steps
-          echo "FINAL_PACKAGE=$bundleName" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+          # Step 4: Normalize filename for hosting (constant)
+          Copy-Item $bundleName "ScoreGenius.appxbundle" -Force
+          echo "FINAL_PACKAGE=ScoreGenius.appxbundle" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
 
-      #- name: Upload artifact
-      #uses: actions/upload-artifact@v4
-      #with:
-      #name: scoregenius-package
-      # path: ${{ env.FINAL_PACKAGE }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoregenius-package
+          path: |
+            ${{ env.FINAL_PACKAGE }}
+            frontend/app/ScoreGenius.appinstaller
 
-      #- name: Draft GitHub Release
-      #uses: softprops/action-gh-release@v2
-      #with:
-      #tag_name: "v${{ steps.version.outputs.version }}"
-      #name: "ScoreGenius v${{ steps.version.outputs.version }}"
-      #draft: true
-      # files: "${{ env.FINAL_PACKAGE }}"
-      # env:
-      # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.version.outputs.version }}"
+          name: "ScoreGenius v${{ steps.version.outputs.version }}"
+          draft: true
+          files: |
+            ${{ env.FINAL_PACKAGE }}
+            frontend/app/ScoreGenius.appinstaller
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
