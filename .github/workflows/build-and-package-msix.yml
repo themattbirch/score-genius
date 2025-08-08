@@ -147,6 +147,35 @@ jobs:
           "MakeAppx version: $((Get-Item $makeappx.FullName).VersionInfo.FileVersion)"
           "SignTool version: $((Get-Item $signtool.FullName).VersionInfo.FileVersion)"
 
+      - name: Trust signing cert on runner (so verify /pa passes)
+        shell: pwsh
+        run: |
+          if (-not $env:PFX_PATH) { throw "PFX_PATH not set." }
+          if (-not $env:SCOREGENIUS_PFX_PASSWORD) { throw "SCOREGENIUS_PFX_PASSWORD not set." }
+
+          # Load the PFX and export the leaf as .cer (DER)
+          $secure = ConvertTo-SecureString $env:SCOREGENIUS_PFX_PASSWORD -AsPlainText -Force
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+            $env:PFX_PATH, $secure,
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+          )
+
+          $cerPath = Join-Path $env:RUNNER_TEMP "signer.cer"
+          [IO.File]::WriteAllBytes($cerPath, $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+
+          $isSelfSigned = ($cert.Subject -eq $cert.Issuer)
+
+          # For self-signed, trust as a root + trusted people.
+          # For real/public CA, TrustedPeople is harmless; Root should already be trusted.
+          if ($isSelfSigned) {
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
+            "Installed self-signed cert to CurrentUser\Root and CurrentUser\TrustedPeople for verification."
+          } else {
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
+            "Installed signer to CurrentUser\TrustedPeople."
+          }
+
       - name: Pack, sign .appx; bundle, sign .appxbundle; verify
         shell: pwsh
         run: |
