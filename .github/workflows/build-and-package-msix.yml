@@ -242,15 +242,32 @@ jobs:
             }
           }
 
+          $verifyTimeoutSec = 30
+
           function Verify-Signature([string]$filePath) {
-            & $env:SIGNTOOL verify /pa /all "$filePath"
-            if ($LASTEXITCODE -ne 0) {
+            # Use the same timeout wrapper we built for signing
+            $args = @('verify','/pa','/all',"$filePath")
+            $code = Invoke-ToolWithTimeout $env:SIGNTOOL $args $verifyTimeoutSec "signtool_verify_$([IO.Path]::GetFileName($filePath))"
+
+            if ($code -eq 999) {
+              # Timed out
               if ($env:SELF_SIGNED -eq '1') {
-                "Trust verify failed (self-signed chain), but signature is present and signer is locally trusted. Continuing."
+                "Verify timed out after $verifyTimeoutSec s (self-signed). Proceeding."
                 return
+              } else {
+                throw "Verify timed out after $verifyTimeoutSec s for $filePath (real PFX)."
               }
-              throw "Signature verification failed for $filePath ($LASTEXITCODE)"
             }
+
+            if ($code -ne 0) {
+              if ($env:SELF_SIGNED -eq '1') {
+                "Verify failed (self-signed), but signature exists and signer is locally trusted. Proceeding."
+                return
+              } else {
+                throw "Signature verification failed for $filePath (exit $code)."
+              }
+            }
+
             "Verified signature: $filePath"
           }
 
