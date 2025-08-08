@@ -126,14 +126,14 @@ app.get("/about", (req, res) => {
 });
 
 // 2. PWA-specific assets
-app.get("/app-sw.js", (req, res) => {
+app.get("/app/app-sw.js", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
-  res.sendFile(path.join(staticRoot, "app-sw.js"));
+  res.sendFile(path.join(staticRoot, "app", "app-sw.js"));
 });
 
-app.get("/offline.html", (req, res) => {
+app.get("/app/offline.html", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=3600");
-  res.sendFile(path.join(staticRoot, "offline.html"));
+  res.sendFile(path.join(staticRoot, "app", "offline.html"));
 });
 
 // 3. Statically served asset directories (for CSS, images, etc.)
@@ -145,6 +145,23 @@ app.use(
   })
 );
 app.use(express.static(staticRoot));
+
+// --- Windows installer + PWA statics under /app ---
+app.use(
+  "/app",
+  express.static(path.join(staticRoot, "app"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".appinstaller")) {
+        res.setHeader("Content-Type", "application/appinstaller");
+      } else if (
+        filePath.endsWith(".appxbundle") ||
+        filePath.endsWith(".msixbundle")
+      ) {
+        res.setHeader("Content-Type", "application/vnd.ms-appx");
+      }
+    },
+  })
+);
 
 // 4. API routes
 app.use("/api/v1/nba", nbaRoutes);
