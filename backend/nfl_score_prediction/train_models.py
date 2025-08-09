@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 import joblib
 import numpy as np
 import pandas as pd
-from scipy.stats import randint, loguniform
+from scipy.stats import randint, loguniform, uniform
 from sklearn.linear_model import LassoCV
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
@@ -398,17 +398,18 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
 
     param_dists: Dict[str, Dict[str, Any]] = {
         "xgb": {
-            "model__n_estimators": randint(200, 600),
-            "model__max_depth": randint(2, 6),
-            "model__learning_rate": loguniform(1e-3, 5e-2),
-            "model__subsample": loguniform(0.5, 0.5),
-            "model__colsample_bytree": loguniform(0.5, 0.5),
+            "model__n_estimators":      randint(200, 600),       # [200, 600)
+            "model__max_depth":         randint(2, 6),           # [2, 6)
+            "model__learning_rate":     loguniform(1e-3, 5e-2),  # (0.001, 0.05)
+            # use UNIFORM here: uniform(loc, scale) => [loc, loc+scale)
+            "model__subsample":         uniform(0.6, 0.4),       # [0.6, 1.0)
+            "model__colsample_bytree":  uniform(0.6, 0.4),       # [0.6, 1.0)
         },
         "rf": {
-            "model__n_estimators": randint(200, 600),
-            "model__max_depth": randint(4, 12),
-            "model__min_samples_leaf": randint(3, 20),
-            "model__max_features": randint(5, 40),
+            "model__n_estimators":      randint(200, 600),
+            "model__max_depth":         randint(4, 12),
+            "model__min_samples_leaf":  randint(3, 20),
+            "model__max_features":      randint(5, 40),
         },
     }
 

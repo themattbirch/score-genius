@@ -10,46 +10,27 @@ from typing import Any, Mapping, Optional
 import numpy as np
 import pandas as pd
 
-# -- Logger Configuration --
 logger = logging.getLogger(__name__)
 
-# -- NFL Constants & Dictionaries --
-
 DEFAULTS: Mapping[str, Any] = {
-    # Basic & Season Stats
     'win_pct': 0.5, 'points_for_avg': 22.0, 'points_against_avg': 22.0,
     'point_differential_avg': 0.0, 'srs_lite': 0.0, 'elo': 1500.0,
-    # Offensive Rate Stats
     'yards_per_play_avg': 5.4, 'passing_yards_per_pass_avg': 6.8, 'rushings_yards_per_rush_avg': 4.2,
     'turnovers_per_game_avg': 1.5, 'turnover_differential_avg': 0.0, 'third_down_pct': 0.40, 'fourth_down_pct': 0.50, 'red_zone_pct': 0.55,
-    # Defensive Rate Stats
     'sacks_per_game_avg': 2.5, 'takeaways_per_game_avg': 1.5,
-    # Standard Deviations
     'points_scored_std': 10.0, 'yards_total_std': 90.0,
-    # Form/Streak Stats
     'form_win_pct': 0.5, 'current_streak': 0.0, 'momentum_direction': 0.0,
-    # Head-to-Head Matchup Stats
     'matchup_num_games': 0.0, 'matchup_avg_point_diff': 0.0, 'matchup_home_win_pct': 0.5,
     'matchup_avg_total_points': 44.0, 'matchup_avg_home_team_points': 22.0,
     'matchup_avg_away_team_points': 22.0,
-    # Rest/Schedule Stats
     'days_since_last_game': 7.0,
 }
 
-# ==============================================================================
-# === IMPORTANT: POPULATE THIS DICTIONARY WITH YOUR DATABASE IDs ===
-# ==============================================================================
-# This map translates the numerical team IDs from your Supabase tables to the
-# canonical team name used throughout the feature engineering pipeline.
 NFL_ID_MAP: Mapping[str, str] = {
-    # Example: "1": "cardinals", # Arizona Cardinals
-    # You must fill this section with the actual IDs for all 32 teams.
+    # Fill with your real IDs → canonical names when ready
 }
-# ==============================================================================
 
-# Definitive mapping for all 32 NFL teams to a single, canonical key.
 NFL_TEAM_MAP: Mapping[str, str] = {
-    # Full Name, City, Abbreviation, Mascot -> Canonical Name
     "arizona cardinals": "cardinals", "arizona": "cardinals", "ari": "cardinals",
     "atlanta falcons": "falcons", "atlanta": "falcons", "atl": "falcons",
     "baltimore ravens": "ravens", "baltimore": "ravens", "bal": "ravens",
@@ -82,7 +63,6 @@ NFL_TEAM_MAP: Mapping[str, str] = {
     "tampa bay buccaneers": "buccaneers", "tampa bay": "buccaneers", "tb": "buccaneers",
     "tennessee titans": "titans", "tennessee": "titans", "ten": "titans",
     "washington commanders": "commanders", "washington": "commanders", "was": "commanders", "washington football team": "commanders", "washington redskins": "commanders",
-    # Add canonical names themselves to the map for full consistency
     "cardinals": "cardinals", "falcons": "falcons", "ravens": "ravens", "bills": "bills", "panthers": "panthers",
     "bears": "bears", "bengals": "bengals", "browns": "browns", "cowboys": "cowboys", "broncos": "broncos",
     "lions": "lions", "packers": "packers", "texans": "texans", "colts": "colts", "jaguars": "jaguars",
@@ -92,40 +72,45 @@ NFL_TEAM_MAP: Mapping[str, str] = {
     "buccaneers": "buccaneers", "titans": "titans", "commanders": "commanders",
 }
 
-# -- Helper Functions --
+_UNKNOWN_SEEN: set[str] = set()
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=2048)
 def normalize_team_name(team_identifier: Optional[Any]) -> str:
-    """
-    Normalizes a team identifier (ID or name) to its canonical NFL form.
-    It prioritizes matching by ID from NFL_ID_MAP, then falls back to matching
-    by name from NFL_TEAM_MAP.
-    """
     if pd.isna(team_identifier):
         return "unknown_team"
-    
+
     try:
-        id_str = str(team_identifier).strip()
+        token = str(team_identifier).strip()
     except Exception:
         return "unknown_team"
 
-    if not id_str:
+    if not token:
         return "unknown_team"
 
-    # 1. First, check if the input is a known ID from our ID map.
-    if id_str in NFL_ID_MAP:
-        return NFL_ID_MAP[id_str]
-    
-    # 2. If not a known ID, assume it's a name. Lowercase and check the name map.
-    name_lower = id_str.lower()
-    if name_lower in NFL_TEAM_MAP:
-        return NFL_TEAM_MAP[name_lower]
-    
-    # 3. If it's not in either map, log a warning and return unknown.
-    logger.warning(
-        f"Team identifier '{team_identifier}' could not be resolved. "
-        f"Not found in NFL_ID_MAP or NFL_TEAM_MAP. Returning 'unknown_team'."
-    )
+    # 1) Exact ID mapping
+    if token in NFL_ID_MAP:
+        return NFL_ID_MAP[token]
+
+    # 2) Pre-tokenized numeric ID like "id_24"
+    tlow = token.lower()
+    if tlow.startswith("id_") and tlow[3:].isdigit():
+        return tlow  # keep distinct, no warning
+
+    # 3) Bare numeric ID "24" → stable token if map not provided
+    if token.isdigit():
+        return f"id_{token}"
+
+    # 4) Name mapping
+    if tlow in NFL_TEAM_MAP:
+        return NFL_TEAM_MAP[tlow]
+
+        # 5) Warn once per unknown string
+    if tlow not in _UNKNOWN_SEEN:
+        _UNKNOWN_SEEN.add(tlow)
+        logger.warning(
+            "Team identifier '%s' could not be resolved. Not in NFL_ID_MAP or NFL_TEAM_MAP. Returning 'unknown_team'.",
+            team_identifier,
+        )
     return "unknown_team"
 
 

@@ -43,7 +43,7 @@ def load_rolling_features(
     games: pd.DataFrame,
     *,
     recent_form_df: Optional[pd.DataFrame] = None,
-    **kwargs # Absorbs unused kwargs from the engine like 'window'
+    **kwargs # Absorbs unused kwargs from the engine
 ) -> pd.DataFrame:
     """
     Attaches recent-form metrics to a games DataFrame using a pre-fetched
@@ -54,76 +54,73 @@ def load_rolling_features(
 
     if recent_form_df is None or recent_form_df.empty:
         logger.warning("rolling: No recent_form_df provided. Cannot add rolling features.")
-        # Return a DataFrame with game_id to prevent merge errors downstream
-        return games[['game_id']].copy()
+        return games.copy()
 
     games_df = games.copy()
     stats_df = recent_form_df.copy()
 
-    # --- The original logic from Step 3 onwards is preserved ---
-    # It now operates on the DataFrames passed into the function.
+    # --- ADDED: Robustly ensure normalized team columns exist ---
+    from .utils import normalize_team_name
+    if 'home_team_norm' not in games_df.columns and 'home_team_id' in games_df.columns:
+        games_df['home_team_norm'] = games_df['home_team_id'].apply(normalize_team_name)
+    if 'away_team_norm' not in games_df.columns and 'away_team_id' in games_df.columns:
+        games_df['away_team_norm'] = games_df['away_team_id'].apply(normalize_team_name)
+    
+    # Ensure the columns now exist before proceeding
+    required_cols = ['game_id', 'home_team_norm', 'away_team_norm']
+    if not all(col in games_df.columns for col in required_cols):
+        missing = [col for col in required_cols if col not in games_df.columns]
+        logger.error(f"rolling.py: DataFrame is missing critical columns after normalization: {missing}")
+        return games.copy()
+    
+    if 'team_norm' not in stats_df.columns and 'team_id' in stats_df.columns:
+        stats_df['team_norm'] = stats_df['team_id'].apply(normalize_team_name)
+    # --- END ADDED BLOCK ---
 
-    # 3. Compute any derived columns locally
+    # Compute derived columns
     for new_col, (num_col, den_col) in _DERIVED_COLS.items():
-        stats_df[new_col] = (
-            stats_df.get(num_col, 0.0) - stats_df.get(den_col, 0.0)
-        )
+        if num_col in stats_df.columns and den_col in stats_df.columns:
+            stats_df[new_col] = stats_df[num_col] - stats_df[den_col]
 
-    # 4. Merge in home/away and prefix
-    home_join = games_df.merge(
-        stats_df,
-        how="left",
-        left_on="home_team_id",
-        right_on="team_id",
-    )
-    home_pref = prefix_columns(
-        home_join.drop(columns=["team_id"], errors="ignore"),
-        "home",
-        exclude=["game_id", "home_team_id", "away_team_id"],
+    # Merge for home team
+    home_stats = stats_df.add_prefix('home_')
+    result = pd.merge(
+        games_df,
+        home_stats,
+        left_on='home_team_norm',
+        right_on='home_team_norm',
+        how='left'
     )
 
-    away_join = games_df.merge(
-        stats_df,
-        how="left",
-        left_on="away_team_id",
-        right_on="team_id",
+    # Merge for away team
+    away_stats = stats_df.add_prefix('away_')
+    result = pd.merge(
+        result,
+        away_stats,
+        left_on='away_team_norm',
+        right_on='away_team_norm',
+        how='left',
+        suffixes=('', '_away_dup')
     )
-    away_pref = prefix_columns(
-        away_join.drop(columns=["team_id"], errors="ignore"),
-        "away",
-        exclude=["game_id", "home_team_id", "away_team_id"],
-    )
-
-    combined = (
-        home_pref
-        .drop(columns=["home_team_id", "away_team_id"], errors="ignore")
-        .merge(
-            away_pref.drop(columns=["home_team_id", "away_team_id"], errors="ignore"),
-            on="game_id",
-        )
-    )
-
-    # 5. Fill missing with defaults
+    result = result.loc[:, ~result.columns.str.endswith('_away_dup')]
+    
+    # Fill missing values with defaults
     for db_col, generic_key in _BASE_FEATURE_COLS.items():
-        home_col = f"home_{db_col}"
-        away_col = f"away_{db_col}"
-        default_val = DEFAULTS.get(generic_key, 0.0)
-        if home_col in combined:
-            combined[home_col] = combined[home_col].astype(float).fillna(default_val)
-        if away_col in combined:
-            combined[away_col] = combined[away_col].astype(float).fillna(default_val)
-    combined.fillna(0.0, inplace=True)
+        for side in ['home', 'away']:
+            col = f"{side}_{db_col}"
+            default_val = DEFAULTS.get(generic_key, 0.0)
+            if col in result.columns:
+                result[col].fillna(default_val, inplace=True)
 
-    # 6. Compute differentials
+    # Compute final differentials
     for db_col in list(_BASE_FEATURE_COLS.keys()) + list(_DERIVED_COLS.keys()):
         h, a = f"home_{db_col}", f"away_{db_col}"
-        if h in combined and a in combined:
-            combined[f"{db_col}_diff"] = combined[h] - combined[a]
+        if h in result.columns and a in result.columns:
+            result[f"{db_col}_diff"] = result[h] - result[a]
 
-    # 7. Return only game_id + newly created feature columns
-    keep = ["game_id"] + [c for c in combined if c.startswith(('home_rolling_', 'away_rolling_')) or c.endswith('_diff')]
-    
-    # Ensure all columns to keep actually exist
-    final_cols = [c for c in keep if c in combined.columns]
-    
-    return combined[final_cols].copy()
+    # Return only the game_id and the newly created features
+    feature_cols = [c for c in result.columns if c.startswith(('home_rolling_', 'away_rolling_')) or c.endswith('_diff')]
+
+    # Return ONLY the game_id and the new feature columns. The engine will do the merge.
+    final_cols = ['game_id'] + feature_cols
+    return result[final_cols]

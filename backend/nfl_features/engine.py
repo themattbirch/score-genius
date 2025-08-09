@@ -115,18 +115,15 @@ def _detect_outliers(df: pd.DataFrame, z_thresh: float = 6.0) -> List[str]:
     mask = (np.abs(z) > z_thresh).any(axis=0)
     return list(mask[mask].index)
 
-def _merge_and_log(
-    left: pd.DataFrame,
-    right: pd.DataFrame,
-    key: str,
-    how: str,
-    module: str,
-    debug: bool,
-) -> pd.DataFrame:
-    """Merge two frames and emit diagnostics about new columns, nulls, etc."""
+def _merge_and_log(left: pd.DataFrame, right: pd.DataFrame, key: str, how: str, module: str, debug: bool) -> pd.DataFrame:
     if right.empty:
         logger.warning("ENGINE:%s produced empty output – skipping merge", module.upper())
         return left
+
+    # Drop any non-key columns from right that already exist in left to avoid _x/_y suffixes
+    dup_cols = [c for c in right.columns if c in left.columns and c != key]
+    if dup_cols:
+        right = right.drop(columns=dup_cols)
 
     before_cols = set(left.columns)
     t_start = time.time()
@@ -137,18 +134,12 @@ def _merge_and_log(
     if debug:
         logger.debug("ENGINE:%s merge done in %.3fs; new_cols=%d → %s",
                      module, elapsed, len(new_cols), new_cols[:25])
-
-        # Null / zero checks for just the new columns
         if new_cols:
             sub = out[new_cols]
             nulls = sub.isna().sum().sort_values(ascending=False)
             zeros = (sub == 0).sum().sort_values(ascending=False)
             logger.debug("ENGINE:%s new_col nulls (top10): %s", module, nulls.head(10).to_dict())
             logger.debug("ENGINE:%s new_col zeros  (top10): %s", module, zeros.head(10).to_dict())
-
-            outliers = _detect_outliers(sub)
-            if outliers:
-                logger.debug("ENGINE:%s potential outlier cols (z>6): %s", module, outliers[:25])
 
     return out
 
@@ -237,17 +228,45 @@ class NFLFeatureEngine:
         t0 = time.time()
         logger.debug("ENGINE: build_features start | rows=%d cols=%d", *games_df.shape)
 
-        # --- MODIFIED: Canonicalization (which creates the 'season' column) now happens FIRST ---
+        # --- Canonicalization (which creates the 'season' column) now happens FIRST ---
         def _canon(df: pd.DataFrame) -> pd.DataFrame:
             out = df.copy()
-            if "home_team_norm" not in out.columns and "home_team_id" in out.columns:
-                 out["home_team_norm"] = out["home_team_id"].apply(normalize_team_name)
-            if "away_team_norm" not in out.columns and "away_team_id" in out.columns:
-                 out["away_team_norm"] = out["away_team_id"].apply(normalize_team_name)
-            if "game_date" in out.columns:
+
+            # 1) Ensure kickoff_ts is parsed if present
+            if "kickoff_ts" in out.columns:
+                out["kickoff_ts"] = pd.to_datetime(out["kickoff_ts"], errors="coerce", utc=True)
+
+            # 2) Ensure game_date exists; derive from kickoff_ts if missing/empty
+            if "game_date" not in out.columns or out["game_date"].isna().all():
+                if "kickoff_ts" in out.columns and out["kickoff_ts"].notna().any():
+                    out["game_date"] = out["kickoff_ts"].dt.tz_convert("UTC").dt.tz_localize(None)
+                else:
+                    # leave as missing; later modules will default, but we’ll keep spine consistent
+                    out["game_date"] = pd.NaT
+            else:
                 out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce")
-                if "season" not in out.columns:
-                    out["season"] = out["game_date"].apply(determine_season)
+
+            # 3) Ensure normalized team keys exist (id/abbr/name → canonical)
+            if "home_team_norm" not in out.columns:
+                if "home_team_id" in out.columns:
+                    out["home_team_norm"] = out["home_team_id"].apply(normalize_team_name)
+                elif "home_team" in out.columns:
+                    out["home_team_norm"] = out["home_team"].apply(normalize_team_name)
+
+            if "away_team_norm" not in out.columns:
+                if "away_team_id" in out.columns:
+                    out["away_team_norm"] = out["away_team_id"].apply(normalize_team_name)
+                elif "away_team" in out.columns:
+                    out["away_team_norm"] = out["away_team"].apply(normalize_team_name)
+
+            for c in ("home_team_norm", "away_team_norm"):
+                if c in out.columns:
+                    out[c] = out[c].astype(str).str.lower()
+
+            # 4) Ensure season exists
+            if "season" not in out.columns:
+                out["season"] = out["game_date"].apply(determine_season)
+
             return out
         
         games = _canon(games_df)
@@ -273,48 +292,59 @@ class NFLFeatureEngine:
             hist_games = compute_advanced_metrics(hist_games)
             hist_games = compute_drive_metrics(hist_games)
 
-        # (The rest of the function remains the same...)
         chunks: List[pd.DataFrame] = []
         for season_str in all_seasons:
             season = int(season_str)
             logger.info("ENGINE: season %s start", season)
-            season_games = games.loc[games["season"] == season_str].copy()
-            cutoff = season_games["game_date"].min()
-            past_games = hist_games.loc[hist_games["game_date"] < cutoff]
+
+            # Per-season schedule spine (only schedule/labels)
+            season_spine_cols = [
+                "game_id", "game_date", "game_time", "kickoff_ts",
+                "season", "week",
+                "home_team_norm", "away_team_norm",
+                "home_score", "away_score",
+            ]
+            season_spine = games.loc[
+                games["season"] == season_str,
+                [c for c in season_spine_cols if c in games.columns]
+            ].copy()
+
+            # Run off the spine; features will be merged into this
+            season_games = season_spine.copy()
+
+            # Historical cutoff (robust even if some dates are NaT)
+            cutoff = season_spine["game_date"].min()
+            past_games = hist_games.loc[hist_games["game_date"] < cutoff] if pd.notna(cutoff) else hist_games
 
             for module in self.execution_order:
                 fn = self.TRANSFORMS[module]
                 logger.debug("ENGINE:%s running…", module)
-                
+
                 kw: Dict[str, Any] = {}
-                if _supports_kwarg(fn, "debug"):
-                    kw["debug"] = debug
-                if _supports_kwarg(fn, "flag_imputations"):
-                    kw["flag_imputations"] = flag_imputations
-                if _supports_kwarg(fn, "historical_df"):
-                    kw["historical_df"] = past_games
-       
+                if _supports_kwarg(fn, "debug"): kw["debug"] = debug
+                if _supports_kwarg(fn, "flag_imputations"): kw["flag_imputations"] = flag_imputations
+                if _supports_kwarg(fn, "historical_df"): kw["historical_df"] = past_games
+
                 if module == "season":
-                    kw["season_stats_df"] = all_season_stats_df[all_season_stats_df['season'] == (season - 1)]
+                    kw["season_stats_df"] = all_season_stats_df[all_season_stats_df["season"] == (season - 1)]
                 elif module == "rolling":
-                    kw["recent_form_df"] = all_recent_form_df
-                    kw["window"] = rolling_window
+                    kw["recent_form_df"] = all_recent_form_df; kw["window"] = rolling_window
                 elif module == "form":
                     kw["lookback_window"] = form_lookback
                 elif module == "momentum":
                     kw["span"] = momentum_span
                 elif module == "h2h":
                     kw["max_games"] = h2h_max_games
-                
                 if _supports_kwarg(fn, "historical_team_stats_df"):
                     kw["historical_team_stats_df"] = hist_team_stats
 
+                # IMPORTANT: pass the running frame, not the original season_df
                 mod_out = fn(season_games, **kw)
 
                 if mod_out.empty:
                     logger.warning("ENGINE:%s returned empty DF – skipped", module.upper())
                     continue
-                
+
                 season_games = _merge_and_log(season_games, mod_out, "game_id", "left", module, debug)
 
             chunks.append(season_games)
