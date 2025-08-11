@@ -52,6 +52,41 @@ app.use((req, res, next) => {
   next();
 });
 
+// 0. Statically served asset directories (for CSS, images, etc.)
+// This will serve files from /public, /app, and /.well-known
+// ─── DAL: assetlinks.json (served before CORS; long-lived cache) ──────────────
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  // Strong, reusable cache for DAL verification
+  res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+  res.type("application/json");
+  // Ensure no Vary: Origin on this one route
+  if (typeof res.removeHeader === "function") res.removeHeader("Vary");
+
+  // Serve the exact file from your static tree
+  res.sendFile(
+    path.join(staticRoot, "public", ".well-known", "assetlinks.json")
+  );
+});
+
+app.use(express.static(staticRoot));
+
+// --- Windows installer + PWA statics under /app ---
+app.use(
+  "/app",
+  express.static(path.join(staticRoot, "app"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".appinstaller")) {
+        res.setHeader("Content-Type", "application/appinstaller");
+      } else if (
+        filePath.endsWith(".appxbundle") ||
+        filePath.endsWith(".msixbundle")
+      ) {
+        res.setHeader("Content-Type", "application/vnd.ms-appx");
+      }
+    },
+  })
+);
+
 // CORS policy, JSON parsing
 app.use(
   cors({
@@ -135,33 +170,6 @@ app.get("/app/offline.html", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.sendFile(path.join(staticRoot, "app", "offline.html"));
 });
-
-// 3. Statically served asset directories (for CSS, images, etc.)
-// This will serve files from /public, /app, and /.well-known
-app.use(
-  "/.well-known",
-  express.static(path.join(staticRoot, "public", ".well-known"), {
-    dotfiles: "allow",
-  })
-);
-app.use(express.static(staticRoot));
-
-// --- Windows installer + PWA statics under /app ---
-app.use(
-  "/app",
-  express.static(path.join(staticRoot, "app"), {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".appinstaller")) {
-        res.setHeader("Content-Type", "application/appinstaller");
-      } else if (
-        filePath.endsWith(".appxbundle") ||
-        filePath.endsWith(".msixbundle")
-      ) {
-        res.setHeader("Content-Type", "application/vnd.ms-appx");
-      }
-    },
-  })
-);
 
 // 4. API routes
 app.use("/api/v1/nba", nbaRoutes);

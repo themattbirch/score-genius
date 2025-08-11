@@ -181,7 +181,7 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
     # global include & exclude
     ALLOW_PREFIX = (
         "home_","away_","rolling_","season_","h2h_","momentum_",
-        "rest_","form_","adv_","drive_","situational_",
+        "rest_","form_","adv_","drive_","situational_", "total_",
         "h_","a_",
     )
     BLOCK = {"home_score","away_score","margin","total"}  # no leakage
@@ -192,7 +192,7 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
 
     # split into buckets
     is_diff = lambda c: c.endswith("_diff") or "_advantage" in c
-    is_points = lambda c: ("points_for" in c) or ("points_against" in c) or ("total_points" in c)
+    is_points = lambda c:  ("points_for" in c) or ("points_against" in c) or ("total_points" in c) or c.startswith("total_")
     is_rest   = lambda c: ("rest_days" in c) or ("short_week" in c) or ("off_bye" in c)
     is_form   = lambda c: ("form_win_pct" in c) or ("current_streak" in c) or ("momentum" in c)
     is_h2h    = lambda c: c.startswith("h2h_")
@@ -246,26 +246,6 @@ def _prune_near_duplicates(X: pd.DataFrame, y: pd.Series, thresh: float = 0.98) 
 
     return kept
 
-def run_feature_selection(
-    X: pd.DataFrame,
-    y: pd.Series,
-    feature_candidates: List[str],
-    target_name: str,
-    save_dir: Path = MODELS_DIR,
-    debug: bool = False,
-) -> List[str]:
-    """
-    Target-specific feature selection:
-      1) sanitize candidates (existence, numeric, non-constant)
-      2) prune highly-correlated duplicates
-      3) LassoCV selection
-      4) stability selection across seeds
-      5) ensure per-bucket coverage via mutual information
-      6) top-up to MIN_KEEP by abs correlation (train-only)
-    """
-
-    logger.info("LassoCV feature selection → %s", target_name)
-
 # ---------- helpers ----------
 
 def _abs_corr_topk(X: pd.DataFrame, y: pd.Series, pool: list[str], k: int) -> list[str]:
@@ -304,7 +284,7 @@ def _stability_select(
     for s in seeds:
         scaler = StandardScaler()
         Xs = scaler.fit_transform(X[base_selected].fillna(0.0))
-        model = LassoCV(cv=DEFAULT_CV_FOLDS, random_state=s, n_jobs=-1, max_iter=2000).fit(Xs, y)
+        model = LassoCV(alphas=np.logspace(-4, -1, 40), cv=TimeSeriesSplit(n_splits=DEFAULT_CV_FOLDS), random_state=s, n_jobs=-1, max_iter=10000).fit(Xs, y)
         keep = [c for c, coef in zip(base_selected, model.coef_) if abs(coef) > 1e-5]
         hits.loc[keep] += 1
     stable = list(hits[hits / len(seeds) >= floor].index)
@@ -372,6 +352,7 @@ def run_feature_selection(
 ) -> list[str]:
     logger.info("LassoCV feature selection → %s", target_name)
 
+    tscv = TimeSeriesSplit(n_splits=DEFAULT_CV_FOLDS)
     # Safety: empty candidate list → fallback by abs corr (top-20)
     if not feature_candidates:
         logger.warning("[%s] No candidates; falling back to top-20 by |corr|.", target_name)
@@ -401,7 +382,7 @@ def run_feature_selection(
         return selected
 
     # pre-prune near duplicates BEFORE Lasso
-    CORR_PRUNE_THRESH = 0.98
+    CORR_PRUNE_THRESH = 0.995
     keep_pre = _prune_near_duplicates(X_sel, y, thresh=CORR_PRUNE_THRESH)
     X_sel = X_sel[keep_pre]
 
@@ -410,13 +391,13 @@ def run_feature_selection(
     # ---------- 1) LassoCV ----------
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_sel)
-    lasso = LassoCV(cv=DEFAULT_CV_FOLDS, random_state=SEED, n_jobs=-1, max_iter=2000).fit(X_scaled, y)
+    lasso = LassoCV(alphas=np.logspace(-4, -1, 40), cv=tscv, random_state=SEED, n_jobs=-1, max_iter=10000).fit(X_scaled, y)
 
     # Map coefs to the EXACT columns used to fit
     selected = [col for col, coef in zip(X_sel.columns, lasso.coef_) if abs(coef) > 1e-5]
 
     # ---------- 2) Stability selection ----------
-    STABILITY_FLOOR = 0.50
+    STABILITY_FLOOR = 0.33
     selected = _stability_select(X_sel, y, selected, seeds=(42, 99, 123), floor=STABILITY_FLOOR)
 
     # ---------- 3) Post-prune near-duplicates among selected ----------
@@ -428,7 +409,7 @@ def run_feature_selection(
     selected = _ensure_bucket_mi(X_sel, y, selected, target_name, min_per_bucket=1, topk_per_bucket=2)
 
     # ---------- 5) Enforce per-target floor via |corr| top-up ----------
-    MIN_KEEP_BY_TARGET = {"margin": 18, "total": 24}
+    MIN_KEEP_BY_TARGET = {"margin": 28, "total": 40}
     min_keep = MIN_KEEP_BY_TARGET.get(target_name, 18)
     if len(selected) < min_keep:
         rest = [c for c in X_sel.columns if c not in selected]
