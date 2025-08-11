@@ -187,9 +187,8 @@ jobs:
         with:
           tag_name: "v${{ steps.version.outputs.version }}"
           name: "ScoreGenius v${{ steps.version.outputs.version }}"
-          draft: true
+          draft: false # ⬅️ publish, not draft
+          prerelease: false
           files: |
             ${{ steps.pkg.outputs.path }}
             frontend/app/ScoreGenius.appinstaller
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
