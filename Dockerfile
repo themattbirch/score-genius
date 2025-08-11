@@ -72,8 +72,11 @@ COPY frontend/public/robots.txt backend/server/static/public/robots.txt
 COPY frontend/public/favicon.ico backend/server/static/public/favicon.ico
 COPY frontend/public/.well-known/assetlinks.json backend/server/static/public/.well-known/
 
-RUN ls -la backend/server/static/public/.well-known || true
-RUN cat backend/server/static/public/.well-known/assetlinks.json || true
+# Verify the file exists inside the built image
+RUN echo "== Build check: listing .well-known ==" && \
+    ls -la backend/server/static/public/.well-known || true && \
+    echo "== Build check: printing assetlinks.json ==" && \
+    cat backend/server/static/public/.well-known/assetlinks.json || true
 
 # Copy SPA artifacts from the builder stage
 COPY --from=builder /app/frontend/dist/public/index.html backend/server/static/public/index.html
