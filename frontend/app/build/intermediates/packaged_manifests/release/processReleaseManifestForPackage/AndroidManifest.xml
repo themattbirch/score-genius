@@ -27,8 +27,8 @@ the abbreviated format.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.scoregenius.app"
-    android:versionCode="64"
-    android:versionName="64" >
+    android:versionCode="65"
+    android:versionName="65" >
 
     <uses-sdk
         android:minSdkVersion="21"
@@ -92,16 +92,10 @@ the abbreviated format.
                 android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
                 android:resource="@color/colorPrimaryDark" />
             <meta-data
-                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
-                android:resource="@color/navigationColor" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK"
-                android:resource="@color/navigationColorDark" />
-            <meta-data
-                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
+                android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
                 android:resource="@color/navigationDividerColor" />
             <meta-data
-                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
+                android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
                 android:resource="@color/navigationDividerColorDark" />
             <meta-data
                 android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
@@ -125,10 +119,16 @@ the abbreviated format.
                 android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION"
                 android:value="@string/orientation" />
 
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
+            <intent-filter android:autoVerify="true" >
+                <action android:name="android.intent.action.VIEW" />
 
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="@string/hostName"
+                    android:pathPrefix="/app/"
+                    android:scheme="https" />
             </intent-filter>
             <intent-filter android:autoVerify="true" >
                 <action android:name="android.intent.action.VIEW" />
