@@ -52,20 +52,41 @@ app.use((req, res, next) => {
   next();
 });
 
-// 0. Statically served asset directories (for CSS, images, etc.)
-// This will serve files from /public, /app, and /.well-known
-// ─── DAL: assetlinks.json (served before CORS; long-lived cache) ──────────────
+// Sanity log once at startup
+const dalPath = path.join(
+  staticRoot,
+  "public",
+  ".well-known",
+  "assetlinks.json"
+);
+try {
+  const exists = fs.existsSync(dalPath);
+  console.log("[DAL] Path:", dalPath, "exists:", exists);
+} catch (e) {
+  console.log("[DAL] Path check error:", e?.message);
+}
+
+// ─── DAL: assetlinks.json (before CORS; long-lived cache) ──────────────
 app.get("/.well-known/assetlinks.json", (req, res) => {
-  // Strong, reusable cache for DAL verification
   res.setHeader("Cache-Control", "public, max-age=86400, immutable");
   res.type("application/json");
-  // Ensure no Vary: Origin on this one route
   if (typeof res.removeHeader === "function") res.removeHeader("Vary");
 
-  // Serve the exact file from your static tree
-  res.sendFile(
-    path.join(staticRoot, "public", ".well-known", "assetlinks.json")
-  );
+  // Use sendFile with an error callback so we see why it failed
+  res.sendFile(dalPath, (err) => {
+    if (err) {
+      console.log(
+        "[DAL] sendFile error:",
+        err?.code,
+        err?.message,
+        "path:",
+        dalPath
+      );
+      // Ensure consistent 404 body
+      if (!res.headersSent)
+        res.status(404).json({ error: "assetlinks.json not found" });
+    }
+  });
 });
 
 app.use(express.static(staticRoot));
