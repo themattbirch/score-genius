@@ -51,6 +51,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 SCRIPT_PATH = Path(__file__).resolve()
 PROJECT_ROOT = SCRIPT_PATH.parents[2]
@@ -122,25 +123,55 @@ def load_prediction_artifacts(model_dir: Path, debug: bool = False) -> Dict[str,
             return {}
     return artifacts
 
+def add_total_composites(df: pd.DataFrame, keys: List[str]) -> pd.DataFrame:
+    """
+    Mirror the train-time composites: total_<k> = home_<k> + away_<k>.
+    Safe if some columns are missing.
+    """
+    out = df.copy()
+    for k in keys:
+        h, a = f"home_{k}", f"away_{k}"
+        if h in out.columns and a in out.columns:
+            out[f"total_{k}"] = out[h] + out[a]
+    return out
+
 def chunked(lst: List[Dict[str, Any]], size: int = 500):
     for i in range(0, len(lst), size):
         yield lst[i:i + size]
 
 def upsert_score_predictions(preds: List[Dict[str, Any]], sb: Client, debug: bool = False) -> int:
+    """
+    Update existing schedule rows with predictions. We don't use UPSERT because
+    `game_id` isn't unique in the schema; UPSERT would try to INSERT and fail
+    NOT NULL constraints. Per-row UPDATE is safe and explicit.
+    """
     if not preds:
         return 0
-    total = 0
-    for batch in chunked(preds, 500):
+
+    updated = 0
+    for p in preds:
+        gid = int(p["game_id"])
+        payload = {
+            "predicted_home_score": float(p["predicted_home_score"]),
+            "predicted_away_score": float(p["predicted_away_score"]),
+        }
         try:
-            resp = sb.table("nfl_game_schedule").upsert(batch, on_conflict="game_id").execute()
-            cnt = len(resp.data or [])
-            total += cnt
+            resp = (
+                sb.table("nfl_game_schedule")
+                  .update(payload)
+                  .eq("game_id", gid)
+                  .execute()
+            )
+            # PostgREST returns the modified rows; count only when a row matched.
+            n = len(resp.data or [])
+            updated += n
             if debug:
-                logger.debug("Upsert batch size=%d -> inserted/updated=%d", len(batch), cnt)
+                logger.debug("Update game_id=%s -> modified=%d", gid, n)
         except Exception as e:
-            logger.error("Upsert error: %s", e)
-    logger.info("Upserted %d predictions", total)
-    return total
+            logger.error("Update error for game_id=%s: %s", gid, e)
+
+    logger.info("Updated predictions for %d games", updated)
+    return updated
 
 def display_prediction_summary(preds: List[Dict[str, Any]]) -> None:
     if not preds:
@@ -151,7 +182,9 @@ def display_prediction_summary(preds: List[Dict[str, Any]]) -> None:
     print("-" * 80)
     for _, r in df.iterrows():
         d = datetime.fromisoformat(str(r["game_date"])).strftime("%Y-%m-%d")
-        matchup = f"{r['away_team_name']} @ {r['home_team_name']}"
+        hn = r.get("home_team_name") or f"home_id {r.get('home_team_id')}"
+        an = r.get("away_team_name") or f"away_id {r.get('away_team_id')}"
+        matchup = f"{an} @ {hn}"
         score = f"{r['predicted_away_score']:.1f} - {r['predicted_home_score']:.1f}"
         print(f"{d:<12}{matchup:<42}{score:<20}")
     print("-" * 80)
@@ -178,7 +211,7 @@ def generate_predictions(
         return []
 
     fetcher = NFLDataFetcher(sb)
-    upcoming_df = fetcher.fetch_upcoming_games(days_window)
+    upcoming_df = fetcher.fetch_upcoming_games(None)
     if upcoming_df.empty:
         logger.info("No upcoming games in window.")
         return []
@@ -202,7 +235,7 @@ def generate_predictions(
     features_df = nfl_engine.build_features(
         games_df=upcoming_df,
         historical_games_df=games_hist,
-        historical_team_game_stats_df=stats_hist,
+        historical_team_stats_df=stats_hist,
         debug=debug_mode,
     )
 
@@ -212,6 +245,20 @@ def generate_predictions(
     if features_df.empty:
         logger.error("Feature DF empty. Abort.")
         return []
+    
+        # Match train-time composites so selected feature lists align
+    features_df = add_total_composites(
+        features_df,
+        keys=[
+            "rolling_points_for_avg",
+            "rolling_points_against_avg",
+            "rolling_yards_per_play_avg",
+            "rolling_turnover_differential_avg",
+            "form_win_pct_5",
+            "rest_days",
+        ],
+    )
+
 
     # Ensure index
     if "game_id" in features_df.columns:
@@ -274,7 +321,8 @@ def generate_predictions(
 # ----------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Generate and Upsert NFL Score Predictions")
-    parser.add_argument("--days", type=int, default=8, help="Days ahead to predict.")
+    parser.add_argument("--days", type=int, default=8, help="Days ahead to predict (ignored if --all-games).")
+    parser.add_argument("--all-games", action="store_true", help="Fetch ALL games from schedule.")
     parser.add_argument("--lookback", type=int, default=1825, help="Historical days for features.")
     parser.add_argument("--no-upsert", action="store_true", help="Skip DB upsert.")
     parser.add_argument("--debug", action="store_true", help="Enable DEBUG logging.")
@@ -284,7 +332,7 @@ def main():
         logger.setLevel(logging.DEBUG)
 
     preds = generate_predictions(
-        days_window=args.days,
+        days_window=(None if args.all_games else args.days),
         historical_lookback=args.lookback,
         debug_mode=args.debug,
     )

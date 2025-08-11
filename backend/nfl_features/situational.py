@@ -58,7 +58,11 @@ def compute_situational_features(games_df: pd.DataFrame) -> pd.DataFrame:
         ts_ts = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
 
     # Parse Eastern date+time
-    dt_combo = df.get("game_date", pd.Series(dtype=str)).astype(str) + " " + df.get("game_time", pd.Series()).fillna("00:00:00")
+    dt_combo = (
+        df.get("game_date", pd.Series(dtype=str)).astype(str)
+        + " "
+        + df.get("game_time", pd.Series(dtype=str)).fillna("00:00:00")
+    )
     ts_dt = (
         pd.to_datetime(dt_combo, errors="coerce")
         .dt.tz_localize("America/New_York", ambiguous="infer", nonexistent="shift_forward")

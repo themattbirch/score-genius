@@ -3,18 +3,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Loading ScoreGenius…</title>
 
-<!-- Safe, permissive-enough CSP for packaged webview -->
+<!-- CSP widened for iframe -->
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'self' https: data: blob:;
            script-src 'self' https: 'unsafe-inline' 'unsafe-eval';
            style-src  'self' https: 'unsafe-inline';
            img-src    'self' https: data: blob:;
-           connect-src https: wss:;"
+           connect-src https:;
+           frame-src https:;"
 />
-<meta http-equiv="refresh" content="0;url=https://scoregenius.io/app/" />
 
-<!-- Speed up first paint by preconnecting to hosts -->
 <link rel="preconnect" href="https://scoregenius.io" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -32,12 +31,40 @@
     font: 16px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
       sans-serif;
   }
-  .wrap {
-    min-height: 100%;
+  .root {
+    position: fixed;
+    inset: 0;
+  }
+  iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #000;
+  }
+
+  /* Overlay */
+  .overlay {
+    position: absolute;
+    inset: 0;
     display: grid;
     place-items: center;
-    padding: 24px;
+    background: #000; /* seamless with splash */
+    transition: opacity 0.25s ease;
+  }
+  .content {
     text-align: center;
+    padding: 24px;
+  }
+  h1 {
+    margin: 0 0 8px 0;
+    font-weight: 600;
+  }
+  .note {
+    opacity: 0.8;
+    font-size: 0.9rem;
+    margin-top: 8px;
   }
   a.button {
     display: inline-block;
@@ -46,11 +73,6 @@
     text-decoration: none;
     border: 1px solid #444;
     color: inherit;
-  }
-  .note {
-    opacity: 0.8;
-    font-size: 0.9rem;
-    margin-top: 8px;
   }
 
   /* Spinner */
@@ -68,34 +90,49 @@
       transform: rotate(360deg);
     }
   }
+  .hide {
+    opacity: 0;
+    pointer-events: none;
+  }
 </style>
 
-<div class="wrap">
-  <main>
-    <h1 id="msg">Loading ScoreGenius…</h1>
-    <p class="note" id="step">Starting…</p>
-    <div class="spinner" aria-hidden="true"></div>
-    <p class="note" id="detail" aria-live="polite"></p>
-    <p>
-      <a
-        id="fallback"
-        class="button"
-        href="https://scoregenius.io/app/"
-        style="display: none"
+<div class="root">
+  <!-- The app loads here while we keep the overlay visible -->
+  <iframe
+    id="appframe"
+    title="ScoreGenius"
+    src="https://scoregenius.io/app/"
+    allow="fullscreen"
+  ></iframe>
+
+  <!-- Extended splash / progress overlay -->
+  <div id="overlay" class="overlay">
+    <div class="content">
+      <h1 id="msg">Loading ScoreGenius…</h1>
+      <p class="note" id="step">Starting…</p>
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="note" id="detail" aria-live="polite"></p>
+      <p>
+        <a
+          id="fallback"
+          class="button"
+          href="https://scoregenius.io/app/"
+          style="display: none"
+          >Open in browser</a
+        >
+      </p>
+      <noscript
+        >JavaScript isn’t required —
+        <a href="https://scoregenius.io/app/">open ScoreGenius</a>.</noscript
       >
-        Open in browser
-      </a>
-    </p>
-    <noscript>
-      JavaScript isn’t required —
-      <a href="https://scoregenius.io/app/">open ScoreGenius</a>.
-    </noscript>
-  </main>
+    </div>
+  </div>
 </div>
 
 <script>
   (function () {
-    const TARGET = "https://scoregenius.io/app/";
+    const overlay = document.getElementById("overlay");
+    const frame = document.getElementById("appframe");
     const msg = document.getElementById("msg");
     const stepEl = document.getElementById("step");
     const detail = document.getElementById("detail");
@@ -107,7 +144,7 @@
       link.style.display = "inline-block";
     }
 
-    // Rotate status text so reviewers see progress
+    // Rotating status so reviewers see motion
     const steps = [
       "Starting…",
       "Connecting to ScoreGenius…",
@@ -120,48 +157,35 @@
       stepEl.textContent = steps[i];
     }, 1000);
 
-    // Visible diagnostics (avoid silent failures)
-    addEventListener("error", (e) => {
+    // If iframe errors, surface it
+    frame.addEventListener("error", () =>
+      showFallback("Unable to load ScoreGenius.", "Network/frame error.")
+    );
+    addEventListener("error", (e) =>
       showFallback(
         "Unable to load ScoreGenius.",
         "Boot error: " + (e.message || e)
-      );
-    });
+      )
+    );
     addEventListener("unhandledrejection", (e) => {
       const reason = (e?.reason && (e.reason.message || e.reason)) || "unknown";
       showFallback("Unable to load ScoreGenius.", "Boot promise: " + reason);
     });
 
-    // Fallback if navigation stalls (short, so it never “feels frozen”)
-    const stall = setTimeout(() => {
-      showFallback("Still loading… you can open it directly.", "");
-    }, 1500);
+    // Show fallback button early if network is slow
+    const stall = setTimeout(
+      () => showFallback("Still loading… you can open it directly.", ""),
+      1500
+    );
 
-    // Navigate: try assign (keeps history) then replace as belt-and-suspenders
-    function navigate() {
-      try {
-        location.assign(TARGET);
-        // If assign was blocked, try replace shortly after
-        setTimeout(() => {
-          if (location.href !== TARGET) location.replace(TARGET);
-        }, 250);
-      } catch {
-        location.replace(TARGET);
-      }
-    }
+    // When the iframe reports load, fade out overlay (short grace so it feels intentional)
+    frame.addEventListener("load", () => {
+      clearTimeout(stall);
+      clearInterval(stepTimer);
+      setTimeout(() => overlay.classList.add("hide"), 300);
+    });
 
-    if (
-      document.readyState === "complete" ||
-      document.readyState === "interactive"
-    ) {
-      requestAnimationFrame(navigate);
-    } else {
-      addEventListener("DOMContentLoaded", () =>
-        requestAnimationFrame(navigate)
-      );
-    }
-
-    // Clear timers if we leave the page
+    // If we ever background before ready, stop timers
     const clearAll = () => {
       clearTimeout(stall);
       clearInterval(stepTimer);

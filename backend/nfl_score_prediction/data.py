@@ -202,49 +202,72 @@ class NFLDataFetcher:
         logger.info("Fetched %d team-game stat rows.", len(df))
         return df
 
-    def fetch_upcoming_games(self, days_ahead: int = 14) -> pd.DataFrame:
+    def _fetch_team_directory(self) -> pd.DataFrame:
         """
-        Upcoming schedule from 'nfl_game_schedule' with team names via FK columns.
+        Try a couple of possible team tables and return id -> team_name map.
         """
-        now = datetime.now()
-        today = now.strftime("%Y-%m-%d")
-        future = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-        logger.info("Fetching upcoming games [%s → %s]...", today, future)
+        for table in ("nfl_teams_dim", "nfl_teams"):
+            try:
+                resp = self.supabase.table(table).select("id, team_name").execute()
+                if hasattr(resp, "data") and resp.data:
+                    df = pd.DataFrame(resp.data)
+                    df["id"] = pd.to_numeric(df["id"], errors="coerce").astype("Int64")
+                    return df[["id", "team_name"]]
+            except Exception:
+                continue
+        logger.warning("No team directory table found (tried nfl_teams_dim, nfl_teams). Team names will be empty.")
+        return pd.DataFrame(columns=["id", "team_name"])
 
-        select_str = (
-            "game_id, game_date, "
-            "home_team:home_team_id(id, team_name), "
-            "away_team:away_team_id(id, team_name)"
-        )
-
+    def fetch_upcoming_games(self, days_ahead: Optional[int] = None) -> pd.DataFrame:
+        """
+        Schedule from 'nfl_game_schedule'. If days_ahead is None, fetch ALL rows (source of truth).
+        Otherwise, fetch bounded window [today, today+days_ahead].
+        """
         try:
-            resp = (
-                self.supabase.table("nfl_game_schedule")
-                .select(select_str)
-                .gte("game_date", today)
-                .lte("game_date", future)
-                .order("game_date", desc=False)
-                .execute()
+            qb = self.supabase.table("nfl_game_schedule").select(
+                "game_id, game_date, home_team_id, away_team_id"
             )
+            if days_ahead is not None:
+                now = datetime.now()
+                today = now.strftime("%Y-%m-%d")
+                future = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+                logger.info("Fetching upcoming games [%s → %s]...", today, future)
+                qb = qb.gte("game_date", today).lte("game_date", future)
+            else:
+                logger.info("Fetching ALL games from nfl_game_schedule (no date filter)…")
+
+            resp = qb.order("game_date", desc=False).execute()
             if not hasattr(resp, "data"):
                 raise ValueError("Response from 'nfl_game_schedule' missing 'data'.")
 
             df = pd.DataFrame(resp.data or [])
             if df.empty:
-                logger.info("No upcoming games in the specified range.")
+                logger.info("No rows found in nfl_game_schedule.")
                 return df
 
-            # Flatten nested team objects
-            df["home_team_id"] = df["home_team"].apply(lambda x: x.get("id") if isinstance(x, dict) else None)
-            df["away_team_id"] = df["away_team"].apply(lambda x: x.get("id") if isinstance(x, dict) else None)
-            df["home_team_name"] = df["home_team"].apply(lambda x: x.get("team_name") if isinstance(x, dict) else None)
-            df["away_team_name"] = df["away_team"].apply(lambda x: x.get("team_name") if isinstance(x, dict) else None)
-
-            df = df.drop(columns=["home_team", "away_team"])
+            # Types & sort
             df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
-
             self._cast_ids(df, ["game_id", "home_team_id", "away_team_id"])
-            final_cols = [
+            df = df.sort_values("game_date").reset_index(drop=True)
+
+            # Optional: enrich with team names via separate lookup
+            team_dir = self._fetch_team_directory()
+            if not team_dir.empty:
+                df = df.merge(
+                    team_dir.rename(columns={"id": "home_team_id", "team_name": "home_team_name"}),
+                    on="home_team_id",
+                    how="left",
+                )
+                df = df.merge(
+                    team_dir.rename(columns={"id": "away_team_id", "team_name": "away_team_name"}),
+                    on="away_team_id",
+                    how="left",
+                )
+            else:
+                df["home_team_name"] = None
+                df["away_team_name"] = None
+
+            cols = [
                 "game_id",
                 "game_date",
                 "home_team_id",
@@ -252,10 +275,9 @@ class NFLDataFetcher:
                 "home_team_name",
                 "away_team_name",
             ]
-            df = df[final_cols].sort_values("game_date").reset_index(drop=True)
-            logger.info("Fetched %d upcoming games.", len(df))
-            return df
+            return df[cols]
 
         except Exception:
-            logger.error("Failed to fetch upcoming games.\n%s", traceback.format_exc())
+            logger.error("Failed to fetch upcoming/all games.\n%s", traceback.format_exc())
             return pd.DataFrame()
+

@@ -40,6 +40,7 @@ from sklearn.linear_model import LassoCV
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import mutual_info_regression
 from supabase import Client, create_client
 
 # ---- Project imports ----
@@ -84,18 +85,13 @@ SEED = 42
 DEFAULT_CV_FOLDS = 4
 
 NFL_SAFE_FEATURE_PREFIXES = (
-    "h_",
-    "a_",
-    "rolling_",
-    "season_",
-    "h2h_",
-    "momentum_",
-    "rest_",
-    "form_",
-    "adv_",
-    "drive_",
-    "situational_",
+    # widen to match your real columns:
+    "home_", "away_",        # e.g., home_prev_season_win_pct, away_rest_days, etc.
+    "h_", "a_",              # keep your short forms if they exist
+    "rolling_", "season_", "h2h_", "momentum_", "rest_", "form_",
+    "adv_", "drive_", "situational_",
 )
+LABEL_BLOCKLIST = {"home_score", "away_score", "margin", "total"}
 NFL_SAFE_EXACT_FEATURE_NAMES = (
     "day_of_week",
     "week",
@@ -159,6 +155,13 @@ def get_supabase_client() -> Optional[Client]:
         logger.error(f"Supabase client init failed: {e}")
         return None
 
+def add_total_composites(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    out = df.copy()
+    for k in keys:
+        h, a = f"home_{k}", f"away_{k}"
+        if h in out.columns and a in out.columns:
+            out[f"total_{k}"] = out[h] + out[a]
+    return out
 
 def chronological_split(
     df: pd.DataFrame,
@@ -172,6 +175,76 @@ def chronological_split(
     val_end = int(n * (1 - test_size))
     return df_sorted.iloc[:train_end], df_sorted.iloc[train_end:val_end], df_sorted.iloc[val_end:]
 
+def build_target_specific_candidates(features: pd.DataFrame) -> dict:
+    num = set(features.select_dtypes(include=np.number).columns)
+
+    # global include & exclude
+    ALLOW_PREFIX = (
+        "home_","away_","rolling_","season_","h2h_","momentum_",
+        "rest_","form_","adv_","drive_","situational_",
+        "h_","a_",
+    )
+    BLOCK = {"home_score","away_score","margin","total"}  # no leakage
+    # keep imputation flags for now (they sometimes help early-season)
+    # If you want to drop them later: add a check like: if c.endswith("_imputed"): continue
+
+    base = [c for c in num if c.startswith(ALLOW_PREFIX) and c not in BLOCK]
+
+    # split into buckets
+    is_diff = lambda c: c.endswith("_diff") or "_advantage" in c
+    is_points = lambda c: ("points_for" in c) or ("points_against" in c) or ("total_points" in c)
+    is_rest   = lambda c: ("rest_days" in c) or ("short_week" in c) or ("off_bye" in c)
+    is_form   = lambda c: ("form_win_pct" in c) or ("current_streak" in c) or ("momentum" in c)
+    is_h2h    = lambda c: c.startswith("h2h_")
+
+    # Target: margin → prioritize differentials & win-prob proxies
+    margin_candidates = [
+        c for c in base if (
+            is_diff(c) or is_rest(c) or is_form(c) or ("turnover_differential" in c) or
+            (is_h2h(c) and ("home_win_pct" in c))
+        )
+    ]
+    # ensure a few raw rolling stats per side sneak in
+    margin_candidates += [c for c in base if "rolling_point_differential" in c]
+
+    # Target: total → prioritize scoring volume / totals
+    total_candidates = [
+        c for c in base if (
+            is_points(c) or ("yards_per_play" in c) or ("plays_per_game" in c)
+            or (is_rest(c)) or (is_h2h(c) and ("avg_total_points" in c))
+        )
+    ]
+    # allow a couple of momentum/form signals for total too
+    total_candidates += [c for c in base if is_form(c) and ("form_win_pct" in c)]
+
+    # de-dup
+    margin_candidates = sorted(set(margin_candidates))
+    total_candidates  = sorted(set(total_candidates))
+    return {"margin": margin_candidates, "total": total_candidates}
+
+def _prune_near_duplicates(X: pd.DataFrame, y: pd.Series, thresh: float = 0.98) -> list[str]:
+    """
+    Remove features that are extremely collinear with each other
+    (absolute correlation >= thresh) to avoid duplicate signal.
+
+    Keeps the first occurrence, drops subsequent near-duplicates.
+    """
+    if X.shape[1] <= 1:
+        return list(X.columns)
+
+    corr_matrix = X.corr().abs()
+    to_drop = set()
+    kept = []
+
+    for col in corr_matrix.columns:
+        if col in to_drop:
+            continue
+        kept.append(col)
+        # Mark other cols with very high correlation to this one
+        duplicates = corr_matrix.index[(corr_matrix[col] >= thresh) & (corr_matrix.index != col)]
+        to_drop.update(duplicates)
+
+    return kept
 
 def run_feature_selection(
     X: pd.DataFrame,
@@ -181,32 +254,197 @@ def run_feature_selection(
     save_dir: Path = MODELS_DIR,
     debug: bool = False,
 ) -> List[str]:
+    """
+    Target-specific feature selection:
+      1) sanitize candidates (existence, numeric, non-constant)
+      2) prune highly-correlated duplicates
+      3) LassoCV selection
+      4) stability selection across seeds
+      5) ensure per-bucket coverage via mutual information
+      6) top-up to MIN_KEEP by abs correlation (train-only)
+    """
+
     logger.info("LassoCV feature selection → %s", target_name)
-    X_sel = X[feature_candidates].copy().fillna(0.0)
 
-    _log_df(X_sel, f"X_sel_{target_name}_before_FS", debug)
+# ---------- helpers ----------
 
+def _abs_corr_topk(X: pd.DataFrame, y: pd.Series, pool: list[str], k: int) -> list[str]:
+    if k <= 0:
+        return []
+    cols = [c for c in pool if c in X.columns]
+    if not cols:
+        return []
+    corrs = X[cols].apply(lambda col: col.corr(y)).abs().sort_values(ascending=False)
+    return list(corrs.head(k).index)
+
+def _prune_near_duplicates(X: pd.DataFrame, y: pd.Series | None = None, thresh: float = 0.98) -> list[str]:
+    """Keep first feature in any near-duplicate (> thresh abs corr) group."""
+    if X.shape[1] <= 1:
+        return list(X.columns)
+    cm = X.corr().abs()
+    keep, dropped = [], set()
+    for c in cm.columns:
+        if c in dropped:
+            continue
+        keep.append(c)
+        dupes = cm.index[(cm[c] >= thresh) & (cm.index != c)]
+        dropped.update(dupes)
+    return keep
+
+def _stability_select(
+    X: pd.DataFrame,
+    y: pd.Series,
+    base_selected: list[str],
+    seeds=(42, 99, 123),
+    floor: float = 2/3,
+) -> list[str]:
+    if not base_selected:
+        return []
+    hits = pd.Series(0, index=base_selected, dtype=int)
+    for s in seeds:
+        scaler = StandardScaler()
+        Xs = scaler.fit_transform(X[base_selected].fillna(0.0))
+        model = LassoCV(cv=DEFAULT_CV_FOLDS, random_state=s, n_jobs=-1, max_iter=2000).fit(Xs, y)
+        keep = [c for c, coef in zip(base_selected, model.coef_) if abs(coef) > 1e-5]
+        hits.loc[keep] += 1
+    stable = list(hits[hits / len(seeds) >= floor].index)
+    return stable if stable else base_selected
+
+def _bucket_for(col: str) -> str:
+    c = col.lower()
+    if "h2h_" in c: return "h2h"
+    if "rolling_" in c: return "rolling"
+    if "form_" in c: return "form"
+    if "momentum" in c: return "momentum"
+    if "rest_" in c or "rest_days" in c or "short_week" in c or "off_bye" in c: return "rest"
+    if "prev_season" in c or c.startswith("season_"): return "season"
+    if c.startswith(("situational_",)) or c in ("week", "day_of_week", "is_division_game", "is_conference_game"):
+        return "situational"
+    return "other"
+
+def _ensure_bucket_mi(
+    X: pd.DataFrame,
+    y: pd.Series,
+    selected: list[str],
+    target_name: str,
+    min_per_bucket: int = 1,
+    topk_per_bucket: int = 2,
+) -> list[str]:
+    """Ensure each bucket contributes at least `min_per_bucket` features; add via MI if needed."""
+    sel_set = set(selected)
+    buckets: dict[str, list[str]] = {}
+    for c in X.columns:
+        buckets.setdefault(_bucket_for(c), []).append(c)
+
+    for bucket, cols in buckets.items():
+        have = [c for c in selected if _bucket_for(c) == bucket]
+        if len(have) >= min_per_bucket:
+            continue
+
+        # viable = non-constant, not already selected
+        cols = [c for c in cols if c not in sel_set and X[c].nunique(dropna=False) > 1]
+        if not cols:
+            continue
+
+        Xb = X[cols].fillna(0.0)
+        # MI can fail if all-zero variance; filter again just in case
+        cols = [c for c in cols if Xb[c].std(ddof=0) > 0]
+        if not cols:
+            continue
+
+        mi = mutual_info_regression(Xb.values, y.values, random_state=SEED)
+        order = np.argsort(mi)[::-1]
+        add = [cols[i] for i in order[:topk_per_bucket]]
+        for a in add:
+            sel_set.add(a)
+
+    return [c for c in selected] + [c for c in sel_set if c not in selected]
+
+# ---------- main ----------
+
+def run_feature_selection(
+    X: pd.DataFrame,
+    y: pd.Series,
+    feature_candidates: list[str],
+    target_name: str,
+    save_dir: Path = MODELS_DIR,
+    debug: bool = False,
+) -> list[str]:
+    logger.info("LassoCV feature selection → %s", target_name)
+
+    # Safety: empty candidate list → fallback by abs corr (top-20)
+    if not feature_candidates:
+        logger.warning("[%s] No candidates; falling back to top-20 by |corr|.", target_name)
+        num = X.select_dtypes(include=np.number)
+        corrs = num.apply(lambda col: col.corr(y)).abs().sort_values(ascending=False)
+        selected = list(corrs.head(20).index)
+        path = save_dir / f"nfl_{target_name}_selected_features.json"
+        with open(path, "w") as f:
+            json.dump(selected, f, indent=4)
+        return selected
+
+    # ---------- 0) Build working matrix (numeric only) ----------
+    cands = [c for c in feature_candidates if c in X.columns]
+    X_sel = X[cands].select_dtypes(include=np.number).copy().fillna(0.0)
+    # drop constant columns
+    nonconst = [c for c in X_sel.columns if X_sel[c].nunique(dropna=False) > 1]
+    X_sel = X_sel[nonconst]
+
+    if X_sel.empty:
+        logger.warning("[%s] All candidates constant/non-numeric; falling back to top-20 by |corr|.", target_name)
+        num = X.select_dtypes(include=np.number)
+        corrs = num.apply(lambda col: col.corr(y)).abs().sort_values(descending=False)
+        selected = list(corrs.head(20).index)
+        path = save_dir / f"nfl_{target_name}_selected_features.json"
+        with open(path, "w") as f:
+            json.dump(selected, f, indent=4)
+        return selected
+
+    # pre-prune near duplicates BEFORE Lasso
+    CORR_PRUNE_THRESH = 0.98
+    keep_pre = _prune_near_duplicates(X_sel, y, thresh=CORR_PRUNE_THRESH)
+    X_sel = X_sel[keep_pre]
+
+    _log_df(X_sel, f"X_sel_{target_name}_before_Lasso", debug)
+
+    # ---------- 1) LassoCV ----------
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_sel)
+    lasso = LassoCV(cv=DEFAULT_CV_FOLDS, random_state=SEED, n_jobs=-1, max_iter=2000).fit(X_scaled, y)
 
-    lasso = LassoCV(
-        cv=DEFAULT_CV_FOLDS,
-        random_state=SEED,
-        n_jobs=-1,
-        max_iter=2000,
-    ).fit(X_scaled, y)
+    # Map coefs to the EXACT columns used to fit
+    selected = [col for col, coef in zip(X_sel.columns, lasso.coef_) if abs(coef) > 1e-5]
 
-    mask = np.abs(lasso.coef_) > 1e-5
-    selected = list(pd.Index(feature_candidates)[mask])
+    # ---------- 2) Stability selection ----------
+    STABILITY_FLOOR = 0.50
+    selected = _stability_select(X_sel, y, selected, seeds=(42, 99, 123), floor=STABILITY_FLOOR)
 
+    # ---------- 3) Post-prune near-duplicates among selected ----------
+    if selected:
+        sel_keep = _prune_near_duplicates(X_sel[selected], y, thresh=CORR_PRUNE_THRESH)
+        selected = sel_keep
+
+    # ---------- 4) Ensure per-bucket MI coverage ----------
+    selected = _ensure_bucket_mi(X_sel, y, selected, target_name, min_per_bucket=1, topk_per_bucket=2)
+
+    # ---------- 5) Enforce per-target floor via |corr| top-up ----------
+    MIN_KEEP_BY_TARGET = {"margin": 18, "total": 24}
+    min_keep = MIN_KEEP_BY_TARGET.get(target_name, 18)
+    if len(selected) < min_keep:
+        rest = [c for c in X_sel.columns if c not in selected]
+        top_up = _abs_corr_topk(X_sel, y, rest, min_keep - len(selected))
+        selected += [c for c in top_up if c not in selected]
+
+    # ---------- 6) Order by original candidate order for stability ----------
+    selected = [c for c in feature_candidates if c in selected]
+
+    # Save & log
     path = save_dir / f"nfl_{target_name}_selected_features.json"
     with open(path, "w") as f:
         json.dump(selected, f, indent=4)
     logger.info("Selected %d features for %s → %s", len(selected), target_name, path)
-
     _log_feature_list(selected, feature_candidates, target_name, debug)
     return selected
-
 
 def optimize_ensemble_weights(
     validation_preds: Dict[str, pd.Series], y_val: pd.Series, debug: bool = False
@@ -343,22 +581,32 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
         debug=args.debug
     )
 
+    # Add sum-style composites for TOTAL modeling
+    features = add_total_composites(features, keys=[
+        "rolling_points_for_avg",
+        "rolling_points_against_avg",
+        "rolling_yards_per_play_avg",
+        "rolling_turnover_differential_avg",
+        "form_win_pct_5",
+        "rest_days",
+    ])
+
+
     logger.info("Feature pipeline complete in %.2fs | shape=%s", time.time() - feat_t0, features.shape)
     _log_df(features, "features_full", args.debug)
     _log_df(features, "features_full", args.debug)
 
-    # targets
+    # Targets (safe; composites don’t touch labels)
     features = features.dropna(subset=["home_score", "away_score"])
     features["margin"] = features["home_score"] - features["away_score"]
-    features["total"] = features["home_score"] + features["away_score"]
-    _log_df(features[["home_score", "away_score", "margin", "total"]], "targets_added", args.debug)
+    features["total"]  = features["home_score"] + features["away_score"]
 
-    # 3. Candidate features
-    numeric_cols = features.select_dtypes(include=np.number).columns
-    candidates = [
-        c for c in numeric_cols if c.startswith(NFL_SAFE_FEATURE_PREFIXES) or c in NFL_SAFE_EXACT_FEATURE_NAMES
-    ]
-    logger.debug("Candidate features (numeric & safe prefixes): %d", len(candidates))
+    # Now build target-specific candidates
+    cands = build_target_specific_candidates(features)
+    logger.info(
+        "Candidate features after filters: margin=%d | total=%d",
+        len(cands["margin"]), len(cands["total"])
+    )
 
     # 4. Chronological split
     train_df, val_df, test_df = chronological_split(
@@ -373,8 +621,12 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     _log_df(test_df,  "test_df",  args.debug)
 
     # 5. Feature selection (per target)
-    feats_margin = run_feature_selection(train_df, train_df["margin"], candidates, "margin", debug=args.debug)
-    feats_total  = run_feature_selection(train_df, train_df["total"],  candidates, "total",  debug=args.debug)
+    feats_margin = run_feature_selection(
+        train_df, train_df["margin"], cands["margin"], "margin", debug=args.debug
+    )
+    feats_total = run_feature_selection(
+        train_df, train_df["total"], cands["total"], "total", debug=args.debug
+    )
 
     # 6. Recency weights
     recency_w_train    = compute_recency_weights(train_df["game_date"])
@@ -415,10 +667,17 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
 
     # 8. Train loop
     results: Dict[str, Dict[str, Any]] = {}
-    for target, model_map, feat_list in [
-        ("margin", margin_models, feats_margin),
-        ("total",  total_models,  feats_total),
+    for target, model_map in [
+        ("margin", margin_models),
+        ("total",  total_models),
     ]:
+        feat_list = run_feature_selection(
+            train_df[cands[target]],
+            train_df[target],
+            cands[target],
+            target,
+            debug=args.debug,
+        )
         logger.info("\n=== Target: %s ===", target.upper())
         X_train, y_train = train_df[feat_list], train_df[target]
         X_val,   y_val   = val_df[feat_list],   val_df[target]

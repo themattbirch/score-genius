@@ -50,6 +50,7 @@ def transform(
     *,
     historical_df: Optional[pd.DataFrame],
     max_games: int = 10,
+    flag_imputations: bool = True,
 ) -> pd.DataFrame:
     """
     Attach leakage‑free H2H features to `games`.
@@ -108,21 +109,51 @@ def transform(
     grp = combined.groupby("matchup_key")
     combined["h2h_games_played"] = grp.cumcount()
 
-    def _roll(s: pd.Series) -> pd.Series:
-        return s.shift(1).rolling(max_games, min_periods=1).mean()
+    def _return_default_h2h(base_games: pd.DataFrame) -> pd.DataFrame:
+        base = base_games[["game_id"]].copy()
+        base["h2h_games_played"]     = 0
+        base["h2h_home_win_pct"]     = DEFAULTS["matchup_home_win_pct"]
+        base["h2h_avg_point_diff"]   = DEFAULTS["matchup_avg_point_diff"]
+        base["h2h_avg_total_points"] = DEFAULTS["matchup_avg_total_points"]
+        if flag_imputations:
+            for c in ("h2h_games_played","h2h_home_win_pct","h2h_avg_point_diff","h2h_avg_total_points"):
+                base[f"{c}_imputed"] = 1
+        return base
 
-    combined["h2h_home_win_pct"]    = grp["home_win"].apply(_roll)
-    combined["h2h_avg_point_diff"]  = grp["point_diff"].apply(_roll)
-    combined["h2h_avg_total_points"]= grp["total_points"].apply(_roll)
+    # quick required-cols guard
+    required = {"home_team_norm","away_team_norm","game_date","game_id",
+                "home_win","point_diff","total_points","_is_upcoming"}
+    missing  = [c for c in required if c not in combined.columns]
+    if missing:
+        logger.warning("h2h: missing required columns %s; defaulting H2H.", missing)
+        return _return_default_h2h(games)
 
-    # 5. Extract only the upcoming rows and merge back
+    # normalize teams
+    for c in ("home_team_norm", "away_team_norm"):
+        combined[c] = combined[c].apply(normalize_team_name).astype(str).str.lower()
+
+    # symmetric pair key
+    pair_a = combined[["home_team_norm","away_team_norm"]].min(axis=1)
+    pair_b = combined[["home_team_norm","away_team_norm"]].max(axis=1)
+    combined["pair_key"] = (pair_a + "__" + pair_b).astype(str)
+
+    # stable sort for rolling
+    combined = combined.sort_values(["pair_key","game_date","game_id"], kind="mergesort")
+
+    grp = combined.groupby("pair_key", sort=False, group_keys=False)
+
+    # pre-game stats (no leakage)
+    combined["h2h_games_played"]     = grp.cumcount()
+    combined["h2h_home_win_pct"]     = grp["home_win"]    .apply(lambda s: s.shift(1).rolling(max_games, min_periods=1).mean())
+    combined["h2h_avg_point_diff"]   = grp["point_diff"]  .apply(lambda s: s.shift(1).rolling(max_games, min_periods=1).mean())
+    combined["h2h_avg_total_points"] = grp["total_points"].apply(lambda s: s.shift(1).rolling(max_games, min_periods=1).mean())
+
     h2h_feats = combined.loc[
         combined["_is_upcoming"],
-        ["game_id", "h2h_games_played", "h2h_home_win_pct", "h2h_avg_point_diff", "h2h_avg_total_points"],
+        ["game_id","h2h_games_played","h2h_home_win_pct","h2h_avg_point_diff","h2h_avg_total_points"],
     ]
     out = games.merge(h2h_feats, on="game_id", how="left")
 
-    # 6. Fill defaults for brand‑new matchups
     fills = {
         "h2h_games_played": 0,
         "h2h_home_win_pct": DEFAULTS["matchup_home_win_pct"],
@@ -130,6 +161,8 @@ def transform(
         "h2h_avg_total_points": DEFAULTS["matchup_avg_total_points"],
     }
     for col, default in fills.items():
+        if flag_imputations:
+            out[f"{col}_imputed"] = out[col].isna().astype("int8")
         out[col] = out[col].fillna(default)
 
     return out
