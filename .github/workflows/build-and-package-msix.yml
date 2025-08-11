@@ -178,8 +178,20 @@ jobs:
 
           # Step 3: Sign the bundle
           if ($signtool -and $pfxPath) {
-            Write-Output "Signing .appxbundle with debug output..."
-            & $signtool.FullName sign /debug /fd SHA256 /a /f $pfxPath /p $env:SCOREGENIUS_PFX_PASSWORD $bundleName
+            Write-Output "Importing PFX and signing by thumbprint to avoid 0x8007000b..."
+
+            # Import PFX into CurrentUser\My
+            $pwdSec = ConvertTo-SecureString $env:SCOREGENIUS_PFX_PASSWORD -AsPlainText -Force
+            $import = Import-PfxCertificate -FilePath $pfxPath -Password $pwdSec -CertStoreLocation Cert:\CurrentUser\My
+            if (-not $import) { throw "Import-PfxCertificate failed" }
+            $thumb = $import.Thumbprint
+            Write-Output "Imported PFX. Thumbprint: $thumb"
+
+            # RFC3161 timestamp server
+            $tsa = "http://timestamp.digicert.com"
+
+            # Sign by thumbprint
+            & $signtool.FullName sign /v /debug /fd SHA256 /td SHA256 /sha1 $thumb /tr $tsa "$bundleName"
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Signing failed with code $LASTEXITCODE"
               exit $LASTEXITCODE
@@ -188,6 +200,7 @@ jobs:
           } else {
             Write-Output "Skipping signing (missing signtool or PFX)."
           }
+
 
           # ✅ expose for later steps (this was missing)
           echo "final_package=$bundleName" | Out-File -Encoding ascii -Append $env:GITHUB_OUTPUT
