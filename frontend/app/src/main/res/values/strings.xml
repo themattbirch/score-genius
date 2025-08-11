@@ -8,9 +8,7 @@
 
 <!-- PWA config -->
 <string name="webManifestUrl">https://scoregenius.io/manifest.webmanifest</string>
-<string name="launchUrl">https://scoregenius.io/app</string>
-
-<!-- Add this hostName entry -->
+<string name="launchUrl">https://scoregenius.io/app/</string>
 <string name="hostName">scoregenius.io</string>
 
 <!-- TWA fallback -->

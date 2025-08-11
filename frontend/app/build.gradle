@@ -23,7 +23,7 @@ plugins {
 def twaManifest = [
     applicationId: 'io.scoregenius.app',
     hostName: 'scoregenius.io', // The domain being opened in the TWA.
-    launchUrl: '/app', // The start path for the TWA. Must be relative to the domain.
+    launchUrl: '/app/', // The start path for the TWA. Must be relative to the domain.
     name: 'ScoreGenius', // The application name.
     launcherName: 'ScoreGenius', // The name shown on the Android Launcher.
     themeColor: '#1F2937', // The color used for the status bar.
@@ -57,8 +57,8 @@ android {
         applicationId "io.scoregenius.app"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 64
-        versionName "64"
+        versionCode 65
+        versionName "65"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name
@@ -215,6 +215,5 @@ implementation 'androidx.appcompat:appcompat:1.6.1'
 implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.6.2'
 
 // For the modern Splash Screen API
-implementation 'androidx.core:core-splashscreen:1.0.1'
-    
+implementation 'androidx.core:core-splashscreen:1.0.1'    
 }

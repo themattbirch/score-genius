@@ -34,7 +34,7 @@
     <!-- Value from default config. -->
     <string name="hostName" translatable="false">scoregenius.io</string>
     <!-- Value from default config. -->
-    <string name="launchUrl" translatable="false">https://scoregenius.io/app</string>
+    <string name="launchUrl" translatable="false">https://scoregenius.io/app/</string>
     <!-- Value from default config. -->
     <string name="launcherName" translatable="false">ScoreGenius</string>
     <!-- Value from default config. -->
