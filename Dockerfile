@@ -89,7 +89,6 @@ COPY --from=builder /app/frontend/dist/workbox-*.js backend/server/static/app/
 COPY --from=builder /app/frontend/dist/sitemap.xml backend/server/static/sitemap.xml
 
 # host the Windows installer files (these must exist in the build context)
-COPY frontend/app/ScoreGenius.appxbundle backend/server/static/app/ScoreGenius.appxbundle
 COPY frontend/app/ScoreGenius.appinstaller      backend/server/static/app/ScoreGenius.appinstaller
 
 # Final sanity check for the service worker

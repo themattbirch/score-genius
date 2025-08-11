@@ -62,7 +62,9 @@ jobs:
           $mainBundle.SetAttribute('Name',      $name)
           $mainBundle.SetAttribute('Publisher', $publisher)
           $mainBundle.SetAttribute('Version',   $version)
-          $mainBundle.SetAttribute('Uri',       'https://scoregenius.io/app/ScoreGenius.appxbundle')
+          $ver = '${{ steps.version.outputs.version }}'
+          $asset = "https://github.com/themattbirch/score-genius/releases/download/v$ver/ScoreGenius_$ver.appxbundle"
+          $mainBundle.SetAttribute('Uri', $asset)
           # Save UTF-8 no BOM
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
           [System.IO.File]::WriteAllText($ai, $doc.OuterXml, $utf8NoBom)
