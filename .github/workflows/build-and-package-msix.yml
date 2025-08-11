@@ -115,7 +115,9 @@ jobs:
         id: bundle
         shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ✅ make secrets available here too (if present)
+          SCOREGENIUS_PFX_B64: ${{ secrets.SCOREGENIUS_PFX_B64 }}
+          SCOREGENIUS_PFX_PASSWORD: ${{ secrets.SCOREGENIUS_PFX_PASSWORD }}
         run: |
           $packageRoot = 'frontend/windows_package/PackageRoot'
           $version = '${{ steps.version.outputs.version }}'
@@ -187,7 +189,11 @@ jobs:
             Write-Output "Skipping signing (missing signtool or PFX)."
           }
 
-          # Expose final package for downstream steps
+          # ✅ expose for later steps (this was missing)
+          echo "final_package=$bundleName" | Out-File -Encoding ascii -Append $env:GITHUB_OUTPUT
+          "Exposed final_package output: $bundleName"
+
+          # (Optional) keep the env var too if you like:
           echo "FINAL_PACKAGE=$bundleName" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
 
       - name: Upload artifact
