@@ -6,7 +6,7 @@
 
   <Identity Name="mattbwebdev.ScoreGenius"
             Publisher="CN=F55BAB6B-31B3-48DF-AEF9-64E278573516"
-            Version="1.12.48" />
+            Version="1.12.53" />
 
   <Properties>
     <DisplayName>ScoreGenius</DisplayName>
