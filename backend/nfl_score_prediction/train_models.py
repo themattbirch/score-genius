@@ -86,11 +86,10 @@ SEED = 42
 DEFAULT_CV_FOLDS = 4
 
 NFL_SAFE_FEATURE_PREFIXES = (
-    # widen to match your real columns:
-    "home_", "away_",        # e.g., home_prev_season_win_pct, away_rest_days, etc.
-    "h_", "a_",              # keep your short forms if they exist
+    "home_", "away_",
+    "h_", "a_",
     "rolling_", "season_", "h2h_", "momentum_", "rest_", "form_",
-    "adv_", "drive_", "situational_",
+    "adv_", "drive_", "situational_", "total_", "map_",
 )
 LABEL_BLOCKLIST = {"home_score", "away_score", "margin", "total"}
 NFL_SAFE_EXACT_FEATURE_NAMES = (
@@ -181,32 +180,51 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
 
     # global include & exclude
     ALLOW_PREFIX = (
-        "home_","away_","rolling_","season_","h2h_","momentum_",
-        "rest_","form_","adv_","drive_","situational_", "total_",
-        "h_","a_",
+        "home_", "away_", "rolling_", "season_", "h2h_", "momentum_",
+        "rest_", "form_", "adv_", "drive_", "situational_", "total_",
+        "h_", "a_", "map_",
+        "prev_season_",  # <-- ensure prior-season *_diff make it into 'base'
     )
-    BLOCK = {"home_score","away_score","margin","total"}  # no leakage
+    BLOCK = {"home_score", "away_score", "margin", "total"}  # no leakage
     # keep imputation flags for now (they sometimes help early-season)
-    # If you want to drop them later: add a check like: if c.endswith("_imputed"): continue
+    # To drop later, add: if c.endswith("_imputed"): continue
 
     base = [c for c in num if c.startswith(ALLOW_PREFIX) and c not in BLOCK]
 
-    # buckets
+    # buckets / helpers
     is_diff   = lambda c: c.endswith("_diff") or "_advantage" in c
     is_points = lambda c: ("points_for" in c) or ("points_against" in c) or ("total_points" in c) or c.startswith("total_")
     is_rest   = lambda c: ("rest_days" in c) or ("short_week" in c) or ("off_bye" in c)
     is_form   = lambda c: ("form_win_pct" in c) or ("current_streak" in c) or ("momentum" in c)
     is_h2h    = lambda c: c.startswith("h2h_")
 
-    # margin → differentials & win-proxy signals
+    # --- helpers specific to season priors ---
+    is_season = lambda c: (
+        "prev_season_" in c
+        or c.startswith("home_prev_season_")
+        or c.startswith("away_prev_season_")
+    )
+    is_season_diff = lambda c: is_season(c) and c.endswith("_diff")
+    is_side_specific_season = lambda c: (
+        c.startswith("home_prev_season_") or c.startswith("away_prev_season_")
+    )
+
+    # margin → differentials & win-proxy signals (include prior-season diffs explicitly)
     margin_candidates = [
         c for c in base if (
-            is_diff(c) or is_rest(c) or is_form(c) or ("turnover_differential" in c)
+            is_diff(c)                               # general diffs
+            or is_season_diff(c)                     # prior-season diffs (e.g., prev_season_win_pct_diff)
+            or is_rest(c)
+            or is_form(c)
+            or ("turnover_differential" in c)
             or (is_h2h(c) and ("home_win_pct" in c))
         )
     ]
-    # ensure raw rolling diffs can appear if you have them
+    # keep raw rolling diffs if present
     margin_candidates += [c for c in base if "point_differential" in c]
+
+    # Drop side-specific prior-season raw columns to avoid duplication/leakage-like redundancy
+    margin_candidates = [c for c in margin_candidates if not is_side_specific_season(c)]
 
     # totals → scoring volume + pace/volume + rest + h2h totals
     is_volume = lambda c: any(k in c for k in (
@@ -217,17 +235,22 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
     ))
     total_candidates = [
         c for c in base if (
-            is_points(c) or is_volume(c) or is_rest(c)
+            is_points(c)
+            or is_volume(c)
+            or is_rest(c)
             or (is_h2h(c) and ("avg_total_points" in c))
         )
     ]
     # allow a couple of momentum/form signals for total, too
     total_candidates += [c for c in base if is_form(c) and ("form_win_pct" in c)]
+    # If you want prior-season diffs to also inform totals, uncomment:
+    # total_candidates += [c for c in base if is_season_diff(c)]
 
     # de-dup & stable order
     margin_candidates = [c for c in base if c in set(margin_candidates)]
     total_candidates  = [c for c in base if c in set(total_candidates)]
     return {"margin": margin_candidates, "total": total_candidates}
+
 
 def _prune_near_duplicates(X: pd.DataFrame, y: pd.Series, thresh: float = 0.98) -> list[str]:
     """
@@ -299,6 +322,12 @@ def _stability_select(
 
 def _bucket_for(col: str) -> str:
     c = col.lower()
+
+    # Explicit prev-season routing (do this FIRST so it doesn't get caught by home_/away_)
+    if c.startswith("prev_season_") or "_prev_season_" in c \
+       or c.startswith("home_prev_season_") or c.startswith("away_prev_season_"):
+        return "season"
+
     if c.startswith("h2h_"): return "h2h"
     if c.startswith("rolling_") or "rolling_" in c: return "rolling"
     if c.startswith("rest_") or "rest_days" in c or "short_week" in c or "off_bye" in c: return "rest"
@@ -309,6 +338,7 @@ def _bucket_for(col: str) -> str:
     if c.startswith("situational_") or c in ("week","day_of_week","is_division_game","is_conference_game"): return "situational"
     if c.startswith("total_"): return "engineered_total"
     if c.startswith("home_") or c.startswith("away_"): return "raw_home_away"
+    if c.startswith("map_"): return "map"
     return "other"
 
 def _summarize_candidates(name: str, cols: list[str]) -> None:
@@ -447,12 +477,17 @@ def run_feature_selection(
     )
 
     # ---------- 5) Enforce per-target floor via |corr| top-up ----------
-    MIN_KEEP_BY_TARGET = {"margin": 28, "total": 36}
-    min_keep = MIN_KEEP_BY_TARGET.get(target_name, 28)
+    desired_keep_map = {"margin": 28, "total": 36}
+    desired = desired_keep_map.get(target_name, 28)
+    available = len(X_sel.columns)
+    min_keep = min(desired, max(available, 0))
+
     if len(selected) < min_keep:
         rest = [c for c in X_sel.columns if c not in selected]
-        top_up = _abs_corr_topk(X_sel, y, rest, min_keep - len(selected))
+        need = max(0, min_keep - len(selected))
+        top_up = _abs_corr_topk(X_sel, y, rest, need)
         selected += [c for c in top_up if c not in selected]
+
 
     # ---------- 6) Order by original candidate order for stability ----------
     selected = [c for c in feature_candidates if c in selected]
@@ -627,6 +662,11 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
         len(cands["margin"]), len(cands["total"])
     )
 
+    # visibility on bucket makeup
+    _summarize_candidates("margin", cands["margin"])
+    _summarize_candidates("total",  cands["total"])
+
+
     # 4. Chronological split
     train_df, val_df, test_df = chronological_split(
         features,
@@ -640,12 +680,12 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     _log_df(test_df,  "test_df",  args.debug)
 
     # 5. Feature selection (per target)
-    feats_margin = run_feature_selection(
-        train_df, train_df["margin"], cands["margin"], "margin", debug=args.debug
-    )
-    feats_total = run_feature_selection(
-        train_df, train_df["total"], cands["total"], "total", debug=args.debug
-    )
+    #feats_margin = run_feature_selection(
+        #train_df, train_df["margin"], cands["margin"], "margin", debug=args.debug
+   # )
+    #feats_total = run_feature_selection(
+        #train_df, train_df["total"], cands["total"], "total", debug=args.debug
+    #)
 
     # 6. Recency weights
     recency_w_train    = compute_recency_weights(train_df["game_date"])

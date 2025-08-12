@@ -3,14 +3,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Loading ScoreGenius…</title>
 
-<!-- Minimal CSP for a top-level nav (no iframe, no external CSS/JS) -->
+<!-- Minimal CSP for top-level nav -->
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'self' https:;
            script-src 'self' 'unsafe-inline';
            style-src  'self' 'unsafe-inline';
-           connect-src https:;
-           img-src    'self' https: data:;"
+           img-src    'self' https: data:;
+           connect-src https:;"
 />
 
 <style>
@@ -38,7 +38,7 @@
     font-weight: 600;
   }
   .note {
-    opacity: 0.85;
+    opacity: 0.9;
     font-size: 0.95rem;
     margin-top: 8px;
     min-height: 1.2em;
@@ -57,13 +57,15 @@
       transform: rotate(360deg);
     }
   }
-  a.button {
+  .button {
     display: inline-block;
-    padding: 10px 16px;
+    padding: 12px 18px;
     border-radius: 999px;
     text-decoration: none;
-    border: 1px solid #444;
-    color: inherit;
+    border: 1px solid #666;
+    color: #000;
+    background: #fff;
+    font-weight: 600;
   }
   .hidden {
     display: none;
@@ -71,13 +73,18 @@
 </style>
 
 <div class="wrap">
-  <main>
+  <main role="status" aria-live="polite">
     <h1 id="msg">Loading ScoreGenius…</h1>
     <p class="note" id="step">Starting…</p>
     <div class="spinner" aria-hidden="true"></div>
-    <p class="note" id="detail" aria-live="polite"></p>
+    <p class="note" id="detail"></p>
     <p>
-      <a id="fallback" class="button hidden" href="https://scoregenius.io/app/"
+      <a
+        id="fallback"
+        class="button hidden"
+        href="https://scoregenius.io/app/"
+        target="_blank"
+        rel="noopener"
         >Open in browser</a
       >
     </p>
@@ -96,7 +103,6 @@
     const detail = document.getElementById("detail");
     const link = document.getElementById("fallback");
 
-    // Visible progress (never looks frozen)
     const steps = ["Starting…", "Connecting…", "Opening app…", "Almost there…"];
     let si = 0;
     const stepTimer = setInterval(() => {
@@ -110,39 +116,39 @@
       link.classList.remove("hidden");
     }
 
-    // Hard nav + redundant triggers
     function go(href) {
       try {
         window.location.replace(href);
-      } catch (e) {
+      } catch {
         try {
           window.location.assign(href);
-        } catch (e2) {
+        } catch {
           showFallback("Unable to open ScoreGenius.", "Navigation error.");
         }
       }
     }
 
-    // Immediate attempt
+    // Immediate + lifecycle + retries
     go(DEST);
-
-    // Also try on key lifecycle events (covers timing quirks)
     document.addEventListener("DOMContentLoaded", () => go(DEST));
     window.addEventListener("pageshow", () => go(DEST));
-
-    // Timed retries (covers slow startup / ignored first call)
     const t1 = setTimeout(() => go(DEST), 250);
     const t2 = setTimeout(() => go(DEST), 2000);
     const t3 = setTimeout(() => go(DEST), 6000);
+    const t4 = setTimeout(() => go(DEST), 9000); // extra late retry
 
-    // Reveal fallback if things are sluggish (reviewer-visible)
+    // Earlier fallback: 3s
     const stall = setTimeout(() => {
       showFallback("Still loading… you can open it directly.", "");
-    }, 6000);
+    }, 3000);
 
-    // Defensive cleanup
+    // If still here at 8s, be explicit
+    const hint = setTimeout(() => {
+      detail.textContent = "If this screen persists, tap “Open in browser”.";
+    }, 8000);
+
     function clearAll() {
-      [t1, t2, t3, stall].forEach(clearTimeout);
+      [t1, t2, t3, t4, stall, hint].forEach(clearTimeout);
       clearInterval(stepTimer);
     }
     window.addEventListener("pagehide", clearAll);
@@ -150,15 +156,14 @@
       if (document.visibilityState === "hidden") clearAll();
     });
 
-    // Last-resort: surface unhandled errors
     window.addEventListener("error", (e) =>
       showFallback("Unable to open ScoreGenius.", (e && e.message) || "Error")
     );
     window.addEventListener("unhandledrejection", (e) => {
-      const reason =
+      const r =
         (e && e.reason && (e.reason.message || e.reason)) ||
         "Promise rejection";
-      showFallback("Unable to open ScoreGenius.", String(reason));
+      showFallback("Unable to open ScoreGenius.", String(r));
     });
   })();
 </script>
