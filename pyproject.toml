@@ -17,7 +17,7 @@ line-length = 99
 select = ["E", "F", "W", "I", "UP"] # Standard errors, Pyflakes, warnings, isort, pyupgrade
 
 extend-exclude = [
-    "venv*", # Also good to exclude virtual environments
+    "venv*", # Also good to exclude virtual environments.
 ]
 
 # Configuration for the Black code formatter
