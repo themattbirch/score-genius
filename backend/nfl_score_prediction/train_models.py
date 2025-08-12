@@ -176,6 +176,7 @@ def chronological_split(
     return df_sorted.iloc[:train_end], df_sorted.iloc[train_end:val_end], df_sorted.iloc[val_end:]
 
 def build_target_specific_candidates(features: pd.DataFrame) -> dict:
+    # numeric universe
     num = set(features.select_dtypes(include=np.number).columns)
 
     # global include & exclude
@@ -183,22 +184,20 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
         "home_", "away_", "rolling_", "season_", "h2h_", "momentum_",
         "rest_", "form_", "adv_", "drive_", "situational_", "total_",
         "h_", "a_", "map_",
-        "prev_season_",  # <-- ensure prior-season *_diff make it into 'base'
     )
-    BLOCK = {"home_score", "away_score", "margin", "total"}  # no leakage
-    # keep imputation flags for now (they sometimes help early-season)
-    # To drop later, add: if c.endswith("_imputed"): continue
+    BLOCK = {"home_score", "away_score", "margin", "total"}
 
-    base = [c for c in num if c.startswith(ALLOW_PREFIX) and c not in BLOCK]
+    # base = prefixed, numeric, non-blocked
+    base = [c for c in num if any(c.startswith(p) for p in ALLOW_PREFIX) and c not in BLOCK]
 
-    # buckets / helpers
+    # --- bucket helpers ---
     is_diff   = lambda c: c.endswith("_diff") or "_advantage" in c
     is_points = lambda c: ("points_for" in c) or ("points_against" in c) or ("total_points" in c) or c.startswith("total_")
     is_rest   = lambda c: ("rest_days" in c) or ("short_week" in c) or ("off_bye" in c)
     is_form   = lambda c: ("form_win_pct" in c) or ("current_streak" in c) or ("momentum" in c)
     is_h2h    = lambda c: c.startswith("h2h_")
 
-    # --- helpers specific to season priors ---
+    # --- season priors helpers ---
     is_season = lambda c: (
         "prev_season_" in c
         or c.startswith("home_prev_season_")
@@ -209,11 +208,13 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
         c.startswith("home_prev_season_") or c.startswith("away_prev_season_")
     )
 
-    # margin → differentials & win-proxy signals (include prior-season diffs explicitly)
+    # =========================
+    # MARGIN candidates
+    # =========================
     margin_candidates = [
         c for c in base if (
             is_diff(c)                               # general diffs
-            or is_season_diff(c)                     # prior-season diffs (e.g., prev_season_win_pct_diff)
+            or is_season_diff(c)                     # explicit prior-season diffs
             or is_rest(c)
             or is_form(c)
             or ("turnover_differential" in c)
@@ -223,17 +224,27 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
     # keep raw rolling diffs if present
     margin_candidates += [c for c in base if "point_differential" in c]
 
-    # Drop side-specific prior-season raw columns to avoid duplication/leakage-like redundancy
+    # drop side-specific raw prior-season columns to avoid redundancy
     margin_candidates = [c for c in margin_candidates if not is_side_specific_season(c)]
 
-    # totals → scoring volume + pace/volume + rest + h2h totals
+    # de-dup while preserving order
+    seen = set()
+    margin_candidates = [c for c in margin_candidates if not (c in seen or seen.add(c))]
+
+    # =========================
+    # TOTAL candidates
+    # =========================
     is_volume = lambda c: any(k in c for k in (
         "yards_per_play", "plays_per_game", "seconds_per_play",
         "neutral_pass_rate", "red_zone", "explosive_play_rate",
         "drive_success_rate", "drive_plays", "drive_yards",
         # "epa_per_play", "pace"  # uncomment if these exist
     ))
-    total_candidates = [
+
+    # source season diffs from the full numeric set (they won't be in base due to prefixes)
+    season_diffs_for_total = [c for c in num if is_season_diff(c)]
+
+    total_core = [
         c for c in base if (
             is_points(c)
             or is_volume(c)
@@ -241,16 +252,17 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
             or (is_h2h(c) and ("avg_total_points" in c))
         )
     ]
-    # allow a couple of momentum/form signals for total, too
-    total_candidates += [c for c in base if is_form(c) and ("form_win_pct" in c)]
-    # If you want prior-season diffs to also inform totals, uncomment:
-    # total_candidates += [c for c in base if is_season_diff(c)]
+    # allow a couple of form signals for total, too
+    total_core += [c for c in base if is_form(c) and ("form_win_pct" in c)]
 
-    # de-dup & stable order
-    margin_candidates = [c for c in base if c in set(margin_candidates)]
-    total_candidates  = [c for c in base if c in set(total_candidates)]
+    # prepend season diffs so corr-filter respects them
+    total_candidates = season_diffs_for_total + total_core
+
+    # de-dup while preserving order
+    seen = set()
+    total_candidates = [c for c in total_candidates if not (c in seen or seen.add(c))]
+
     return {"margin": margin_candidates, "total": total_candidates}
-
 
 def _prune_near_duplicates(X: pd.DataFrame, y: pd.Series, thresh: float = 0.98) -> list[str]:
     """
@@ -657,17 +669,70 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
 
     # Now build target-specific candidates
     cands = build_target_specific_candidates(features)
+
+    # --- seed immutable, high-value priors into the candidate lists ---
+    REQUIRED_MARGIN = ["prev_season_win_pct_diff", "prev_season_srs_lite_diff"]
+    REQUIRED_TOTAL  = []  # keep totals clean for now; add priors here if you want them for totals
+
+    def _seed_required(cands_list, required):
+        # Required first (if present), then the rest (no dupes); preserves stable order
+        req = [c for c in required if c in cands_list]
+        seen = set(req)
+        tail = [c for c in cands_list if c not in seen]
+        return req + tail
+
+    margin_candidates = _seed_required(cands["margin"], REQUIRED_MARGIN)
+    total_candidates  = _seed_required(cands["total"],  REQUIRED_TOTAL)
+
     logger.info(
-        "Candidate features after filters: margin=%d | total=%d",
-        len(cands["margin"]), len(cands["total"])
+        "Candidate features after seeding: margin=%d | total=%d",
+        len(margin_candidates), len(total_candidates)
     )
 
-    # visibility on bucket makeup
-    _summarize_candidates("margin", cands["margin"])
-    _summarize_candidates("total",  cands["total"])
+    # --- Feature-selection helpers (place near other helpers/utilities) ---
+    def _variance_filter(df, cols, min_var=1e-8, required=()):
+        keep = []
+        for c in cols:
+            if c in required:
+                keep.append(c); continue
+            if c in df.columns and float(df[c].var()) > min_var:
+                keep.append(c)
+        return keep
 
+    def _corr_filter(df, cols, max_corr=0.98, required=()):
+        out = []
+        for c in cols:
+            if c in required:
+                out.append(c); continue
+            drop = any(
+                abs(df[[c, k]].corr().iloc[0, 1]) >= max_corr
+                for k in out
+                if c in df.columns and k in df.columns
+            )
+            if not drop:
+                out.append(c)
+        return out
 
-    # 4. Chronological split
+    # --- apply filters while preserving required features ---
+    margin_after_var = _variance_filter(features, margin_candidates, required=REQUIRED_MARGIN)
+    margin_after_cor = _corr_filter(features, margin_after_var,  required=REQUIRED_MARGIN)
+
+    total_after_var  = _variance_filter(features, total_candidates,  required=REQUIRED_TOTAL)
+    total_after_cor  = _corr_filter(features, total_after_var,       required=REQUIRED_TOTAL)
+
+    # quick visibility: ensure required features survived
+    for _f in REQUIRED_MARGIN:
+        if _f not in margin_after_cor:
+            logger.warning("Required margin feature missing after filters: %s", _f)
+    for _f in REQUIRED_TOTAL:
+        if _f not in total_after_cor:
+            logger.warning("Required total feature missing after filters: %s", _f)
+
+    # visibility on bucket makeup (summarize the FILTERED sets from the full frame)
+    _summarize_candidates("margin (pre-split)", margin_after_cor)
+    _summarize_candidates("total (pre-split)",  total_after_cor)
+
+    # 4) Chronological split
     train_df, val_df, test_df = chronological_split(
         features,
         test_size=args.test_size,
@@ -678,16 +743,30 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     _log_df(train_df, "train_df", args.debug)
     _log_df(val_df,   "val_df",   args.debug)
     _log_df(test_df,  "test_df",  args.debug)
+    
+    # 5) Re-run lightweight filters on TRAIN ONLY (leakage-safe) while preserving required
+    margin_after_var_tr = _variance_filter(train_df, margin_candidates, required=REQUIRED_MARGIN)
+    margin_after_cor_tr = _corr_filter(train_df, margin_after_var_tr, required=REQUIRED_MARGIN)
 
-    # 5. Feature selection (per target)
-    #feats_margin = run_feature_selection(
-        #train_df, train_df["margin"], cands["margin"], "margin", debug=args.debug
-   # )
-    #feats_total = run_feature_selection(
-        #train_df, train_df["total"], cands["total"], "total", debug=args.debug
-    #)
+    total_after_var_tr  = _variance_filter(train_df, total_candidates,  required=REQUIRED_TOTAL)
+    total_after_cor_tr  = _corr_filter(train_df, total_after_var_tr,    required=REQUIRED_TOTAL)
 
-    # 6. Recency weights
+    # sanity: ensure required survived
+    for _f in REQUIRED_MARGIN:
+        if _f not in margin_after_cor_tr:
+            logger.warning("Required margin feature missing after TRAIN filters: %s", _f)
+    for _f in REQUIRED_TOTAL:
+        if _f not in total_after_cor_tr:
+            logger.warning("Required total feature missing after TRAIN filters: %s", _f)
+
+    # 6) Final column sets for each target
+    MARGIN_COLS = [c for c in margin_after_cor_tr if c in train_df.columns]
+    TOTAL_COLS  = [c for c in total_after_cor_tr  if c in train_df.columns]
+
+    logger.info("Final MARGIN features (n=%d): %s", len(MARGIN_COLS), MARGIN_COLS[:15])
+    logger.info("Final TOTAL  features (n=%d): %s", len(TOTAL_COLS),  TOTAL_COLS[:15])
+
+    # 7. Recency weights
     recency_w_train    = compute_recency_weights(train_df["game_date"])
     combined_dates     = pd.concat([train_df, val_df])["game_date"]
     recency_w_combined = compute_recency_weights(combined_dates)
@@ -697,7 +776,7 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
                      len(recency_w_train) if recency_w_train is not None else None,
                      len(recency_w_combined) if recency_w_combined is not None else None)
 
-    # 7. Model dictionaries & param grids
+    # 8. Model dictionaries & param grids
     margin_models: Dict[str, Type[BaseNFLPredictor]] = {
         "ridge": RidgeMarginPredictor,
         "svr": SVRMarginPredictor,
@@ -724,24 +803,39 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
         },
     }
 
-    # 8. Train loop
+    # 9. Train loop
     results: Dict[str, Dict[str, Any]] = {}
 
     for target, model_map in [("margin", margin_models), ("total", total_models)]:
-        # One selection pass per target
+        # Pick filtered/seeded candidate list for this target (TRAIN-based)
+        if target == "margin":
+            candidates_for_target = margin_after_cor_tr
+            required_for_target   = REQUIRED_MARGIN
+        else:
+            candidates_for_target = total_after_cor_tr
+            required_for_target   = REQUIRED_TOTAL
+
+        # One selection pass per target using the TRAIN-based, filtered list
         feat_list = run_feature_selection(
-            X=train_df,                  # ok to pass full frame; selector filters by cands
+            X=train_df,
             y=train_df[target],
-            feature_candidates=cands[target],
+            feature_candidates=candidates_for_target,
             target_name=target,
             debug=args.debug,
         )
 
+        # Force required priors to remain (prepend, then de-dup while preserving order)
+        if required_for_target:
+            req_then_selected = required_for_target + [f for f in feat_list if f not in required_for_target]
+            feat_list = req_then_selected
+
         _summarize_selected(target, feat_list)
 
         logger.info("\n=== Target: %s ===", target.upper())
+
+        # Build matrices; reindex val/test to avoid missing-column errors
         X_train, y_train = train_df[feat_list], train_df[target]
-        X_val,   y_val   = val_df[feat_list],   val_df[target]
+        X_val,   y_val   = val_df.reindex(columns=feat_list, fill_value=0.0),   val_df[target]
 
         _log_df(X_train, f"X_train_{target}", args.debug)
         _log_df(X_val,   f"X_val_{target}",   args.debug)
@@ -772,7 +866,8 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
 
         results[target] = {"weights": weights, "features": feat_list}
 
-    # 9. Final test evaluation
+
+    # 10. Final test evaluation
     logger.info("\n=== Final Ensemble Evaluation (TEST) ===")
     final_preds: Dict[str, pd.Series] = {}
     for target, meta in results.items():
@@ -801,7 +896,7 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     if args.debug:
         logger.debug("Score head:\n%s", scores.head())
 
-    # 10. Reports
+    # 11. Reports
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = REPORTS_DIR / f"nfl_eval_report_{timestamp}.txt"
     generate_evaluation_report(scores, overall_mae, report_path)
