@@ -41,25 +41,12 @@
 
       <!-- Allow hosted content + common CDNs/services used by modern PWAs -->
       <uap:ApplicationContentUriRules>
-        <!-- Primary app domain(s) -->
-        <uap:Rule Type="include" Match="https://scoregenius.io/*" />
-        <uap:Rule Type="include" Match="https://www.scoregenius.io/*" />
-        <uap:Rule Type="include" Match="https://*.scoregenius.io/*" />
+        <!-- App host: grant full Windows runtime access for smooth integration -->
+        <uap:Rule Match="https://scoregenius.io/*" Type="include" WindowsRuntimeAccess="all" />
 
-        <!-- Fonts & Google services -->
-        <uap:Rule Type="include" Match="https://fonts.googleapis.com/*" />
-        <uap:Rule Type="include" Match="https://fonts.gstatic.com/*" />
-        <uap:Rule Type="include" Match="https://*.gstatic.com/*" />
-        <uap:Rule Type="include" Match="https://www.googletagmanager.com/*" />
-        <uap:Rule Type="include" Match="https://www.google-analytics.com/*" />
-        <uap:Rule Type="include" Match="https://*.googleapis.com/*" />
-
-        <!-- Common CDNs (keep the ones you actually use; harmless if unused) -->
-        <uap:Rule Type="include" Match="https://cdn.jsdelivr.net/*" />
-        <uap:Rule Type="include" Match="https://cdnjs.cloudflare.com/*" />
-        <uap:Rule Type="include" Match="https://unpkg.com/*" />
-        <uap:Rule Type="include" Match="https://cdn.skypack.dev/*" />
-        <uap:Rule Type="include" Match="https://cdn.cloudflare.com/*" />
+        <!-- Early font preloads from /app/index.html -->
+        <uap:Rule Match="https://fonts.googleapis.com/*" Type="include" />
+        <uap:Rule Match="https://fonts.gstatic.com/*"   Type="include" />
       </uap:ApplicationContentUriRules>
     </Application>
   </Applications>
