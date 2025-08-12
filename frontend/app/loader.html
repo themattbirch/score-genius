@@ -3,20 +3,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Loading ScoreGenius…</title>
 
-<!-- CSP widened for iframe -->
+<!-- Minimal CSP for a top-level nav (no iframe, no external CSS/JS) -->
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self' https: data: blob:;
-           script-src 'self' https: 'unsafe-inline' 'unsafe-eval';
-           style-src  'self' https: 'unsafe-inline';
-           img-src    'self' https: data: blob:;
+  content="default-src 'self' https:;
+           script-src 'self' 'unsafe-inline';
+           style-src  'self' 'unsafe-inline';
            connect-src https:;
-           frame-src https:;"
+           img-src    'self' https: data:;"
 />
-
-<link rel="preconnect" href="https://scoregenius.io" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 
 <style>
   :root {
@@ -31,51 +26,23 @@
     font: 16px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
       sans-serif;
   }
-  .root {
-    position: fixed;
-    inset: 0;
-  }
-  iframe {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: #000;
-  }
-
-  /* Overlay */
-  .overlay {
-    position: absolute;
-    inset: 0;
+  .wrap {
+    min-height: 100%;
     display: grid;
     place-items: center;
-    background: #000; /* seamless with splash */
-    transition: opacity 0.25s ease;
-  }
-  .content {
-    text-align: center;
     padding: 24px;
+    text-align: center;
   }
   h1 {
     margin: 0 0 8px 0;
     font-weight: 600;
   }
   .note {
-    opacity: 0.8;
-    font-size: 0.9rem;
+    opacity: 0.85;
+    font-size: 0.95rem;
     margin-top: 8px;
+    min-height: 1.2em;
   }
-  a.button {
-    display: inline-block;
-    padding: 10px 16px;
-    border-radius: 999px;
-    text-decoration: none;
-    border: 1px solid #444;
-    color: inherit;
-  }
-
-  /* Spinner */
   .spinner {
     width: 40px;
     height: 40px;
@@ -90,109 +57,108 @@
       transform: rotate(360deg);
     }
   }
-  .hide {
-    opacity: 0;
-    pointer-events: none;
+  a.button {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 999px;
+    text-decoration: none;
+    border: 1px solid #444;
+    color: inherit;
+  }
+  .hidden {
+    display: none;
   }
 </style>
 
-<div class="root">
-  <!-- The app loads here while we keep the overlay visible -->
-  <iframe
-    id="appframe"
-    title="ScoreGenius"
-    src="https://scoregenius.io/app/"
-    allow="fullscreen"
-  ></iframe>
-
-  <!-- Extended splash / progress overlay -->
-  <div id="overlay" class="overlay">
-    <div class="content">
-      <h1 id="msg">Loading ScoreGenius…</h1>
-      <p class="note" id="step">Starting…</p>
-      <div class="spinner" aria-hidden="true"></div>
-      <p class="note" id="detail" aria-live="polite"></p>
-      <p>
-        <a
-          id="fallback"
-          class="button"
-          href="https://scoregenius.io/app/"
-          style="display: none"
-          >Open in browser</a
-        >
-      </p>
-      <noscript
-        >JavaScript isn’t required —
-        <a href="https://scoregenius.io/app/">open ScoreGenius</a>.</noscript
+<div class="wrap">
+  <main>
+    <h1 id="msg">Loading ScoreGenius…</h1>
+    <p class="note" id="step">Starting…</p>
+    <div class="spinner" aria-hidden="true"></div>
+    <p class="note" id="detail" aria-live="polite"></p>
+    <p>
+      <a id="fallback" class="button hidden" href="https://scoregenius.io/app/"
+        >Open in browser</a
       >
-    </div>
-  </div>
+    </p>
+    <noscript
+      >JavaScript isn’t required —
+      <a href="https://scoregenius.io/app/">open ScoreGenius</a>.</noscript
+    >
+  </main>
 </div>
 
 <script>
   (function () {
-    const overlay = document.getElementById("overlay");
-    const frame = document.getElementById("appframe");
+    const DEST = "https://scoregenius.io/app/";
     const msg = document.getElementById("msg");
     const stepEl = document.getElementById("step");
     const detail = document.getElementById("detail");
     const link = document.getElementById("fallback");
 
-    function showFallback(text, extra) {
-      if (text) msg.textContent = text;
+    // Visible progress (never looks frozen)
+    const steps = ["Starting…", "Connecting…", "Opening app…", "Almost there…"];
+    let si = 0;
+    const stepTimer = setInterval(() => {
+      si = (si + 1) % steps.length;
+      stepEl.textContent = steps[si];
+    }, 1200);
+
+    function showFallback(title, extra) {
+      if (title) msg.textContent = title;
       if (extra) detail.textContent = extra;
-      link.style.display = "inline-block";
+      link.classList.remove("hidden");
     }
 
-    // Rotating status so reviewers see motion
-    const steps = [
-      "Starting…",
-      "Connecting to ScoreGenius…",
-      "Negotiating secure session…",
-      "Loading app…",
-    ];
-    let i = 0;
-    const stepTimer = setInterval(() => {
-      i = (i + 1) % steps.length;
-      stepEl.textContent = steps[i];
-    }, 1000);
+    // Hard nav + redundant triggers
+    function go(href) {
+      try {
+        window.location.replace(href);
+      } catch (e) {
+        try {
+          window.location.assign(href);
+        } catch (e2) {
+          showFallback("Unable to open ScoreGenius.", "Navigation error.");
+        }
+      }
+    }
 
-    // If iframe errors, surface it
-    frame.addEventListener("error", () =>
-      showFallback("Unable to load ScoreGenius.", "Network/frame error.")
-    );
-    addEventListener("error", (e) =>
-      showFallback(
-        "Unable to load ScoreGenius.",
-        "Boot error: " + (e.message || e)
-      )
-    );
-    addEventListener("unhandledrejection", (e) => {
-      const reason = (e?.reason && (e.reason.message || e.reason)) || "unknown";
-      showFallback("Unable to load ScoreGenius.", "Boot promise: " + reason);
-    });
+    // Immediate attempt
+    go(DEST);
 
-    // Show fallback button early if network is slow
-    const stall = setTimeout(
-      () => showFallback("Still loading… you can open it directly.", ""),
-      1500
-    );
+    // Also try on key lifecycle events (covers timing quirks)
+    document.addEventListener("DOMContentLoaded", () => go(DEST));
+    window.addEventListener("pageshow", () => go(DEST));
 
-    // When the iframe reports load, fade out overlay (short grace so it feels intentional)
-    frame.addEventListener("load", () => {
-      clearTimeout(stall);
+    // Timed retries (covers slow startup / ignored first call)
+    const t1 = setTimeout(() => go(DEST), 250);
+    const t2 = setTimeout(() => go(DEST), 2000);
+    const t3 = setTimeout(() => go(DEST), 6000);
+
+    // Reveal fallback if things are sluggish (reviewer-visible)
+    const stall = setTimeout(() => {
+      showFallback("Still loading… you can open it directly.", "");
+    }, 6000);
+
+    // Defensive cleanup
+    function clearAll() {
+      [t1, t2, t3, stall].forEach(clearTimeout);
       clearInterval(stepTimer);
-      setTimeout(() => overlay.classList.add("hide"), 300);
-    });
-
-    // If we ever background before ready, stop timers
-    const clearAll = () => {
-      clearTimeout(stall);
-      clearInterval(stepTimer);
-    };
-    addEventListener("pagehide", clearAll);
-    addEventListener("visibilitychange", () => {
+    }
+    window.addEventListener("pagehide", clearAll);
+    document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") clearAll();
+    });
+
+    // Last-resort: surface unhandled errors
+    window.addEventListener("error", (e) =>
+      showFallback("Unable to open ScoreGenius.", (e && e.message) || "Error")
+    );
+    window.addEventListener("unhandledrejection", (e) => {
+      const reason =
+        (e && e.reason && (e.reason.message || e.reason)) ||
+        "Promise rejection";
+      showFallback("Unable to open ScoreGenius.", String(reason));
     });
   })();
 </script>
