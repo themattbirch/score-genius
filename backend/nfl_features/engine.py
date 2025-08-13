@@ -320,12 +320,6 @@ class NFLFeatureEngine:
         all_seasons = sorted(games["season"].dropna().unique())
         logger.debug("ENGINE: seasons in batch → %s", all_seasons)
 
-        # Precompute advanced/drive columns on historical (idempotent if repeated)
-        if "team_id" in hist_games.columns:
-            logger.debug("ENGINE: precomputing ADV/DRIVE on historical frame")
-            hist_games = compute_advanced_metrics(hist_games)
-            hist_games = compute_drive_metrics(hist_games)
-
         # Prefetch auxiliary data (use provided frames if present)
         if season_stats_df is None:
             parts = []
@@ -422,8 +416,12 @@ class NFLFeatureEngine:
                 kw: Dict[str, Any] = {}
                 if _supports_kwarg(fn, "debug"): kw["debug"] = debug
                 if _supports_kwarg(fn, "flag_imputations"): kw["flag_imputations"] = flag_imputations
-                if _supports_kwarg(fn, "historical_df"): kw["historical_df"] = full_hist
-                if _supports_kwarg(fn, "historical_team_stats_df"): kw["historical_team_stats_df"] = hist_team_stats
+                if _supports_kwarg(fn, "historical_df"):
+                    kw["historical_df"] = full_hist.copy(deep=True)
+
+                if _supports_kwarg(fn, "historical_team_stats_df"):
+                    kw["historical_team_stats_df"] = hist_team_stats.copy(deep=True)
+
 
                 if module == "season":
                     # Pass full priors; let season.transform handle (season-1) selection and self-heal.
