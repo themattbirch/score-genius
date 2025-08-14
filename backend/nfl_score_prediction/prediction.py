@@ -3,23 +3,29 @@
 prediction.py – NFL Score Prediction Generation Script (with rich DEBUG logging)
 
 Pipeline:
-1. Fetch upcoming games (window) + historical context (lookback).
+1. Fetch schedule (date-bounded) + historical context (lookback).
 2. Build features via NFLFeatureEngine().build_features().
-3. Load artifacts (selected features + ensemble weights).
-4. Load models with NFLEnsemble, predict margin & total.
-5. Derive home/away scores, upsert to Supabase.
-6. Optional: print human-readable summary.
+3. Load artifacts (selected features + ensemble weights + optional train stats).
+4. Optional pre-model shaping:
+    • H2H shrink toward priors (can be disabled)
+    • Gentle attenuation of volatile diff features (opt-in, tunable)
+    • Targeted clipping of outlier diffs (surgical)
+    • Mean imputation for sparse advanced features using train means (+ flags)
+5. Vectorized ensemble predictions for margin & total.
+6. Soft mean calibration (week → train priors; tunable lambdas).
+7. Feasibility guard (total ≥ |margin| + dynamic buffer).
+8. Derive home/away, clamp non-negatives, upsert, and debug dump (optional).
 
-Debug instrumentation (when --debug):
-- CLI focus selectors: --focus-date, --focus-games (away@home), --focus-ids.
-- Selected-features audit per target (counts, first ~20, missing).
-- Frame audit per target (row count, null_top, non-numeric cols, order_crc).
-- Focused-row feature snapshots (bucketed) before per-model predictions.
-- Per-model raw predictions for focused rows.
-- Ensemble weights per target; optional TOTAL clip pre/post with flags.
-- Rolling freshness proxy via *_imputed flags or rolling-support counts if present.
-- Priors sanity (prev season + advanced diffs).
-- Optional CSV dump per focused game (selected vectors, per-model, ensemble, flags).
+CLI highlights:
+  --date-start/--date-end  : control schedule window precisely
+  --days                   : or relative window [today, today+days]
+  --no-h2h-shrink          : bypass H2H shrink
+  --atten-total-alpha      : pre-model diff attenuation for TOTAL (default 0.85)
+  --atten-margin-alpha     : pre-model diff attenuation for MARGIN (default 0.80)
+  --no-atten               : disable pre-model attenuation
+  --mean-calibration-lambda-total / --mean-calibration-lambda-margin
+  --feas-buffer-max        : cap on dynamic feasibility buffer (default 6.0)
+  --margin-cap             : hard cap for spread (default 24.0)
 """
 
 from __future__ import annotations
@@ -31,12 +37,12 @@ import logging
 import re
 import sys
 import time
-import numpy as np
 from dataclasses import dataclass
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+import numpy as np
 import pandas as pd
 from supabase import Client, create_client
 
@@ -124,9 +130,7 @@ def _parse_focus_games(arg: Optional[str]) -> Set[Tuple[int, int]]:
     out: Set[Tuple[int, int]] = set()
     for tok in arg.split(","):
         tok = tok.strip()
-        if not tok:
-            continue
-        if "@" not in tok:
+        if not tok or "@" not in tok:
             continue
         a, h = tok.split("@", 1)
         try:
@@ -153,20 +157,15 @@ def _normalize_date_str(s: Optional[str]) -> Optional[str]:
     if not s:
         return None
     try:
-        # Accept YYYY-MM-DD or other parseable forms
         d = datetime.fromisoformat(s.strip())
         return d.date().isoformat()
     except Exception:
-        # Try plain date
         try:
             return datetime.strptime(s.strip(), "%Y-%m-%d").date().isoformat()
         except Exception:
             return None
 
-def _is_focused_row(
-    row: Mapping[str, Any],
-    focus: Focus
-) -> bool:
+def _is_focused_row(row: Mapping[str, Any], focus: Focus) -> bool:
     gid = int(row.get("game_id")) if "game_id" in row and pd.notna(row.get("game_id")) else None
     if focus.ids and gid is not None and gid in focus.ids:
         return True
@@ -197,7 +196,6 @@ def _ensure_season_and_ids(df: pd.DataFrame) -> pd.DataFrame:
         return df.copy()
 
     out = df.copy()
-    # Normalize dates
     if "game_date" in out.columns:
         out["game_date"] = pd.to_datetime(out["game_date"], errors="coerce", utc=False)
 
@@ -211,10 +209,8 @@ def _ensure_season_and_ids(df: pd.DataFrame) -> pd.DataFrame:
         if "season" not in out.columns:
             out["season"] = derived
         else:
-            # Fill only missing season values
             out["season"] = out["season"].where(out["season"].notna(), derived)
 
-    # Coerce key IDs to numeric Int64
     for col in ("game_id", "home_team_id", "away_team_id"):
         if col in out.columns:
             out[col] = pd.to_numeric(out[col], errors="coerce").astype("Int64")
@@ -266,12 +262,8 @@ def chunked(lst: List[Dict[str, Any]], size: int = 500):
         yield lst[i:i + size]
 
 def upsert_score_predictions(preds: List[Dict[str, Any]], sb: Client, debug: bool = False) -> int:
-    """
-    Update existing schedule rows with predictions.
-    """
     if not preds:
         return 0
-
     updated = 0
     for p in preds:
         gid = int(p["game_id"])
@@ -292,7 +284,6 @@ def upsert_score_predictions(preds: List[Dict[str, Any]], sb: Client, debug: boo
                 logger.debug("Update game_id=%s -> modified=%d", gid, n)
         except Exception as e:
             logger.error("Update error for game_id=%s: %s", gid, e)
-
     logger.info("Updated predictions for %d games", updated)
     return updated
 
@@ -312,18 +303,15 @@ def display_prediction_summary(preds: List[Dict[str, Any]]) -> None:
         print(f"{d:<12}{matchup:<42}{score:<20}")
     print("-" * 80)
 
+# ----------------------------------------------------------------------------- #
+# Feature shaping utilities
+# ----------------------------------------------------------------------------- #
 def _clip_feature_columns(
     df: pd.DataFrame,
     bounds: Dict[str, tuple],
     debug: bool = False,
     focus_ids: Optional[set] = None,
 ) -> pd.DataFrame:
-    """
-    Clip designated feature columns to given (min, max) bounds.
-    - Only clips columns that exist in df.
-    - Logs how many values were clipped per column.
-    - For focused games, logs pre→post per clipped feature.
-    """
     out = df.copy()
     focus_ids = set(focus_ids or [])
     clipped_stats = {}
@@ -333,200 +321,57 @@ def _clip_feature_columns(
             continue
         s = out[col]
         pre = s.copy()
-
-        # Clip
-        out[col] = s.clip(lower=lo, upper=hi)
-
-        # Count changes
+        out[col] = s.clip(lower=float(lo), upper=float(hi))
         changed = (out[col] != pre) & pre.notna()
         n_changed = int(changed.sum())
         if n_changed > 0:
             clipped_stats[col] = n_changed
-
             if debug and focus_ids:
                 for gid in focus_ids:
-                    if "game_id" in out.columns:
-                        row_mask = out["game_id"] == gid
-                    elif out.index.name == "game_id":
-                        row_mask = out.index == gid
-                    else:
-                        row_mask = pd.Series(False, index=out.index)
-
-                    if row_mask.any():
-                        pre_v = float(pre[row_mask].iloc[0]) if pd.notna(pre[row_mask].iloc[0]) else None
-                        post_v = float(out.loc[row_mask, col].iloc[0]) if pd.notna(out.loc[row_mask, col].iloc[0]) else None
+                    mask = (out["game_id"] == gid) if "game_id" in out.columns else pd.Series(False, index=out.index)
+                    if mask.any():
+                        pre_v = float(pre.loc[mask].iloc[0]) if pd.notna(pre.loc[mask].iloc[0]) else None
+                        post_v = float(out.loc[mask, col].iloc[0]) if pd.notna(out.loc[mask, col].iloc[0]) else None
                         if pre_v != post_v:
                             logger.debug("PRED[CLIP] game_id=%s %s: %.3f → %.3f (lo=%.2f hi=%.2f)",
                                          gid, col, pre_v, post_v, lo, hi)
 
-    if debug and clipped_stats:
-        logger.debug("PRED[CLIP] counts=%s", clipped_stats)
-    elif debug:
-        logger.debug("PRED[CLIP] counts={} (no clipping applied)")
-
+    if debug:
+        if clipped_stats:
+            logger.debug("PRED[CLIP] counts=%s", clipped_stats)
+        else:
+            logger.debug("PRED[CLIP] counts={} (no clipping applied)")
     return out
 
-def _attenuate_total_diffs(X_total: pd.DataFrame, alpha: float = 0.6, debug: bool = False, focus_ids: Optional[Set[int]] = None) -> pd.DataFrame:
+def _attenuate_total_diffs(
+    X_total: pd.DataFrame,
+    alpha: float = 0.85,
+    debug: bool = False,
+    focus_ids: Optional[Set[int]] = None
+) -> pd.DataFrame:
     """
-    Scale down high-variance diff features that tend to over-suppress totals.
-    Applied only to the design matrix for TOTAL (post-reindex), optionally only for focus_ids.
+    Scale down high-variance diff features that can suppress totals if too spiky.
+    Only applied when alpha < 1.0. Uses a short, truly-diff list.
     """
-    if X_total is None or X_total.empty:
+    if X_total is None or X_total.empty or not (alpha < 1.0):
         return X_total
     diffs = [
         "rolling_points_for_avg_diff",
         "rolling_points_against_avg_diff",
         "rolling_yards_per_play_avg_diff",
-        "total_rolling_turnover_differential_avg",  # not a diff, but can over-pull
+        # Note: intentionally NOT including any 'total_*' sums here
     ]
     cols = [c for c in diffs if c in X_total.columns]
     if not cols:
         return X_total
     X = X_total.copy()
-    target_index = X.index.tolist() if not focus_ids else [i for i in X.index if i in focus_ids]
-    if len(target_index) == 0:
+    idx = X.index if focus_ids is None else [i for i in X.index if i in focus_ids]
+    if len(idx) == 0:
         return X
-    X.loc[target_index, cols] = X.loc[target_index, cols] * float(alpha)
+    X.loc[idx, cols] = X.loc[idx, cols] * float(alpha)
     if debug:
-        logger.debug("PRED[ATTN] TOTAL diffs scaled by alpha=%.2f on %d rows, cols=%s", alpha, len(target_index), cols)
+        logger.debug("PRED[ATTN] TOTAL diffs scaled by alpha=%.2f on %d rows, cols=%s", alpha, len(idx), cols)
     return X
-
-def _shrink_h2h_features(
-    df: pd.DataFrame,
-    mu_total: float = 44.0,   # league-ish baseline total
-    mu_margin: float = 0.0,
-    k: float = 6.0,           # ~games to “trust” H2H fully
-    debug: bool = False,
-    focus_ids: Optional[Set[int]] = None,
-) -> pd.DataFrame:
-    """
-    Shrinks H2H features toward league priors with a weight w = clip(games/k,0,1).
-    Works whether or not game_id is the index. Adds global summary logging.
-    """
-    if df is None or df.empty:
-        return df
-
-    out = df.copy()
-
-    # Ensure numeric types (coerce just in case)
-    for col in ["h2h_games_played", "h2h_avg_total_points", "h2h_avg_point_diff"]:
-        if col in out.columns:
-            out[col] = pd.to_numeric(out[col], errors="coerce")
-
-    # Weight based on games played
-    if "h2h_games_played" in out.columns:
-        w_raw = out["h2h_games_played"].astype(float)
-    else:
-        w_raw = pd.Series(0.0, index=out.index)
-
-    w = (w_raw / float(k)).clip(lower=0.0, upper=1.0).fillna(0.0)
-
-    def _shrink(series: pd.Series, mu: float) -> Tuple[pd.Series, pd.Series]:
-        base = pd.to_numeric(series, errors="coerce").fillna(mu)
-        shrunk = mu + w * (base - mu)
-        delta = shrunk - base
-        return shrunk, delta
-
-    # Keep pre values for deltas
-    before_total = out["h2h_avg_total_points"].copy() if "h2h_avg_total_points" in out.columns else None
-    before_margin = out["h2h_avg_point_diff"].copy() if "h2h_avg_point_diff" in out.columns else None
-
-    total_delta = None
-    margin_delta = None
-
-    if "h2h_avg_total_points" in out.columns:
-        out["h2h_avg_total_points"], total_delta = _shrink(out["h2h_avg_total_points"], mu_total)
-
-    if "h2h_avg_point_diff" in out.columns:
-        out["h2h_avg_point_diff"], margin_delta = _shrink(out["h2h_avg_point_diff"], mu_margin)
-
-    # Focused per-row logs (unchanged)
-    if debug and focus_ids:
-        game_id_series = (
-            out["game_id"]
-            if "game_id" in out.columns
-            else pd.Series(out.index, index=out.index, name="game_id")
-        )
-        for gid in sorted(focus_ids):
-            mask = game_id_series.eq(gid)
-            if not mask.any():
-                logger.debug("PRED[H2H] focus game_id=%s not present in this batch", gid)
-                continue
-            wv = float(w.loc[mask].iloc[0])
-            if before_total is not None and "h2h_avg_total_points" in out.columns:
-                old = float(before_total.loc[mask].iloc[0])
-                new = float(out.loc[mask, "h2h_avg_total_points"].iloc[0])
-                logger.debug(
-                    "PRED[H2H] game_id=%s h2h_avg_total_points: %.2f → %.2f (w=%.2f, k=%.1f, mu=%.1f)",
-                    gid, old, new, wv, k, mu_total
-                )
-            if before_margin is not None and "h2h_avg_point_diff" in out.columns:
-                old = float(before_margin.loc[mask].iloc[0])
-                new = float(out.loc[mask, "h2h_avg_point_diff"].iloc[0])
-                logger.debug(
-                    "PRED[H2H] game_id=%s h2h_avg_point_diff: %.2f → %.2f (w=%.2f, k=%.1f, mu=%.1f)",
-                    gid, old, new, wv, k, mu_margin
-                )
-
-    # Global summary (touch counts + average magnitude), always when debug
-    if debug:
-        touched_rows = 0
-        avg_abs_total = None
-        avg_abs_margin = None
-
-        if total_delta is not None:
-            # A row is "touched" if any H2H column changed from its original value
-            total_changed = (total_delta != 0).astype(int)
-        else:
-            total_changed = pd.Series(0, index=out.index)
-
-        if margin_delta is not None:
-            margin_changed = (margin_delta != 0).astype(int)
-        else:
-            margin_changed = pd.Series(0, index=out.index)
-
-        any_changed = ((total_changed + margin_changed) > 0)
-        touched_rows = int(any_changed.sum())
-
-        if total_delta is not None:
-            nz = total_delta[any_changed].abs()
-            if len(nz) > 0:
-                avg_abs_total = float(nz.mean())
-        if margin_delta is not None:
-            nz = margin_delta[any_changed].abs()
-            if len(nz) > 0:
-                avg_abs_margin = float(nz.mean())
-
-        logger.debug(
-            "PRED[H2H][SUMMARY] rows_touched=%d | avg_abs_delta_total=%s | avg_abs_delta_margin=%s",
-            touched_rows,
-            f"{avg_abs_total:.3f}" if avg_abs_total is not None else "n/a",
-            f"{avg_abs_margin:.3f}" if avg_abs_margin is not None else "n/a",
-        )
-
-    return out
-
-# ----------------------------------------------------------------------------- #
-# Bucketing / snapshots
-# ----------------------------------------------------------------------------- #
-_BUCKET_RULES: List[Tuple[str, str]] = [
-    (r"^rolling_", "rolling"),
-    (r"(?:^season_|_season_)", "season"),
-    (r"^(?:advanced_|adv_)", "advanced"),
-    (r"^(?:form_|momentum_)", "form"),
-    (r"^rest_", "rest"),
-    (r"^h2h_", "h2h"),
-    (r"^drive_", "drive"),
-]
-
-def _bucket_of(feature: str) -> str:
-    for pat, bucket in _BUCKET_RULES:
-        if re.search(pat, feature):
-            return bucket
-    # diffs that don't carry explicit prefix
-    if feature.endswith("_diff"):
-        return "diffs"
-    return "other"
 
 def _attenuate_margin_diffs(
     X: pd.DataFrame,
@@ -551,13 +396,17 @@ def _attenuate_margin_diffs(
         return X.copy()
 
     X2 = X.copy()
-    target_idx = X2.index
-    if focus_ids:
-        target_idx = [gid for gid in X2.index if gid in focus_ids]
-        if not target_idx:
-            return X2
 
-    # Attenuate
+    # Always use a list to avoid ambiguous truth-value errors with pd.Index
+    if focus_ids:
+        target_idx = [gid for gid in X2.index.tolist() if gid in focus_ids]
+    else:
+        target_idx = X2.index.tolist()
+
+    if len(target_idx) == 0:
+        return X2
+
+    # Attenuate diffs
     X2.loc[target_idx, existing] = X2.loc[target_idx, existing] * float(alpha)
 
     # Tighter h2h cap for margin (these can be wild early season)
@@ -572,6 +421,133 @@ def _attenuate_margin_diffs(
         )
     return X2
 
+def _shrink_h2h_features(
+    df: pd.DataFrame,
+    mu_total: float = 44.0,
+    mu_margin: float = 0.0,
+    k: float = 6.0,
+    debug: bool = False,
+    focus_ids: Optional[Set[int]] = None,
+) -> pd.DataFrame:
+    """
+    Shrinks H2H features toward league priors with a weight w = clip(games/k,0,1).
+    """
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    for col in ["h2h_games_played", "h2h_avg_total_points", "h2h_avg_point_diff"]:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+    if "h2h_games_played" in out.columns:
+        w_raw = out["h2h_games_played"].astype(float)
+    else:
+        w_raw = pd.Series(0.0, index=out.index)
+    if k <= 0:
+        w = pd.Series(0.0, index=out.index)
+    else:
+        w = (w_raw / float(k)).clip(lower=0.0, upper=1.0).fillna(0.0)
+
+    def _shrink(series: pd.Series, mu: float) -> Tuple[pd.Series, pd.Series]:
+        base = pd.to_numeric(series, errors="coerce").fillna(mu)
+        shrunk = mu + w * (base - mu)
+        delta = shrunk - base
+        return shrunk, delta
+
+    before_total = out["h2h_avg_total_points"].copy() if "h2h_avg_total_points" in out.columns else None
+    before_margin = out["h2h_avg_point_diff"].copy() if "h2h_avg_point_diff" in out.columns else None
+
+    total_delta = None
+    margin_delta = None
+    if "h2h_avg_total_points" in out.columns:
+        out["h2h_avg_total_points"], total_delta = _shrink(out["h2h_avg_total_points"], mu_total)
+    if "h2h_avg_point_diff" in out.columns:
+        out["h2h_avg_point_diff"], margin_delta = _shrink(out["h2h_avg_point_diff"], mu_margin)
+
+    if debug and focus_ids:
+        for gid in sorted(focus_ids):
+            mask = (out["game_id"] == gid) if "game_id" in out.columns else pd.Series(False, index=out.index)
+            if not mask.any():
+                continue
+            wv = float(w.loc[mask].iloc[0]) if len(w.loc[mask]) else 0.0
+            if before_total is not None and "h2h_avg_total_points" in out.columns:
+                old = float(before_total.loc[mask].iloc[0])
+                new = float(out.loc[mask, "h2h_avg_total_points"].iloc[0])
+                logger.debug("PRED[H2H] gid=%s h2h_avg_total_points: %.2f → %.2f (w=%.2f, k=%.1f, mu=%.1f)",
+                             gid, old, new, wv, k, mu_total)
+            if before_margin is not None and "h2h_avg_point_diff" in out.columns:
+                old = float(before_margin.loc[mask].iloc[0])
+                new = float(out.loc[mask, "h2h_avg_point_diff"].iloc[0])
+                logger.debug("PRED[H2H] gid=%s h2h_avg_point_diff: %.2f → %.2f (w=%.2f, k=%.1f, mu=%.1f)",
+                             gid, old, new, wv, k, mu_margin)
+
+    if debug:
+        touched = 0
+        avg_abs_total = None
+        avg_abs_margin = None
+        if total_delta is not None:
+            total_changed = (total_delta != 0).astype(int)
+        else:
+            total_changed = pd.Series(0, index=out.index)
+        if margin_delta is not None:
+            margin_changed = (margin_delta != 0).astype(int)
+        else:
+            margin_changed = pd.Series(0, index=out.index)
+        any_changed = ((total_changed + margin_changed) > 0)
+        touched = int(any_changed.sum())
+        if total_delta is not None and any_changed.any():
+            avg_abs_total = float(total_delta[any_changed].abs().mean())
+        if margin_delta is not None and any_changed.any():
+            avg_abs_margin = float(margin_delta[any_changed].abs().mean())
+        logger.debug("PRED[H2H][SUMMARY] rows_touched=%d | avg_abs_delta_total=%s | avg_abs_delta_margin=%s",
+                     touched,
+                     f"{avg_abs_total:.3f}" if avg_abs_total is not None else "n/a",
+                     f"{avg_abs_margin:.3f}" if avg_abs_margin is not None else "n/a")
+    return out
+
+def _soft_mean_calibration(
+    series: pd.Series,
+    target_mean: float,
+    lam: float,
+    min_trigger: float,
+    label: str,
+    debug: bool,
+) -> pd.Series:
+    """Shift series toward target_mean by lam * (target - observed) if |Δ| ≥ min_trigger."""
+    if series is None or len(series) == 0 or lam <= 0.0:
+        return series
+    obs_mean = float(series.mean())
+    delta = target_mean - obs_mean
+    if abs(delta) < float(min_trigger):
+        if debug:
+            logger.debug("PRED[CAL] %s mean-calibration skipped | obs=%.2f target=%.2f (|Δ|=%.2f < %.2f)",
+                         label, obs_mean, target_mean, abs(delta), min_trigger)
+        return series
+    adjusted = (series + lam * delta).astype(float)
+    if debug:
+        logger.debug("PRED[CAL] %s mean-calibration | obs=%.2f → target=%.2f (λ=%.2f, Δ=%.2f)",
+                     label, obs_mean, target_mean, lam, delta)
+    return adjusted
+
+# ----------------------------------------------------------------------------- #
+# Bucketing (for debug snapshots)
+# ----------------------------------------------------------------------------- #
+_BUCKET_RULES: List[Tuple[str, str]] = [
+    (r"^rolling_", "rolling"),
+    (r"(?:^season_|_season_)", "season"),
+    (r"^(?:advanced_|adv_)", "advanced"),
+    (r"^(?:form_|momentum_)", "form"),
+    (r"^rest_", "rest"),
+    (r"^h2h_", "h2h"),
+    (r"^drive_", "drive"),
+]
+
+def _bucket_of(feature: str) -> str:
+    for pat, bucket in _BUCKET_RULES:
+        if re.search(pat, feature):
+            return bucket
+    if feature.endswith("_diff"):
+        return "diffs"
+    return "other"
 
 def _row_snapshot(
     gid: int,
@@ -579,24 +555,15 @@ def _row_snapshot(
     X_row: pd.Series,
     selected_cols: Sequence[str],
 ) -> Dict[str, Dict[str, Any]]:
-    """
-    Return grouped dicts of feature values for a single row keyed by bucket.
-    Also extracts impute flags and bucket counts.
-    """
     grouped: Dict[str, Dict[str, Any]] = {}
     impute_flags: Dict[str, Any] = {}
     for col in selected_cols:
-        if col not in X_row.index:
-            # missing cols are zero-filled elsewhere; show explicitly as 0.0
-            val = 0.0
-        else:
-            val = X_row[col]
+        val = X_row[col] if col in X_row.index else 0.0
         b = _bucket_of(col)
         grouped.setdefault(b, {})
         grouped[b][col] = float(val) if pd.notna(val) else None
         if col.endswith("_imputed") or "imputed" in col:
             impute_flags[col] = grouped[b][col]
-    # Bucket counts
     counts = {b: len(cols) for b, cols in grouped.items()}
     meta = {
         "game_id": gid,
@@ -616,7 +583,6 @@ def _log_snapshot(tag: str, snap: Dict[str, Dict[str, Any]]):
         "PRED[ROW] %s game_id=%s, date=%s, away_id=%s, home_id=%s, key=%s",
         tag, m["game_id"], m["date"], m["away_id"], m["home_id"], m["key"]
     )
-    # Compact print of a few buckets; keep everything but fold by bucket
     for bucket in ("season", "rolling", "advanced", "form", "rest", "h2h", "drive", "diffs", "other"):
         if bucket in snap["grouped"] and snap["grouped"][bucket]:
             logger.debug("  %s=%s", bucket, {k: snap["grouped"][bucket][k] for k in list(snap["grouped"][bucket].keys())[:12]})
@@ -625,77 +591,52 @@ def _log_snapshot(tag: str, snap: Dict[str, Dict[str, Any]]):
     logger.debug("  bucket_counts=%s", snap["bucket_counts"])
 
 # ----------------------------------------------------------------------------- #
-# Per-model prediction utilities
-# ----------------------------------------------------------------------------- #
-def _per_model_predict(ensemble: NFLEnsemble, X_row_vec) -> Dict[str, float]:
-    """
-    Return {model_name: y_hat} for a single row vector.
-    Falls back to {} if models aren't exposed.
-    """
-    preds: Dict[str, float] = {}
-    models = getattr(ensemble, "models", None)
-    if not isinstance(models, dict) or not models:
-        return preds
-    for name, est in models.items():
-        try:
-            y = float(est.predict(X_row_vec)[0])
-            preds[name] = y
-        except Exception:
-            continue
-    return preds
-
-def _short_model_types(model_names: Iterable[str]) -> Dict[str, str]:
-    """
-    Map model key to a short label like 'Ridge' | 'SVR' | 'XGB' | 'RF' | 'GB' | 'OLS' | 'Other'.
-    """
-    out: Dict[str, str] = {}
-    for n in model_names:
-        ln = n.lower()
-        if "ridge" in ln:
-            out[n] = "Ridge"
-        elif "svr" in ln:
-            out[n] = "SVR"
-        elif "xgb" in ln or "xgboost" in ln:
-            out[n] = "XGB"
-        elif "rf" in ln or "randomforest" in ln:
-            out[n] = "RF"
-        elif "gb" in ln or "gradient" in ln:
-            out[n] = "GB"
-        elif "ols" in ln or "linear" in ln:
-            out[n] = "OLS"
-        else:
-            out[n] = "Other"
-    return out
-
-# ----------------------------------------------------------------------------- #
 # Core
 # ----------------------------------------------------------------------------- #
 def generate_predictions(
-    days_window: Optional[int] = 7,           # kept for signature compatibility (ignored)
+    *,
+    # Windowing
+    date_start: Optional[str] = None,
+    date_end: Optional[str] = None,
+    days_window: Optional[int] = None,
+
+    # History
     historical_lookback: int = 1825,
+
+    # Debug
     debug_mode: bool = False,
     focus: Optional[Focus] = None,
     dump_dir: Optional[Path] = None,
+
+    # Attenuation knobs
+    no_atten: bool = False,
+    atten_total_alpha: float = 0.85,
+    atten_margin_alpha: float = 0.80,
+
+    # H2H shrink
+    no_h2h_shrink: bool = False,
+    h2h_k: float = 6.0,
+
+    # Mean calibration (soft)
+    mean_cal_lambda_total: float = 0.35,
+    mean_cal_lambda_margin: float = 0.50,
+    mean_cal_min_trigger_total: float = 0.50,
+    mean_cal_min_trigger_margin: float = 0.15,
+
+    # Feasibility + caps
+    feas_buffer_max: float = 6.0,
+    margin_cap: float = 24.0,
+
+    # Optional TOTAL clip band (post-calibration)
     total_clip_min: Optional[float] = None,
     total_clip_max: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """
-    End-to-end prediction pipeline (full schedule), with:
-      - feature composites
-      - H2H shrink (global, pre-model) with guard logs
-      - advanced-feature mean imputation + _imputed flags (train means if available)
-      - surgical clipping on volatile 'diff' features
-      - TOTAL / MARGIN diff attenuation (pre-predict)
-      - vectorized ensemble predictions
-      - global mean calibration (TOTAL & MARGIN)
-      - optional TOTAL clip band (post-calibration)
-      - feasibility guard total ≥ |margin| + buffer
-      - per-model breakdowns and CSV dumps for focused games
+    End-to-end prediction pipeline with gentle, tunable shaping and strong debug.
     """
     logger.info("--- NFL Prediction Pipeline ---")
     t0 = time.time()
 
-    # Resolve focus set from caller (no hardcoding)
     FOCUS_IDS: Set[int] = set(focus.ids) if (focus and focus.ids) else set()
 
     # ------------------------------------------------------------------ #
@@ -729,12 +670,10 @@ def generate_predictions(
     # Baselines / means fallbacks
     total_train_mean = float(extra.get("total_train_mean", artifacts.get("total_train_mean", 43.5)))
     margin_train_mean = float(extra.get("margin_train_mean", artifacts.get("margin_train_mean", 0.0)))
-    total_p1 = extra.get("total_p1")  # may be None
-    total_p99 = extra.get("total_p99")  # may be None
     feature_means: Dict[str, float] = extra.get("feature_means", {}) or {}
 
     # ------------------------------------------------------------------ #
-    # Fetch schedule (ALL rows) + historical context
+    # Fetch schedule (bounded by date window)
     # ------------------------------------------------------------------ #
     try:
         sched_resp = sb.table("nfl_game_schedule").select("*").execute()
@@ -746,6 +685,34 @@ def generate_predictions(
     upcoming_df = _ensure_season_and_ids(upcoming_df)
     if upcoming_df.empty:
         logger.info("No games found in nfl_game_schedule.")
+        return []
+
+    # Apply windowing
+    if "game_date" in upcoming_df.columns:
+        upcoming_df["game_date"] = pd.to_datetime(upcoming_df["game_date"], errors="coerce")
+        lower = None
+        upper = None
+        if date_start:
+            try:
+                lower = pd.to_datetime(date_start)
+            except Exception:
+                lower = None
+        if date_end:
+            try:
+                upper = pd.to_datetime(date_end)
+            except Exception:
+                upper = None
+        if days_window is not None and (lower is None and upper is None):
+            today = pd.Timestamp(datetime.now(timezone.utc).date())
+            lower = today
+            upper = today + timedelta(days=int(days_window))
+        if lower is not None:
+            upcoming_df = upcoming_df.loc[upcoming_df["game_date"] >= lower]
+        if upper is not None:
+            upcoming_df = upcoming_df.loc[upcoming_df["game_date"] <= upper]
+
+    if upcoming_df.empty:
+        logger.info("No games within the requested window.")
         return []
 
     fetcher = NFLDataFetcher(sb)
@@ -770,6 +737,8 @@ def generate_predictions(
         historical_games_df=games_hist,
         historical_team_stats_df=stats_hist,
         debug=debug_mode,
+        # If your engine was patched to accept drive window params, add them here.
+        # e.g., drive_window=5, drive_soft_fail=True
     )
     logger.info("Feature pipeline done in %.2fs", time.time() - feat_t)
     _log_df(features_df, "features_df", debug_mode)
@@ -792,51 +761,55 @@ def generate_predictions(
     )
 
     # ------------------------------------------------------------------ #
-    # Global H2H shrink (pre-model) with guard logs
+    # H2H shrink (optional)
     # ------------------------------------------------------------------ #
-    touched_rows = 0
-    if "h2h_games_played" in features_df.columns:
-        try:
-            touched_rows = int((pd.to_numeric(features_df["h2h_games_played"], errors="coerce").fillna(0.0) > 0).sum())
-        except Exception:
-            touched_rows = 0
-
-    features_df = _shrink_h2h_features(
-        features_df,
-        mu_total=total_train_mean,
-        mu_margin=margin_train_mean,
-        k=float(extra.get("h2h_trust_k", 6.0)),
-        debug=debug_mode,
-        focus_ids=FOCUS_IDS,
-    )
-
-    if touched_rows == 0:
-        logger.warning("PRED[H2H][WARN] No rows had h2h_games_played > 0; H2H shrink effectively no-op this batch.")
-
-    # ------------------------------------------------------------------ #
-    # Advanced feature mean imputation (+ _imputed flags)
-    # - Use train-time feature_means if available
-    # - Treat zeros as missing for adv_* / advanced_* (distribution fix)
-    # ------------------------------------------------------------------ #
-    # --- Advanced diffs observability (guarded: no warnings when none present) ---
-    adv_cols = [c for c in features_df.columns if c.startswith(("adv_", "advanced_"))]
-    if adv_cols:
-        top_counts = []
-        for c in adv_cols:
-            zero_like = (features_df[c].fillna(0.0) == 0.0).sum()
-            top_counts.append((c, int(zero_like)))
-        fully_zero_like = sum(1 for c, cnt in top_counts if cnt == len(features_df))
-        adv_imputed_ratio = 100.0 * fully_zero_like / max(1, len(adv_cols))
-        if debug_mode:
-            logger.debug(
-                "PRED[IMPUTE] advanced_imputed_ratio=%.2f%%, top=%s",
-                adv_imputed_ratio,
-                sorted(top_counts, key=lambda x: x[1], reverse=True)[:5],
-            )
+    if not no_h2h_shrink:
+        touched_rows = 0
+        if "h2h_games_played" in features_df.columns:
+            try:
+                touched_rows = int((pd.to_numeric(features_df["h2h_games_played"], errors="coerce").fillna(0.0) > 0).sum())
+            except Exception:
+                touched_rows = 0
+        features_df = _shrink_h2h_features(
+            features_df,
+            mu_total=total_train_mean,
+            mu_margin=margin_train_mean,
+            k=float(h2h_k),
+            debug=debug_mode,
+            focus_ids=FOCUS_IDS,
+        )
+        if touched_rows == 0 and debug_mode:
+            logger.debug("PRED[H2H] No rows had h2h_games_played > 0; H2H shrink effectively no-op.")
     else:
         if debug_mode:
-            logger.debug("PRED[IMPUTE] advanced_imputed_ratio=0%% (note: no advanced cols present)")
+            logger.debug("PRED[H2H] shrink bypassed (--no-h2h-shrink).")
 
+    # ------------------------------------------------------------------ #
+    # Advanced feature mean imputation (+ flags) using train means
+    # Treat NaN and zero-like as missing for 'adv_' / 'advanced_' prefixed columns.
+    # ------------------------------------------------------------------ #
+    adv_cols = [c for c in features_df.columns if c.startswith(("adv_", "advanced_"))]
+    if adv_cols and feature_means:
+        df = features_df.copy()
+        for c in adv_cols:
+            if c not in df.columns:
+                continue
+            col = pd.to_numeric(df[c], errors="coerce")
+            zero_like = col.fillna(0.0) == 0.0
+            need_impute = col.isna() | zero_like
+            if need_impute.any():
+                if c in feature_means:
+                    fill_val = float(feature_means[c])
+                    df.loc[need_impute, c] = fill_val
+                    flag_col = f"{c}_imputed"
+                    df[flag_col] = df.get(flag_col, 0)
+                    df.loc[need_impute, flag_col] = 1
+        features_df = df
+        if debug_mode:
+            logger.debug("PRED[IMPUTE] Applied train-mean imputation to advanced features (subset present).")
+    else:
+        if debug_mode:
+            logger.debug("PRED[IMPUTE] No advanced cols or no train feature_means provided; skipping imputation.")
 
     # ------------------------------------------------------------------ #
     # Volatile diff clipping (global, pre-model)
@@ -866,15 +839,12 @@ def generate_predictions(
     margin_ensemble.load_models()
     total_ensemble.load_models()
 
-    # Ensure consistent indexing by game_id
     if "game_id" in features_df.columns:
         features_df = features_df.set_index("game_id", drop=False)
 
-    # Build matrices against selected feature lists (imputation already applied on features_df)
     X_margin = features_df.reindex(columns=artifacts["margin_features"], fill_value=0.0).copy()
     X_total  = features_df.reindex(columns=artifacts["total_features"],  fill_value=0.0).copy()
 
-    # Frame audits
     if debug_mode:
         for label, X in (("MARGIN", X_margin), ("TOTAL", X_total)):
             prof = _df_profile(X, f"X_{label}")
@@ -888,78 +858,14 @@ def generate_predictions(
     _check_features(X_total,  artifacts["total_features"],  "X_total",  debug_mode)
 
     # ------------------------------------------------------------------ #
-    # Pre-predict attenuation
+    # Pre-predict attenuation (opt-in & gentle)
     # ------------------------------------------------------------------ #
-    # (Optional) baseline total per focus game before any attenuation – helpful in debugging
-    if debug_mode and FOCUS_IDS and getattr(total_ensemble, "models", None):
-        for gid in sorted([g for g in FOCUS_IDS if g in X_total.index]):
-            try:
-                _ = float(total_ensemble.predict(X_total.loc[[gid]])[0])
-            except Exception as e:
-                logger.debug("PRED[ATTN][BASE] skip game_id=%s (%s)", gid, e)
-
-    # TOTAL attenuation (diffs)
-    X_total  = _attenuate_total_diffs(X_total,  alpha=0.6, debug=debug_mode, focus_ids=None)
-    X_margin = _attenuate_margin_diffs(X_margin, alpha=0.6, debug=debug_mode, focus_ids=None)
-
-
-    # ------------------------------------------------------------------ #
-    # Focused snapshots (per-model) BEFORE vectorized predict
-    # ------------------------------------------------------------------ #
-    per_model_totals: Dict[int, Dict[str, float]] = {}
-    per_model_margins: Dict[int, Dict[str, float]] = {}
-
-    if debug_mode and FOCUS_IDS:
-        for gid in sorted([g for g in FOCUS_IDS if g in features_df.index]):
-            # TOTAL per-model breakdown
-            if getattr(total_ensemble, "models", None):
-                pm_total: Dict[str, float] = {}
-                pieces: List[str] = []
-                xvec = X_total.loc[[gid]].values
-                for mname, m in total_ensemble.models.items():
-                    try:
-                        y = float(m.predict(xvec)[0])
-                        pm_total[mname] = y
-                        tag = ("XGB" if "xgb" in mname.lower() else
-                               "RF"  if "rf"  in mname.lower() else mname)
-                        pieces.append(f"{tag}={y:.3f}")
-                    except Exception:
-                        pass
-                per_model_totals[int(gid)] = pm_total
-                if pieces:
-                    logger.debug("PRED[MODEL] TOTAL game_id=%s | %s", gid, " | ".join(pieces))
-
-            # MARGIN per-model breakdown
-            if getattr(margin_ensemble, "models", None):
-                pm_margin: Dict[str, float] = {}
-                pieces = []
-                xvec = X_margin.loc[[gid]].values
-                for mname, m in margin_ensemble.models.items():
-                    try:
-                        y = float(m.predict(xvec)[0])
-                        pm_margin[mname] = y
-                        tag = ("Ridge" if "ridge" in mname.lower() else
-                               "SVR"   if "svr"   in mname.lower() else mname)
-                        pieces.append(f"{tag}={y:.3f}")
-                    except Exception:
-                        pass
-                per_model_margins[int(gid)] = pm_margin
-                if pieces:
-                    logger.debug("PRED[MODEL] MARGIN game_id=%s | %s", gid, " | ".join(pieces))
-
-            # Compact feature snapshots (first ~20 from each list)
-            tfeat = artifacts["total_features"][:20]
-            mfeat = artifacts["margin_features"][:20]
-            snap_t = {c: float(features_df.at[gid, c]) if (c in features_df.columns and pd.notna(features_df.at[gid, c])) else 0.0 for c in tfeat}
-            snap_m = {c: float(features_df.at[gid, c]) if (c in features_df.columns and pd.notna(features_df.at[gid, c])) else 0.0 for c in mfeat}
-            logger.debug("PRED[ROW] TOTAL game_id=%s | %s", gid, snap_t)
-            logger.debug("PRED[ROW] MARGIN game_id=%s | %s", gid, snap_m)
-
-            # Also dump the full feature row to CSV
-            outdir = PROJECT_ROOT / "debug" / "pred_inspect"
-            outdir.mkdir(parents=True, exist_ok=True)
-            features_df.loc[[gid]].to_csv(outdir / f"game_{gid}_features.csv", index=False)
-            logger.debug("PRED[DUMP] wrote %s", outdir / f"game_{gid}_features.csv")
+    if not no_atten:
+        X_total  = _attenuate_total_diffs(X_total,  alpha=float(atten_total_alpha),  debug=debug_mode, focus_ids=None)
+        X_margin = _attenuate_margin_diffs(X_margin, alpha=float(atten_margin_alpha), debug=debug_mode, focus_ids=None)
+    else:
+        if debug_mode:
+            logger.debug("PRED[ATTN] pre-model attenuation disabled (--no-atten).")
 
     # ------------------------------------------------------------------ #
     # Vectorized predict (ENSEMBLE)
@@ -968,7 +874,6 @@ def generate_predictions(
     margin_preds = margin_ensemble.predict(X_margin)
     total_preds  = total_ensemble.predict(X_total)
 
-    # Ensure Series (not numpy) with game_id index
     if isinstance(margin_preds, np.ndarray):
         margin_preds = pd.Series(margin_preds, index=features_df.index, name="pred_margin")
     if isinstance(total_preds, np.ndarray):
@@ -980,100 +885,74 @@ def generate_predictions(
         logger.debug("Predict time: %.3fs", time.time() - pred_t)
 
     # ------------------------------------------------------------------ #
-    # Global calibration (unconditional) → OPTIONAL clip → feasibility
+    # Soft mean calibration → optional clip → feasibility
     # ------------------------------------------------------------------ #
-    # 1) Mean calibration for TOTAL
-    week_mean_total = float(total_preds.mean()) if len(total_preds) else total_train_mean
-    delta_total = total_train_mean - week_mean_total
-    if abs(delta_total) >= 0.75:
-        total_preds = (total_preds + delta_total).astype(float)
-        if debug_mode:
-            logger.debug(
-                "PRED[CAL] TOTAL mean-calibration | week_mean=%.2f → target=%.2f (Δ=%.2f)",
-                week_mean_total, total_train_mean, delta_total
-            )
+    total_preds  = _soft_mean_calibration(
+        total_preds,  target_mean=total_train_mean,  lam=float(mean_cal_lambda_total),
+        min_trigger=float(mean_cal_min_trigger_total), label="TOTAL",  debug=debug_mode
+    )
+    margin_preds = _soft_mean_calibration(
+        margin_preds, target_mean=0.0,                lam=float(mean_cal_lambda_margin),
+        min_trigger=float(mean_cal_min_trigger_margin), label="MARGIN", debug=debug_mode
+    )
 
-    # 2) Mean recenter for MARGIN (toward 0)
-    week_mean_margin = float(margin_preds.mean()) if len(margin_preds) else 0.0
-    if abs(week_mean_margin) >= 0.25:
-        margin_preds = (margin_preds - week_mean_margin).astype(float)
-        if debug_mode:
-            logger.debug("PRED[CAL] MARGIN recenter | week_mean=%.2f → 0.00 (Δ=%.2f)", week_mean_margin, -week_mean_margin)
-
-    # 3) Optional TOTAL clip band (after calibration)
+    # Optional TOTAL clip (after calibration)
     if (total_clip_min is not None) or (total_clip_max is not None):
         lo = float(total_clip_min) if total_clip_min is not None else float("-inf")
         hi = float(total_clip_max) if total_clip_max is not None else float("+inf")
-        if debug_mode and FOCUS_IDS:
-            for gid in [g for g in FOCUS_IDS if g in total_preds.index]:
-                pre = float(total_preds.loc[gid])
-                post = max(lo, min(hi, pre))
-                logger.debug("PRED[ENS] TOTAL | post-cal clip: pre=%.3f → post=%.3f (game_id=%s)", pre, post, gid)
         total_preds = total_preds.clip(lower=lo, upper=hi)
+        if debug_mode:
+            logger.debug("PRED[CAL] TOTAL clip applied: [%.1f, %.1f]", lo, hi)
 
-    # 4) Feasibility floor: total must exceed |margin| by a buffer
-    buffer_pts = 6.0
+    # Feasibility: total ≥ |margin| + dynamic buffer
     pair = pd.DataFrame({"total": total_preds.astype(float), "margin": margin_preds.astype(float)}, index=total_preds.index)
-    need_raise = (pair["total"] < pair["margin"].abs() + buffer_pts)
+    dyn_buffer = (0.35 * pair["margin"].abs()) + 3.0
+    dyn_buffer = dyn_buffer.clip(lower=3.0, upper=float(feas_buffer_max))
+    need_raise = pair["total"] < (pair["margin"].abs() + dyn_buffer)
     if need_raise.any():
-        min_allowed = pair["margin"].abs() + buffer_pts
-        adjusted = pair["total"].where(~need_raise, min_allowed)
-        if debug_mode and FOCUS_IDS:
-            for gid in [g for g in FOCUS_IDS if g in adjusted.index and need_raise.loc[g]]:
-                pre  = float(pair.at[gid, "total"])
-                post = float(adjusted.at[gid])
-                logger.debug("PRED[CAL][FEAS] gid=%s | total pre=%.2f → post=%.2f (|M|+buf=%.2f)", gid, pre, post, float(min_allowed.at[gid]))
-        total_preds = adjusted.astype(float)
+        min_allowed = pair["margin"].abs() + dyn_buffer
+        total_preds = pair["total"].where(~need_raise, min_allowed).astype(float)
+        if debug_mode:
+            logger.debug("PRED[FEAS] total raised on %d rows to satisfy total ≥ |margin| + buffer", int(need_raise.sum()))
 
-    # 5) Optional hard cap on margin to trim extremes
-    margin_cap = 24.0
-    over_cap = margin_preds.abs() > margin_cap
-    if over_cap.any():
-        margin_preds = margin_preds.clip(lower=-margin_cap, upper=margin_cap)
-        if debug_mode and FOCUS_IDS:
-            for gid in [g for g in FOCUS_IDS if g in margin_preds.index and over_cap.loc[g]]:
-                logger.debug("PRED[CAL] MARGIN hard-cap applied | gid=%s cap=±%.1f", gid, margin_cap)
-
-    # >>> Focus-only test shrink for close spreads (temporary) <<<
-    if debug_mode and FOCUS_IDS:
-        lam = 0.90
-        thresh = 6.0
-        for gid in [g for g in FOCUS_IDS if g in margin_preds.index]:
-            pre = float(margin_preds.loc[gid])
-            if abs(pre) <= thresh:
-                margin_preds.loc[gid] = pre * lam
-                logger.debug("PRED[SHRINK][MARGIN] gid=%s pre=%.3f → post=%.3f (λ=%.2f)", gid, pre, pre * lam, lam)
+    # Hard cap on margin (±)
+    if float(margin_cap) > 0:
+        over_cap = margin_preds.abs() > float(margin_cap)
+        if over_cap.any():
+            margin_preds = margin_preds.clip(lower=-float(margin_cap), upper=float(margin_cap))
+            if debug_mode:
+                logger.debug("PRED[CAP] MARGIN hard-cap applied at ±%.1f on %d rows", float(margin_cap), int(over_cap.sum()))
 
     # ------------------------------------------------------------------ #
     # Derive scores and assign back onto schedule
     # ------------------------------------------------------------------ #
     scores_df = derive_scores_from_predictions(margin_preds, total_preds)
 
-    # Make sure scores_df is indexed by game_id and numeric
+    # Index and numeric safety
     if "game_id" in scores_df.columns:
         scores_df = scores_df.set_index("game_id", drop=False)
-    scores_df["predicted_home_score"] = scores_df["predicted_home_score"].astype(float)
-    scores_df["predicted_away_score"] = scores_df["predicted_away_score"].astype(float)
+    for c in ("predicted_home_score", "predicted_away_score"):
+        if c in scores_df.columns:
+            scores_df[c] = scores_df[c].astype(float).clip(lower=0.0)  # non-negative clamp
+
     _log_df(scores_df, "scores_df", debug_mode)
 
-    # Assign onto upcoming_df by index = game_id
     final_df = upcoming_df.set_index("game_id", drop=False)
     final_df.loc[scores_df.index, "predicted_home_score"] = scores_df["predicted_home_score"]
     final_df.loc[scores_df.index, "predicted_away_score"] = scores_df["predicted_away_score"]
 
-    # Compute totals/margins *after* assignment and *before* printing
     final_df["pred_total"]  = (final_df["predicted_home_score"] + final_df["predicted_away_score"]).astype(float)
     final_df["pred_margin"] = (final_df["predicted_home_score"] - final_df["predicted_away_score"]).astype(float)
 
-    # Pretty-print (example)
+    # Pretty-print (sample)
     def _fmt(x): return f"{x:.2f}"
     for _, row in final_df.loc[scores_df.index].iterrows():
-        date = str(row["game_date"])[:10]
+        date_s = str(row["game_date"])[:10]
         home = _fmt(row["predicted_home_score"])
         away = _fmt(row["predicted_away_score"])
         tot  = _fmt(row["pred_total"])
         mar  = _fmt(row["pred_margin"])
-        print(f"{date}  away_id {int(row['away_team_id'])} @ home_id {int(row['home_team_id'])}   {away} - {home}   (T={tot}, M={mar})")
+        print(f"{date_s}  away_id {int(row['away_team_id'])} @ home_id {int(row['home_team_id'])}   {away} - {home}   (T={tot}, M={mar})")
 
     if debug_mode:
         n_assigned = final_df["predicted_home_score"].notna().sum()
@@ -1104,11 +983,6 @@ def generate_predictions(
                 "weights_total_json": json.dumps(artifacts.get("total_weights", {})),
                 "weights_margin_json": json.dumps(artifacts.get("margin_weights", {})),
             }
-            # Include per-model raw preds if we computed them
-            for full, val in per_model_totals.get(int(gid), {}).items():
-                csv_row[f"pred_total__{full}"] = float(val)
-            for full, val in per_model_margins.get(int(gid), {}).items():
-                csv_row[f"pred_margin__{full}"] = float(val)
 
             # Selected feature vectors (union of total + margin features)
             union_cols = list(dict.fromkeys(artifacts["total_features"] + artifacts["margin_features"]))
@@ -1161,29 +1035,52 @@ def generate_predictions(
 # ----------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Generate and Upsert NFL Score Predictions")
-    parser.add_argument("--days", type=int, default=8, help="Days ahead to predict.")
-    parser.add_argument("--lookback", type=int, default=1825, help="Historical days for features.")
-    parser.add_argument("--no-upsert", action="store_true", help="Skip DB upsert.")
-    parser.add_argument("--debug", action="store_true", help="Enable DEBUG logging.")
 
-    # Focus selectors
+    # Windowing
+    parser.add_argument("--date-start", type=str, default=None, help="Start date inclusive (YYYY-MM-DD).")
+    parser.add_argument("--date-end",   type=str, default=None, help="End date inclusive (YYYY-MM-DD).")
+    parser.add_argument("--days",       type=int, default=None, help="Relative window [today, today+days] if no date range is given.")
+
+    # History
+    parser.add_argument("--lookback", type=int, default=1825, help="Historical days for features.")
+
+    # Persistence
+    parser.add_argument("--no-upsert", action="store_true", help="Skip DB upsert.")
+
+    # Debug / focus
+    parser.add_argument("--debug", action="store_true", help="Enable DEBUG logging.")
     parser.add_argument("--focus-date", type=str, default=None, help="Focus on a specific date (YYYY-MM-DD).")
     parser.add_argument("--focus-games", type=str, default=None, help="Comma-separated away@home pairs, e.g., 25@26,21@28.")
     parser.add_argument("--focus-ids", type=str, default=None, help="Comma-separated game_id list.")
-
-    # Optional TOTAL clip band (debug/QA)
-    parser.add_argument("--total-clip-min", type=float, default=None, help="Clip TOTAL predictions to lower bound.")
-    parser.add_argument("--total-clip-max", type=float, default=None, help="Clip TOTAL predictions to upper bound.")
-
-    # Dump dir
     parser.add_argument("--dump-dir", type=str, default=None, help="Directory to write per-focused-game CSVs.")
 
-    args = parser.parse_args()
+    # Pre-model attenuation
+    parser.add_argument("--no-atten", action="store_true", help="Disable pre-model diff attenuation.")
+    parser.add_argument("--atten-total-alpha", type=float, default=0.85, help="Total diff attenuation factor (0..1].")
+    parser.add_argument("--atten-margin-alpha", type=float, default=0.80, help="Margin diff attenuation factor (0..1].")
 
+    # H2H shrink
+    parser.add_argument("--no-h2h-shrink", action="store_true", help="Disable H2H shrink toward priors.")
+    parser.add_argument("--h2h-k", type=float, default=6.0, help="Games to “trust” H2H fully (larger=weaker shrink).")
+
+    # Mean calibration (soft)
+    parser.add_argument("--mean-calibration-lambda-total", type=float, default=0.35, help="Lambda for TOTAL soft mean calibration.")
+    parser.add_argument("--mean-calibration-lambda-margin", type=float, default=0.50, help="Lambda for MARGIN soft mean calibration.")
+    parser.add_argument("--mean-cal-min-trigger-total", type=float, default=0.50, help="Min |Δ| to trigger TOTAL calibration.")
+    parser.add_argument("--mean-cal-min-trigger-margin", type=float, default=0.15, help="Min |Δ| to trigger MARGIN calibration.")
+
+    # Feasibility + caps
+    parser.add_argument("--feas-buffer-max", type=float, default=6.0, help="Max dynamic feasibility buffer.")
+    parser.add_argument("--margin-cap", type=float, default=24.0, help="Hard cap for absolute margin.")
+
+    # Optional TOTAL clip band
+    parser.add_argument("--total-clip-min", type=float, default=None, help="Clip TOTAL predictions to lower bound (post-calibration).")
+    parser.add_argument("--total-clip-max", type=float, default=None, help="Clip TOTAL predictions to upper bound (post-calibration).")
+
+    args = parser.parse_args()
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
-    # Build Focus from CLI (you already have these helpers in the file)
     focus = Focus(
         date_str=_normalize_date_str(args.focus_date),
         pairs=_parse_focus_games(args.focus_games),
@@ -1191,15 +1088,33 @@ def main():
     )
 
     preds = generate_predictions(
+        date_start=args.date_start,
+        date_end=args.date_end,
         days_window=args.days,
+
         historical_lookback=args.lookback,
-        debug_mode=args.debug,           # <- True/False from CLI
-        focus=focus,                     # <- proper Focus object
+        debug_mode=args.debug,
+        focus=focus,
         dump_dir=Path(args.dump_dir) if args.dump_dir else None,
+
+        no_atten=args.no_atten,
+        atten_total_alpha=args.atten_total_alpha,
+        atten_margin_alpha=args.atten_margin_alpha,
+
+        no_h2h_shrink=args.no_h2h_shrink,
+        h2h_k=args.h2h_k,
+
+        mean_cal_lambda_total=args.mean_calibration_lambda_total,
+        mean_cal_lambda_margin=args.mean_calibration_lambda_margin,
+        mean_cal_min_trigger_total=args.mean_cal_min_trigger_total,
+        mean_cal_min_trigger_margin=args.mean_cal_min_trigger_margin,
+
+        feas_buffer_max=args.feas_buffer_max,
+        margin_cap=args.margin_cap,
+
         total_clip_min=args.total_clip_min,
         total_clip_max=args.total_clip_max,
     )
-
 
     if not preds:
         logger.info("No predictions produced.")

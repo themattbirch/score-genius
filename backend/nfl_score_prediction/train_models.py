@@ -264,30 +264,6 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
 
     return {"margin": margin_candidates, "total": total_candidates}
 
-def _prune_near_duplicates(X: pd.DataFrame, y: pd.Series, thresh: float = 0.98) -> list[str]:
-    """
-    Remove features that are extremely collinear with each other
-    (absolute correlation >= thresh) to avoid duplicate signal.
-
-    Keeps the first occurrence, drops subsequent near-duplicates.
-    """
-    if X.shape[1] <= 1:
-        return list(X.columns)
-
-    corr_matrix = X.corr().abs()
-    to_drop = set()
-    kept = []
-
-    for col in corr_matrix.columns:
-        if col in to_drop:
-            continue
-        kept.append(col)
-        # Mark other cols with very high correlation to this one
-        duplicates = corr_matrix.index[(corr_matrix[col] >= thresh) & (corr_matrix.index != col)]
-        to_drop.update(duplicates)
-
-    return kept
-
 # ---------- helpers ----------
 
 def _abs_corr_topk(X: pd.DataFrame, y: pd.Series, pool: list[str], k: int) -> list[str]:
@@ -371,14 +347,24 @@ def _ensure_bucket_mi(
     target_name: str,
     min_per_bucket: int = 1,
     topk_per_bucket: int = 2,
+    *,
+    freeze_drive_bucket: bool = False,
 ) -> list[str]:
-    """Ensure each bucket contributes at least `min_per_bucket` features; add via MI if needed."""
+    """
+    Ensure each bucket contributes at least `min_per_bucket` features; add via MI if needed.
+    If `freeze_drive_bucket` is True, the 'drive' bucket will NOT be auto-topped up by MI.
+    """
     sel_set = set(selected)
     buckets: dict[str, list[str]] = {}
     for c in X.columns:
         buckets.setdefault(_bucket_for(c), []).append(c)
 
     for bucket, cols in buckets.items():
+        # Optionally freeze 'drive' additions to isolate changes during DRIVE debugging
+        if freeze_drive_bucket and bucket == "drive":
+            # Keep already-selected drive features, but do NOT add new ones via MI.
+            continue
+
         have = [c for c in selected if _bucket_for(c) == bucket]
         if len(have) >= min_per_bucket:
             continue
@@ -389,7 +375,7 @@ def _ensure_bucket_mi(
             continue
 
         Xb = X[cols].fillna(0.0)
-        # MI can fail if all-zero variance; filter again just in case
+        # guard again for zero-variance
         cols = [c for c in cols if Xb[c].std(ddof=0) > 0]
         if not cols:
             continue
@@ -400,7 +386,9 @@ def _ensure_bucket_mi(
         for a in add:
             sel_set.add(a)
 
-    return [c for c in selected] + [c for c in sel_set if c not in selected]
+    out = [c for c in selected] + [c for c in sel_set if c not in selected]
+    return out
+
 
 # ---------- main ----------
 
@@ -411,8 +399,10 @@ def run_feature_selection(
     target_name: str,
     save_dir: Path = MODELS_DIR,
     debug: bool = False,
+    *,
+    freeze_drive_bucket: bool = False,   # NEW
 ) -> list[str]:
-    logger.info("Lasso/EN feature selection → %s", target_name)
+    logger.info("Lasso/EN feature selection → %s (freeze_drive_bucket=%s)", target_name, freeze_drive_bucket)
 
     # Safety: empty candidate list → fallback by |corr|
     if not feature_candidates:
@@ -486,6 +476,7 @@ def run_feature_selection(
         X_sel, y, selected, target_name,
         min_per_bucket=(2 if use_en else 1),
         topk_per_bucket=(3 if use_en else 2),
+        freeze_drive_bucket=freeze_drive_bucket,   # NEW
     )
 
     # ---------- 5) Enforce per-target floor via |corr| top-up ----------
@@ -500,9 +491,11 @@ def run_feature_selection(
         top_up = _abs_corr_topk(X_sel, y, rest, need)
         selected += [c for c in top_up if c not in selected]
 
-
     # ---------- 6) Order by original candidate order for stability ----------
     selected = [c for c in feature_candidates if c in selected]
+
+    # Visibility: per-bucket counts for final selection
+    _summarize_selected(target_name, selected)
 
     # Save & log
     path = save_dir / f"nfl_{target_name}_selected_features.json"
@@ -633,18 +626,24 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     logger.info("Initializing and running the refactored NFLFeatureEngine...")
     feat_t0 = time.time()
 
-    # The engine is now created as a class instance
+    # Constructor: keep simple unless your engine.__init__ was patched to accept drive knobs
     nfl_engine = NFLFeatureEngine(
         supabase_url=config.SUPABASE_URL,
-        supabase_service_key=config.SUPABASE_SERVICE_KEY
+        supabase_service_key=config.SUPABASE_SERVICE_KEY,
     )
 
-    # Call the build_features method
+    # Build features: pass drive knobs so engine can forward to drive.transform
     features = nfl_engine.build_features(
         games_df=games_df,
-        historical_games_df=games_df, # Pass the same df for history context
+        historical_games_df=games_df,  # Pass the same df for history context
         historical_team_stats_df=stats_df,
-        debug=args.debug
+        debug=args.debug,
+        # DRIVE module controls
+        window=args.drive_window,
+        reset_by_season=args.drive_reset_by_season,
+        min_prior_games=args.drive_min_prior_games,
+        soft_fail=args.drive_soft_fail,
+        disable_drive_stage=args.disable_drive_stage,
     )
 
     # Add sum-style composites for TOTAL modeling
@@ -657,9 +656,7 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
         "rest_days",
     ])
 
-
     logger.info("Feature pipeline complete in %.2fs | shape=%s", time.time() - feat_t0, features.shape)
-    _log_df(features, "features_full", args.debug)
     _log_df(features, "features_full", args.debug)
 
     # Targets (safe; composites don’t touch labels)
@@ -822,7 +819,9 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
             feature_candidates=candidates_for_target,
             target_name=target,
             debug=args.debug,
+            freeze_drive_bucket=args.freeze_drive_mi,   # NEW
         )
+
 
         # Force required priors to remain (prepend, then de-dup while preserving order)
         if required_for_target:
@@ -929,6 +928,27 @@ if __name__ == "__main__":
     p.add_argument("--skip-tuning", action="store_true")
     p.add_argument("--tune-iterations", type=int, default=50)
     p.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS)
+    p.add_argument("--disable-drive-stage", action="store_true",
+                help="Skip the DRIVE feature module entirely for A/B tests.")
+    p.add_argument("--drive-window", type=int, default=5,
+                help="Rolling window (games) for DRIVE pre-game averages.")
+    p.add_argument("--drive-reset-by-season", dest="drive_reset_by_season", action="store_true",
+                help="Reset DRIVE rolling windows at season boundaries (default).")
+    p.add_argument("--no-drive-reset-by-season", dest="drive_reset_by_season", action="store_false",
+                help="Do not reset DRIVE rolling windows at season boundaries.")
+    p.set_defaults(drive_reset_by_season=True)
+
+    p.add_argument("--drive-min-prior-games", type=int, default=0,
+                help="If >0, mask DRIVE *_avg to NaN when prior_games < threshold.")
+    p.add_argument("--drive-soft-fail", dest="drive_soft_fail", action="store_true",
+                help="Soft-fail DRIVE on error and keep pipeline running (default).")
+    p.add_argument("--no-drive-soft-fail", dest="drive_soft_fail", action="store_false",
+                help="Raise on DRIVE errors instead of soft-failing.")
+    p.set_defaults(drive_soft_fail=True)
+
+    # --- Feature selection control for DRIVE bucket ---
+    p.add_argument("--freeze-drive-mi", action="store_true",
+               help="Prevent mutual-information top-ups for the 'drive' bucket during feature selection.")
     p.add_argument("--debug", action="store_true")
     args = p.parse_args()
 

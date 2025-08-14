@@ -259,10 +259,49 @@ class NFLFeatureEngine:
         supabase_url: str,
         supabase_service_key: str,
         execution_order: Optional[List[str]] = None,
+        *,
+        # ---- DRIVE stage knobs ----
+        drive_window: int = 5,
+        drive_reset_by_season: bool = True,
+        drive_min_prior_games: int = 0,
+        drive_soft_fail: bool = True,
+        disable_drive_stage: bool = False,
     ):
-        self.execution_order = execution_order or self.DEFAULT_ORDER
+        """
+        Initialize the feature engine.
+
+        Parameters:
+        execution_order: Optional override for module order.
+        drive_window: Rolling window size for DRIVE (games).
+        drive_reset_by_season: If True, rolling in DRIVE resets each season.
+        drive_min_prior_games: If >0, DRIVE masks *_avg to NaN when prior games < threshold.
+        drive_soft_fail: If True, DRIVE returns a sentinel frame on error and keeps pipeline running.
+        disable_drive_stage: If True, the DRIVE module is removed from execution order.
+        """
+        # Order
+        self.execution_order = execution_order or self.DEFAULT_ORDER[:]
+        self.disable_drive_stage = bool(disable_drive_stage)
+        if self.disable_drive_stage and "drive" in self.execution_order:
+            self.execution_order = [m for m in self.execution_order if m != "drive"]
+
+        # Supabase client (safe/stubbed)
         self.supabase = _safe_create_client(supabase_url, supabase_service_key)
-        logger.info("NFLFeatureEngine initialized | order=%s", self.execution_order)
+
+        # DRIVE config
+        self.drive_window = int(drive_window)
+        self.drive_reset_by_season = bool(drive_reset_by_season)
+        self.drive_min_prior_games = int(drive_min_prior_games)
+        self.drive_soft_fail = bool(drive_soft_fail)
+
+        logger.info(
+            "NFLFeatureEngine initialized | order=%s | DRIVE{window=%s, reset_by_season=%s, min_prior=%s, soft_fail=%s, disabled=%s}",
+            self.execution_order,
+            self.drive_window,
+            self.drive_reset_by_season,
+            self.drive_min_prior_games,
+            self.drive_soft_fail,
+            self.disable_drive_stage,
+        )
 
     # --- RPC helpers (optional) ------------------------------------------------
     def _fetch_data_via_rpc(self, rpc_name: str, params: Dict) -> pd.DataFrame:
@@ -299,7 +338,13 @@ class NFLFeatureEngine:
         form_lookback: int = 5,
         momentum_span: int = 5,
         h2h_max_games: int = 10,
-    ) -> pd.DataFrame:
+        # ------------ DRIVE stage controls (NEW) ------------
+        window: int = 10,
+        reset_by_season: bool = True,
+        min_prior_games: int = 0,
+        soft_fail: bool = True,
+        disable_drive_stage: bool = False,
+        ) -> pd.DataFrame:
 
         if debug:
             logger.setLevel(logging.DEBUG)
@@ -323,7 +368,6 @@ class NFLFeatureEngine:
         # Prefetch auxiliary data (use provided frames if present)
         if season_stats_df is None:
             parts = []
-            # we need priors for S-1 for every S in the batch
             prev_seasons = sorted({int(s) - 1 for s in all_seasons if pd.notna(s)})
             for ps in prev_seasons:
                 try:
@@ -333,9 +377,10 @@ class NFLFeatureEngine:
                 except Exception:
                     continue
             season_stats_df = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
-        
+
         if recent_form_df is None:
             recent_form_df = self._fetch_recent_form_via_rpc()
+
         if advanced_stats_df is None:
             parts = []
             for s in all_seasons:
@@ -347,7 +392,6 @@ class NFLFeatureEngine:
             advanced_stats_df = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
         _log_profile(season_stats_df, "season_stats_df (priors)", debug)
-        
         if debug and season_stats_df is not None and not season_stats_df.empty and "season" in season_stats_df.columns:
             avail_prev = sorted(pd.Series(season_stats_df["season"]).dropna().astype(int).unique().tolist())
             logger.debug("ENGINE: priors available for seasons → %s", avail_prev)
@@ -368,12 +412,14 @@ class NFLFeatureEngine:
                 "home_team_norm", "away_team_norm",
                 "home_score", "away_score",
             ]
-            # Carry IDs if present so season.py can join by team_id
             for _idcol in ("home_team_id", "away_team_id"):
                 if _idcol in games.columns and _idcol not in spine_cols:
                     spine_cols.append(_idcol)
 
-            season_spine = games.loc[games["season"] == season_token, [c for c in spine_cols if c in games.columns]].copy()
+            season_spine = games.loc[
+                games["season"] == season_token,
+                [c for c in spine_cols if c in games.columns]
+            ].copy()
             season_games = season_spine.copy()
 
             # Full historical context (modules handle leakage internally)
@@ -383,7 +429,7 @@ class NFLFeatureEngine:
             for module in self.execution_order:
                 t_mod = time.time()
 
-                # Resolve transform
+                # Resolve transform function
                 if module == "situational":
                     fn = compute_situational_features
                 elif module == "rest":
@@ -399,6 +445,10 @@ class NFLFeatureEngine:
                 elif module == "advanced":
                     fn = advanced_transform
                 elif module == "drive":
+                    # Respect disable flag
+                    if disable_drive_stage:
+                        logger.info("ENGINE:DRIVE disabled via flag; skipping.")
+                        continue
                     fn = drive_transform
                 elif module == "momentum":
                     fn = momentum_transform
@@ -416,18 +466,13 @@ class NFLFeatureEngine:
                 kw: Dict[str, Any] = {}
                 if _supports_kwarg(fn, "debug"): kw["debug"] = debug
                 if _supports_kwarg(fn, "flag_imputations"): kw["flag_imputations"] = flag_imputations
-                if _supports_kwarg(fn, "historical_df"):
-                    kw["historical_df"] = full_hist.copy(deep=True)
-
+                if _supports_kwarg(fn, "historical_df"): kw["historical_df"] = full_hist.copy(deep=True)
                 if _supports_kwarg(fn, "historical_team_stats_df"):
                     kw["historical_team_stats_df"] = hist_team_stats.copy(deep=True)
 
-
                 if module == "season":
-                    # Pass full priors; let season.transform handle (season-1) selection and self-heal.
                     if season_stats_df is not None and not season_stats_df.empty:
                         kw["season_stats_df"] = season_stats_df
-                    # Coverage hint so season.transform can downgrade logs (e.g., 2021 needs 2020 which may be missing)
                     if season_stats_df is not None and "season" in season_stats_df.columns:
                         available_prev = set(season_stats_df["season"].dropna().astype(int).unique())
                         kw["known_missing_prev"] = (season_int - 1) not in available_prev
@@ -447,9 +492,24 @@ class NFLFeatureEngine:
                 elif module == "h2h":
                     kw["max_games"] = h2h_max_games
                 elif module == "advanced":
-                    if advanced_stats_df is not None and not advanced_stats_df.empty and _supports_kwarg(fn, "advanced_stats_df"):
-                        kw["advanced_stats_df"] = advanced_stats_df.loc[advanced_stats_df.get("season", pd.Series(dtype=int)).isin([season_int - 1, season_int])]
-                    # many advanced transforms can also read from historical_df (already precomputed)
+                    if (
+                        advanced_stats_df is not None
+                        and not advanced_stats_df.empty
+                        and _supports_kwarg(fn, "advanced_stats_df")
+                    ):
+                        kw["advanced_stats_df"] = advanced_stats_df.loc[
+                            advanced_stats_df.get("season", pd.Series(dtype=int)).isin([season_int - 1, season_int])
+                        ]
+                elif module == "drive":
+                    # NEW: pass drive controls if the transform supports them
+                    if _supports_kwarg(fn, "window"):
+                        kw["window"] = int(window)
+                    if _supports_kwarg(fn, "reset_by_season"):
+                        kw["reset_by_season"] = bool(reset_by_season)
+                    if _supports_kwarg(fn, "min_prior_games"):
+                        kw["min_prior_games"] = int(min_prior_games)
+                    if _supports_kwarg(fn, "soft_fail"):
+                        kw["soft_fail"] = bool(soft_fail)
 
                 # Call transform on the current running frame (season_games)
                 try:
@@ -458,6 +518,9 @@ class NFLFeatureEngine:
                     logger.error("ENGINE:%s call failed (TypeError): %s", module.upper(), e)
                     continue
                 except Exception as e:
+                    if module == "drive" and soft_fail:
+                        logger.error("ENGINE:DRIVE soft-fail: %s", e)
+                        continue
                     logger.error("ENGINE:%s call failed: %s", module.upper(), e)
                     continue
 
@@ -466,7 +529,9 @@ class NFLFeatureEngine:
                     continue
 
                 # Merge by game_id only
-                season_games = _merge_and_log(season_games, mod_out, key="game_id", how="left", module=module, debug=debug)
+                season_games = _merge_and_log(
+                    season_games, mod_out, key="game_id", how="left", module=module, debug=debug
+                )
                 logger.debug("ENGINE:%s done in %.3fs", module, time.time() - t_mod)
 
             chunks.append(season_games)
