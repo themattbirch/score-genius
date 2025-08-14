@@ -76,6 +76,18 @@ WINSOR_CAPS = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _verify_merge_asof_sort(df: pd.DataFrame, on: str, by: List[str]) -> bool:
+    """
+    True if within every group defined by `by`, column `on` is monotonic non-decreasing.
+    """
+    if df is None or df.empty:
+        return True
+    try:
+        return bool(df.groupby(by, dropna=False)[on].apply(lambda s: s.is_monotonic_increasing).all())
+    except Exception:
+        return False
+
+
 def _first(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     for c in candidates:
         if c in df.columns:
@@ -124,12 +136,10 @@ def _normalize_adv_map(season_map: pd.DataFrame) -> pd.DataFrame:
         lc = c.lower()
         v = pd.to_numeric(season_map[c], errors="coerce")
         # if column looks like a rate (or has '_pct') and median > 1, assume percentage and scale down
-        if ("_pct" in lc) or any(name in lc for name in ADV_RATE_NAMES):
-            med = float(v.median()) if not np.isnan(v.median()) else np.nan
-            if isinstance(med, float) and not np.isnan(med) and med > 1.1:
-                v = v / 100.0
-            v = v.clip(0.0, 1.0)
-        season_map[c] = v.astype("float32")
+        med = float(v.median()) if not np.isnan(v.median()) else np.nan
+        if ("_pct" in lc or any(name in lc for name in ADV_RATE_NAMES)) and isinstance(med, float) and not np.isnan(med) and med > 1.1:
+            v = v / 100.0
+        season_map[c] = v.clip(0.0, 1.0).astype("float32") if ("_pct" in lc or any(name in lc for name in ADV_RATE_NAMES)) else v.astype("float32")
     return season_map
 
 
@@ -138,6 +148,21 @@ def _cap_for(col: str) -> Tuple[float, float]:
         if k != "_default" and col.endswith(k):
             return rng
     return WINSOR_CAPS["_default"]
+
+
+def _dedupe_by(df: pd.DataFrame, keys: List[str]) -> pd.DataFrame:
+    """
+    Deterministic de-duplication: keep the last row per key combination.
+    This is used to enforce a single row per (season_current, key, game_date).
+    """
+    if not keys or any(k not in df.columns for k in keys):
+        return df
+    if not df.duplicated(subset=keys).any():
+        return df
+    before = len(df)
+    out = df.sort_values(keys).drop_duplicates(subset=keys, keep="last")
+    logger.warning("ADVANCED_FIX: De-duplicated left/right at %s: %d -> %d rows", keys, before, len(out))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +357,7 @@ def _build_prior_season_map(
 
 
 # ---------------------------------------------------------------------------
-# Internal: build current-season rolling map (leak-safe, optional blend)
+# Internal: build current-seaon rolling map (leak-safe, optional blend)
 # ---------------------------------------------------------------------------
 
 def _build_current_season_rolling(
@@ -354,6 +379,13 @@ def _build_current_season_rolling(
         return None
 
     per_game = per_game.copy()
+
+    # --- Defensive de-duplication on the RIGHT (rolling source) ---
+    key_cols_for_dedupe = [c for c in ["team_id", "team_norm", "game_date"] if c in per_game.columns]
+    if len(key_cols_for_dedupe) > 1 and per_game.duplicated(subset=key_cols_for_dedupe).any():
+        logger.warning("ADVANCED_FIX: Found and removed duplicate team-game date entries in RIGHT source data.")
+        per_game = per_game.sort_values(key_cols_for_dedupe).drop_duplicates(subset=key_cols_for_dedupe, keep="last")
+
     per_game["game_date"] = pd.to_datetime(per_game["game_date"], errors="coerce", utc=False)
     per_game["season_current"] = per_game["game_date"].apply(_nfl_season_from_date).astype("Int64")
 
@@ -388,8 +420,6 @@ def _same_season_fallback(join_df: pd.DataFrame, key_col: str, adv_cols: List[st
         return join_df
 
     key = key_col
-    same_map = season_map[[key.replace("home_", "").replace("away_", "") if k in season_map.columns else key for k in [key]]][0:0]  # dummy to appease lints
-    # Rebuild same_map cleanly keyed by (key, season)
     if key.endswith("_team_id") and "team_id" in season_map.columns:
         same_map = season_map[["team_id", "season"] + adv_cols].rename(columns={"team_id": key})
     elif key.endswith("_team_norm") and "team_norm" in season_map.columns:
@@ -576,14 +606,12 @@ def transform(
     # ------------------------------------------------------------------
     roll_map = None
     key_kind = None
-
     if enable_current_season_blend:
         roll_map = _build_current_season_rolling(
             historical_team_stats_df=historical_team_stats_df,
             window=rolling_window,
             min_periods=1,
         )
-        # Identify which key is present in rolling
         if roll_map is not None:
             if "team_id" in roll_map.columns and have_ids:
                 key_kind = "team_id"
@@ -591,41 +619,149 @@ def transform(
                 key_kind = "team_norm"
 
     def _merge_roll(side: str) -> Optional[pd.DataFrame]:
-        """Merge last known rolling values up to the game_date for given side."""
+        """
+        Merge last known rolling values up to the game_date for given side.
+        Ensures:
+        - dtype parity for key
+        - no duplicates at ["season_current", key_kind, "game_date"]
+        - global/group-wise sort invariants required by merge_asof
+        - rows with null join keys/dates are excluded from the rolling merge
+        """
         if roll_map is None or key_kind is None:
             return None
+
         tmp = g[["game_id", "game_date", side, "season"]].copy()
         tmp = tmp.rename(columns={side: key_kind})
-        # season_current equals g["season"] for our game_date
         tmp["season_current"] = tmp["season"].astype("Int64")
-        tmp[key_kind] = tmp[key_kind] if key_kind == "team_id" else _normalize_team_series(tmp[key_kind])
 
-        # merge_asof on date per (team, season_current)
-        r = roll_map.copy()
-        r = r[r["season_current"].notna()].copy()
-        r = r.sort_values(["season_current", key_kind, "game_date"])
-        tmp = tmp.sort_values(["season_current", key_kind, "game_date"])
+        # Key dtype parity
+        if key_kind == "team_id":
+            tmp[key_kind] = _ensure_numeric(tmp[key_kind])
+            r = roll_map.copy()
+            r[key_kind] = _ensure_numeric(r[key_kind])
+        else:  # key_kind == "team_norm"
+            tmp[key_kind] = _normalize_team_series(tmp[key_kind].astype(str))
+            r = roll_map.copy()
+            r[key_kind] = r[key_kind].astype(str).str.lower()
+
+        # Dates tz-naive
+        tmp["game_date"] = pd.to_datetime(tmp["game_date"], errors="coerce", utc=False)
+        r["game_date"]   = pd.to_datetime(r["game_date"], errors="coerce", utc=False)
+
+        # -----------------------------
+        # NULL-KEY / NULL-DATE FILTERS
+        # -----------------------------
+        left_nulls = {
+            "season_current": int(tmp["season_current"].isna().sum()),
+            key_kind:         int(tmp[key_kind].isna().sum()),
+            "game_date":      int(tmp["game_date"].isna().sum()),
+        }
+        right_nulls = {
+            "season_current": int(r["season_current"].isna().sum()) if "season_current" in r.columns else 0,
+            key_kind:         int(r[key_kind].isna().sum()),
+            "game_date":      int(r["game_date"].isna().sum()),
+        }
+        logger.debug("ADVANCED_DIAG: LEFT nulls %s | RIGHT nulls %s", left_nulls, right_nulls)
+
+        left_len_before  = len(tmp)
+        right_len_before = len(r)
+
+        # Drop rows that cannot participate in merge_asof groups
+        tmp = tmp[tmp["season_current"].notna() & tmp[key_kind].notna() & tmp["game_date"].notna()].copy()
+        r   = r[  r["season_current"].notna() &   r[key_kind].notna() &   r["game_date"].notna()].copy()
+
+        logger.debug(
+            "ADVANCED_DIAG: Filtered null keys/dates | LEFT %d→%d | RIGHT %d→%d",
+            left_len_before, len(tmp), right_len_before, len(r)
+        )
+
+        # ---------------------------------
+        # DE-DUPLICATE AT MERGE GRANULARITY
+        # ---------------------------------
+        key_tuple = ["season_current", key_kind, "game_date"]
+        dup_l = int(tmp.duplicated(key_tuple).sum())
+        dup_r = int(r.duplicated(key_tuple).sum())
+        if dup_l or dup_r:
+            logger.warning("ADVANCED_FIX: pre-dedupe duplicates | LEFT=%d RIGHT=%d at %s", dup_l, dup_r, key_tuple)
+        tmp = _dedupe_by(tmp, key_tuple)
+        r   = _dedupe_by(r,   key_tuple)
+
+        # --------------
+        # GLOBAL SORTING
+        # --------------
+        sort_keys = ["game_date", "season_current", key_kind]
+        tmp = tmp.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
+        r   = r.sort_values(sort_keys,   kind="mergesort").reset_index(drop=True)
+
+        # explicit global monotonic check on the 'on' key to mirror pandas' expectation
+        if not tmp["game_date"].is_monotonic_increasing:
+            # Defensive re-sort in case upstream reordering intervened
+            tmp = tmp.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
+        if not r["game_date"].is_monotonic_increasing:
+            r = r.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
+
+
+        # ---------------------------------------------
+        # PER-GROUP MONOTONICITY (HELPFUL ERROR DUMPS)
+        # ---------------------------------------------
+        def _first_bad_group(df: pd.DataFrame) -> Optional[tuple]:
+            try:
+                monotone = df.groupby(["season_current", key_kind], dropna=False)["game_date"] \
+                            .apply(lambda s: s.is_monotonic_increasing)
+                bad = monotone[~monotone]
+                return tuple(bad.index[0]) if len(bad) else None
+            except Exception:
+                return None
+
+        logger.info("ADVANCED_DIAG: Preparing for merge_asof for side '%s' | key=%s", side, key_kind)
+        logger.debug("ADVANCED_DIAG: dtypes tmp[%s]=%s r[%s]=%s", key_kind, tmp[key_kind].dtype, key_kind, r[key_kind].dtype)
+
+        if not _verify_merge_asof_sort(tmp, on="game_date", by=["season_current", key_kind]):
+            bad = _first_bad_group(tmp)
+            if bad:
+                s_bad, k_bad = bad
+                sample = tmp[(tmp["season_current"] == s_bad) & (tmp[key_kind] == k_bad)] \
+                        [["game_id", "season_current", key_kind, "game_date"]].head(20)
+                logger.error(
+                    "ADVANCED_ERROR: LEFT not monotonic for season=%s key=%s; sample:\n%s",
+                    s_bad, k_bad, sample.to_string(index=False)
+                )
+            raise ValueError("left keys must be sorted")
+
+        if not _verify_merge_asof_sort(r, on="game_date", by=["season_current", key_kind]):
+            bad = _first_bad_group(r)
+            if bad:
+                s_bad, k_bad = bad
+                sample = r[(r["season_current"] == s_bad) & (r[key_kind] == k_bad)] \
+                        [["game_date", "season_current", key_kind]].head(20)
+                logger.error(
+                    "ADVANCED_ERROR: RIGHT not monotonic for season=%s key=%s; sample:\n%s",
+                    s_bad, k_bad, sample.to_string(index=False)
+                )
+            raise ValueError("right keys must be sorted")
 
         out = pd.merge_asof(
             left=tmp,
             right=r,
-            by=[key_kind, "season_current"],
+            by=["season_current", key_kind],
             left_on="game_date",
             right_on="game_date",
             direction="backward",
             allow_exact_matches=True,
         )
-        # Keep only game_id + roll cols
-        roll_cols = [c for c in out.columns if c.endswith("_roll")] + (["roll_count"] if "roll_count" in out.columns else [])
+
+        roll_cols = [c for c in out.columns if c.endswith("_roll")]
+        if "roll_count" in out.columns:
+            roll_cols.append("roll_count")
         keep = ["game_id"] + roll_cols
         return out[keep].copy()
 
-    # side keys to use
-    left_key = "home_team_id" if have_ids else "home_team_norm"
-    right_key = "away_team_id" if have_ids else "away_team_norm"
+    # Select keys for sides
+    left_key  = "home_team_id" if (key_kind == "team_id") else ("home_team_norm" if key_kind == "team_norm" else None)
+    right_key = "away_team_id" if (key_kind == "team_id") else ("away_team_norm" if key_kind == "team_norm" else None)
 
-    home_roll = _merge_roll(left_key)
-    away_roll = _merge_roll(right_key)
+    home_roll = _merge_roll(left_key)  if left_key  else None
+    away_roll = _merge_roll(right_key) if right_key else None
 
     # ------------------------------------------------------------------
     # 3) Produce blended home_/away_ values
@@ -725,7 +861,7 @@ def transform(
     present_ratio = (wide[present_cols].notna().mean().mean() * 100.0) if present_cols else 0.0
     logger.debug(
         "advanced: features attached | games=%d | metrics=%d | side_value_cols=%d | present≈%.1f%%",
-        len(wide), len(base_metrics), len(value_cols), present_ratio
+        len(wide), len(set(base_metrics)), len(value_cols), present_ratio
     )
 
     # Compact coverage summary (first ~8 metrics) + imputation %

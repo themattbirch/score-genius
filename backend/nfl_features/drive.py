@@ -263,25 +263,7 @@ def transform(
     window: int = 5,
 ) -> pd.DataFrame:
     """
-    DRIVE stage entrypoint expected by the engine.
-
-    Parameters
-    ----------
-    games_df : pd.DataFrame
-        Season spine for the current batch (one row per game_id).
-    historical_team_stats_df : pd.DataFrame
-        Team-game box score history with raw counts (one row per team per game).
-    debug : bool
-        If True, emits verbose logging about columns and nulls.
-    flag_imputations : bool
-        Passed through to compute_drive_metrics.
-    window : int
-        Rolling window length (number of *prior* games) for pre-game averages.
-
-    Returns
-    -------
-    pd.DataFrame
-        One row per `game_id` with drive_* columns.
+    DRIVE stage entrypoint...
     """
     if games_df is None or games_df.empty:
         logger.warning("ENGINE:drive received empty games_df; returning empty.")
@@ -291,14 +273,30 @@ def transform(
         logger.warning("ENGINE:drive missing historical_team_stats_df; returning empty.")
         return pd.DataFrame(columns=["game_id"])
 
-    # Work on copies; never mutate inputs
     spine = _ensure_ids_on_spine(games_df.copy())
     spine["ts_utc"] = _build_ts_utc(spine)
-
     team = historical_team_stats_df.copy()
+
+    # <<< START OF NEW DIAGNOSTIC CODE >>>
+    logger.info("DRIVE_DEBUG: Preparing to call compute_drive_metrics.")
+    pre_existing_col = "__opp_row_in_game__"
+    if pre_existing_col in team.columns:
+        logger.warning(
+            "DRIVE_DEBUG: Column '%s' FOUND in input dataframe. Attempting to drop.",
+            pre_existing_col
+        )
+        team = team.drop(columns=[pre_existing_col], errors='ignore')
+        if pre_existing_col not in team.columns:
+            logger.info("DRIVE_DEBUG: Column '%s' successfully dropped.", pre_existing_col)
+        else:
+            logger.error("DRIVE_DEBUG: FAILED to drop column '%s'.", pre_existing_col)
+    else:
+        logger.info("DRIVE_DEBUG: Column '%s' not found in input dataframe. Proceeding.", pre_existing_col)
+    # <<< END OF NEW DIAGNOSTIC CODE >>>
 
     # Enrich team-game rows with team-drive metrics (utility layer)
     team = compute_drive_metrics(team, flag_imputations=flag_imputations)
+
 
     # Timestamps for team rows (ordering for rolling)
     team["ts_utc"] = _build_ts_utc(team)
