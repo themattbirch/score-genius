@@ -354,7 +354,7 @@
       "latitude": 36.0908,
       "longitude": -115.1837,
       "orientation": 0,
-      "is_indoor": true
+      "is_indoor": false
     },
     "Los Angeles Chargers": {
       "stadium": "SoFi Stadium",

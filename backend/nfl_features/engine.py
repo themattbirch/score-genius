@@ -452,8 +452,14 @@ class NFLFeatureEngine:
                     fn = drive_transform
                 elif module == "momentum":
                     fn = momentum_transform
-                elif module == "map":
-                    fn = compute_map_features
+                #elif module == "map":
+                    #fn = compute_map_features
+                    #kw = {}
+                    #if _supports_kwarg(fn, "debug"): kw["debug"] = debug
+                    # If you pulled the matviews into DataFrames:
+                    #if _supports_kwarg(fn, "weather_latest_df"): kw["weather_latest_df"] = weather_latest_df
+                    #if _supports_kwarg(fn, "climatology_df"):    kw["climatology_df"]    = climatology_df
+                    #mod_out = fn(season_games, **kw)
                 else:
                     logger.warning("ENGINE: unknown module '%s' – skipping", module)
                     continue
