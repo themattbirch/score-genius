@@ -163,6 +163,24 @@ def add_total_composites(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
             out[f"total_{k}"] = out[h] + out[a]
     return out
 
+def _drop_constant_columns(df: pd.DataFrame, *, exclude: tuple[str, ...] = ("game_id",), debug: bool = False) -> pd.DataFrame:
+    """
+    Drop columns that are all-NaN or have a single unique value.
+    Keeps keys in `exclude`. Mirrors engine’s constant-col dropper as a belt-and-suspenders step.
+    """
+    if df.empty:
+        return df
+    cols = [c for c in df.columns if c not in exclude]
+    nunq = {c: df[c].nunique(dropna=False) for c in cols}
+    const_cols = [c for c, k in nunq.items() if k <= 1]
+    if const_cols:
+        if debug:
+            logger.debug("TRAIN: dropping %d constant cols (sample=%s)", len(const_cols), const_cols[:18])
+        else:
+            logger.info("TRAIN: dropping %d constant cols", len(const_cols))
+        df = df.drop(columns=const_cols, errors="ignore")
+    return df
+
 def chronological_split(
     df: pd.DataFrame,
     test_size: float,
@@ -208,13 +226,16 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
         c.startswith("home_prev_season_") or c.startswith("away_prev_season_")
     )
 
+    # pull season diffs from the full numeric set (NOT just base) so prev_season_* are included
+    season_diffs_global = [c for c in num if is_season_diff(c)]
+
     # =========================
     # MARGIN candidates
     # =========================
-    margin_candidates = [
+    # prepend season diffs so they always make it into the pool
+    margin_core = [
         c for c in base if (
             is_diff(c)                               # general diffs
-            or is_season_diff(c)                     # explicit prior-season diffs
             or is_rest(c)
             or is_form(c)
             or ("turnover_differential" in c)
@@ -222,11 +243,11 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
         )
     ]
     # keep raw rolling diffs if present
-    margin_candidates += [c for c in base if "point_differential" in c]
+    margin_core += [c for c in base if "point_differential" in c]
 
+    margin_candidates = season_diffs_global + margin_core
     # drop side-specific raw prior-season columns to avoid redundancy
     margin_candidates = [c for c in margin_candidates if not is_side_specific_season(c)]
-
     # de-dup while preserving order
     seen = set()
     margin_candidates = [c for c in margin_candidates if not (c in seen or seen.add(c))]
@@ -241,9 +262,6 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
         # "epa_per_play", "pace"  # uncomment if these exist
     ))
 
-    # source season diffs from the full numeric set (they won't be in base due to prefixes)
-    season_diffs_for_total = [c for c in num if is_season_diff(c)]
-
     total_core = [
         c for c in base if (
             is_points(c)
@@ -255,14 +273,13 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
     # allow a couple of form signals for total, too
     total_core += [c for c in base if is_form(c) and ("form_win_pct" in c)]
 
-    # prepend season diffs so corr-filter respects them
-    total_candidates = season_diffs_for_total + total_core
-
+    total_candidates = season_diffs_global + total_core
     # de-dup while preserving order
     seen = set()
     total_candidates = [c for c in total_candidates if not (c in seen or seen.add(c))]
 
     return {"margin": margin_candidates, "total": total_candidates}
+
 
 # ---------- helpers ----------
 
@@ -360,22 +377,18 @@ def _ensure_bucket_mi(
         buckets.setdefault(_bucket_for(c), []).append(c)
 
     for bucket, cols in buckets.items():
-        # Optionally freeze 'drive' additions to isolate changes during DRIVE debugging
         if freeze_drive_bucket and bucket == "drive":
-            # Keep already-selected drive features, but do NOT add new ones via MI.
             continue
 
         have = [c for c in selected if _bucket_for(c) == bucket]
         if len(have) >= min_per_bucket:
             continue
 
-        # viable = non-constant, not already selected
         cols = [c for c in cols if c not in sel_set and X[c].nunique(dropna=False) > 1]
         if not cols:
             continue
 
         Xb = X[cols].fillna(0.0)
-        # guard again for zero-variance
         cols = [c for c in cols if Xb[c].std(ddof=0) > 0]
         if not cols:
             continue
@@ -626,7 +639,6 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     logger.info("Initializing and running the refactored NFLFeatureEngine...")
     feat_t0 = time.time()
 
-    # Constructor: keep simple unless your engine.__init__ was patched to accept drive knobs
     nfl_engine = NFLFeatureEngine(
         supabase_url=config.SUPABASE_URL,
         supabase_service_key=config.SUPABASE_SERVICE_KEY,
@@ -656,11 +668,18 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
         "rest_days",
     ])
 
+    # ---- NEW: train-side constant dropper (belt & suspenders) ----
+    features = _drop_constant_columns(features, exclude=("game_id",), debug=args.debug)
+
     logger.info("Feature pipeline complete in %.2fs | shape=%s", time.time() - feat_t0, features.shape)
     _log_df(features, "features_full", args.debug)
 
     # Targets (safe; composites don’t touch labels)
     features = features.dropna(subset=["home_score", "away_score"])
+    if features.empty:
+        logger.critical("After dropping rows without labels, no data remains.")
+        sys.exit(1)
+
     features["margin"] = features["home_score"] - features["away_score"]
     features["total"]  = features["home_score"] + features["away_score"]
 
@@ -785,12 +804,11 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
 
     param_dists: Dict[str, Dict[str, Any]] = {
         "xgb": {
-            "model__n_estimators":      randint(200, 600),       # [200, 600)
-            "model__max_depth":         randint(2, 6),           # [2, 6)
-            "model__learning_rate":     loguniform(1e-3, 5e-2),  # (0.001, 0.05)
-            # use UNIFORM here: uniform(loc, scale) => [loc, loc+scale)
-            "model__subsample":         uniform(0.6, 0.4),       # [0.6, 1.0)
-            "model__colsample_bytree":  uniform(0.6, 0.4),       # [0.6, 1.0)
+            "model__n_estimators":      randint(200, 600),
+            "model__max_depth":         randint(2, 6),
+            "model__learning_rate":     loguniform(1e-3, 5e-2),
+            "model__subsample":         uniform(0.6, 0.4),
+            "model__colsample_bytree":  uniform(0.6, 0.4),
         },
         "rf": {
             "model__n_estimators":      randint(200, 600),
@@ -812,7 +830,6 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
             candidates_for_target = total_after_cor_tr
             required_for_target   = REQUIRED_TOTAL
 
-        # One selection pass per target using the TRAIN-based, filtered list
         feat_list = run_feature_selection(
             X=train_df,
             y=train_df[target],
@@ -822,8 +839,6 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
             freeze_drive_bucket=args.freeze_drive_mi,   # NEW
         )
 
-
-        # Force required priors to remain (prepend, then de-dup while preserving order)
         if required_for_target:
             req_then_selected = required_for_target + [f for f in feat_list if f not in required_for_target]
             feat_list = req_then_selected
@@ -939,7 +954,7 @@ if __name__ == "__main__":
     p.set_defaults(drive_reset_by_season=True)
 
     p.add_argument("--drive-min-prior-games", type=int, default=0,
-                help="If >0, mask DRIVE *_avg to NaN when prior_games < threshold.")
+                help="If >0, mask DRIVE *_avg to NaN when prior games < threshold.")
     p.add_argument("--drive-soft-fail", dest="drive_soft_fail", action="store_true",
                 help="Soft-fail DRIVE on error and keep pipeline running (default).")
     p.add_argument("--no-drive-soft-fail", dest="drive_soft_fail", action="store_false",

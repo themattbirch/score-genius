@@ -17,8 +17,8 @@ Key behaviors:
     eff:     points_per_drive, yards_per_play, rush_yards_per_rush,
              turnover_rate_per_play, points_per_100_yards, pass_rate
     situational: 3rd/4th down %, red zone %
-- Surfaces home_/away_ values, adv_*_diff (computed AFTER fills), total_adv_*,
-  and *_imputed flags for observability.
+- Surfaces home_/away_ values, adv_*_diff (computed BEFORE any imputation),
+  total_adv_*, and *_imputed flags for observability.
 
 This module avoids label leakage by never using same-day or future information.
 """
@@ -70,7 +70,6 @@ WINSOR_CAPS = {
     "yards_per_drive":  (15.0, 55.0),
     "_default":         (-1e6, 1e6),
 }
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -357,7 +356,7 @@ def _build_prior_season_map(
 
 
 # ---------------------------------------------------------------------------
-# Internal: build current-seaon rolling map (leak-safe, optional blend)
+# Internal: build current-season rolling map (leak-safe, optional blend)
 # ---------------------------------------------------------------------------
 
 def _build_current_season_rolling(
@@ -511,7 +510,7 @@ def transform(
                 break
 
     # ------------------------------------------------------------------
-    # 1) Build prior-season map
+    # 1) Build prior-seasons map
     # ------------------------------------------------------------------
     season_map = _build_prior_season_map(
         advanced_stats_df=advanced_stats_df,
@@ -648,96 +647,27 @@ def transform(
         tmp["game_date"] = pd.to_datetime(tmp["game_date"], errors="coerce", utc=False)
         r["game_date"]   = pd.to_datetime(r["game_date"], errors="coerce", utc=False)
 
-        # -----------------------------
-        # NULL-KEY / NULL-DATE FILTERS
-        # -----------------------------
-        left_nulls = {
-            "season_current": int(tmp["season_current"].isna().sum()),
-            key_kind:         int(tmp[key_kind].isna().sum()),
-            "game_date":      int(tmp["game_date"].isna().sum()),
-        }
-        right_nulls = {
-            "season_current": int(r["season_current"].isna().sum()) if "season_current" in r.columns else 0,
-            key_kind:         int(r[key_kind].isna().sum()),
-            "game_date":      int(r["game_date"].isna().sum()),
-        }
-        logger.debug("ADVANCED_DIAG: LEFT nulls %s | RIGHT nulls %s", left_nulls, right_nulls)
-
+        # NULL-KEY/DATE FILTERS
         left_len_before  = len(tmp)
         right_len_before = len(r)
-
-        # Drop rows that cannot participate in merge_asof groups
         tmp = tmp[tmp["season_current"].notna() & tmp[key_kind].notna() & tmp["game_date"].notna()].copy()
         r   = r[  r["season_current"].notna() &   r[key_kind].notna() &   r["game_date"].notna()].copy()
+        logger.debug("ADVANCED_DIAG: Filtered nulls | LEFT %d→%d | RIGHT %d→%d", left_len_before, len(tmp), right_len_before, len(r))
 
-        logger.debug(
-            "ADVANCED_DIAG: Filtered null keys/dates | LEFT %d→%d | RIGHT %d→%d",
-            left_len_before, len(tmp), right_len_before, len(r)
-        )
-
-        # ---------------------------------
         # DE-DUPLICATE AT MERGE GRANULARITY
-        # ---------------------------------
         key_tuple = ["season_current", key_kind, "game_date"]
-        dup_l = int(tmp.duplicated(key_tuple).sum())
-        dup_r = int(r.duplicated(key_tuple).sum())
-        if dup_l or dup_r:
-            logger.warning("ADVANCED_FIX: pre-dedupe duplicates | LEFT=%d RIGHT=%d at %s", dup_l, dup_r, key_tuple)
         tmp = _dedupe_by(tmp, key_tuple)
         r   = _dedupe_by(r,   key_tuple)
 
-        # --------------
         # GLOBAL SORTING
-        # --------------
         sort_keys = ["game_date", "season_current", key_kind]
         tmp = tmp.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
         r   = r.sort_values(sort_keys,   kind="mergesort").reset_index(drop=True)
 
-        # explicit global monotonic check on the 'on' key to mirror pandas' expectation
-        if not tmp["game_date"].is_monotonic_increasing:
-            # Defensive re-sort in case upstream reordering intervened
-            tmp = tmp.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
-        if not r["game_date"].is_monotonic_increasing:
-            r = r.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
-
-
-        # ---------------------------------------------
-        # PER-GROUP MONOTONICITY (HELPFUL ERROR DUMPS)
-        # ---------------------------------------------
-        def _first_bad_group(df: pd.DataFrame) -> Optional[tuple]:
-            try:
-                monotone = df.groupby(["season_current", key_kind], dropna=False)["game_date"] \
-                            .apply(lambda s: s.is_monotonic_increasing)
-                bad = monotone[~monotone]
-                return tuple(bad.index[0]) if len(bad) else None
-            except Exception:
-                return None
-
-        logger.info("ADVANCED_DIAG: Preparing for merge_asof for side '%s' | key=%s", side, key_kind)
-        logger.debug("ADVANCED_DIAG: dtypes tmp[%s]=%s r[%s]=%s", key_kind, tmp[key_kind].dtype, key_kind, r[key_kind].dtype)
-
+        # PER-GROUP MONOTONICITY CHECKS
         if not _verify_merge_asof_sort(tmp, on="game_date", by=["season_current", key_kind]):
-            bad = _first_bad_group(tmp)
-            if bad:
-                s_bad, k_bad = bad
-                sample = tmp[(tmp["season_current"] == s_bad) & (tmp[key_kind] == k_bad)] \
-                        [["game_id", "season_current", key_kind, "game_date"]].head(20)
-                logger.error(
-                    "ADVANCED_ERROR: LEFT not monotonic for season=%s key=%s; sample:\n%s",
-                    s_bad, k_bad, sample.to_string(index=False)
-                )
             raise ValueError("left keys must be sorted")
-
         if not _verify_merge_asof_sort(r, on="game_date", by=["season_current", key_kind]):
-            bad = _first_bad_group(r)
-            if bad:
-                s_bad, k_bad = bad
-                sample = r[(r["season_current"] == s_bad) & (r[key_kind] == k_bad)] \
-                        [["game_date", "season_current", key_kind]].head(20)
-                logger.error(
-                    "ADVANCED_ERROR: RIGHT not monotonic for season=%s key=%s; sample:\n%s",
-                    s_bad, k_bad, sample.to_string(index=False)
-                )
             raise ValueError("right keys must be sorted")
 
         out = pd.merge_asof(
@@ -764,7 +694,7 @@ def transform(
     away_roll = _merge_roll(right_key) if right_key else None
 
     # ------------------------------------------------------------------
-    # 3) Produce blended home_/away_ values
+    # 3) Produce blended home_/away_ values (no fill yet)
     # ------------------------------------------------------------------
     base_metrics = [c.replace("adv_", "", 1) for c in adv_cols_base]
 
@@ -791,7 +721,10 @@ def transform(
 
     def _blend_series(prior: pd.Series, roll: pd.Series, n_games: pd.Series) -> Tuple[pd.Series, pd.Series]:
         """Return blended series and imputed flag series."""
-        w = np.minimum(np.maximum(n_games.astype(float) / float(blend_k_games), 0.0), 1.0)
+        # Defensive: sanitize n_games before weight calc
+        ng = pd.to_numeric(n_games, errors="coerce").fillna(0.0).astype(float)
+        w = np.clip(ng / float(blend_k_games), 0.0, 1.0)
+
         both = prior.notna() & roll.notna()
         only_prior = prior.notna() & ~roll.notna()
         only_roll = ~prior.notna() & roll.notna()
@@ -801,43 +734,54 @@ def transform(
         blended.loc[only_prior] = prior[only_prior].astype(float)
         blended.loc[only_roll] = roll[only_roll].astype(float)
 
-        imputed = (~prior.notna()) | (~roll.notna())  # if either source missing, flag as imputed
+        # Imputed if either source is missing (observability)
+        imputed = (~prior.notna()) | (~roll.notna())
         return blended.astype("float32"), imputed.astype("int8")
 
+
+    # ---- per-side blend & write-out ------------------------------------
     for side in ("home", "away"):
         df_roll = home_roll if side == "home" else away_roll
         n_games = home_roll_n if side == "home" else away_roll_n
 
         for metric in base_metrics:
             prior = _get_prior(side, metric)
-            roll = _get_roll(df_roll, metric) if enable_current_season_blend else pd.Series(np.nan, index=prior.index)
+            roll  = _get_roll(df_roll, metric) if enable_current_season_blend else pd.Series(np.nan, index=prior.index)
+
             if enable_current_season_blend:
                 blended, imp = _blend_series(prior, roll, n_games)
             else:
-                blended = prior.astype("float32")
-                imp = (~prior.notna()).astype("int8")
+                # no blend → just carry prior; imputed if prior is missing
+                blended = pd.to_numeric(prior, errors="coerce").astype("float32")
+                imp = (~pd.Series(prior).notna()).astype("int8")
 
             wide[f"{side}_adv_{metric}"] = blended
             if flag_imputations:
                 wide[f"{side}_adv_{metric}_imputed"] = imp
 
-    # ------------------------------------------------------------------
-    # 4) Finalize, fill, then compute diffs/totals (diffs AFTER fill!)
-    # ------------------------------------------------------------------
+    # --- NO-NaN guard for side values (belt & suspenders) ---
+    # Ensure both home_/away_ side columns exist for every base metric, and fill NaN→0.0
+    for metric in base_metrics:
+        h = f"home_adv_{metric}"
+        a = f"away_adv_{metric}"
+        if h not in wide.columns:
+            wide[h] = 0.0
+        if a not in wide.columns:
+            wide[a] = 0.0
+
     value_cols = [c for c in wide.columns if c.startswith(("home_adv_", "away_adv_")) and not c.endswith("_imputed")]
 
-    # Winsorize to control outliers
+    # Winsorize then fill (stabilize outliers, ensure numeric & non-null for diffs/totals)
     for c in value_cols:
         lo, hi = _cap_for(c)
         wide[c] = pd.to_numeric(wide[c], errors="coerce").clip(lower=lo, upper=hi)
-
-    # Fill NaNs in side values (post-cap) to 0.0 for stable diffs/totals
-    for c in value_cols:
         wide[c] = wide[c].astype("float32").fillna(0.0)
 
-    # Now compute diffs and totals AFTER fills; attach diff_imputed if either side was imputed
     out_cols: List[str] = ["game_id"]
-    for metric in base_metrics:
+
+    # Compute diffs/totals AFTER fill (stable; avoids artificial NaN propagation)
+    base_names = sorted({c.replace("home_adv_", "") for c in value_cols if c.startswith("home_adv_")})
+    for metric in base_names:
         h = f"home_adv_{metric}"
         a = f"away_adv_{metric}"
         if h in wide.columns and a in wide.columns:
@@ -849,24 +793,44 @@ def transform(
 
             out_cols.extend([h, a, diff_col, tot_col])
 
+            # diff_imputed if either side was imputed OR either side was NaN pre-fill
             if flag_imputations:
                 hi = f"{h}_imputed"
                 ai = f"{a}_imputed"
+                # Base flag: conservatively treat prior NaNs as imputed
+                base_flag = ((wide[h].isna()) | (wide[a].isna())).astype("int8")
                 if hi in wide.columns and ai in wide.columns:
-                    wide[f"{diff_col}_imputed"] = ((wide[hi] == 1) | (wide[ai] == 1)).astype("int8")
-                    out_cols.append(f"{diff_col}_imputed")
+                    wide[f"{diff_col}_imputed"] = ((wide[hi] == 1) | (wide[ai] == 1) | (base_flag == 1)).astype("int8")
+                else:
+                    wide[f"{diff_col}_imputed"] = base_flag
+                out_cols.append(f"{diff_col}_imputed")
 
     # Minimal observability
     present_cols = [c for c in out_cols if c.startswith(("home_adv_", "away_adv_"))]
     present_ratio = (wide[present_cols].notna().mean().mean() * 100.0) if present_cols else 0.0
     logger.debug(
         "advanced: features attached | games=%d | metrics=%d | side_value_cols=%d | present≈%.1f%%",
-        len(wide), len(set(base_metrics)), len(value_cols), present_ratio
+        len(wide), len(set(base_names)), len(value_cols), present_ratio
     )
+
+    # Diff zero-rate sanity (exclude NaNs)
+    try:
+        zero_rates = {}
+        for metric in base_names[:10]:  # keep logs concise
+            dcol = f"adv_{metric}_diff"
+            if dcol in wide.columns:
+                nz = wide[dcol].notna()
+                denom = int(nz.sum())
+                if denom > 0:
+                    zero_rates[metric] = float((wide.loc[nz, dcol] == 0).mean()) * 100.0
+        if zero_rates:
+            logger.debug("advanced: diff zero-rates (%%, non-NaN) sample=%s", {k: round(v, 1) for k, v in zero_rates.items()})
+    except Exception:
+        pass
+
 
     # Compact coverage summary (first ~8 metrics) + imputation %
     if ADV_LOG_SUMMARY:
-        base_names = sorted({c.replace("home_adv_", "").replace("away_adv_", "") for c in value_cols})
         nonnull = {}
         for b in base_names[:8]:
             h, a = f"home_adv_{b}", f"away_adv_{b}"
@@ -874,7 +838,7 @@ def transform(
             cnt = (wide[cols].notna().any(axis=1)).sum() if cols else 0
             nonnull[b] = int(cnt)
 
-        imp_cols = [f"{c}_imputed" for c in value_cols if f"{c}_imputed" in wide.columns]
+        imp_cols = [c for c in wide.columns if c.endswith("_imputed") and (c.startswith("home_adv_") or c.startswith("away_adv_"))]
         imp_ratio = (float(wide[imp_cols].mean().mean()) * 100.0) if imp_cols else None
 
         src = "unknown"

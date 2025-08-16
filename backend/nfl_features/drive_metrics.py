@@ -152,7 +152,6 @@ def _derive_opponent_slice(df: pd.DataFrame) -> pd.DataFrame:
     Returns a frame keyed by (game_id, team_id) with opponent metrics renamed 'opp_*'.
     Assumes at most two teams per game_id; if more, deterministically trims to two.
     """
-    # Choose a minimal set we might need from the opponent row
     cols_of_interest = [
         "game_id", "team_id",
         "total_drives", "yards_total", "plays_total", "turnovers_total",
@@ -170,15 +169,28 @@ def _derive_opponent_slice(df: pd.DataFrame) -> pd.DataFrame:
     # Stable order for pairing
     opp = opp.sort_values(["game_id", "team_id"], kind="stable").copy()
 
-    # Pair rows 0 <-> 1 within each game using a local row index
+    # Local pairing markers
     opp["__row_in_game__"] = opp.groupby("game_id").cumcount()
     opp["__opp_row_in_game__"] = 1 - opp["__row_in_game__"]
 
-    opp_idx = opp.set_index(["game_id", "__row_in_game__"])
-    opp_partner = opp.set_index(["game_id", "__opp_row_in_game__"]).add_prefix("opp_")
-    joined = opp_idx.join(opp_partner, how="left").reset_index()
+    # Build two aligned views and join on (game_id, __row_in_game__)
+    left = opp.set_index(["game_id", "__row_in_game__"])
+    right = (
+        opp.set_index(["game_id", "__opp_row_in_game__"])
+           .add_prefix("opp_")
+    )
 
-    # Keep only columns from the opponent perspective plus keys
+    joined = left.join(right, how="left")
+
+    # --- Defensive: avoid reset_index() collisions with columns that share index names ---
+    idx_names = [n for n in (joined.index.names or []) if n is not None]
+    for n in idx_names:
+        if n in joined.columns:
+            joined = joined.drop(columns=[n])
+
+    joined = joined.reset_index()
+
+    # Keep only keys and opponent-facing columns we actually want
     keep = ["game_id", "team_id"] + [c for c in joined.columns if c.startswith("opp_")]
     out = joined[keep].copy()
 
@@ -217,6 +229,17 @@ def compute_drive_metrics(
     # Work on a copy; track original columns for cleanup
     df = box_scores_df.copy()
     original_cols = set(df.columns)
+
+    # Proactive cleanup: if a previous run left pairing temps around, drop them
+    for _tmp in ("__row_in_game__", "__opp_row_in_game__"):
+        if _tmp in df.columns:
+            df.drop(columns=[_tmp], inplace=True, errors="ignore")
+    
+    # If someone stashed them in the index names (unlikely), clear those too
+    if isinstance(df.index, pd.MultiIndex):
+        new_names = [None if n in ("__row_in_game__", "__opp_row_in_game__") else n
+                    for n in df.index.names]
+        df.index = df.index.set_names(new_names)
 
     # Normalize numeric types for denominators to avoid string "0" surprises
     _coerce_numeric(df, ["total_drives", "plays_total"])

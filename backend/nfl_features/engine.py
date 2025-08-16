@@ -8,6 +8,7 @@ Key behaviors:
   • Merge strictly by game_id; each module must return one row per game_id.
   • Wire in advanced, drive, and map stages (with safe fallbacks).
   • Rich debug instrumentation: per-module timing, new cols, nulls, bucket counts.
+  • Drop constant columns (all-NaN or single value) at the end to stabilize models.
 """
 
 from __future__ import annotations
@@ -102,7 +103,7 @@ def _profile_df(df: pd.DataFrame, name: str, top_n: int = 10) -> Dict[str, Any]:
     if df.empty:
         return {"name": name, "rows": 0, "cols": 0, "null_top": {}, "constant_cols": []}
     null_counts = df.isna().sum().sort_values(ascending=False)
-    const_cols = [c for c in df.columns if df[c].nunique(dropna=True) <= 1]
+    const_cols = [c for c in df.columns if df[c].nunique(dropna=False) <= 1]
     return {
         "name": name,
         "rows": len(df),
@@ -124,7 +125,8 @@ def _log_profile(df: pd.DataFrame, name: str, debug: bool):
 
 def _merge_and_log(left: pd.DataFrame, right: pd.DataFrame, key: str, how: str, module: str, debug: bool) -> pd.DataFrame:
     if right is None or right.empty:
-        logger.warning("ENGINE:%s produced empty output – skipping merge", module.upper())
+        # TINY TWEAK: empty module output is common and not an error; downgrade to INFO
+        logger.info("ENGINE:%s produced empty output – skipping merge", module.upper())
         return left
 
     if key not in right.columns:
@@ -234,6 +236,25 @@ def _summarize_by_bucket(df: pd.DataFrame, name: str, debug: bool):
     logger.debug("BUCKETS[%s]: %s", name, counts)
 
 
+def _drop_constant_columns(df: pd.DataFrame, *, exclude: tuple[str, ...] = ("game_id",), debug: bool = False) -> pd.DataFrame:
+    """
+    Drop columns that are all-NaN or have a single unique value (including zeros).
+    Keeps keys in `exclude`. Helpful to prevent dead features from reaching models.
+    """
+    if df.empty:
+        return df
+    cols = [c for c in df.columns if c not in exclude]
+    nunq = {c: df[c].nunique(dropna=False) for c in cols}
+    const_cols = [c for c, k in nunq.items() if k <= 1]
+    if const_cols:
+        if debug:
+            logger.debug("ENGINE: dropping %d constant cols (sample=%s)", len(const_cols), const_cols[:18])
+        else:
+            logger.info("ENGINE: dropping %d constant cols", len(const_cols))
+        df = df.drop(columns=const_cols, errors="ignore")
+    return df
+
+
 # ==============================================================================
 # Engine
 # ==============================================================================
@@ -251,7 +272,7 @@ class NFLFeatureEngine:
         "advanced",  # adjusted efficiency/quality signals
         "drive",     # per-drive rates
         "momentum",  # optional; after core signals
-        "map",       # final mapping/enrichment stage, if any
+        #"map",       # final mapping/enrichment stage, if any
     ]
 
     def __init__(
@@ -344,6 +365,8 @@ class NFLFeatureEngine:
         min_prior_games: int = 0,
         soft_fail: bool = True,
         disable_drive_stage: bool = False,
+        # ------------ Finalization ------------
+        drop_constant_cols: bool = True,
         ) -> pd.DataFrame:
 
         if debug:
@@ -531,7 +554,8 @@ class NFLFeatureEngine:
                     continue
 
                 if mod_out is None or mod_out.empty:
-                    logger.warning("ENGINE:%s returned empty – skipped", module.upper())
+                    # TINY TWEAK already handled in _merge_and_log, but also guard here
+                    logger.info("ENGINE:%s returned empty – skipped", module.upper())
                     continue
 
                 # Merge by game_id only
@@ -549,6 +573,10 @@ class NFLFeatureEngine:
         final = pd.concat(chunks, ignore_index=True)
         # Drop helper/private cols
         final.drop(columns=[c for c in final.columns if c.startswith("_")], inplace=True, errors="ignore")
+
+        # Drop constant columns (stabilize downstream selection/fit)
+        if drop_constant_cols:
+            final = _drop_constant_columns(final, exclude=("game_id",), debug=debug)
 
         _log_profile(final, "FINAL_FEATURES", debug)
         _summarize_by_bucket(final.drop(columns=["game_id"], errors="ignore"), "FINAL_FEATURES", debug)
