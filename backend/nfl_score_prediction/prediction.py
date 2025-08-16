@@ -102,6 +102,22 @@ def _order_crc(cols: Sequence[str]) -> str:
     m.update(",".join(list(cols)).encode("utf-8"))
     return m.hexdigest()[:8]
 
+def _safe_int(v, default=None):
+    try:
+        # pd.NA / NaN / None → default
+        if v is None:
+            return default
+        # Handle pandas NA/NaN
+        try:
+            import pandas as pd  # local import to avoid top-level dependency here
+            if pd.isna(v):
+                return default
+        except Exception:
+            pass
+        return int(v)
+    except Exception:
+        return default
+
 def _check_features(X: pd.DataFrame, needed: Sequence[str], label: str, debug: bool):
     if not debug:
         return
@@ -763,6 +779,123 @@ def _impute_advanced_features(
         logger.debug("PRED[IMPUTE] advanced imputed with train means: %s", touched)
     return out
 
+def _normalize_team_key(s: Optional[str]) -> Optional[str]:
+    if s is None:
+        return None
+    t = str(s).strip().lower()
+    # very light normalization; expand if you have variants
+    t = re.sub(r"\s+", " ", t)
+    # common aliases
+    t = t.replace("washington football team", "washington commanders")
+    t = t.replace("oakland raiders", "las vegas raiders")
+    t = t.replace("san diego chargers", "los angeles chargers")
+    t = t.replace("st. louis rams", "los angeles rams")
+    return t
+
+def _fetch_team_mapping(sb: Client) -> Dict[str, int]:
+    """
+    Build {normalized_team_name -> team_id} from your historical tables.
+    Prefers the game-team stats (most complete), falls back to season table.
+    """
+    mapping: Dict[str, int] = {}
+
+    # 1) Try per-game team stats (usually contains (team_id, team_name))
+    try:
+        resp = (
+            sb.table("nfl_historical_game_team_stats")
+              .select("team_id,team_name")
+              .limit(100000)
+              .execute()
+        )
+        rows = resp.data or []
+        for r in rows:
+            tid = r.get("team_id")
+            tname = r.get("team_name")
+            if tid is None or tname is None:
+                continue
+            key = _normalize_team_key(tname)
+            if key and key not in mapping:
+                mapping[key] = int(tid)
+    except Exception as e:
+        logger.debug("TEAM MAP (game_team_stats) skipped: %s", e)
+
+    # 2) Fallback: season stats table
+    if not mapping:
+        try:
+            resp = (
+                sb.table("nfl_historical_team_stats")
+                  .select("team_id,team_name")
+                  .limit(100000)
+                  .execute()
+            )
+            rows = resp.data or []
+            for r in rows:
+                tid = r.get("team_id")
+                tname = r.get("team_name")
+                if tid is None or tname is None:
+                    continue
+                key = _normalize_team_key(tname)
+                if key and key not in mapping:
+                    mapping[key] = int(tid)
+        except Exception as e:
+            logger.debug("TEAM MAP (team_stats) skipped: %s", e)
+
+    if not mapping:
+        logger.warning("TEAM MAP: no mappings found; schedule hydration will be a no-op.")
+    else:
+        logger.debug("TEAM MAP: loaded %d name→id entries", len(mapping))
+    return mapping
+
+def _hydrate_schedule_team_ids(df: pd.DataFrame, mapping: Dict[str, int]) -> pd.DataFrame:
+    """
+    Fill missing home/away team IDs (and standardized names) on schedule rows
+    using your historical mapping. Also mirror names into home_team_name / away_team_name
+    if only home_team / away_team exist.
+    """
+    if df is None or df.empty or not mapping:
+        return df
+
+    out = df.copy()
+
+    # Ensure name columns exist for lookup
+    if "home_team_name" not in out.columns and "home_team" in out.columns:
+        out["home_team_name"] = out["home_team"]
+    if "away_team_name" not in out.columns and "away_team" in out.columns:
+        out["away_team_name"] = out["away_team"]
+
+    # Normalize keys
+    for col in ("home_team_name", "away_team_name"):
+        if col in out.columns:
+            out[f"__norm__{col}"] = out[col].apply(_normalize_team_key)
+        else:
+            out[f"__norm__{col}"] = None
+
+    # Fill IDs if missing
+    for side in ("home", "away"):
+        id_col = f"{side}_team_id"
+        name_norm_col = f"__norm__{side}_team_name"
+        if id_col not in out.columns:
+            out[id_col] = pd.Series([pd.NA] * len(out), dtype="Int64")
+
+        def _lookup(row):
+            if pd.notna(row.get(id_col)):
+                return row.get(id_col)
+            key = row.get(name_norm_col)
+            if key and key in mapping:
+                return int(mapping[key])
+            return pd.NA
+
+        out[id_col] = out.apply(_lookup, axis=1).astype("Int64")
+
+    # Clean temp columns
+    drop_cols = [c for c in out.columns if c.startswith("__norm__")]
+    out.drop(columns=drop_cols, inplace=True, errors="ignore")
+
+    # Make sure we have season also (some rows may lack it)
+    out = _ensure_season_and_ids(out)
+
+    return out
+
 
 # ----------------------------------------------------------------------------- #
 # Core
@@ -773,6 +906,8 @@ def generate_predictions(
     date_start: Optional[str] = None,
     date_end: Optional[str] = None,
     days_window: Optional[int] = None,
+    all_games: bool = False,
+
 
     # History
     historical_lookback: int = 1825,
@@ -898,38 +1033,89 @@ def generate_predictions(
         return []
 
     upcoming_df = _ensure_season_and_ids(upcoming_df)
+
+    # 🔧 Hydrate missing team_ids from historical tables (critical for backfilled rows)
+    try:
+        team_map = _fetch_team_mapping(sb)
+        if team_map:
+            before_missing = int(
+                ((~upcoming_df["home_team_id"].notna()) | (~upcoming_df["away_team_id"].notna())).sum()
+            ) if ("home_team_id" in upcoming_df.columns and "away_team_id" in upcoming_df.columns) else -1
+
+            upcoming_df = _hydrate_schedule_team_ids(upcoming_df, team_map)
+
+            after_missing = int(
+                ((~upcoming_df["home_team_id"].notna()) | (~upcoming_df["away_team_id"].notna())).sum()
+            ) if ("home_team_id" in upcoming_df.columns and "away_team_id" in upcoming_df.columns) else -1
+
+            logger.info("TEAM MAP hydration: missing IDs before=%s after=%s",
+                        before_missing if before_missing >= 0 else "n/a",
+                        after_missing if after_missing >= 0 else "n/a")
+    except Exception as e:
+        logger.debug("TEAM MAP hydration skipped: %s", e)
+
     if upcoming_df.empty:
         logger.info("No games found in nfl_game_schedule.")
         return []
 
+    # Log pre-window stats
+    if debug_mode:
+        n_total = len(upcoming_df)
+        date_min = pd.to_datetime(upcoming_df.get("game_date"), errors="coerce").min()
+        date_max = pd.to_datetime(upcoming_df.get("game_date"), errors="coerce").max()
+        logger.debug("SCHEDULE pre-window: rows=%d | date_range=[%s, %s]", n_total, str(date_min)[:10], str(date_max)[:10])
 
-    # Apply windowing
-    if "game_date" in upcoming_df.columns:
-        upcoming_df["game_date"] = pd.to_datetime(upcoming_df["game_date"], errors="coerce")
+    # Windowing rules:
+    # - If all_games=True => no filtering at all
+    # - Else if ANY of date_start/date_end/days_window is provided => apply them
+    # - Else => no filtering (process all)
+    apply_window = (not all_games) and (bool(date_start) or bool(date_end) or (days_window is not None))
+
+    if apply_window and "game_date" in upcoming_df.columns:
+        dfw = upcoming_df.copy()
+        dfw["game_date"] = pd.to_datetime(dfw["game_date"], errors="coerce")
+
         lower = None
         upper = None
+
         if date_start:
             try:
                 lower = pd.to_datetime(date_start)
             except Exception:
                 lower = None
+
         if date_end:
             try:
-                upper = pd.to_datetime(date_end)
+                # include the end date fully by moving to end-of-day
+                upper = pd.to_datetime(date_end) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
             except Exception:
                 upper = None
-        if days_window is not None and (lower is None and upper is None):
+
+        if (lower is None and upper is None) and (days_window is not None):
             today = pd.Timestamp(datetime.now(timezone.utc).date())
             lower = today
             upper = today + timedelta(days=int(days_window))
-        if lower is not None:
-            upcoming_df = upcoming_df.loc[upcoming_df["game_date"] >= lower]
-        if upper is not None:
-            upcoming_df = upcoming_df.loc[upcoming_df["game_date"] <= upper]
 
+        if lower is not None:
+            dfw = dfw.loc[dfw["game_date"] >= lower]
+        if upper is not None:
+            dfw = dfw.loc[dfw["game_date"] <= upper]
+
+        if debug_mode:
+            logger.debug(
+                "SCHEDULE post-window: rows=%d | lower=%s upper=%s",
+                len(dfw),
+                lower.isoformat() if lower is not None else None,
+                upper.isoformat() if upper is not None else None,
+            )
+
+        upcoming_df = dfw
+
+    # Final guard
     if upcoming_df.empty:
-        logger.info("No games within the requested window.")
+        logger.info("No games within the requested window (or after filtering). Use --all to include everything.")
         return []
+
 
     fetcher = NFLDataFetcher(sb)
     games_hist = fetcher.fetch_historical_games(historical_lookback)
@@ -1201,15 +1387,30 @@ def generate_predictions(
     final_df["pred_total"]  = (final_df["predicted_home_score"] + final_df["predicted_away_score"]).astype(float)
     final_df["pred_margin"] = (final_df["predicted_home_score"] - final_df["predicted_away_score"]).astype(float)
 
-    # Pretty-print (sample)
-    def _fmt(x): return f"{x:.2f}"
+    # Pretty-print (sample) – tolerate missing IDs gracefully
+    def _fmt(x): 
+        try:
+            return f"{float(x):.2f}"
+        except Exception:
+            return "NA"
+
     for _, row in final_df.loc[scores_df.index].iterrows():
-        date_s = str(row["game_date"])[:10]
-        home = _fmt(row["predicted_home_score"])
-        away = _fmt(row["predicted_away_score"])
-        tot  = _fmt(row["pred_total"])
-        mar  = _fmt(row["pred_margin"])
-        print(f"{date_s}  away_id {int(row['away_team_id'])} @ home_id {int(row['home_team_id'])}   {away} - {home}   (T={tot}, M={mar})")
+        date_s = str(row.get("game_date"))[:10]
+        home_id = _safe_int(row.get("home_team_id"))
+        away_id = _safe_int(row.get("away_team_id"))
+        home = _fmt(row.get("predicted_home_score"))
+        away = _fmt(row.get("predicted_away_score"))
+        tot  = _fmt(row.get("pred_total"))
+        mar  = _fmt(row.get("pred_margin"))
+
+        if home_id is None or away_id is None:
+            # Don’t crash on incomplete schedule rows; log once at DEBUG
+            if debug_mode:
+                logger.debug("PPRINT skip: missing team_id(s) for row on %s (home_id=%s, away_id=%s)", date_s, home_id, away_id)
+            continue
+
+        print(f"{date_s}  away_id {away_id} @ home_id {home_id}   {away} - {home}   (T={tot}, M={mar})")
+
 
     if debug_mode:
         n_assigned = final_df["predicted_home_score"].notna().sum()
@@ -1283,12 +1484,21 @@ def generate_predictions(
             if debug_mode:
                 logger.debug("Skipping game_id=%s due to NaN prediction", gid)
             continue
+
+        home_id = _safe_int(row.get("home_team_id"))
+        away_id = _safe_int(row.get("away_team_id"))
+        if home_id is None or away_id is None:
+            # Don’t attempt to upsert without valid IDs
+            if debug_mode:
+                logger.debug("Skipping payload for game_id=%s due to missing team_id(s): home_id=%s away_id=%s", gid, home_id, away_id)
+            continue
+
         payload.append(
             {
                 "game_id":              int(gid),
                 "game_date":            row["game_date"].isoformat() if hasattr(row["game_date"], "isoformat") else str(row["game_date"]),
-                "home_team_id":         int(row["home_team_id"]),
-                "away_team_id":         int(row["away_team_id"]),
+                "home_team_id":         home_id,
+                "away_team_id":         away_id,
                 "home_team_name":       row.get("home_team_name"),
                 "away_team_name":       row.get("away_team_name"),
                 "predicted_home_score": round(float(row["predicted_home_score"]), 2),
@@ -1296,6 +1506,7 @@ def generate_predictions(
                 "prediction_utc":       now_iso,
             }
         )
+
 
     logger.info("Generated %d predictions in %.2fs", len(payload), time.time() - t0)
     return payload
@@ -1310,6 +1521,8 @@ def main():
     parser.add_argument("--date-start", type=str, default=None, help="Start date inclusive (YYYY-MM-DD).")
     parser.add_argument("--date-end",   type=str, default=None, help="End date inclusive (YYYY-MM-DD).")
     parser.add_argument("--days",       type=int, default=None, help="Relative window [today, today+days] if no date range is given.")
+    parser.add_argument("--all", dest="all_games", action="store_true",
+                    help="Ignore date windowing and predict for ALL rows in nfl_game_schedule.")
 
     # History
     parser.add_argument("--lookback", type=int, default=1825, help="Historical days for features.")
@@ -1361,6 +1574,7 @@ def main():
         date_start=args.date_start,
         date_end=args.date_end,
         days_window=args.days,
+        all_games=args.all_games,
 
         historical_lookback=args.lookback,
         debug_mode=args.debug,
