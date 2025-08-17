@@ -1,20 +1,21 @@
 # backend/nfl_features/rest.py
-
 """
-Rest‑day & schedule‑spacing features for NFL games.
+Rest-day & schedule-spacing features for NFL games.
 
 For each upcoming matchup we calculate:
-  • rest_days             – full days between a team’s previous game and kickoff
-  • is_on_short_week      – rest_days ≤ 3   (Thu after Sun / Sat after Mon, etc.)
-  • is_off_bye            – rest_days ≥ 13  (the week after a bye)
-  • rest_advantage        – home_rest_days – away_rest_days
+• rest_days – full days between a team’s previous game and kickoff
+• is_on_short_week – rest_days ≤ 3 (Thu after Sun / Sat after Mon, etc.)
+• is_off_bye – rest_days ≥ 13 (the week after a bye)
+• rest_advantage – home_rest_days – away_rest_days
 """
+
 from __future__ import annotations
 
 import logging
 from typing import Optional
 
 import pandas as pd
+import numpy as np
 
 from .utils import DEFAULTS, normalize_team_name, prefix_columns
 
@@ -25,19 +26,19 @@ __all__ = ["transform"]
 
 
 # --------------------------------------------------------------------------- #
-# Helpers                                                                     #
+# Helpers
 # --------------------------------------------------------------------------- #
 def _default_rest(games: pd.DataFrame, *, flag_imputations: bool = True) -> pd.DataFrame:
     base = games[["game_id"]].copy()
 
     # pass through schedule context so next modules have what they need
-    passthru = [c for c in (
-        "game_date", "game_time",
-        "season",
-        "home_team_norm", "away_team_norm",
-        "home_score", "away_score",
-        "kickoff_ts"
-    ) if c in games.columns]
+    passthru = [
+        c for c in (
+            "game_date", "game_time", "season",
+            "home_team_norm", "away_team_norm",
+            "home_score", "away_score", "kickoff_ts"
+        ) if c in games.columns
+    ]
     if passthru:
         base = base.merge(games[["game_id"] + passthru], on="game_id", how="left")
 
@@ -85,13 +86,20 @@ def _timeline(historical: pd.DataFrame, upcoming: pd.DataFrame) -> pd.DataFrame:
     away = combined.rename(columns={"away_team_norm": "team"})
 
     long_df = pd.concat([home, away], ignore_index=True, sort=False)
-    long_df = long_df[["game_id", "game_date", "team", "_is_upcoming"]]
+
+    keep_cols = ["game_id", "game_date", "team", "_is_upcoming"]
+    if "game_time" in long_df.columns:
+        keep_cols.append("game_time")
+    if "kickoff_ts" in long_df.columns:
+        keep_cols.append("kickoff_ts")
+
+    long_df = long_df[keep_cols]
     return long_df.sort_values(["team", "game_date"], kind="mergesort").reset_index(drop=True)
 
-# --------------------------------------------------------------------------- #
-# Public API                                                                  #
-# --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+# Public API
+# --------------------------------------------------------------------------- #
 def transform(
     games: pd.DataFrame,
     *,
@@ -109,7 +117,6 @@ def transform(
     # ── 1) Normalize upcoming teams & make sure we have game_date ────────────
     games_norm = games.copy()
 
-    # Ensure game_date; derive from kickoff_ts if needed
     if "game_date" not in games_norm.columns or games_norm["game_date"].isna().all():
         if "kickoff_ts" in games_norm.columns:
             ts = pd.to_datetime(games_norm["kickoff_ts"], errors="coerce", utc=True)
@@ -124,7 +131,6 @@ def transform(
     else:
         games_norm["game_date"] = pd.to_datetime(games_norm["game_date"], errors="coerce")
 
-    # Normalize team keys (id/abbr/name → canonical)
     for col in ("home_team_norm", "away_team_norm"):
         if col in games_norm.columns:
             games_norm[col] = games_norm[col].apply(normalize_team_name).astype(str).str.lower()
@@ -132,12 +138,32 @@ def transform(
     # ── 2) Build timeline from history and upcoming games ────────────────────
     long_df = _timeline(historical_df, games_norm)
 
-    # Compute previous game per team
-    grp = long_df.groupby("team", sort=False)
-    long_df["prev_game_date"] = grp["game_date"].shift(1)
+    def _mk_ts(df: pd.DataFrame) -> pd.Series:
+        gd = pd.to_datetime(df["game_date"], errors="coerce", utc=True)
+        if "game_time" in df.columns:
+            tt = df["game_time"].astype(str).fillna("00:00:00")
+            ts = pd.to_datetime(gd.dt.strftime("%Y-%m-%d") + " " + tt, errors="coerce", utc=True)
+            ts = ts.fillna(gd + pd.Timedelta(hours=12))
+        else:
+            ts = gd + pd.Timedelta(hours=12)
+        if "kickoff_ts" in df.columns:
+            ko = pd.to_datetime(df["kickoff_ts"], errors="coerce", utc=True)
+            ts = ko.where(ko.notna(), ts)
+        return ts
 
-    # Rest days (full days between previous game and kickoff, excluding both days → −1)
-    long_df["rest_days"] = (long_df["game_date"] - long_df["prev_game_date"]).dt.days - 1
+    long_df["__ts__"] = _mk_ts(long_df)
+
+    long_df = long_df.sort_values(["team", "__ts__", "game_id"], kind="mergesort")
+    long_df["__day__"] = long_df["__ts__"].dt.date
+    long_df = long_df.drop_duplicates(["team", "__day__"], keep="last")
+
+    grp = long_df.groupby("team", sort=False)
+    long_df["__prev_ts__"] = grp["__ts__"].shift(1)
+
+    delta_hours = (long_df["__ts__"] - long_df["__prev_ts__"]).dt.total_seconds() / 3600.0
+    long_df["rest_days"] = (np.floor(delta_hours / 24.0) - 1).astype("float32")
+    long_df["rest_days"] = long_df["rest_days"].clip(lower=0, upper=30)
+
     long_df["is_on_short_week"] = (long_df["rest_days"] <= 3).astype("int8")
     long_df["is_off_bye"] = (long_df["rest_days"] >= 13).astype("int8")
 
@@ -146,11 +172,7 @@ def transform(
     # ── 3) Merge per side ────────────────────────────────────────────────────
     merged = {}
     for side, team_col in (("home", "home_team_norm"), ("away", "away_team_norm")):
-        df_side = games_norm.merge(
-            feats.rename(columns={"team": team_col}),
-            on=["game_id", team_col],
-            how="left",
-        )
+        df_side = games_norm.merge(feats.rename(columns={"team": team_col}), on=["game_id", team_col], how="left")
         merged[side] = prefix_columns(
             df_side[["game_id", "rest_days", "is_on_short_week", "is_off_bye"]],
             side,
@@ -170,16 +192,16 @@ def transform(
             out[flag_col] = out[flag_col].fillna(0).astype("int8")
 
     out["rest_advantage"] = (out["home_rest_days"] - out["away_rest_days"]).astype("float32")
+    out["short_week_diff"] = (out["home_is_on_short_week"] - out["away_is_on_short_week"]).astype("int8")
+    out["off_bye_diff"] = (out["home_is_off_bye"] - out["away_is_off_bye"]).astype("int8")
 
-    # Pass through the same schedule columns
-    passthru = [c for c in (
-        "game_date", "game_time",
-        "season",
-        "home_team_norm", "away_team_norm",
-        "home_score", "away_score",
-        "kickoff_ts"
-    ) if c in games_norm.columns]
-
+    passthru = [
+        c for c in (
+            "game_date", "game_time", "season",
+            "home_team_norm", "away_team_norm",
+            "home_score", "away_score", "kickoff_ts"
+        ) if c in games_norm.columns
+    ]
     if passthru:
         out = out.merge(games_norm[["game_id"] + passthru], on="game_id", how="left")
 

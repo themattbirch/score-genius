@@ -2,7 +2,11 @@
 """Win-loss *form* and current streak features for NFL teams.
 
 Leakage-free + memory-lean.
-Key change: per-team merge_asof to avoid global sort constraints.
+Key updates:
+  • Optional per-team merge_asof tolerance (days) to avoid dragging in very old form.
+  • Clamp lookback_window to ≥1 and use the effective window consistently.
+  • Pre-sort long frames once; avoid re-sorting inside per-team asof.
+  • Unify default helper; add OR-imputation flags for quick downstream visibility.
 """
 
 from __future__ import annotations
@@ -54,29 +58,11 @@ def _pick_historical(kwargs: Mapping[str, object]) -> Optional[pd.DataFrame]:
         logger.warning("form: no historical_df found. Available kwargs keys: %s", snapshot)
     return None
 
-def _return_default_form(games: pd.DataFrame, lookback_window: int, flag_imputations: bool) -> pd.DataFrame:
-    base = games[["game_id"]].copy()
-    for side in ("home", "away"):
-        base[f"{side}_form_win_pct_{lookback_window}"] = DEFAULTS["form_win_pct"]
-        base[f"{side}_current_streak"] = DEFAULTS["current_streak"]
-        if flag_imputations:
-            base[f"{side}_form_imputed"] = 1
-            base[f"{side}_streak_imputed"] = 1
-    base[f"form_win_pct_{lookback_window}_diff"] = 0.0
-    base["current_streak_diff"] = 0.0
-
-    # pass through schedule columns so downstream never loses them
-    passthru = [c for c in ("game_date","game_time","season","home_team_norm","away_team_norm","home_score","away_score","kickoff_ts") if c in games.columns]
-    if passthru:
-        base = base.merge(games[["game_id"] + passthru], on="game_id", how="left")
-    return base
-
 
 def _prepare_long_format(historical: pd.DataFrame) -> pd.DataFrame:
     hist = historical.copy()
     hist["game_date"] = pd.to_datetime(hist["game_date"], errors="coerce")
 
-    # normalize both home/away via utils (handles ids/abbr/names consistently)
     for c in ("home_team_norm", "away_team_norm"):
         if c in hist.columns:
             hist[c] = hist[c].apply(normalize_team_name).astype(str).str.lower()
@@ -86,7 +72,6 @@ def _prepare_long_format(historical: pd.DataFrame) -> pd.DataFrame:
         base_cols.append("game_time")
     hist = hist[[c for c in base_cols if c in hist.columns]]
 
-    # home & away perspectives
     home_games = hist.rename(columns={
         "home_team_norm": "team", "away_team_norm": "opponent",
         "home_score": "team_score", "away_score": "opp_score",
@@ -117,7 +102,6 @@ def _compute_outcomes(long_df: pd.DataFrame) -> pd.DataFrame:
         default=0,
     ).astype("int8")
 
-    # fast per-team pre-game signed streak (ties reset to 0)
     def _streak_signed_pre_game(outcome: np.ndarray) -> np.ndarray:
         n = outcome.shape[0]
         after = np.zeros(n, dtype=np.int16)
@@ -158,8 +142,8 @@ def _dedup_form_rhs(rhs: pd.DataFrame) -> pd.DataFrame:
     return rhs
 
 
-def _pivot_wide(merged_long: pd.DataFrame, lookback_window: int) -> pd.DataFrame:
-    value_cols = [f"form_win_pct_{lookback_window}", "current_streak"]
+def _pivot_wide(merged_long: pd.DataFrame, win_k: int) -> pd.DataFrame:
+    value_cols = [f"form_win_pct_{win_k}", "current_streak"]
 
     if "game_id" not in merged_long.columns:
         if "game_id_x" in merged_long.columns:
@@ -175,19 +159,20 @@ def _pivot_wide(merged_long: pd.DataFrame, lookback_window: int) -> pd.DataFrame
     return pivot_df.reset_index()
 
 
-def _asof_join_per_team(left_df: pd.DataFrame, right_df: pd.DataFrame, on: str) -> pd.DataFrame:
-    """Run merge_asof per team to dodge global-sort requirement."""
+def _asof_join_per_team(
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
+    *,
+    on: str,
+    tolerance: Optional[pd.Timedelta] = None,
+) -> pd.DataFrame:
     parts: List[pd.DataFrame] = []
-    # unique teams on the left only (we don't need teams that aren't in the schedule)
-    for team, left_g in left_df.groupby("team", sort=False):
+    for team, left_idx in left_df.groupby("team", sort=False).indices.items():
+        left_g = left_df.loc[left_idx]
         rg = right_df[right_df["team"] == team]
-        # sort by the 'on' key within each team
-        left_g = left_g.sort_values(on, kind="mergesort")
         if rg.empty:
-            # no history — keep left as-is and produce NaNs for feature cols
             parts.append(left_g)
             continue
-        rg = rg.sort_values(on, kind="mergesort")
         merged = pd.merge_asof(
             left_g,
             rg,
@@ -195,12 +180,12 @@ def _asof_join_per_team(left_df: pd.DataFrame, right_df: pd.DataFrame, on: str) 
             right_on=on,
             direction="backward",
             allow_exact_matches=False,
+            tolerance=tolerance,
         )
         parts.append(merged)
     if not parts:
         return left_df
-    out = pd.concat(parts, ignore_index=True)
-    return out
+    return pd.concat(parts, ignore_index=True)
 
 
 # ---------- Main entrypoint ----------
@@ -212,37 +197,38 @@ def transform(
     lookback_window: int = 5,
     flag_imputations: bool = True,
     strict_inputs: bool = False,
+    tolerance_days: Optional[int] = None,
     **kwargs,
 ) -> pd.DataFrame:
-    # ---------- tiny local helper to return defaults (with schedule passthrough) ----------
+    win_k = max(1, int(lookback_window))
+
     def _return_default_form(base_games: pd.DataFrame) -> pd.DataFrame:
         base = base_games[["game_id"]].copy()
         for side in ("home", "away"):
-            base[f"{side}_form_win_pct_{lookback_window}"] = DEFAULTS["form_win_pct"]
+            base[f"{side}_form_win_pct_{win_k}"] = DEFAULTS["form_win_pct"]
             base[f"{side}_current_streak"] = DEFAULTS["current_streak"]
             if flag_imputations:
                 base[f"{side}_form_imputed"] = 1
                 base[f"{side}_streak_imputed"] = 1
-        base[f"form_win_pct_{lookback_window}_diff"] = 0.0
+        base[f"form_win_pct_{win_k}_diff"] = 0.0
         base["current_streak_diff"] = 0.0
 
-        # Pass through schedule/context so downstream never loses them
-        passthru = [
-            c for c in (
-                "game_date", "game_time", "season",
-                "home_team_norm", "away_team_norm",
-                "home_score", "away_score", "kickoff_ts"
-            ) if c in base_games.columns
-        ]
+        passthru = [c for c in (
+            "game_date", "game_time", "season",
+            "home_team_norm", "away_team_norm",
+            "home_score", "away_score", "kickoff_ts"
+        ) if c in base_games.columns]
         if passthru:
             base = base.merge(base_games[["game_id"] + passthru], on="game_id", how="left")
+
+        if flag_imputations:
+            base[f"form_any_imputed_{win_k}"] = np.int8(1)
+            base["streak_any_imputed"] = np.int8(1)
         return base
 
-    # ---------- accept alias keys from the engine ----------
     if historical_df is None or (isinstance(historical_df, pd.DataFrame) and historical_df.empty):
         historical_df = _pick_historical(kwargs)
 
-    # ---------- guard: if no historical, default immediately ----------
     if historical_df is None or historical_df.empty:
         msg = "form: No historical data – defaulting all form features."
         if strict_inputs:
@@ -250,37 +236,29 @@ def transform(
         logger.warning(msg)
         return _return_default_form(games)
 
-    # ---------- build RHS (historical team-games) ----------
     long_df = _prepare_long_format(historical_df)
-    # drop literal unknowns on RHS (id_XX stays distinct)
     long_df = long_df[long_df["team"].ne("unknown_team")]
-
     long_df = _compute_outcomes(long_df)
 
-    # pre-game rolling win% (shift then rolling)
     long_df["win_shift"] = long_df.groupby("team", sort=False)["win"].shift(1)
-    long_df[f"form_win_pct_{lookback_window}"] = (
+    long_df[f"form_win_pct_{win_k}"] = (
         long_df.groupby("team", sort=False)["win_shift"]
-        .rolling(lookback_window, min_periods=1)
+        .rolling(win_k, min_periods=1)
         .mean()
         .reset_index(level=0, drop=True)
         .astype("float32")
     )
 
-    rhs_cols = ["team", "game_date", "current_streak", f"form_win_pct_{lookback_window}"]
+    rhs_cols = ["team", "game_date", "current_streak", f"form_win_pct_{win_k}"]
     if "game_time" in long_df.columns:
         rhs_cols.append("game_time")
     features_long = _dedup_form_rhs(long_df[rhs_cols])
 
-    # ---------- build LHS (upcoming) with robust date/timestamp handling ----------
     upcoming = games.copy()
-
-    # If game_date is missing, try to derive from kickoff_ts; else default safely
     if "game_date" not in upcoming.columns or upcoming["game_date"].isna().all():
         if "kickoff_ts" in upcoming.columns:
             ts = pd.to_datetime(upcoming["kickoff_ts"], errors="coerce", utc=True)
             if ts.notna().any():
-                # keep a naive date for downstream, retain kickoff_ts as an id_var too
                 upcoming["game_date"] = ts.dt.tz_convert("UTC").dt.tz_localize(None)
             else:
                 logger.warning("form: kickoff_ts present but unusable – defaulting form features.")
@@ -289,7 +267,6 @@ def transform(
             logger.warning("form: missing game_date and kickoff_ts – defaulting form features.")
             return _return_default_form(games)
 
-    # normalize & trim LHS
     upcoming["game_date"] = pd.to_datetime(upcoming["game_date"], errors="coerce")
     for c in ("home_team_norm", "away_team_norm"):
         if c in upcoming.columns:
@@ -302,7 +279,6 @@ def transform(
         lhs_cols.append("kickoff_ts")
     upcoming = upcoming[[c for c in lhs_cols if c in upcoming.columns]]
 
-    # reshape to long
     id_vars = [c for c in ["game_id", "game_date", "game_time", "kickoff_ts"] if c in upcoming.columns]
     upcoming_long = pd.melt(
         upcoming,
@@ -314,45 +290,33 @@ def transform(
     upcoming_long["side"] = upcoming_long["side"].str.replace("_team_norm", "", regex=False)
     upcoming_long["team"] = upcoming_long["team"].astype(str).str.lower()
 
-    # timestamps for as-of join
     if "kickoff_ts" in upcoming_long.columns:
         upcoming_long["kickoff_ts"] = pd.to_datetime(upcoming_long["kickoff_ts"], errors="coerce", utc=True)
-        # if all NaT (edge), fallback to building from date/time
         if upcoming_long["kickoff_ts"].isna().all():
-            upcoming_long["kickoff_ts"] = _mk_ts(
-                upcoming_long,
-                date_col="game_date",
-                time_col="game_time" if "game_time" in upcoming_long.columns else "game_time",
-            )
+            upcoming_long["kickoff_ts"] = _mk_ts(upcoming_long, date_col="game_date", time_col="game_time" if "game_time" in upcoming_long.columns else "game_time")
     else:
-        upcoming_long["kickoff_ts"] = _mk_ts(
-            upcoming_long,
-            date_col="game_date",
-            time_col="game_time" if "game_time" in upcoming_long.columns else "game_time",
-        )
+        upcoming_long["kickoff_ts"] = _mk_ts(upcoming_long, date_col="game_date", time_col="game_time" if "game_time" in upcoming_long.columns else "game_time")
 
-    # ---------- clean join keys & per-team as-of ----------
-    # drop nulls in join keys (bad rows get defaults later)
     upcoming_long = upcoming_long.dropna(subset=["team", "kickoff_ts"])
     features_long = features_long.dropna(subset=["team", "kickoff_ts"])
 
-    # ensure string dtype
-    upcoming_long["team"] = upcoming_long["team"].astype(str)
-    features_long["team"] = features_long["team"].astype(str)
+    upcoming_long["team"] = upcoming_long["team"].astype("category")
+    features_long["team"] = features_long["team"].astype("category")
+    upcoming_long["side"] = upcoming_long["side"].astype("category")
 
-    # per-team merge_asof → avoids global sort constraint
-    merged_long = _asof_join_per_team(upcoming_long, features_long, on="kickoff_ts")
-    merged_long["side"] = merged_long["side"].astype("category")
+    upcoming_long = upcoming_long.sort_values(["team", "kickoff_ts"], kind="mergesort").reset_index(drop=True)
+    features_long = features_long.sort_values(["team", "kickoff_ts"], kind="mergesort").reset_index(drop=True)
 
-    # ---------- pivot back to wide ----------
-    pivot_df = _pivot_wide(merged_long, lookback_window)
+    tol = pd.Timedelta(days=int(tolerance_days)) if tolerance_days is not None else None
+    merged_long = _asof_join_per_team(upcoming_long, features_long, on="kickoff_ts", tolerance=tol)
 
-    # ---------- merge & fill defaults + imputation flags ----------
+    pivot_df = _pivot_wide(merged_long, win_k)
+
     result = games[["game_id"]].merge(pivot_df, on="game_id", how="left")
 
     fills = {
-        f"home_form_win_pct_{lookback_window}": DEFAULTS["form_win_pct"],
-        f"away_form_win_pct_{lookback_window}": DEFAULTS["form_win_pct"],
+        f"home_form_win_pct_{win_k}": DEFAULTS["form_win_pct"],
+        f"away_form_win_pct_{win_k}": DEFAULTS["form_win_pct"],
         "home_current_streak": DEFAULTS["current_streak"],
         "away_current_streak": DEFAULTS["current_streak"],
     }
@@ -361,14 +325,22 @@ def transform(
             result[f"{col}_imputed"] = result[col].isna().astype("int8")
         result[col] = result[col].fillna(dval)
 
-    result[f"form_win_pct_{lookback_window}_diff"] = (
-        result[f"home_form_win_pct_{lookback_window}"] - result[f"away_form_win_pct_{lookback_window}"]
+    if flag_imputations:
+        result[f"form_any_imputed_{win_k}"] = (
+            result[f"home_form_win_pct_{win_k}_imputed"].astype("int8") |
+            result[f"away_form_win_pct_{win_k}_imputed"].astype("int8")
+        ).astype("int8")
+        result["streak_any_imputed"] = (
+            result["home_current_streak_imputed"].astype("int8") |
+            result["away_current_streak_imputed"].astype("int8")
+        ).astype("int8")
+
+    result[f"form_win_pct_{win_k}_diff"] = (
+        result[f"home_form_win_pct_{win_k}"] - result[f"away_form_win_pct_{win_k}"]
     )
     result["current_streak_diff"] = result["home_current_streak"] - result["away_current_streak"]
 
-    # compact types
-    for c in (f"home_form_win_pct_{lookback_window}", f"away_form_win_pct_{lookback_window}",
-              f"form_win_pct_{lookback_window}_diff"):
+    for c in (f"home_form_win_pct_{win_k}", f"away_form_win_pct_{win_k}", f"form_win_pct_{win_k}_diff"):
         result[c] = result[c].astype("float32")
     for c in ("home_current_streak", "away_current_streak", "current_streak_diff"):
         result[c] = result[c].astype("int16")

@@ -4,11 +4,12 @@ Advanced efficiency features (leakage-safe) for NFL games.
 
 Prefers prior-season aggregates (advanced_stats_df); otherwise computes from
 team-game box scores (historical_team_stats_df), aggregates to season, and
-optionally blends with current-season rolling (leak-safe; up to game_date-1).
+optionally blends with current-season rolling (leak-safe; up to kickoff_ts or
+game_date-1).
 
 Key behaviors:
 - Joins by PRIOR season (season - 1) for priors.
-- Optional blend with current-season rolling means (windowed), weighted by
+- Optional blend with current-season rolling means (windowed), weighted by the
   number of prior games this season.
 - Joins by numeric team_id when available; otherwise falls back to normalized
   team name (team_norm).
@@ -17,8 +18,9 @@ Key behaviors:
     eff:     points_per_drive, yards_per_play, rush_yards_per_rush,
              turnover_rate_per_play, points_per_100_yards, pass_rate
     situational: 3rd/4th down %, red zone %
-- Surfaces home_/away_ values, adv_*_diff (computed BEFORE any imputation),
-  total_adv_*, and *_imputed flags for observability.
+    (optional when present) sack_rate, explosive_play_rate, penalty_yards_per_play
+- Emits home_/away_ values, adv_*_diff (computed after fills), total_adv_*,
+  and *_imputed flags for observability.
 
 This module avoids label leakage by never using same-day or future information.
 """
@@ -39,16 +41,18 @@ logger.addHandler(logging.NullHandler())
 __all__ = ["transform", "compute_advanced_metrics"]
 
 # --- module toggles / constants ---
-ADV_LOG_SUMMARY = True            # print one compact coverage line per transform()
-ALLOW_SAME_SEASON_FALLBACK = True # if prev season missing, optionally use same-season with shrink
-SAME_SEASON_SHRINK = 0.70         # shrink factor when same-season is used as proxy for prev-season
+ADV_LOG_SUMMARY = True             # compact coverage log
+ALLOW_SAME_SEASON_FALLBACK = True  # allow same-season proxy when prev-season missing
+SAME_SEASON_SHRINK = 0.70          # base shrink for same-season priors
+WINSORIZE_POST_BLEND = True        # toggle winsorization/clipping after blend
 
 # families used for normalization / engineered totals
 ADV_RATE_NAMES = {
     "third_down_pct", "fourth_down_pct", "red_zone_pct", "pythagorean_win_pct", "pass_rate",
+    "sack_rate", "explosive_play_rate",
 }
 ADV_PER_PLAY_NAMES = {
-    "yards_per_play", "turnover_rate_per_play",
+    "yards_per_play", "rush_yards_per_rush", "turnover_rate_per_play", "penalty_yards_per_play",
 }
 ADV_PER_DRIVE_NAMES = {
     "yards_per_drive", "points_per_drive", "plays_per_drive",
@@ -68,6 +72,12 @@ WINSOR_CAPS = {
     "fourth_down_pct":  (0.20, 0.80),
     "red_zone_pct":     (0.35, 0.75),
     "yards_per_drive":  (15.0, 55.0),
+    # new caps for optional metrics
+    "sack_rate":        (0.0, 0.15),
+    "explosive_play_rate": (0.05, 0.20),
+    "penalty_yards_per_play": (0.0, 1.5),
+    "time_of_possession_seconds": (1200.0, 2400.0),  # 20–40 minutes
+    "turnovers_per_game": (0.0, 4.0),
     "_default":         (-1e6, 1e6),
 }
 
@@ -94,7 +104,7 @@ def _first(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     return None
 
 
-def _ensure_numeric(s: pd.Series) -> pd.Series:
+def _coerce_int(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce").astype("Int64")
 
 
@@ -134,11 +144,13 @@ def _normalize_adv_map(season_map: pd.DataFrame) -> pd.DataFrame:
     for c in adv_cols:
         lc = c.lower()
         v = pd.to_numeric(season_map[c], errors="coerce")
-        # if column looks like a rate (or has '_pct') and median > 1, assume percentage and scale down
         med = float(v.median()) if not np.isnan(v.median()) else np.nan
         if ("_pct" in lc or any(name in lc for name in ADV_RATE_NAMES)) and isinstance(med, float) and not np.isnan(med) and med > 1.1:
             v = v / 100.0
-        season_map[c] = v.clip(0.0, 1.0).astype("float32") if ("_pct" in lc or any(name in lc for name in ADV_RATE_NAMES)) else v.astype("float32")
+        if ("_pct" in lc or any(name in lc for name in ADV_RATE_NAMES)):
+            season_map[c] = v.clip(0.0, 1.0).astype("float32")
+        else:
+            season_map[c] = v.astype("float32")
     return season_map
 
 
@@ -152,16 +164,44 @@ def _cap_for(col: str) -> Tuple[float, float]:
 def _dedupe_by(df: pd.DataFrame, keys: List[str]) -> pd.DataFrame:
     """
     Deterministic de-duplication: keep the last row per key combination.
-    This is used to enforce a single row per (season_current, key, game_date).
     """
     if not keys or any(k not in df.columns for k in keys):
         return df
     if not df.duplicated(subset=keys).any():
         return df
     before = len(df)
-    out = df.sort_values(keys).drop_duplicates(subset=keys, keep="last")
-    logger.warning("ADVANCED_FIX: De-duplicated left/right at %s: %d -> %d rows", keys, before, len(out))
+    out = df.sort_values(keys, kind="mergesort").drop_duplicates(subset=keys, keep="last")
+    logger.warning("ADVANCED_FIX: De-duplicated at %s: %d -> %d rows", keys, before, len(out))
     return out
+
+
+def _mk_kickoff_ts(df: pd.DataFrame, *, date_col="game_date", time_col="game_time", kickoff_col="kickoff_ts") -> pd.Series:
+    """
+    Build a robust, UTC-aware kickoff timestamp per row.
+    Prefer kickoff_col if present; else compose from date+time (fallback midday).
+    """
+    # kickoff_ts if present
+    if kickoff_col in df.columns:
+        ko = pd.to_datetime(df[kickoff_col], errors="coerce", utc=True)
+    else:
+        ko = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
+
+    # compose from date+time
+    gd = pd.to_datetime(df.get(date_col, pd.NaT), errors="coerce")
+    if time_col in df.columns:
+        tt = df[time_col].astype(str).fillna("00:00:00")
+        combo = pd.to_datetime(gd.astype(str) + " " + tt, errors="coerce")
+        combo = combo.fillna(gd + pd.Timedelta(hours=12))
+    else:
+        combo = gd + pd.Timedelta(hours=12)
+
+    try:
+        combo = combo.dt.tz_localize("America/New_York", ambiguous="infer", nonexistent="shift_forward").dt.tz_convert("UTC")
+    except Exception:
+        combo = pd.to_datetime(combo, errors="coerce", utc=True)
+
+    ts = ko.where(ko.notna(), combo)
+    return ts
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +221,7 @@ def compute_advanced_metrics(
 
     # Identity columns
     if "team_id" in df.columns:
-        df["team_id"] = _ensure_numeric(df["team_id"])
+        df["team_id"] = _coerce_int(df["team_id"])
 
     team_norm_src = _first(df, ["team_norm", "team_name", "team", "team_abbr"])
     if team_norm_src:
@@ -214,13 +254,21 @@ def compute_advanced_metrics(
     pass_att_col    = _first(df, ["passing_attempts", "pass_att", "attempts_passing"])
     # possession time
     top_col         = _first(df, ["possession_time", "time_of_possession", "top"])
+    # extras
+    sacks_col       = _first(df, ["sacks_allowed", "sacks"])
+    dropbacks_col   = _first(df, ["pass_dropbacks", "dropbacks"])
+    explosive_col   = _first(df, ["explosive_plays", "explosive_total"])
+    pass_sacks_alt  = sacks_col  # capture even if named "sacks"
 
     def _add(col_out: str, numer: pd.Series, denom: pd.Series, default_key: Optional[str] = None, *, scale: float = 1.0):
         default_val = float(DEFAULTS.get(default_key, 0.0)) if default_key else 0.0
-        rate = safe_divide(numer, denom, default_val=default_val) * scale
-        out[col_out] = rate.astype("float32")
+        rate = safe_divide(pd.to_numeric(numer, errors="coerce"),
+                           pd.to_numeric(denom, errors="coerce"),
+                           default_val=default_val) * scale
+        out[col_out] = pd.to_numeric(rate, errors="coerce").astype("float32")
         if flag_imputations:
-            out[f"{col_out}_imputed"] = (denom.isna()) | (denom == 0) | numer.isna()
+            out[f"{col_out}_imputed"] = ((pd.to_numeric(denom, errors="coerce").isna()) | (pd.to_numeric(denom, errors="coerce") == 0) |
+                                         (pd.to_numeric(numer, errors="coerce").isna())).astype("int8")
 
     # Core rates/ratios
     if third_made and third_att:
@@ -255,6 +303,20 @@ def compute_advanced_metrics(
         total_att = pd.to_numeric(df[pass_att_col], errors="coerce") + pd.to_numeric(df[rush_att_col], errors="coerce")
         _add("adv_pass_rate", pd.to_numeric(df[pass_att_col], errors="coerce"), total_att, None)
 
+    # Optional: sack rate = sacks / dropbacks (or pass_att + sacks)
+    if pass_sacks_alt and (dropbacks_col or pass_att_col):
+        denom = (pd.to_numeric(df[dropbacks_col], errors="coerce")
+                 if dropbacks_col else (pd.to_numeric(df[pass_att_col], errors="coerce") + pd.to_numeric(df[pass_sacks_alt], errors="coerce")))
+        _add("adv_sack_rate", pd.to_numeric(df[pass_sacks_alt], errors="coerce"), denom, None)
+
+    # Optional: explosive play rate = explosive plays / total plays
+    if explosive_col and plays_col:
+        _add("adv_explosive_play_rate", pd.to_numeric(df[explosive_col], errors="coerce"), pd.to_numeric(df[plays_col], errors="coerce"), None)
+
+    # Optional: penalty yards per play
+    if pen_yards_col and plays_col:
+        _add("adv_penalty_yards_per_play", pd.to_numeric(df[pen_yards_col], errors="coerce"), pd.to_numeric(df[plays_col], errors="coerce"), None)
+
     # Keep only advanced columns + ids
     adv_cols = [c for c in out.columns if c.startswith("adv_") and not c.endswith("_imputed")]
     if not adv_cols:
@@ -288,13 +350,13 @@ def _build_prior_season_map(
 
         # Keys
         if "team_id" in adv.columns:
-            adv["team_id"] = _ensure_numeric(adv["team_id"])
-        if "team_name" in adv.columns:
+            adv["team_id"] = _coerce_int(adv["team_id"])
+        if "team_name" in adv.columns and "team_norm" not in adv.columns:
             adv["team_norm"] = _normalize_team_series(adv["team_name"])
         if "team_norm" in adv.columns:
             adv["team_norm"] = adv["team_norm"].astype(str).str.lower()
         if "season" in adv.columns:
-            adv["season"] = _ensure_numeric(adv["season"])
+            adv["season"] = _coerce_int(adv["season"])
 
         # Rename known aggregates to adv_*
         rename_map: Dict[str, str] = {}
@@ -341,9 +403,9 @@ def _build_prior_season_map(
             if key_cols and "season" in per_game.columns:
                 adv_cols = [c for c in per_game.columns if c.startswith("adv_") and not c.endswith("_imputed")]
                 grp = per_game.groupby(key_cols + ["season"], dropna=False)[adv_cols].mean().reset_index()
-                grp["season"] = _ensure_numeric(grp["season"])
+                grp["season"] = _coerce_int(grp["season"])
                 if "team_id" in grp.columns:
-                    grp["team_id"] = _ensure_numeric(grp["team_id"])
+                    grp["team_id"] = _coerce_int(grp["team_id"])
                 season_map = grp
                 season_map["__adv_source__"] = "fallback"
 
@@ -352,6 +414,13 @@ def _build_prior_season_map(
 
     # normalize & clip rates
     season_map = _normalize_adv_map(season_map)
+
+    # dedupe by merge keys
+    if "team_id" in season_map.columns:
+        season_map = _dedupe_by(season_map, ["team_id", "season"])
+    if "team_norm" in season_map.columns:
+        season_map = _dedupe_by(season_map, ["team_norm", "season"])
+
     return season_map
 
 
@@ -368,13 +437,13 @@ def _build_current_season_rolling(
     """
     Returns per-game rolling means (shifted) by (team_id or team_norm, season_current),
     ready for merge_asof. Columns:
-      ["team_id"/"team_norm", "season_current", "game_date"] + adv_*_roll + ["roll_count"]
+      ["team_id"/"team_norm", "season_current", "__ts__", "game_date"] + adv_*_roll + ["roll_count"]
     """
     if historical_team_stats_df is None or historical_team_stats_df.empty:
         return None
 
     per_game = compute_advanced_metrics(historical_team_stats_df, flag_imputations=True)
-    if per_game.empty or "game_date" not in per_game.columns:
+    if per_game.empty:
         return None
 
     per_game = per_game.copy()
@@ -382,19 +451,20 @@ def _build_current_season_rolling(
     # --- Defensive de-duplication on the RIGHT (rolling source) ---
     key_cols_for_dedupe = [c for c in ["team_id", "team_norm", "game_date"] if c in per_game.columns]
     if len(key_cols_for_dedupe) > 1 and per_game.duplicated(subset=key_cols_for_dedupe).any():
-        logger.warning("ADVANCED_FIX: Found and removed duplicate team-game date entries in RIGHT source data.")
-        per_game = per_game.sort_values(key_cols_for_dedupe).drop_duplicates(subset=key_cols_for_dedupe, keep="last")
+        per_game = _dedupe_by(per_game, key_cols_for_dedupe)
 
-    per_game["game_date"] = pd.to_datetime(per_game["game_date"], errors="coerce", utc=False)
+    per_game["game_date"] = pd.to_datetime(per_game.get("game_date", pd.NaT), errors="coerce", utc=False)
+    per_game["__ts__"] = _mk_kickoff_ts(per_game, date_col="game_date", time_col="game_time" if "game_time" in per_game.columns else "game_time", kickoff_col="kickoff_ts" if "kickoff_ts" in per_game.columns else "kickoff_ts")
     per_game["season_current"] = per_game["game_date"].apply(_nfl_season_from_date).astype("Int64")
 
-    key = "team_id" if "team_id" in per_game.columns and per_game["team_id"].notna().any() else "team_norm"
-    if key not in per_game.columns:
+    key = "team_id" if ("team_id" in per_game.columns and per_game["team_id"].notna().any()) else ("team_norm" if "team_norm" in per_game.columns else None)
+    if key is None:
         return None
 
     adv_cols = [c for c in per_game.columns if c.startswith("adv_") and not c.endswith("_imputed")]
 
-    per_game = per_game.sort_values(["season_current", key, "game_date"]).reset_index(drop=True)
+    # Sort for group-wise rolling and for asof later
+    per_game = per_game.sort_values(["season_current", key, "__ts__"], kind="mergesort").reset_index(drop=True)
 
     # Rolling means (leak-safe): shift(1) to exclude current game
     grp = per_game.groupby([key, "season_current"], dropna=False, sort=False)
@@ -402,46 +472,75 @@ def _build_current_season_rolling(
         per_game[f"{c}_roll"] = grp[c].transform(lambda s: s.shift(1).rolling(window=window, min_periods=min_periods).mean()).astype("float32")
     per_game["roll_count"] = grp.cumcount().astype("Int64")  # number of prior games in-season
 
-    cols = [key, "season_current", "game_date"] + [f"{c}_roll" for c in adv_cols] + ["roll_count"]
+    # Normalize *_roll if they are rates/percentages
+    roll_cols = [f"{c}_roll" for c in adv_cols]
+    for rc in roll_cols:
+        lc = rc.lower()
+        if ("_pct" in lc or any(name in lc for name in ADV_RATE_NAMES)):
+            v = pd.to_numeric(per_game[rc], errors="coerce")
+            med = float(v.median()) if not np.isnan(v.median()) else np.nan
+            if isinstance(med, float) and not np.isnan(med) and med > 1.1:
+                v = v / 100.0
+            per_game[rc] = v.clip(0.0, 1.0).astype("float32")
+
+    cols = [key, "season_current", "__ts__", "game_date"] + roll_cols + ["roll_count"]
     return per_game[cols].copy()
 
 
 # ---------------------------------------------------------------------------
-# Same-season fallback (shrunken) when prev-season missing
+# Same-season fallback applied after we know roll_counts (smarter shrink)
 # ---------------------------------------------------------------------------
 
-def _same_season_fallback(join_df: pd.DataFrame, key_col: str, adv_cols: List[str], season_map: pd.DataFrame) -> pd.DataFrame:
+def _apply_same_season_fallback_after_roll(
+    *,
+    wide: pd.DataFrame,
+    side: str,
+    season_map: pd.DataFrame,
+    key_kind: Optional[str],
+    g_games: pd.DataFrame,
+    roll_count_series: pd.Series,
+    adv_cols_base: List[str],
+) -> pd.DataFrame:
     """
-    For rows where prev-season join missed, try same-season, then shrink.
-    `join_df` must contain [key_col, "season"] for target season and adv_cols (joined prev-season columns).
-    """
-    if season_map is None or season_map.empty or key_col not in join_df.columns or "season" not in join_df.columns:
-        return join_df
+    For rows where prev-season priors are entirely missing for a side, try same-season
+    values from season_map and shrink based on prior games played this season.
 
-    key = key_col
-    if key.endswith("_team_id") and "team_id" in season_map.columns:
-        same_map = season_map[["team_id", "season"] + adv_cols].rename(columns={"team_id": key})
-    elif key.endswith("_team_norm") and "team_norm" in season_map.columns:
-        same_map = season_map[["team_norm", "season"] + adv_cols].rename(columns={"team_norm": key})
+    roll_count_series must be indexed to wide (aligned via game_id before passing).
+    """
+    key_col = f"{side}_{key_kind}" if key_kind in ("team_id", "team_norm") else None
+    if key_col is None or key_col not in g_games.columns or "season" not in g_games.columns:
+        return wide
+
+    # Build probe with (key, season)
+    probe = g_games[["game_id", key_col, "season"]].copy()
+    # Map game_id alignment to wide index
+    probe = wide[["game_id"]].merge(probe, on="game_id", how="left")
+
+    # same-season slice from season_map
+    if key_kind == "team_id" and "team_id" in season_map.columns:
+        same_map = season_map[["team_id", "season"] + adv_cols_base].rename(columns={"team_id": key_col})
+    elif key_kind == "team_norm" and "team_norm" in season_map.columns:
+        same_map = season_map[["team_norm", "season"] + adv_cols_base].rename(columns={"team_norm": key_col})
     else:
-        return join_df
+        return wide
 
-    miss_mask = join_df[adv_cols].isna().all(axis=1)
+    miss_mask = wide[[f"{side}_prior_{c}" for c in adv_cols_base if f"{side}_prior_{c}" in wide.columns]].isna().all(axis=1)
     if not miss_mask.any():
-        return join_df
+        return wide
 
-    probe = join_df.loc[miss_mask, [key, "season"]]
-    probe = probe.merge(
-        same_map.rename(columns={"season": "__same_season__"}),
-        left_on=[key, "season"], right_on=[key, "__same_season__"], how="left"
-    )
+    ss = probe.merge(same_map, on=[key_col, "season"], how="left")
+    # shrink = min(1, games_played/8) * SAME_SEASON_SHRINK
+    ng = pd.to_numeric(roll_count_series, errors="coerce").fillna(0.0).astype(float)
+    shrink = np.clip(ng / 8.0, 0.0, 1.0) * float(SAME_SEASON_SHRINK)
 
-    if not probe.empty:
-        for c in adv_cols:
-            vals = pd.to_numeric(probe[c], errors="coerce")
-            join_df.loc[miss_mask, c] = (vals * SAME_SEASON_SHRINK).values
+    for c in adv_cols_base:
+        pcol = f"{side}_prior_{c}"
+        if pcol not in wide.columns or c not in ss.columns:
+            continue
+        vals = pd.to_numeric(ss[c], errors="coerce")
+        wide.loc[miss_mask, pcol] = (vals.loc[miss_mask] * shrink.loc[miss_mask]).astype("float32")
 
-    return join_df
+    return wide
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +558,8 @@ def transform(
     enable_current_season_blend: bool = True,
     rolling_window: int = 5,
     blend_k_games: float = 5.0,  # trust fully after ~k prior games this season
+    # winsorization toggle:
+    winsorize_post_blend: bool = WINSORIZE_POST_BLEND,
 ) -> pd.DataFrame:
     """
     Attach leakage-free advanced efficiency features to `games`.
@@ -467,24 +568,24 @@ def transform(
       1) advanced_stats_df (season aggregates)
       2) compute from historical_team_stats_df -> aggregate to season
 
-    Optionally blends current-season rolling (up to game_date-1) with priors.
+    Optionally blends current-season rolling (up to kickoff_ts or game_date-1) with priors.
     """
     if games is None or games.empty:
         return pd.DataFrame()
 
     g = games.copy()
 
-    # Require season & game_date to be sane
+    # Require season & (preferably) kickoff_ts or game_date for leak-safe rolling
     if "season" not in g.columns:
         logger.warning("advanced.transform: games missing 'season'; cannot attach advanced.")
         return pd.DataFrame(columns=["game_id"])
-    g["season"] = _ensure_numeric(g["season"])
+    g["season"] = _coerce_int(g["season"])
 
     if "game_date" in g.columns:
         g["game_date"] = pd.to_datetime(g["game_date"], errors="coerce", utc=False)
-    else:
-        # Without dates we cannot do leak-safe rolling; we can still attach priors
-        enable_current_season_blend = False
+
+    # Build robust kickoff timestamp for upcoming games
+    g["__ts__"] = _mk_kickoff_ts(g, date_col="game_date", time_col="game_time" if "game_time" in g.columns else "game_time", kickoff_col="kickoff_ts" if "kickoff_ts" in g.columns else "kickoff_ts")
 
     # Ensure team keys on games
     have_ids = all(c in g.columns for c in ("home_team_id", "away_team_id"))
@@ -497,8 +598,8 @@ def transform(
             have_ids = all(c in g.columns for c in ("home_team_id", "away_team_id"))
 
     if have_ids:
-        g["home_team_id"] = _ensure_numeric(g["home_team_id"])
-        g["away_team_id"] = _ensure_numeric(g["away_team_id"])
+        g["home_team_id"] = _coerce_int(g["home_team_id"])
+        g["away_team_id"] = _coerce_int(g["away_team_id"])
 
     if not have_ids and not have_norms:
         # derive normalized names on games
@@ -508,6 +609,9 @@ def transform(
                 g["away_team_norm"] = _normalize_team_series(g[an])
                 have_norms = True
                 break
+    if have_norms:
+        g["home_team_norm"] = _normalize_team_series(g["home_team_norm"])
+        g["away_team_norm"] = _normalize_team_series(g["away_team_norm"])
 
     # ------------------------------------------------------------------
     # 1) Build prior-seasons map
@@ -526,6 +630,16 @@ def transform(
     can_join_by_id = have_ids and "team_id" in season_map.columns and season_map["team_id"].notna().any()
     can_join_by_norm = ("home_team_norm" in g.columns and "away_team_norm" in g.columns and "team_norm" in season_map.columns)
 
+    # Compute per-season league averages for priors (metric-wise fallback)
+    league_avgs = None
+    try:
+        if "season" in season_map.columns:
+            adv_cols = [c for c in season_map.columns if c.startswith("adv_")]
+            league_avgs = (season_map.groupby("season", dropna=False)[adv_cols].mean().reset_index()
+                           .rename(columns={c: f"league_{c}" for c in adv_cols}))
+    except Exception:
+        league_avgs = None
+
     # Prepare prev-season frames
     g_home = g[["game_id", "season"]].copy()
     g_home["prev_season"] = (g_home["season"] - 1).astype("Int64")
@@ -536,8 +650,8 @@ def transform(
         g_home = g_home.join(g[["game_id", "home_team_id"]].set_index("game_id"), on="game_id")
         g_away = g_away.join(g[["game_id", "away_team_id"]].set_index("game_id"), on="game_id")
 
-        map_home = season_map.rename(columns={"team_id": "home_team_id"})
-        map_away = season_map.rename(columns={"team_id": "away_team_id"})
+        map_home = _dedupe_by(season_map.rename(columns={"team_id": "home_team_id"}), ["home_team_id", "season"])
+        map_away = _dedupe_by(season_map.rename(columns={"team_id": "away_team_id"}), ["away_team_id", "season"])
 
         home_join = g_home.merge(
             map_home,
@@ -554,14 +668,11 @@ def transform(
 
     elif can_join_by_norm:
         logger.debug("advanced: joining priors by team_norm & prev_season")
-        g["home_team_norm"] = _normalize_team_series(g["home_team_norm"])
-        g["away_team_norm"] = _normalize_team_series(g["away_team_norm"])
-
         g_home = g_home.join(g[["game_id", "home_team_norm"]].set_index("game_id"), on="game_id")
         g_away = g_away.join(g[["game_id", "away_team_norm"]].set_index("game_id"), on="game_id")
 
-        map_home = season_map.rename(columns={"team_norm": "home_team_norm"})
-        map_away = season_map.rename(columns={"team_norm": "away_team_norm"})
+        map_home = _dedupe_by(season_map.rename(columns={"team_norm": "home_team_norm"}), ["home_team_norm", "season"])
+        map_away = _dedupe_by(season_map.rename(columns={"team_norm": "away_team_norm"}), ["away_team_norm", "season"])
 
         home_join = g_home.merge(
             map_home,
@@ -582,15 +693,6 @@ def transform(
         )
         return pd.DataFrame(columns=["game_id"])
 
-    # If allowed, try same-season fallback for rows where prev-season was missing
-    if ALLOW_SAME_SEASON_FALLBACK and adv_cols_base:
-        if can_join_by_id:
-            home_join = _same_season_fallback(home_join, "home_team_id", adv_cols_base, season_map)
-            away_join = _same_season_fallback(away_join, "away_team_id", adv_cols_base, season_map)
-        elif can_join_by_norm:
-            home_join = _same_season_fallback(home_join, "home_team_norm", adv_cols_base, season_map)
-            away_join = _same_season_fallback(away_join, "away_team_norm", adv_cols_base, season_map)
-
     # Build prior columns with explicit prefixes
     home_prior = home_join[["game_id"] + adv_cols_base].copy()
     home_prior.columns = ["game_id"] + [f"home_prior_{c}" for c in adv_cols_base]
@@ -599,6 +701,26 @@ def transform(
     away_prior.columns = ["game_id"] + [f"away_prior_{c}" for c in adv_cols_base]
 
     wide = home_prior.merge(away_prior, on="game_id", how="outer")
+
+    # League-average fallback per metric for priors
+    if league_avgs is not None and not league_avgs.empty:
+        tmp = g[["game_id", "season"]].copy()
+        tmp["prev_season"] = (tmp["season"] - 1).astype("Int64")
+        tmp = tmp.merge(league_avgs.rename(columns={"season": "prev_season"}), on="prev_season", how="left")
+        for c in adv_cols_base:
+            league_c = f"league_{c}"
+            for side in ("home", "away"):
+                pcol = f"{side}_prior_{c}"
+                if pcol in wide.columns and league_c in tmp.columns:
+                    wide[pcol] = wide[pcol].fillna(pd.to_numeric(tmp[league_c], errors="coerce"))
+
+    # If still NaN, fill with sensible global defaults (or 0.0)
+    for c in adv_cols_base:
+        dflt = float(DEFAULTS.get(c.replace("adv_", ""), 0.0))
+        for side in ("home", "away"):
+            pcol = f"{side}_prior_{c}"
+            if pcol in wide.columns:
+                wide[pcol] = pd.to_numeric(wide[pcol], errors="coerce").fillna(dflt).astype("float32")
 
     # ------------------------------------------------------------------
     # 2) Current-season rolling (optional) and blend
@@ -614,84 +736,132 @@ def transform(
         if roll_map is not None:
             if "team_id" in roll_map.columns and have_ids:
                 key_kind = "team_id"
-            elif "team_norm" in roll_map.columns and "home_team_norm" in g.columns and "away_team_norm" in g.columns:
+            elif "team_norm" in roll_map.columns and have_norms:
                 key_kind = "team_norm"
 
-    def _merge_roll(side: str) -> Optional[pd.DataFrame]:
+    def _merge_roll_per_group(side_key_col: str) -> Optional[pd.DataFrame]:
         """
-        Merge last known rolling values up to the game_date for given side.
-        Ensures:
-        - dtype parity for key
-        - no duplicates at ["season_current", key_kind, "game_date"]
-        - global/group-wise sort invariants required by merge_asof
-        - rows with null join keys/dates are excluded from the rolling merge
+        Per-(season_current, team) as-of join for rolling features (no global `by=`).
+        This avoids the 'left keys must be sorted' pitfall from cross-group ordering.
         """
         if roll_map is None or key_kind is None:
             return None
 
-        tmp = g[["game_id", "game_date", side, "season"]].copy()
-        tmp = tmp.rename(columns={side: key_kind})
+        # Build LEFT slice
+        tmp = g[["game_id", "__ts__", "season", side_key_col]].copy()
+        tmp = tmp.rename(columns={side_key_col: key_kind})
         tmp["season_current"] = tmp["season"].astype("Int64")
 
-        # Key dtype parity
+        # Normalize dtypes and strings
+        r = roll_map.copy()
         if key_kind == "team_id":
-            tmp[key_kind] = _ensure_numeric(tmp[key_kind])
-            r = roll_map.copy()
-            r[key_kind] = _ensure_numeric(r[key_kind])
-        else:  # key_kind == "team_norm"
+            tmp[key_kind] = _coerce_int(tmp[key_kind])
+            r[key_kind] = _coerce_int(r[key_kind])
+        else:
             tmp[key_kind] = _normalize_team_series(tmp[key_kind].astype(str))
-            r = roll_map.copy()
             r[key_kind] = r[key_kind].astype(str).str.lower()
 
-        # Dates tz-naive
-        tmp["game_date"] = pd.to_datetime(tmp["game_date"], errors="coerce", utc=False)
-        r["game_date"]   = pd.to_datetime(r["game_date"], errors="coerce", utc=False)
+        # Ensure UTC tz-awareness on both sides
+        tmp["__ts__"] = pd.to_datetime(tmp["__ts__"], errors="coerce", utc=True)
+        r["__ts__"] = pd.to_datetime(r["__ts__"], errors="coerce", utc=True)
 
-        # NULL-KEY/DATE FILTERS
-        left_len_before  = len(tmp)
-        right_len_before = len(r)
-        tmp = tmp[tmp["season_current"].notna() & tmp[key_kind].notna() & tmp["game_date"].notna()].copy()
-        r   = r[  r["season_current"].notna() &   r[key_kind].notna() &   r["game_date"].notna()].copy()
-        logger.debug("ADVANCED_DIAG: Filtered nulls | LEFT %d→%d | RIGHT %d→%d", left_len_before, len(tmp), right_len_before, len(r))
+        # Filter null keys/timestamps
+        tmp = tmp[tmp["season_current"].notna() & tmp[key_kind].notna() & tmp["__ts__"].notna()].copy()
+        r   = r[  r["season_current"].notna() &   r[key_kind].notna() &   r["__ts__"].notna()].copy()
 
-        # DE-DUPLICATE AT MERGE GRANULARITY
-        key_tuple = ["season_current", key_kind, "game_date"]
+        if tmp.empty or r.empty:
+            return pd.DataFrame(columns=["game_id"])
+
+        # De-duplicate precisely at merge grain
+        key_tuple = ["season_current", key_kind, "__ts__"]
         tmp = _dedupe_by(tmp, key_tuple)
         r   = _dedupe_by(r,   key_tuple)
 
-        # GLOBAL SORTING
-        sort_keys = ["game_date", "season_current", key_kind]
-        tmp = tmp.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
-        r   = r.sort_values(sort_keys,   kind="mergesort").reset_index(drop=True)
+        # Group keys set
+        grp_keys = ["season_current", key_kind]
 
-        # PER-GROUP MONOTONICITY CHECKS
-        if not _verify_merge_asof_sort(tmp, on="game_date", by=["season_current", key_kind]):
-            raise ValueError("left keys must be sorted")
-        if not _verify_merge_asof_sort(r, on="game_date", by=["season_current", key_kind]):
-            raise ValueError("right keys must be sorted")
+        out_parts: List[pd.DataFrame] = []
 
-        out = pd.merge_asof(
-            left=tmp,
-            right=r,
-            by=["season_current", key_kind],
-            left_on="game_date",
-            right_on="game_date",
-            direction="backward",
-            allow_exact_matches=True,
-        )
+        # Iterate per group to avoid global ordering constraints
+        for (season_cur, key_val), lsub in tmp.groupby(grp_keys, sort=False):
+            rsub = r[(r["season_current"] == season_cur) & (r[key_kind] == key_val)]
+            if rsub.empty:
+                # No history for this group → return only game_id with NaNs later filled upstream
+                out_parts.append(lsub[["game_id"]].copy())
+                continue
 
-        roll_cols = [c for c in out.columns if c.endswith("_roll")]
-        if "roll_count" in out.columns:
-            roll_cols.append("roll_count")
-        keep = ["game_id"] + roll_cols
-        return out[keep].copy()
+            # Stable sort (tie-breaker = game_id on left)
+            lsub = lsub.sort_values(["__ts__", "game_id"], kind="mergesort")
+            rsub = rsub.sort_values(["__ts__"], kind="mergesort")
+
+            joined = pd.merge_asof(
+                left=lsub,
+                right=rsub,
+                left_on="__ts__",
+                right_on="__ts__",
+                direction="backward",
+                allow_exact_matches=True,
+            )
+
+            roll_cols = [c for c in joined.columns if c.endswith("_roll")]
+            if "roll_count" in joined.columns:
+                roll_cols.append("roll_count")
+
+            keep = ["game_id"] + roll_cols
+            out_parts.append(joined[keep].copy())
+
+        if not out_parts:
+            return pd.DataFrame(columns=["game_id"])
+
+        out = pd.concat(out_parts, ignore_index=True)
+        # Final dedupe on game_id in case of any overlap (paranoia)
+        if out["game_id"].duplicated().any():
+            out = out.sort_values("game_id").drop_duplicates("game_id", keep="last")
+
+        return out
 
     # Select keys for sides
     left_key  = "home_team_id" if (key_kind == "team_id") else ("home_team_norm" if key_kind == "team_norm" else None)
     right_key = "away_team_id" if (key_kind == "team_id") else ("away_team_norm" if key_kind == "team_norm" else None)
 
-    home_roll = _merge_roll(left_key)  if left_key  else None
-    away_roll = _merge_roll(right_key) if right_key else None
+    home_roll = _merge_roll_per_group(left_key)  if left_key  else None
+    away_roll = _merge_roll_per_group(right_key) if right_key else None
+
+    # Same-season fallback AFTER roll counts (smarter shrink)
+    if ALLOW_SAME_SEASON_FALLBACK and adv_cols_base:
+        def _roll_n(df_roll: Optional[pd.DataFrame]) -> pd.Series:
+            if df_roll is None or "roll_count" not in df_roll.columns:
+                return pd.Series(0, index=wide.index, dtype="int64")
+            j = wide[["game_id"]].merge(df_roll[["game_id", "roll_count"]], on="game_id", how="left")
+            return pd.to_numeric(j["roll_count"], errors="coerce").fillna(0).astype(int)
+
+        home_roll_n = _roll_n(home_roll)
+        away_roll_n = _roll_n(away_roll)
+
+        # temporarily attach keys for fallback function
+        g_keys = g[["game_id", "season"]].copy()
+        if key_kind == "team_id":
+            g_keys["home_team_id"] = g.get("home_team_id")
+            g_keys["away_team_id"] = g.get("away_team_id")
+        elif key_kind == "team_norm":
+            g_keys["home_team_norm"] = g.get("home_team_norm")
+            g_keys["away_team_norm"] = g.get("away_team_norm")
+
+        # ensure prior columns exist
+        for c in adv_cols_base:
+            for side in ("home", "away"):
+                pcol = f"{side}_prior_{c}"
+                if pcol not in wide.columns:
+                    wide[pcol] = np.nan
+
+        wide = _apply_same_season_fallback_after_roll(
+            wide=wide, side="home", season_map=season_map, key_kind=key_kind,
+            g_games=g.merge(g_keys, on="game_id", how="left"), roll_count_series=home_roll_n, adv_cols_base=adv_cols_base
+        )
+        wide = _apply_same_season_fallback_after_roll(
+            wide=wide, side="away", season_map=season_map, key_kind=key_kind,
+            g_games=g.merge(g_keys, on="game_id", how="left"), roll_count_series=away_roll_n, adv_cols_base=adv_cols_base
+        )
 
     # ------------------------------------------------------------------
     # 3) Produce blended home_/away_ values (no fill yet)
@@ -721,7 +891,6 @@ def transform(
 
     def _blend_series(prior: pd.Series, roll: pd.Series, n_games: pd.Series) -> Tuple[pd.Series, pd.Series]:
         """Return blended series and imputed flag series."""
-        # Defensive: sanitize n_games before weight calc
         ng = pd.to_numeric(n_games, errors="coerce").fillna(0.0).astype(float)
         w = np.clip(ng / float(blend_k_games), 0.0, 1.0)
 
@@ -735,9 +904,8 @@ def transform(
         blended.loc[only_roll] = roll[only_roll].astype(float)
 
         # Imputed if either source is missing (observability)
-        imputed = (~prior.notna()) | (~roll.notna())
-        return blended.astype("float32"), imputed.astype("int8")
-
+        imputed = (prior.isna() | roll.isna()).astype("int8")
+        return blended.astype("float32"), imputed
 
     # ---- per-side blend & write-out ------------------------------------
     for side in ("home", "away"):
@@ -751,35 +919,35 @@ def transform(
             if enable_current_season_blend:
                 blended, imp = _blend_series(prior, roll, n_games)
             else:
-                # no blend → just carry prior; imputed if prior is missing
                 blended = pd.to_numeric(prior, errors="coerce").astype("float32")
-                imp = (~pd.Series(prior).notna()).astype("int8")
+                imp = (prior.isna()).astype("int8")
 
             wide[f"{side}_adv_{metric}"] = blended
             if flag_imputations:
                 wide[f"{side}_adv_{metric}_imputed"] = imp
 
     # --- NO-NaN guard for side values (belt & suspenders) ---
-    # Ensure both home_/away_ side columns exist for every base metric, and fill NaN→0.0
     for metric in base_metrics:
         h = f"home_adv_{metric}"
         a = f"away_adv_{metric}"
         if h not in wide.columns:
-            wide[h] = 0.0
+            wide[h] = np.nan
         if a not in wide.columns:
-            wide[a] = 0.0
+            wide[a] = np.nan
 
     value_cols = [c for c in wide.columns if c.startswith(("home_adv_", "away_adv_")) and not c.endswith("_imputed")]
 
     # Winsorize then fill (stabilize outliers, ensure numeric & non-null for diffs/totals)
     for c in value_cols:
-        lo, hi = _cap_for(c)
-        wide[c] = pd.to_numeric(wide[c], errors="coerce").clip(lower=lo, upper=hi)
+        wide[c] = pd.to_numeric(wide[c], errors="coerce")
+        if winsorize_post_blend:
+            lo, hi = _cap_for(c)
+            wide[c] = wide[c].clip(lower=lo, upper=hi)
         wide[c] = wide[c].astype("float32").fillna(0.0)
 
     out_cols: List[str] = ["game_id"]
 
-    # Compute diffs/totals AFTER fill (stable; avoids artificial NaN propagation)
+    # Compute diffs/totals AFTER fill (stable; avoids NaN propagation)
     base_names = sorted({c.replace("home_adv_", "") for c in value_cols if c.startswith("home_adv_")})
     for metric in base_names:
         h = f"home_adv_{metric}"
@@ -793,53 +961,27 @@ def transform(
 
             out_cols.extend([h, a, diff_col, tot_col])
 
-            # diff_imputed if either side was imputed OR either side was NaN pre-fill
+            # diff_imputed if either side was imputed
             if flag_imputations:
                 hi = f"{h}_imputed"
                 ai = f"{a}_imputed"
-                # Base flag: conservatively treat prior NaNs as imputed
-                base_flag = ((wide[h].isna()) | (wide[a].isna())).astype("int8")
                 if hi in wide.columns and ai in wide.columns:
-                    wide[f"{diff_col}_imputed"] = ((wide[hi] == 1) | (wide[ai] == 1) | (base_flag == 1)).astype("int8")
-                else:
-                    wide[f"{diff_col}_imputed"] = base_flag
-                out_cols.append(f"{diff_col}_imputed")
+                    wide[f"{diff_col}_imputed"] = ((wide[hi] == 1) | (wide[ai] == 1)).astype("int8")
+                    out_cols.append(f"{diff_col}_imputed")
 
     # Minimal observability
-    present_cols = [c for c in out_cols if c.startswith(("home_adv_", "away_adv_"))]
-    present_ratio = (wide[present_cols].notna().mean().mean() * 100.0) if present_cols else 0.0
-    logger.debug(
-        "advanced: features attached | games=%d | metrics=%d | side_value_cols=%d | present≈%.1f%%",
-        len(wide), len(set(base_names)), len(value_cols), present_ratio
-    )
-
-    # Diff zero-rate sanity (exclude NaNs)
-    try:
-        zero_rates = {}
-        for metric in base_names[:10]:  # keep logs concise
-            dcol = f"adv_{metric}_diff"
-            if dcol in wide.columns:
-                nz = wide[dcol].notna()
-                denom = int(nz.sum())
-                if denom > 0:
-                    zero_rates[metric] = float((wide.loc[nz, dcol] == 0).mean()) * 100.0
-        if zero_rates:
-            logger.debug("advanced: diff zero-rates (%%, non-NaN) sample=%s", {k: round(v, 1) for k, v in zero_rates.items()})
-    except Exception:
-        pass
-
-
-    # Compact coverage summary (first ~8 metrics) + imputation %
     if ADV_LOG_SUMMARY:
-        nonnull = {}
-        for b in base_names[:8]:
-            h, a = f"home_adv_{b}", f"away_adv_{b}"
-            cols = [c for c in (h, a) if c in wide.columns]
-            cnt = (wide[cols].notna().any(axis=1)).sum() if cols else 0
-            nonnull[b] = int(cnt)
+        present_cols = [c for c in out_cols if c.startswith(("home_adv_", "away_adv_"))]
+        present_ratio = (wide[present_cols].notna().mean().mean() * 100.0) if present_cols else 0.0
 
-        imp_cols = [c for c in wide.columns if c.endswith("_imputed") and (c.startswith("home_adv_") or c.startswith("away_adv_"))]
-        imp_ratio = (float(wide[imp_cols].mean().mean()) * 100.0) if imp_cols else None
+        try:
+            families = {
+                "per_play":  [n for n in base_names if any(n.endswith(k) for k in ADV_PER_PLAY_NAMES)],
+                "per_drive": [n for n in base_names if any(n.endswith(k) for k in ADV_PER_DRIVE_NAMES)],
+                "rates":     [n for n in base_names if any(n.endswith(k) for k in ADV_RATE_NAMES) or n.endswith("_pct")],
+            }
+        except Exception:
+            families = {}
 
         src = "unknown"
         if "__adv_source__" in season_map.columns:
@@ -848,9 +990,8 @@ def transform(
 
         join_mode = "team_id" if can_join_by_id else ("team_norm" if can_join_by_norm else "none")
         logger.info(
-            "ADVANCED[summary] rows=%d | source=%s | join=%s | nonnull_by_metric=%s%s",
-            len(wide), src, join_mode, nonnull,
-            (f" | imputed≈{imp_ratio:.1f}%" if imp_ratio is not None else "")
+            "ADVANCED[summary] games=%d | source=%s | join=%s | features=%d | present≈%.1f%% | fam=%s",
+            len(wide), src, join_mode, len(base_names), present_ratio, {k: len(v) for k, v in families.items()}
         )
 
-    return wide[out_cols].copy()
+    return wide[["game_id"] + sorted(set(out_cols) - {"game_id"})].copy()
