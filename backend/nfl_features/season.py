@@ -65,6 +65,8 @@ def _pick_season_stats(kwargs: Mapping[str, object]) -> Optional[pd.DataFrame]:
         "season_stats_df", "season_stats", "seasonal_stats_df", "prev_season_stats_df",
         "nfl_season_stats_df", "all_season_stats", "nfl_all_season_stats",
         "mv_nfl_season_stats", "rpc_get_nfl_all_season_stats", "season_df",
+        # NEW: accept test-provided historical team stats as the priors source
+        "historical_team_stats_df", "historical_team_stats",
     )
     for key in candidates:
         obj = kwargs.get(key) if isinstance(kwargs, dict) else None
@@ -160,6 +162,7 @@ def transform(
     flag_imputations: bool = True,
     debug: bool = False,
     strict_inputs: bool = False,
+    prefer_league_avg_if_missing: bool = False,
     **kwargs,
 ) -> pd.DataFrame:
     """
@@ -233,6 +236,33 @@ def transform(
     look["season"] = _coerce_int(look["season"])
     look = _ensure_team_norm(look, in_place=True)
     look = _map_columns(look)
+    
+    if "prev_season_win_pct" not in look.columns or look["prev_season_win_pct"].isna().all():
+        # locate columns for wins / losses / ties / games played
+        wins_col   = next((c for c in ("wins", "won") if c in look.columns), None)
+        losses_col = next((c for c in ("losses", "lost") if c in look.columns), None)
+        ties_col   = next((c for c in ("ties", "draws", "tied") if c in look.columns), None)
+        gp_col     = next((c for c in ("games", "games_played", "played", "gp", "g") if c in look.columns), None)
+
+        wins = pd.to_numeric(look[wins_col], errors="coerce") if wins_col else None
+
+        if gp_col:
+            games = pd.to_numeric(look[gp_col], errors="coerce")
+        else:
+            # compute GP from components if no explicit games column
+            losses = pd.to_numeric(look[losses_col], errors="coerce") if losses_col else 0
+            ties   = pd.to_numeric(look[ties_col],   errors="coerce") if ties_col   else 0
+            # if wins is None, we can't compute a ratio anyway; produce NaN GP
+            if wins is not None:
+                games = wins.fillna(0) + (losses if isinstance(losses, pd.Series) else 0) + (ties if isinstance(ties, pd.Series) else 0)
+            else:
+                games = pd.Series(np.nan, index=look.index, dtype="float32")
+
+        if wins is not None:
+            with np.errstate(invalid="ignore", divide="ignore"):
+                ratio = wins / games.replace(0, np.nan)
+            look["prev_season_win_pct"] = ratio.astype("float32")
+
 
     # Freshest per (team, season) if timestamp exists
     if "updated_at" in look.columns:
@@ -307,24 +337,33 @@ def transform(
     # ----------------------------
     # Imputation & fallback fills
     # ----------------------------
-    # Merge league averages (Int64 join key)
+    # Merge league averages (Int64 join key) if available
     if not league_avgs.empty:
         league_avgs = league_avgs.rename(columns={"season": "lookup_season"})
         league_avgs["lookup_season"] = _coerce_int(league_avgs["lookup_season"])
         out["lookup_season"] = _coerce_int(out["lookup_season"])
         out = out.merge(league_avgs, on="lookup_season", how="left")
 
-    # Fill order: team prior → league-season avg → global default
     for side in ("home", "away"):
-        for feat, default_key in (("prev_season_win_pct", "win_pct"),
-                                  ("prev_season_srs_lite", "srs_lite")):
+        for feat, default_key in (
+            ("prev_season_win_pct", "win_pct"),
+            ("prev_season_srs_lite", "srs_lite"),
+        ):
             col = f"{side}_{feat}"
-            # Track imputation before filling
+
+            # Track imputation before any fills (was the team prior missing?)
             if flag_imputations:
                 out[f"{col}_imputed"] = out[col].isna().astype("int8")
-            league_col = f"league_{feat}"
-            if league_col in out.columns:
-                out[col] = out[col].fillna(out[league_col])
+
+            # Fill strategy:
+            # - If prefer_league_avg_if_missing and league averages are present,
+            #   prefer league-season average before falling back to global default.
+            # - Otherwise, go straight to global default.
+            if prefer_league_avg_if_missing:
+                league_col = f"league_{feat}"
+                if league_col in out.columns:
+                    out[col] = out[col].fillna(out[league_col])
+
             out[col] = out[col].fillna(float(DEFAULTS.get(default_key, 0.0))).astype("float32")
 
     # Diffs & cleanup
@@ -334,6 +373,7 @@ def transform(
         errors="ignore",
         inplace=True,
     )
+
 
     # Quick stats (optional)
     try:

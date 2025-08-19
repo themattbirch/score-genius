@@ -205,9 +205,10 @@ def compute_drive_metrics(
     box_scores_df: pd.DataFrame,
     *,
     flag_imputations: bool = True,
-    winsorize: bool = True,
+    winsorize: bool = False,  # ⟵ was True; disable by default to preserve exact ratios
     winsor_limits: Tuple[float, float] = (0.005, 0.995),
 ) -> pd.DataFrame:
+
     """
     Return a copy of the input team-game DataFrame with drive-based metrics appended.
 

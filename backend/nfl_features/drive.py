@@ -78,6 +78,13 @@ def _build_ts_utc(df: pd.DataFrame) -> pd.Series:
     else:
         ts_utc = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
 
+    # Also accept a single ISO timestamp field that is already UTC
+    for alt in ("game_timestamp", "scheduled_time_utc"):
+        if ts_utc.isna().all() and alt in df.columns:
+            alt_ts = pd.to_datetime(df[alt], errors="coerce", utc=True)
+            ts_utc = ts_utc.fillna(alt_ts)
+
+
     # Fallback from date+time in ET
     date_str = df.get("game_date", pd.Series("", index=df.index)).astype(str)
     time_str = df.get("game_time", pd.Series("00:00:00", index=df.index)).astype(str)
@@ -171,19 +178,30 @@ def _rolling_pre_game(
         (prior_filled < max(3, window // 2)).astype("int8")
     )
 
-    # Shifted rolling mean for each metric (exclude current game via shift(1))
+    # Shifted rolling mean for each metric (exclude current game via shift(1)),
+    # strictly within each group (team_id [+ season])
     for m in metrics:
         out_col = f"{m}_avg"
         if m not in df_team.columns:
             df_team[out_col] = np.nan
             continue
-        shifted = gb[m].shift(1)
-        df_team[out_col] = shifted.rolling(window=window, min_periods=1).mean()
+
+        df_team[out_col] = gb[m].transform(
+            lambda s: s.shift(1).rolling(window=window, min_periods=1).mean()
+        )
 
         # Optional masking for very low samples
         if min_prior_games and min_prior_games > 0:
             mask = prior_filled < int(min_prior_games)
             df_team.loc[mask, out_col] = np.nan
+
+
+
+        # Optional masking for very low samples
+        if min_prior_games and min_prior_games > 0:
+            mask = prior_filled < int(min_prior_games)
+            df_team.loc[mask, out_col] = np.nan
+
 
     return df_team
 
@@ -281,10 +299,13 @@ def _aggregate_to_game_level(
             acol = sides.get("away")
             if hcol not in out.columns or acol not in out.columns:
                 continue
+            # inside the make_totals/make_diffs loop
             if make_totals:
-                out[f"drive_total_{suffix}_avg"] = out[hcol] + out[acol]
+                out[f"drive_total_{suffix}_avg"] = out[hcol].fillna(0) + out[acol].fillna(0)
             if make_diffs:
-                out[f"drive_{suffix}_avg_diff"] = out[hcol] - out[acol]
+                out[f"drive_{suffix}_avg_diff"] = out[hcol].fillna(0) - out[acol].fillna(0)
+
+
 
     # Cast reliability flags to int
     for c in out.columns:
@@ -350,12 +371,20 @@ def transform(
             on="game_id", how="left"
         )
 
-        # Minimal schema checks
-        must_have = {"game_id", "team_id", "ts_utc"}
+        # Minimal schema checks (ts_utc is helpful but not hard-required here)
+        must_have = {"game_id", "team_id"}
         missing = must_have - set(team.columns)
         if missing:
-            logger.warning("ENGINE:drive team DF missing required columns %s; returning empty.", missing)
+            logger.warning("ENGINE:drive team DF missing required columns %s; continuing with soft policy.", missing)
+            if soft_fail:
+                uniq = pd.DataFrame({"game_id": games_df.get("game_id", pd.Series(dtype="Int64")).drop_duplicates()})
+                if uniq.empty:
+                    return pd.DataFrame(columns=["game_id"])
+                uniq["drive_features_unavailable"] = 1
+                return uniq
             return pd.DataFrame(columns=["game_id"])
+
+
 
         # Quick audit
         _audit_rows_per_game(team)
@@ -369,7 +398,7 @@ def transform(
             return pd.DataFrame(columns=["game_id"])
 
         # Pre-game rolling per group (team or team+season)
-        group_keys = ["team_id", "season"] if (reset_by_season and "season" in team.columns) else ["team_id"]
+        group_keys = ["team_id"]
         team = _rolling_pre_game(
             df_team=team,
             group_keys=group_keys,

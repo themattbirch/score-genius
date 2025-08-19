@@ -124,9 +124,9 @@ def _log_profile(df: pd.DataFrame, name: str, debug: bool):
 
 
 def _merge_and_log(left: pd.DataFrame, right: pd.DataFrame, key: str, how: str, module: str, debug: bool) -> pd.DataFrame:
+    # Be loud if a whole stage produced nothing (can silently kill a feature family)
     if right is None or right.empty:
-        # TINY TWEAK: empty module output is common and not an error; downgrade to INFO
-        logger.info("ENGINE:%s produced empty output – skipping merge", module.upper())
+        logger.warning("ENGINE:%s produced EMPTY output; no features merged for this stage", module.upper())
         return left
 
     if key not in right.columns:
@@ -139,6 +139,7 @@ def _merge_and_log(left: pd.DataFrame, right: pd.DataFrame, key: str, how: str, 
         logger.warning("ENGINE:%s output has %d duplicate %s rows – keeping last", module.upper(), dup_ct, key)
         right = right.sort_values(key).drop_duplicates(key, keep="last")
 
+    # avoid overwriting existing columns except the key
     dup_cols = [c for c in right.columns if c in left.columns and c != key]
     if dup_cols:
         right = right.drop(columns=dup_cols)
@@ -237,15 +238,17 @@ def _summarize_by_bucket(df: pd.DataFrame, name: str, debug: bool):
 
 
 def _drop_constant_columns(df: pd.DataFrame, *, exclude: tuple[str, ...] = ("game_id",), debug: bool = False) -> pd.DataFrame:
-    """
-    Drop columns that are all-NaN or have a single unique value (including zeros).
-    Keeps keys in `exclude`. Helpful to prevent dead features from reaching models.
-    """
     if df.empty:
         return df
     cols = [c for c in df.columns if c not in exclude]
     nunq = {c: df[c].nunique(dropna=False) for c in cols}
-    const_cols = [c for c, k in nunq.items() if k <= 1]
+
+    # ⬇️ Only drop constants that are NOT boolean dtype
+    const_cols = [
+        c for c, k in nunq.items()
+        if k <= 1 and not pd.api.types.is_bool_dtype(df[c])
+    ]
+
     if const_cols:
         if debug:
             logger.debug("ENGINE: dropping %d constant cols (sample=%s)", len(const_cols), const_cols[:18])
@@ -253,6 +256,7 @@ def _drop_constant_columns(df: pd.DataFrame, *, exclude: tuple[str, ...] = ("gam
             logger.info("ENGINE: dropping %d constant cols", len(const_cols))
         df = df.drop(columns=const_cols, errors="ignore")
     return df
+
 
 
 # ==============================================================================
@@ -313,6 +317,20 @@ class NFLFeatureEngine:
         self.drive_reset_by_season = bool(drive_reset_by_season)
         self.drive_min_prior_games = int(drive_min_prior_games)
         self.drive_soft_fail = bool(drive_soft_fail)
+
+        self.TRANSFORMS = {
+        "situational": compute_situational_features,
+        "rest":        rest_transform,
+        "h2h":         h2h_transform,
+        "form":        form_transform,
+        "rolling":     rolling_transform,
+        "season":      season_transform,
+        "advanced":    advanced_transform,   # may be None; handled below
+        "drive":       drive_transform,      # may be None; handled below
+        "momentum":    momentum_transform,
+        # "map":       compute_map_features,
+    }
+
 
         logger.info(
             "NFLFeatureEngine initialized | order=%s | DRIVE{window=%s, reset_by_season=%s, min_prior=%s, soft_fail=%s, disabled=%s}",
@@ -452,54 +470,55 @@ class NFLFeatureEngine:
             for module in self.execution_order:
                 t_mod = time.time()
 
-                # Resolve transform function
-                if module == "situational":
-                    fn = compute_situational_features
-                elif module == "rest":
-                    fn = rest_transform
-                elif module == "h2h":
-                    fn = h2h_transform
-                elif module == "form":
-                    fn = form_transform
-                elif module == "rolling":
-                    fn = rolling_transform
-                elif module == "season":
-                    fn = season_transform
-                elif module == "advanced":
-                    fn = advanced_transform
-                elif module == "drive":
-                    # Respect disable flag
-                    if disable_drive_stage:
-                        logger.info("ENGINE:DRIVE disabled via flag; skipping.")
-                        continue
-                    fn = drive_transform
-                elif module == "momentum":
-                    fn = momentum_transform
-                #elif module == "map":
-                    #fn = compute_map_features
-                    #kw = {}
-                    #if _supports_kwarg(fn, "debug"): kw["debug"] = debug
-                    # If you pulled the matviews into DataFrames:
-                    #if _supports_kwarg(fn, "weather_latest_df"): kw["weather_latest_df"] = weather_latest_df
-                    #if _supports_kwarg(fn, "climatology_df"):    kw["climatology_df"]    = climatology_df
-                    #mod_out = fn(season_games, **kw)
-                else:
-                    logger.warning("ENGINE: unknown module '%s' – skipping", module)
+                # Resolve from registry (tests monkeypatch eng.TRANSFORMS[mod])
+                fn = self.TRANSFORMS.get(module)
+
+                # Respect disable flag for drive
+                if module == "drive" and disable_drive_stage:
+                    logger.info("ENGINE:DRIVE disabled via flag; skipping.")
                     continue
 
                 if fn is None:
                     logger.warning("ENGINE:%s transform not available – skipping", module.upper())
                     continue
 
-                # Kwargs handshake
+                # ---- NEW: per-module kwargs hook (season) ----
+                kw = {}
+
+                # (optional) common flags
+                if _supports_kwarg(fn, "debug"):
+                    kw["debug"] = debug
+                if _supports_kwarg(fn, "flag_imputations"):
+                    kw["flag_imputations"] = flag_imputations
+
+                # Inject season-specific safety flag only if supported
+                if module == "season" and _supports_kwarg(fn, "prefer_league_avg_if_missing"):
+                    kw["prefer_league_avg_if_missing"] = True
+
+                # If the transform wants the season series, provide it from the current working df
+                if _supports_kwarg(fn, "season") and "season" in season_games.columns:
+                    kw["season"] = season_games["season"]
+
+
+
+                # ---- Consolidated kwargs handshake (no reassign) ----
                 kw: Dict[str, Any] = {}
-                if _supports_kwarg(fn, "debug"): kw["debug"] = debug
-                if _supports_kwarg(fn, "flag_imputations"): kw["flag_imputations"] = flag_imputations
-                if _supports_kwarg(fn, "historical_df"): kw["historical_df"] = full_hist.copy(deep=True)
+
+                # Common flags
+                if _supports_kwarg(fn, "debug"):
+                    kw["debug"] = debug
+                if _supports_kwarg(fn, "flag_imputations"):
+                    kw["flag_imputations"] = flag_imputations
+
+                # Historical context (safe copies)
+                if _supports_kwarg(fn, "historical_df"):
+                    kw["historical_df"] = full_hist.copy(deep=True)
                 if _supports_kwarg(fn, "historical_team_stats_df"):
                     kw["historical_team_stats_df"] = hist_team_stats.copy(deep=True)
 
+                # Module-specific
                 if module == "season":
+                    # Provide priors and missing-prev hint
                     if season_stats_df is not None and not season_stats_df.empty:
                         kw["season_stats_df"] = season_stats_df
                     if season_stats_df is not None and "season" in season_stats_df.columns:
@@ -510,16 +529,27 @@ class NFLFeatureEngine:
                                 "ENGINE: season %s → required_prev=%s | available_prev=%s | known_missing_prev=%s",
                                 season_int, season_int - 1, sorted(available_prev), kw["known_missing_prev"]
                             )
+                    # Safety: prefer league averages over global default if priors missing
+                    if _supports_kwarg(fn, "prefer_league_avg_if_missing"):
+                        kw["prefer_league_avg_if_missing"] = True
+                    # Pass season series if the transform supports it
+                    if _supports_kwarg(fn, "season") and "season" in season_games.columns:
+                        kw["season"] = season_games["season"]
+
                 elif module == "rolling":
                     if recent_form_df is not None and not recent_form_df.empty:
                         kw["recent_form_df"] = recent_form_df
                     kw["window"] = rolling_window
+
                 elif module == "form":
                     kw["lookback_window"] = form_lookback
+
                 elif module == "momentum":
                     kw["span"] = momentum_span
+
                 elif module == "h2h":
                     kw["max_games"] = h2h_max_games
+
                 elif module == "advanced":
                     if (
                         advanced_stats_df is not None
@@ -529,8 +559,9 @@ class NFLFeatureEngine:
                         kw["advanced_stats_df"] = advanced_stats_df.loc[
                             advanced_stats_df.get("season", pd.Series(dtype=int)).isin([season_int - 1, season_int])
                         ]
+
                 elif module == "drive":
-                    # NEW: pass drive controls if the transform supports them
+                    # Respect disable flag was handled above; pass controls if supported
                     if _supports_kwarg(fn, "window"):
                         kw["window"] = int(window)
                     if _supports_kwarg(fn, "reset_by_season"):
@@ -539,6 +570,7 @@ class NFLFeatureEngine:
                         kw["min_prior_games"] = int(min_prior_games)
                     if _supports_kwarg(fn, "soft_fail"):
                         kw["soft_fail"] = bool(soft_fail)
+
 
                 # Call transform on the current running frame (season_games)
                 try:

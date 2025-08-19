@@ -63,29 +63,40 @@ def _prepare_long_format(historical: pd.DataFrame) -> pd.DataFrame:
     hist = historical.copy()
     hist["game_date"] = pd.to_datetime(hist["game_date"], errors="coerce")
 
+    # Treat *_norm as already-canonical: lowercase only (do NOT re-normalize).
     for c in ("home_team_norm", "away_team_norm"):
         if c in hist.columns:
-            hist[c] = hist[c].apply(normalize_team_name).astype(str).str.lower()
+            hist[c] = hist[c].astype(str).str.lower()
 
+    # Keep only the columns we actually need if present
     base_cols = ["game_id", "game_date", "home_team_norm", "away_team_norm", "home_score", "away_score"]
     if "game_time" in hist.columns:
         base_cols.append("game_time")
     hist = hist[[c for c in base_cols if c in hist.columns]]
 
+    # Build long format (home and away perspectives)
     home_games = hist.rename(columns={
-        "home_team_norm": "team", "away_team_norm": "opponent",
-        "home_score": "team_score", "away_score": "opp_score",
+        "home_team_norm": "team",
+        "away_team_norm": "opponent",
+        "home_score": "team_score",
+        "away_score": "opp_score",
     })
     away_games = hist.rename(columns={
-        "away_team_norm": "team", "home_team_norm": "opponent",
-        "away_score": "team_score", "home_score": "opp_score",
+        "away_team_norm": "team",
+        "home_team_norm": "opponent",
+        "away_score": "team_score",
+        "home_score": "opp_score",
     })
 
     long_df = pd.concat([home_games, away_games], ignore_index=True)
     long_df["team"] = long_df["team"].astype(str).str.lower()
     long_df["opponent"] = long_df["opponent"].astype(str).str.lower()
 
-    long_df = long_df.sort_values(["team", "game_date", "game_id"], kind="mergesort").reset_index(drop=True)
+    # Sort using whatever keys exist; game_id may be absent in history
+    sort_keys = [c for c in ["team", "game_date", "game_id"] if c in long_df.columns]
+    if not sort_keys:
+        sort_keys = ["team", "game_date"]
+    long_df = long_df.sort_values(sort_keys, kind="mergesort").reset_index(drop=True)
 
     for c in ("team_score", "opp_score"):
         if c in long_df.columns:
@@ -96,13 +107,16 @@ def _prepare_long_format(historical: pd.DataFrame) -> pd.DataFrame:
 def _compute_outcomes(long_df: pd.DataFrame) -> pd.DataFrame:
     df = long_df.copy()
 
+    # +1 win, -1 loss, 0 tie
     df["outcome"] = np.select(
         [df["team_score"] > df["opp_score"], df["team_score"] < df["opp_score"]],
         [1, -1],
         default=0,
     ).astype("int8")
 
-    def _streak_signed_pre_game(outcome: np.ndarray) -> np.ndarray:
+    # Build the *after this game* running streak (so the asof join picks the
+    # last completed game's streak value as the "current" entering the next game).
+    def _streak_signed_after(outcome: np.ndarray) -> np.ndarray:
         n = outcome.shape[0]
         after = np.zeros(n, dtype=np.int16)
         cur = 0
@@ -115,19 +129,17 @@ def _compute_outcomes(long_df: pd.DataFrame) -> pd.DataFrame:
             else:
                 cur = cur - 1 if cur < 0 else -1
             after[i] = cur
-        pre = np.empty_like(after)
-        pre[0] = 0
-        pre[1:] = after[:-1]
-        return pre
+        return after
 
     df["current_streak"] = 0
     for _, idx in df.groupby("team", sort=False).indices.items():
         s = df.loc[idx, "outcome"].to_numpy()
-        df.loc[idx, "current_streak"] = _streak_signed_pre_game(s)
+        df.loc[idx, "current_streak"] = _streak_signed_after(s)
 
+    # <-- This was missing and causes the KeyError: 'win'
     df["win"] = (df["outcome"] > 0).astype("int8")
-    return df
 
+    return df
 
 def _dedup_form_rhs(rhs: pd.DataFrame) -> pd.DataFrame:
     rhs = rhs.copy()
@@ -237,17 +249,15 @@ def transform(
         return _return_default_form(games)
 
     long_df = _prepare_long_format(historical_df)
-    long_df = long_df[long_df["team"].ne("unknown_team")]
     long_df = _compute_outcomes(long_df)
 
-    long_df["win_shift"] = long_df.groupby("team", sort=False)["win"].shift(1)
     long_df[f"form_win_pct_{win_k}"] = (
-        long_df.groupby("team", sort=False)["win_shift"]
-        .rolling(win_k, min_periods=1)
-        .mean()
-        .reset_index(level=0, drop=True)
-        .astype("float32")
-    )
+    long_df.groupby("team", sort=False)["win"]
+    .rolling(win_k, min_periods=1)
+    .mean()
+    .reset_index(level=0, drop=True)
+    .astype("float32")
+)
 
     rhs_cols = ["team", "game_date", "current_streak", f"form_win_pct_{win_k}"]
     if "game_time" in long_df.columns:
@@ -268,9 +278,17 @@ def transform(
             return _return_default_form(games)
 
     upcoming["game_date"] = pd.to_datetime(upcoming["game_date"], errors="coerce")
+    # normalize upcoming ONLY if we do NOT already have *_team_norm
     for c in ("home_team_norm", "away_team_norm"):
         if c in upcoming.columns:
-            upcoming[c] = upcoming[c].apply(normalize_team_name).astype(str).str.lower()
+            # trust that *_team_norm is already canonical
+            upcoming[c] = upcoming[c].astype(str).str.lower()
+        elif c.replace("_team_norm", "_team") in upcoming.columns:
+            # only normalize if it's a raw name/id
+            raw = c.replace("_team_norm", "_team")
+            upcoming[c] = upcoming[raw].apply(normalize_team_name).astype(str).str.lower()
+
+
 
     lhs_cols = ["game_id", "game_date", "home_team_norm", "away_team_norm"]
     if "game_time" in upcoming.columns:
