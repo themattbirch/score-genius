@@ -93,10 +93,18 @@ app.get("/.well-known/assetlinks.json", (req, res) => {
 
 app.use(express.static(staticRoot));
 
-// --- Windows installer + PWA statics under /app ---
+// Serve the SPA shell for /app and /app/ with 200 (no redirect)
+app.get(["/app", "/app/"], (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(path.join(staticRoot, "app.html"));
+});
+
+// Static assets under /app/* without directory redirecting or index serving
 app.use(
   "/app",
   express.static(path.join(staticRoot, "app"), {
+    index: false,
+    redirect: false,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith(".appinstaller")) {
         res.setHeader("Content-Type", "application/appinstaller");
