@@ -1231,7 +1231,7 @@ int style TextAppearance_Compat_Notification_Title 0x7f0f00f7
 int style TextAppearance_Widget_AppCompat_ExpandedMenu_Item 0x7f0f00f8
 int style TextAppearance_Widget_AppCompat_Toolbar_Subtitle 0x7f0f00f9
 int style TextAppearance_Widget_AppCompat_Toolbar_Title 0x7f0f00fa
-int style Theme_App_SplashScreen 0x7f0f00fb
+int style Theme_App_Splash 0x7f0f00fb
 int style Theme_AppCompat 0x7f0f00fc
 int style Theme_AppCompat_CompactMenu 0x7f0f00fd
 int style Theme_AppCompat_DayNight 0x7f0f00fe
