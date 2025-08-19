@@ -116,6 +116,12 @@
                 android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
                 android:resource="@color/navigationDividerColorDark" />
             <meta-data
+                android:name="androidx.browser.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/navigationBarColor" />
+            <meta-data
+                android:name="androidx.browser.trusted.NAVIGATION_BAR_COLOR_DARK"
+                android:resource="@color/navigationBarColorDark" />
+            <meta-data
                 android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
                 android:resource="@drawable/splash" />
             <meta-data

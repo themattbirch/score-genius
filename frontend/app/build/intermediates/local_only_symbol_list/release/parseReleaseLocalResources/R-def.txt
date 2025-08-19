@@ -5,6 +5,8 @@ bool enableSiteSettingsShortcut
 color backgroundColor
 color colorPrimary
 color colorPrimaryDark
+color navigationBarColor
+color navigationBarColorDark
 color navigationColor
 color navigationColorDark
 color navigationDividerColor

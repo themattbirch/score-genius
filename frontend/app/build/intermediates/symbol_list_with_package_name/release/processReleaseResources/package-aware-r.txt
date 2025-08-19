@@ -401,6 +401,8 @@ color material_grey_600
 color material_grey_800
 color material_grey_850
 color material_grey_900
+color navigationBarColor
+color navigationBarColorDark
 color navigationColor
 color navigationColorDark
 color navigationDividerColor
