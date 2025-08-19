@@ -45,45 +45,6 @@
       gtag("js", new Date());
       gtag("config", "G-Q10Q9ST6DC");
     </script>
-  <!-- Default (new devices): keep your orange theme-color earlier in <head> -->
-    <!--   <meta name="theme-color" content="#F97316"> -->
-
-    <!-- Conditional fix for Android <= 11 ONLY -->
-    <script>
-    (function () {
-      var ua = navigator.userAgent || "";
-      var m = ua.match(/Android\s(\d+)/i);
-      var ver = m ? parseInt(m[1], 10) : 999;     // treat unknown as new
-      var isOldAndroid = ver <= 11;
-
-      if (!isOldAndroid) return;                  // Pixel 7/8 etc keep ORANGE
-
-      // 1) Force a black theme-color so nav icons flip to white
-      var DARK = "#000000";
-      var metaTC = document.querySelector('meta[name="theme-color"]');
-      if (!metaTC) {
-        metaTC = document.createElement("meta");
-        metaTC.name = "theme-color";
-        document.head.appendChild(metaTC);
-      }
-      metaTC.setAttribute("content", DARK);
-
-      // 2) Hint older Chrome that page is dark
-      var metaCS = document.querySelector('meta[name="color-scheme"]');
-      if (!metaCS) {
-        metaCS = document.createElement("meta");
-        metaCS.name = "color-scheme";
-        metaCS.content = "dark";
-        document.head.appendChild(metaCS);
-      }
-
-      // 3) Make sure the backdrop under the system bar is unambiguously black
-      var style = document.createElement("style");
-      style.textContent = "html,body{background:#000!important}";
-      document.head.appendChild(style);
-    })();
-    </script>
-
 </head>
 
 <body class="min-h-screen bg-gradient-to-b from-gray-900 to-black">

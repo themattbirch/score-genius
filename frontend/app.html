@@ -34,8 +34,8 @@
       type="image/png"
     />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#F97316" />
+    <meta name="mobile-web-app-capable" content="yes" />
 
     <!-- Google Play App Link -->
     <meta name="google-play-app" content="app-id=io.scoregenius.app" />
@@ -98,40 +98,6 @@
         "operatingSystem": "HTML5",
         "privacyPolicy": "https://scoregenius.io/privacy"
       }
-    </script>
-    <script>
-      (function () {
-        var ua = navigator.userAgent || "";
-        var m = ua.match(/Android\s(\d+)/i);
-        var ver = m ? parseInt(m[1], 10) : 999; // treat unknown as new
-        var isOldAndroid = ver <= 11;
-
-        if (!isOldAndroid) return; // Pixel 7/8 etc keep ORANGE
-
-        // 1) Force a black theme-color so nav icons flip to white
-        var DARK = "#000000";
-        var metaTC = document.querySelector('meta[name="theme-color"]');
-        if (!metaTC) {
-          metaTC = document.createElement("meta");
-          metaTC.name = "theme-color";
-          document.head.appendChild(metaTC);
-        }
-        metaTC.setAttribute("content", DARK);
-
-        // 2) Hint older Chrome that page is dark
-        var metaCS = document.querySelector('meta[name="color-scheme"]');
-        if (!metaCS) {
-          metaCS = document.createElement("meta");
-          metaCS.name = "color-scheme";
-          metaCS.content = "dark";
-          document.head.appendChild(metaCS);
-        }
-
-        // 3) Make sure the backdrop under the system bar is unambiguously black
-        var style = document.createElement("style");
-        style.textContent = "html,body{background:#000!important}";
-        document.head.appendChild(style);
-      })();
     </script>
   </head>
   <body>
