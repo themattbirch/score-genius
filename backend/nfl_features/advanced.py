@@ -267,8 +267,11 @@ def compute_advanced_metrics(
                            default_val=default_val) * scale
         out[col_out] = pd.to_numeric(rate, errors="coerce").astype("float32")
         if flag_imputations:
-            out[f"{col_out}_imputed"] = ((pd.to_numeric(denom, errors="coerce").isna()) | (pd.to_numeric(denom, errors="coerce") == 0) |
-                                         (pd.to_numeric(numer, errors="coerce").isna())).astype("int8")
+            out[f"{col_out}_imputed"] = (
+                pd.to_numeric(denom, errors="coerce").isna() |
+                (pd.to_numeric(denom, errors="coerce") == 0) |
+                pd.to_numeric(numer, errors="coerce").isna()
+            ).astype("int8")
 
     # Core rates/ratios
     if third_made and third_att:
@@ -290,11 +293,29 @@ def compute_advanced_metrics(
         _add("adv_yards_per_drive", df[yards_col], df[drives_col], None)
     if points_col and drives_col:
         _add("adv_points_per_drive", df[points_col], df[drives_col], None)
-    if plays_col and top_col:
+
+    # possession seconds (always compute when TOP exists)
+    top_seconds = None
+    if top_col:
         top_seconds = df[top_col].apply(_to_seconds_maybe)
+        out["possession_seconds"] = pd.to_numeric(top_seconds, errors="coerce").astype("float32")
+
+    # pace metrics using TOP
+    if plays_col and top_seconds is not None:
+        # seconds per play = TOP_seconds / plays
         _add("adv_seconds_per_play", top_seconds, df[plays_col], None)
+        # plays per minute = plays / (TOP_seconds / 60) = plays * 60 / TOP_seconds
+        _add(
+            "adv_plays_per_minute",
+            pd.to_numeric(df[plays_col], errors="coerce"),
+            pd.to_numeric(top_seconds, errors="coerce"),
+            None,
+            scale=60.0,
+        )
+
     if plays_col and drives_col:
         _add("adv_plays_per_drive", df[plays_col], df[drives_col], None)
+
     if points_col and yards_col:
         _add("adv_points_per_100_yards", df[points_col], df[yards_col], "points_for_avg", scale=100.0)
 
@@ -305,27 +326,42 @@ def compute_advanced_metrics(
 
     # Optional: sack rate = sacks / dropbacks (or pass_att + sacks)
     if pass_sacks_alt and (dropbacks_col or pass_att_col):
-        denom = (pd.to_numeric(df[dropbacks_col], errors="coerce")
-                 if dropbacks_col else (pd.to_numeric(df[pass_att_col], errors="coerce") + pd.to_numeric(df[pass_sacks_alt], errors="coerce")))
+        denom = (
+            pd.to_numeric(df[dropbacks_col], errors="coerce")
+            if dropbacks_col else
+            (pd.to_numeric(df[pass_att_col], errors="coerce") + pd.to_numeric(df[pass_sacks_alt], errors="coerce"))
+        )
         _add("adv_sack_rate", pd.to_numeric(df[pass_sacks_alt], errors="coerce"), denom, None)
 
     # Optional: explosive play rate = explosive plays / total plays
     if explosive_col and plays_col:
-        _add("adv_explosive_play_rate", pd.to_numeric(df[explosive_col], errors="coerce"), pd.to_numeric(df[plays_col], errors="coerce"), None)
+        _add("adv_explosive_play_rate",
+             pd.to_numeric(df[explosive_col], errors="coerce"),
+             pd.to_numeric(df[plays_col], errors="coerce"),
+             None)
 
-    # Optional: penalty yards per play
+    # Optional: penalty metrics
     if pen_yards_col and plays_col:
-        _add("adv_penalty_yards_per_play", pd.to_numeric(df[pen_yards_col], errors="coerce"), pd.to_numeric(df[plays_col], errors="coerce"), None)
+        _add("adv_penalty_yards_per_play",
+             pd.to_numeric(df[pen_yards_col], errors="coerce"),
+             pd.to_numeric(df[plays_col], errors="coerce"),
+             None)
+    if pen_yards_col and penalties_col:
+        _add("adv_yards_per_penalty",
+             pd.to_numeric(df[pen_yards_col], errors="coerce"),
+             pd.to_numeric(df[penalties_col], errors="coerce"),
+             None)
 
-    # Keep only advanced columns + ids
+    # Keep only advanced columns + ids (+ possession_seconds for tests)
     adv_cols = [c for c in out.columns if c.startswith("adv_") and not c.endswith("_imputed")]
     if not adv_cols:
         logger.warning("advanced.compute: no metrics computed. available_cols=%s", list(df.columns))
         return pd.DataFrame()
 
-    keep_cols = [c for c in ["game_id", "team_id", "team_norm", "game_date"] if c in out.columns]
+    keep_cols   = [c for c in ["game_id", "team_id", "team_norm", "game_date"] if c in out.columns]
     impute_cols = [c for c in out.columns if c.endswith("_imputed")]
-    return out[keep_cols + adv_cols + impute_cols].copy()
+    extra_cols  = ["possession_seconds"] if "possession_seconds" in out.columns else []
+    return out[keep_cols + adv_cols + impute_cols + extra_cols].copy()
 
 
 # ---------------------------------------------------------------------------

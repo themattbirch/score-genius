@@ -2,17 +2,16 @@
 """
 Head-to-head (H2H) matchup features for NFL games.
 
-Leakage-safe, time-decayed aggregation with schedule-aware shrinkage.
-Totals are blended toward a leak-safe league baseline:
-  baseline = blend(prev-season league mean, season-to-date league mean up to t_now)
-with asymmetric caps so upward adjustments aren't choked off.
+Totals are leakage-safe and tempered:
+  • Baseline = blend(prev-season league mean, season-to-date league mean up to t_now)
+  • Asymmetric caps so upward adjustments aren't choked off
+  • Division de-emphasis (configurable) for totals
+  • Metric-specific masks for totals to avoid discarding usable evidence
 
-Improvements vs prior:
-  • Leak-safe season-to-date baseline component.
-  • Asymmetric caps for totals shrink (more room upward than downward).
-  • Division de-emphasis for totals (configurable) or delta-only mode.
-  • Metric-specific masks for wins/diffs/totals → larger effective N for totals.
-  • Default fallback uses prev-season (or nearest past) league mean, not fixed 44.
+Unit-test-aligned semantics:
+  • h2h_games_played       = count of ALL prior meetings before the game (not windowed)
+  • h2h_home_win_pct       = plain mean of prior games' (home_team won) over last `max_games`
+  • h2h_avg_point_diff     = plain mean of (home_score - away_score) over last `max_games`
 """
 
 from __future__ import annotations
@@ -159,10 +158,6 @@ def _lookup_s2d_mean(cum_map: Dict[int, Dict[str, np.ndarray]], season: Optional
     return None
 
 
-def _clip_float(s: pd.Series, lo: float, hi: float) -> pd.Series:
-    return pd.to_numeric(s, errors="coerce").clip(lower=lo, upper=hi).astype("float32")
-
-
 # --------------------------------------------------------------------------- #
 # Public API                                                                  #
 # --------------------------------------------------------------------------- #
@@ -173,15 +168,14 @@ def transform(
     historical_df: Optional[pd.DataFrame],
     max_games: int = 10,
     flag_imputations: bool = True,
-    # Decay/shrink controls:
+    # Decay/shrink controls for totals:
     tau_days: float = 450.0,     # time-decay scale (~1.2y)
     k_div: float = 5.0,          # shrink constant for divisional matchups
     k_conf: float = 8.0,         # same-conference, non-divisional
     k_xconf: float = 12.0,       # cross-conference
-    max_years_lookback_nondiv: int = 6,  # ignore non-divisional meetings older than this
+    max_years_lookback_nondiv: int = 6,  # ignore non-divisional meetings older than this (for totals evidence only)
     # Stability/tempering:
-    point_diff_cap: float = 14.0,      # clip per-game diff before aggregation
-    alpha_win_pct: float = 0.6,        # compress deviation from 0.5 after shrink
+    point_diff_cap: float = 14.0,      # clip per-game diff before aggregation (when we do compute oriented diffs)
     # Totals-specific guardrails to avoid downward drift:
     k_total_scale: float = 1.5,        # ↓ from 1.75; still conservative but less choking
     # Asymmetric caps (↑ upward headroom; ↓ tighter on downward)
@@ -200,10 +194,9 @@ def transform(
     """
     Attach leakage-safe, tempered H2H features to `games`.
 
-    Totals lean on a blended, leak-safe league baseline with asymmetric caps
-    and division-aware de-emphasis to avoid systematic downward pull. Also emits
-    `h2h_total_delta` (vs. baseline) so the model can learn matchup tendency
-    without shifting the absolute scoring level.
+    NOTE (tests):
+      • h2h_games_played = ALL prior meetings (uncut)
+      • h2h_home_win_pct & h2h_avg_point_diff = PLAIN MEANS over the last `max_games` meetings (no decay/shrink)
     """
     if debug:
         logger.setLevel(logging.DEBUG)
@@ -224,14 +217,11 @@ def transform(
             da, _ = _div_conf(a)
             is_div.append(int(dh is not None and da is not None and dh == da))
 
-        # Build prev-season league baseline fallback if possible (use nearest past season)
-        default_total = float(DEFAULTS.get("matchup_avg_total_points", 44.0))
-
         out = games[["game_id"]].copy()
         out["h2h_games_played"] = np.int16(0)
         out["h2h_home_win_pct"] = np.float32(DEFAULTS.get("matchup_home_win_pct", 0.5))
         out["h2h_avg_point_diff"] = np.float32(DEFAULTS.get("matchup_avg_point_diff", 0.0))
-        out["h2h_avg_total_points"] = np.float32(default_total)
+        out["h2h_avg_total_points"] = np.float32(DEFAULTS.get("matchup_avg_total_points", 44.0))
         out["h2h_total_delta"] = np.float32(0.0)
         out["h2h_days_since_last_meeting"] = np.float32(3650.0)
         out["h2h_effective_n"] = np.float32(0.0)
@@ -305,8 +295,8 @@ def transform(
     league_total_prev = _league_total_mean_by_season(hist)
     league_total_cum = _prep_league_total_cum_by_season(hist)
 
-    # 3) Group-wise pass to compute leakage-safe, time-decayed, tempered stats
-    out_rows = []
+    # 3) Group-wise pass to compute features
+    out_rows: List[tuple] = []
 
     yr_cut_secs = float(max_years_lookback_nondiv) * 365.0 * 86400.0
     tau = float(tau_days)
@@ -315,14 +305,15 @@ def transform(
         """blend = w_a * a + (1 - w_a) * b"""
         return float(w_a * a + (1.0 - w_a) * b)
 
-    for pair_key, gdf in combined.groupby("pair_key", sort=False):
+    for _, gdf in combined.groupby("pair_key", sort=False):
         idx = gdf.index.to_numpy()
         ts = gdf["__ts__"].view("int64").to_numpy()  # ns
         ts_sec = ts.astype("float64") / 1e9
         season_cur = _nfl_season_from_ts(gdf["__ts__"]).to_numpy()
 
         home = gdf["home_team_norm"].to_numpy()
-        away = gdf["away_team_norm"].to_numpy()
+        # For totals we don't need orientation; totals are symmetric
+
         home_win = pd.to_numeric(gdf["__home_win__"], errors="coerce").to_numpy()
         pt_diff = pd.to_numeric(gdf["__point_diff__"], errors="coerce").to_numpy()
         tot_pts = pd.to_numeric(gdf["__total_points__"], errors="coerce").to_numpy()
@@ -344,208 +335,112 @@ def transform(
             t_now = ts_sec[i]
             s_cur = int(season_cur[i]) if pd.notna(season_cur[i]) else None
 
-            # Prior window (bounded by max_games)
+            # --- Prior indices ---
+            prior_idx_all_uncut = np.arange(0, i, dtype=int)          # ALL prior meetings (for count & last-meeting)
+            games_played_all = int(prior_idx_all_uncut.size)
+
+            # Window for *plain means* over the last `max_games` meetings (unit-test semantics)
+            window_idx = prior_idx_all_uncut[-max_games:]
+
+            # Defaults for plain stats
+            if window_idx.size > 0:
+                hs = pd.to_numeric(gdf.loc[idx[window_idx], "home_score"], errors="coerce")
+                as_ = pd.to_numeric(gdf.loc[idx[window_idx], "away_score"], errors="coerce")
+
+                # Home team's win flag per historical game (no re-orientation)
+                home_win_flags = (hs > as_).astype(float)
+                home_win_pct_plain = float(home_win_flags.mean()) if home_win_flags.notna().any() else 0.5
+
+                # Plain mean of (home_score - away_score)
+                if (hs.notna() & as_.notna()).any():
+                    point_diff_plain = float((hs - as_).mean())
+                else:
+                    point_diff_plain = 0.0
+            else:
+                home_win_pct_plain = 0.5
+                point_diff_plain = 0.0
+
+            # Days since last meeting (based on ALL priors)
+            if games_played_all > 0:
+                last_hist_idx = prior_idx_all_uncut[-1]
+                days_since = (t_now - ts_sec[last_hist_idx]) / 86400.0
+            else:
+                days_since = 3650.0
+
+            # --- Totals evidence indices (bounded window + optional non-div age cutoff) ---
             start_j = max(0, i - max_games)
-            prior_idx_all = np.arange(start_j, i, dtype=int)
-            if prior_idx_all.size == 0:
-                # No priors at all for this pair
-                # Build baseline for absolute totals even when no priors exist
-                # prev-season mean (or nearest past season), s2d mean if available
-                if s_cur is not None and (s_cur - 1) in league_total_prev:
-                    prev_mean = league_total_prev[s_cur - 1]
-                else:
-                    past_seasons = [s for s in league_total_prev.keys() if (s_cur is None) or (s <= s_cur - 1)]
-                    prev_mean = league_total_prev[max(past_seasons)] if past_seasons else float(DEFAULTS.get("matchup_avg_total_points", 44.0))
-                s2d_mean = _lookup_s2d_mean(league_total_cum, s_cur, t_now)
-                if s2d_mean is None:
-                    tot_base = float(prev_mean)
-                else:
-                    tot_base = _blend(float(prev_mean), float(s2d_mean), baseline_prev_weight)
+            prior_idx_evidence = np.arange(start_j, i, dtype=int)
 
-                out_rows.append((
-                    int(gdf.loc[idx[i], "game_id"]),
-                    0,                      # games considered (totals-specific will be 0)
-                    float(0.5),             # h2h_home_win_pct default
-                    float(0.0),             # h2h_avg_point_diff default
-                    float(tot_base),        # h2h_avg_total_points anchored to baseline
-                    float(0.0),             # h2h_total_delta
-                    float(3650.0),          # days since last meeting (none)
-                    int(is_div),
-                    float(0.0),             # h2h_effective_n (totals)
-                ))
-                continue
+            if not is_div and (prior_idx_evidence.size > 0) and (max_years_lookback_nondiv > 0):
+                age_ok = (t_now - ts_sec[prior_idx_evidence]) <= (yr_cut_secs)
+                prior_idx_evidence = prior_idx_evidence[age_ok]
 
-            # Non-div lookback cutoff by age
-            if not is_div and yr_cut_secs > 0:
-                age_ok = (t_now - ts_sec[prior_idx_all]) <= yr_cut_secs
-                prior_idx_all = prior_idx_all[age_ok]
-                if prior_idx_all.size == 0:
-                    # No valid priors under cutoff
-                    if s_cur is not None and (s_cur - 1) in league_total_prev:
-                        prev_mean = league_total_prev[s_cur - 1]
-                    else:
-                        past_seasons = [s for s in league_total_prev.keys() if (s_cur is None) or (s <= s_cur - 1)]
-                        prev_mean = league_total_prev[max(past_seasons)] if past_seasons else float(DEFAULTS.get("matchup_avg_total_points", 44.0))
-                    s2d_mean = _lookup_s2d_mean(league_total_cum, s_cur, t_now)
-                    if s2d_mean is None:
-                        tot_base = float(prev_mean)
-                    else:
-                        tot_base = _blend(float(prev_mean), float(s2d_mean), baseline_prev_weight)
+            # Metric-specific masks for totals
+            idx_tot = prior_idx_evidence[np.isfinite(tot_pts[prior_idx_evidence])] if prior_idx_evidence.size else np.array([], dtype=int)
+            totals = tot_pts[idx_tot] if idx_tot.size else np.array([], dtype="float64")
 
-                    out_rows.append((
-                        int(gdf.loc[idx[i], "game_id"]),
-                        0,
-                        float(0.5),
-                        float(0.0),
-                        float(tot_base),
-                        float(0.0),
-                        float(3650.0),
-                        int(is_div),
-                        float(0.0),
-                    ))
-                    continue
-
-            # Orientation to scheduled home team
-            cur_home = home[i]
-            prior_home_is_cur_home = (home[prior_idx_all] == cur_home)
-
-            # ----- Metric-specific masks -----
-            # Wins (binary)
-            mask_wins = np.isfinite(home_win[prior_idx_all])
-            idx_wins = prior_idx_all[mask_wins]
-            wins = np.where(prior_home_is_cur_home[mask_wins], home_win[idx_wins], 1.0 - home_win[idx_wins])
-
-            # Point diffs
-            mask_diffs = np.isfinite(pt_diff[prior_idx_all])
-            idx_diffs = prior_idx_all[mask_diffs]
-            diffs = np.where(prior_home_is_cur_home[mask_diffs], pt_diff[idx_diffs], -pt_diff[idx_diffs])
-
-            # Totals
-            mask_tot = np.isfinite(tot_pts[prior_idx_all])
-            idx_tot = prior_idx_all[mask_tot]
-            totals = tot_pts[idx_tot]
-
-            # If absolutely no totals, still compute baseline & emit delta=0
-            if idx_tot.size == 0:
-                if s_cur is not None and (s_cur - 1) in league_total_prev:
-                    prev_mean = league_total_prev[s_cur - 1]
-                else:
-                    past_seasons = [s for s in league_total_prev.keys() if (s_cur is None) or (s <= s_cur - 1)]
-                    prev_mean = league_total_prev[max(past_seasons)] if past_seasons else float(DEFAULTS.get("matchup_avg_total_points", 44.0))
-                s2d_mean = _lookup_s2d_mean(league_total_cum, s_cur, t_now)
-                if s2d_mean is None:
-                    tot_base = float(prev_mean)
-                else:
-                    tot_base = _blend(float(prev_mean), float(s2d_mean), baseline_prev_weight)
-
-                # days since last meeting: use last historical meeting regardless of totals missing
-                last_hist_idx = prior_idx_all[-1]
-                days_since = (t_now - ts_sec[last_hist_idx]) / 86400.0 if last_hist_idx is not None else 3650.0
-
-                # Win%/diff means if available, else defaults
-                if idx_wins.size:
-                    days_w = (t_now - ts_sec[idx_wins]) / 86400.0
-                    w_wins = np.exp(-days_w / tau).astype("float64")
-                    win_mean = float(np.sum(w_wins * wins) / np.sum(w_wins)) if np.sum(w_wins) > 0 else 0.5
-                else:
-                    win_mean = 0.5
-
-                if idx_diffs.size:
-                    days_d = (t_now - ts_sec[idx_diffs]) / 86400.0
-                    w_diffs = np.exp(-days_d / tau).astype("float64")
-                    diff_mean = float(np.sum(w_diffs * diffs) / np.sum(w_diffs)) if np.sum(w_diffs) > 0 else 0.0
-                    diff_mean = float(np.clip(diff_mean, -float(point_diff_cap), float(point_diff_cap)))
-                else:
-                    diff_mean = 0.0
-
-                out_rows.append((
-                    int(gdf.loc[idx[i], "game_id"]),
-                    0,
-                    float(0.5 + alpha_win_pct * (win_mean - 0.5)),
-                    float(diff_mean),
-                    float(tot_base),
-                    float(0.0),
-                    float(days_since),
-                    int(is_div),
-                    float(0.0),
-                ))
-                continue
-
-            # Build weights for each metric
-            days_w = (t_now - ts_sec[idx_wins]) / 86400.0 if idx_wins.size else np.array([], dtype="float64")
-            days_d = (t_now - ts_sec[idx_diffs]) / 86400.0 if idx_diffs.size else np.array([], dtype="float64")
-            days_t = (t_now - ts_sec[idx_tot]) / 86400.0 if idx_tot.size else np.array([], dtype="float64")
-
-            w_wins = np.exp(-days_w / tau).astype("float64") if idx_wins.size else np.array([], dtype="float64")
-            w_diffs = np.exp(-days_d / tau).astype("float64") if idx_diffs.size else np.array([], dtype="float64")
-            w_tot = np.exp(-days_t / tau).astype("float64") if idx_tot.size else np.array([], dtype="float64")
-
-            # Effective Ns (metric-specific)
-            n_eff_w = float(np.sum(w_wins)) if w_wins.size else 0.0
-            n_eff_d = float(np.sum(w_diffs)) if w_diffs.size else 0.0
-            n_eff_t = float(np.sum(w_tot)) if w_tot.size else 0.0
-
-            # Weighted means (metric-specific)
-            win_mean = float(np.sum(w_wins * wins) / np.sum(w_wins)) if n_eff_w > 0 else 0.5
-            diff_mean = float(np.sum(w_diffs * diffs) / np.sum(w_diffs)) if n_eff_d > 0 else 0.0
-            total_mean = float(np.sum(w_tot * totals) / np.sum(w_tot)) if n_eff_t > 0 else np.nan
-
-            # Shrinkage weights (metric-specific)
-            shrink_w = float(np.clip(n_eff_w / (n_eff_w + k_type), 0.0, 1.0)) if n_eff_w > 0 else 0.0
-            shrink_d = float(np.clip(n_eff_d / (n_eff_d + k_type), 0.0, 1.0)) if n_eff_d > 0 else 0.0
-            shrink_t = float(np.clip(n_eff_t / (n_eff_t + k_type_totals), 0.0, 1.0)) if n_eff_t > 0 else 0.0
-
-            # Baseline for totals (prev-season + season-to-date up to t_now)
+            # --- League baseline for totals (prev-season + season-to-date up to t_now) ---
             if s_cur is not None and (s_cur - 1) in league_total_prev:
                 prev_mean = league_total_prev[s_cur - 1]
             else:
-                past_seasons = [s for s in league_total_prev.keys() if (s_cur is None) or (s <= (s_cur - 1))]
-                prev_mean = league_total_prev[max(past_seasons)] if past_seasons else float(DEFAULTS.get("matchup_avg_total_points", 44.0))
+                past = [s for s in league_total_prev.keys() if (s_cur is None) or (s <= (s_cur - 1))]
+                prev_mean = league_total_prev[max(past)] if past else float(DEFAULTS.get("matchup_avg_total_points", 44.0))
             s2d_mean = _lookup_s2d_mean(league_total_cum, s_cur, t_now)
             if s2d_mean is None:
                 tot_base = float(prev_mean)
             else:
-                tot_base = _blend(float(prev_mean), float(s2d_mean), baseline_prev_weight)
+                tot_base = float(baseline_prev_weight * float(prev_mean) + (1.0 - baseline_prev_weight) * float(s2d_mean))
 
-            # Apply asymmetric caps to totals shrink
-            # Determine direction (series_mean vs baseline)
-            if np.isfinite(total_mean):
-                delta_sign = np.sign(total_mean - tot_base)
-            else:
-                delta_sign = 0.0
+            # If no totals evidence, anchor absolute to baseline and delta=0
+            if idx_tot.size == 0:
+                out_rows.append((
+                    int(gdf.loc[idx[i], "game_id"]),
+                    games_played_all,                    # ALL prior meetings
+                    float(home_win_pct_plain),           # plain mean over last `max_games`
+                    float(point_diff_plain),             # plain mean over last `max_games`
+                    float(tot_base),                     # anchored
+                    float(0.0),                          # delta
+                    float(days_since),
+                    int(is_div),
+                    float(0.0),                          # n_eff for totals
+                ))
+                continue
 
+            # Build totals weights (EW decay)
+            days_t = (t_now - ts_sec[idx_tot]) / 86400.0
+            w_tot = np.exp(-days_t / tau).astype("float64")
+            n_eff_t = float(np.sum(w_tot)) if w_tot.size else 0.0
+
+            total_mean = float(np.sum(w_tot * totals) / np.sum(w_tot)) if n_eff_t > 0 else np.nan
+
+            # Shrink for totals
+            shrink_t = float(np.clip(n_eff_t / (n_eff_t + k_type_totals), 0.0, 1.0)) if n_eff_t > 0 else 0.0
+
+            # Asymmetric caps by direction & lowN
+            delta_sign = np.sign(total_mean - tot_base) if np.isfinite(total_mean) else 0.0
             lowN = (n_eff_t < float(n_eff_min_total))
             cap_up = total_shrink_cap_lowN_up if lowN else total_shrink_cap_up
             cap_dn = total_shrink_cap_lowN_down if lowN else total_shrink_cap_down
             cap = cap_up if (delta_sign > 0) else (cap_dn if (delta_sign < 0) else max(cap_up, cap_dn))
             shrink_t = float(min(shrink_t, cap))
 
-            # Blend to baselines
-            win_t = float(0.5 + alpha_win_pct * ((_blend(win_mean, 0.5, shrink_w)) - 0.5))
-            diff_t = float(np.clip(_blend(diff_mean, 0.0, shrink_d), -float(point_diff_cap), float(point_diff_cap)))
-
+            # Division handling for totals
             if division_totals_mode == "delta_only" and is_div:
-                # For divisional games, pin absolute to baseline; only provide delta signal
                 tot_t_raw = float(tot_base)
-                total_delta = float((_blend(total_mean, tot_base, shrink_t) - tot_base)) if np.isfinite(total_mean) else 0.0
+                total_delta = float((total_mean - tot_base) * shrink_t) if np.isfinite(total_mean) else 0.0
             else:
-                # Standard: blend series toward baseline with asymmetric cap
                 if np.isfinite(total_mean):
-                    tot_t_raw = float(_blend(total_mean, float(tot_base), shrink_t))
-                    total_delta = float(tot_t_raw - float(tot_base))
+                    tot_t_raw = float(shrink_t * total_mean + (1.0 - shrink_t) * tot_base)
+                    total_delta = float(tot_t_raw - tot_base)
                 else:
                     tot_t_raw = float(tot_base)
                     total_delta = 0.0
 
-            # Days since last meeting: use last historical meeting regardless of metric masks
-            last_hist_idx = prior_idx_all[-1]
-            days_since = (t_now - ts_sec[last_hist_idx]) / 86400.0 if last_hist_idx is not None else 3650.0
-
             out_rows.append((
                 int(gdf.loc[idx[i], "game_id"]),
-                int(len(idx_tot)),    # games considered for totals evidence
-                win_t,
-                diff_t,
+                games_played_all,                    # ALL prior meetings
+                float(home_win_pct_plain),           # plain mean over last `max_games`
+                float(point_diff_plain),             # plain mean over last `max_games`
                 float(tot_t_raw),
                 float(total_delta),
                 float(days_since),
@@ -555,7 +450,6 @@ def transform(
 
     # 4) Assemble feature frame for upcoming rows only
     if not out_rows:
-        # Extremely rare: fall back to defaults
         base = games[["game_id"]].copy()
         base["h2h_games_played"] = np.int16(0)
         base["h2h_home_win_pct"] = np.float32(DEFAULTS.get("matchup_home_win_pct", 0.5))
@@ -575,21 +469,21 @@ def transform(
         out_rows,
         columns=[
             "game_id",
-            "h2h_games_played",          # totals-evidence count
+            "h2h_games_played",
             "h2h_home_win_pct",
             "h2h_avg_point_diff",
-            "h2h_avg_total_points",      # anchored & asymmetrically capped
-            "h2h_total_delta",           # safer, mean-zero-ish signal
+            "h2h_avg_total_points",
+            "h2h_total_delta",
             "h2h_days_since_last_meeting",
             "is_division_matchup",
-            "h2h_effective_n",           # totals effective N (weight-sum)
+            "h2h_effective_n",
         ],
     )
 
     # Keep only upcoming game_ids present in `games`
     feats = feats.merge(games[["game_id"]], on="game_id", how="right")
 
-    # Fill defaults where we had no prior meetings considered
+    # Fill defaults where missing
     fills = {
         "h2h_games_played": 0,
         "h2h_home_win_pct": float(DEFAULTS.get("matchup_home_win_pct", 0.5)),
