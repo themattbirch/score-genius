@@ -1,26 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    Copyright 2019 Google Inc. All Rights Reserved.
-
-     Licensed under the Apache License, Version 2.0 (the "License");
-     you may not use this file except in compliance with the License.
-     You may obtain a copy of the License at
-
-         http://www.apache.org/licenses/LICENSE-2.0
-
-     Unless required by applicable law or agreed to in writing, software
-     distributed under the License is distributed on an "AS IS" BASIS,
-     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-     See the License for the specific language governing permissions and
-     limitations under the License.
--->
-<!--
- The "package" attribute is rewritten by the Gradle build with the value of applicationId.
-     It is still required here, as it is used to derive paths, for instance when referring
-     to an Activity by ".MyActivity" instead of the full name. If more Activities are added to the
-     application, the package attribute will need to reflect the correct path in order to use
-     the abbreviated format.
--->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.scoregenius.app"
     android:versionCode="68"
@@ -30,6 +8,7 @@
         android:minSdkVersion="21"
         android:targetSdkVersion="35" />
 
+    <!-- Notifications (runtime on 13+ if you enable) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <queries>
@@ -57,7 +36,9 @@
         android:label="@string/appName"
         android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Translucent.NoTitleBar" >
+        android:theme="@style/Theme.TwaLauncher" >
+
+        <!-- Digital Asset Links, Web Manifest, generator tag -->
         <meta-data
             android:name="asset_statements"
             android:resource="@string/assetStatements" />
@@ -68,25 +49,30 @@
             android:name="twa_generator"
             android:value="@string/generatorApp" />
 
+        <!-- Manage Data screen -->
         <activity android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity" >
             <meta-data
                 android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
                 android:value="@string/launchUrl" />
         </activity>
+
+        <!-- TWA launcher activity -->
         <activity
             android:name="io.scoregenius.app.LauncherActivity"
             android:alwaysRetainTaskState="true"
             android:exported="true"
-            android:label="@string/launcherName" >
+            android:label="@string/launcherName"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.App.Splash" >
 
-            <!-- restore launcher icon -->
+            <!-- Home screen icon -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- single verified app link -->
+            <!-- Verified App Link to /app -->
             <intent-filter android:autoVerify="true" >
                 <action android:name="android.intent.action.VIEW" />
 
@@ -99,28 +85,34 @@
                     android:scheme="https" />
             </intent-filter>
 
-            <!-- TWA meta -->
+            <!-- ABH / TWA configuration -->
             <meta-data
                 android:name="android.support.customtabs.trusted.DEFAULT_URL"
                 android:value="@string/launchUrl" />
+
+            <!-- Status bar colors (keep legacy support namespace) -->
             <meta-data
                 android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
                 android:resource="@color/colorPrimary" />
             <meta-data
                 android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
                 android:resource="@color/colorPrimaryDark" />
-            <meta-data
-                android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
-                android:resource="@color/navigationDividerColor" />
-            <meta-data
-                android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
-                android:resource="@color/navigationDividerColorDark" />
+
+            <!-- Navigation bar colors & divider (androidx keys are the current canonical ones) -->
             <meta-data
                 android:name="androidx.browser.trusted.NAVIGATION_BAR_COLOR"
                 android:resource="@color/navigationBarColor" />
             <meta-data
                 android:name="androidx.browser.trusted.NAVIGATION_BAR_COLOR_DARK"
                 android:resource="@color/navigationBarColorDark" />
+            <meta-data
+                android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
+                android:resource="@color/navigationDividerColor" />
+            <meta-data
+                android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
+                android:resource="@color/navigationDividerColorDark" />
+
+            <!-- Splash config -->
             <meta-data
                 android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
                 android:resource="@drawable/splash" />
@@ -130,9 +122,13 @@
             <meta-data
                 android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
                 android:value="@integer/splashScreenFadeOutDuration" />
+
+            <!-- File provider for sharing (ABH) -->
             <meta-data
                 android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
                 android:value="@string/providerAuthority" />
+
+            <!-- Shortcuts, fallback, orientation -->
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -143,6 +139,8 @@
                 android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION"
                 android:value="@string/orientation" />
         </activity>
+
+        <!-- Focus/notifications helpers from ABH -->
         <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
         <activity
             android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"

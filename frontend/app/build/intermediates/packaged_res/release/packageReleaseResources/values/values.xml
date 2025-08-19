@@ -27,13 +27,26 @@
     <string name="orientation" translatable="false">default</string>
     <string name="providerAuthority" translatable="false">io.scoregenius.app.fileprovider</string>
     <string name="webManifestUrl" translatable="false">https://scoregenius.io/manifest.webmanifest</string>
-    <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
-<item name="windowSplashScreenBackground">@color/backgroundColor</item>
-<item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
-<item name="postSplashScreenTheme">@style/Theme.TwaLauncher</item>
-</style>
+    <style name="Theme.App.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/backgroundColor</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.TwaLauncher</item>
+    </style>
     <style name="Theme.TwaLauncher" parent="Theme.AppCompat.DayNight.NoActionBar">
-<item name="android:windowIsTranslucent">true</item>
-<item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-</style>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
+        <item name="android:windowTranslucentStatus">false</item>
+
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="android:navigationBarColor">@color/navigationBarColor</item>
+
+        
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
 </resources>

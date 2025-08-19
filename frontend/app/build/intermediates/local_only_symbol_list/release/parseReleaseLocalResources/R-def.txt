@@ -30,7 +30,7 @@ string launcherName
 string orientation
 string providerAuthority
 string webManifestUrl
-style Theme.App.SplashScreen
+style Theme.App.Splash
 style Theme.TwaLauncher
 xml filepaths
 xml shortcuts
