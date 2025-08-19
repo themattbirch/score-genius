@@ -91,8 +91,6 @@ app.get("/.well-known/assetlinks.json", (req, res) => {
   res.status(200).send(dalBody);
 });
 
-app.use(express.static(staticRoot));
-
 // Serve the SPA shell for /app and /app/ with 200 (no redirect)
 app.get(["/app", "/app/"], (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
@@ -117,6 +115,8 @@ app.use(
     },
   })
 );
+
+app.use(express.static(staticRoot));
 
 // CORS policy, JSON parsing
 app.use(
