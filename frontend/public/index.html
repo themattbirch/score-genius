@@ -45,6 +45,18 @@
       gtag("js", new Date());
       gtag("config", "G-Q10Q9ST6DC");
     </script>
+    <script>
+    (function () {
+      var DARK = '#0b0b0f'; // pick your exact shade
+      var m = document.querySelector('meta[name="theme-color"]');
+      if (!m) { 
+        m = document.createElement('meta'); 
+        m.name = 'theme-color'; 
+        document.head.appendChild(m); 
+      }
+      m.setAttribute('content', DARK);
+    })();
+    </script>
 </head>
 
 <body class="min-h-screen bg-gradient-to-b from-gray-900 to-black">

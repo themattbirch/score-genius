@@ -5,6 +5,8 @@
     <color name="backgroundColor">#FFFFFF</color>
     <color name="colorPrimary">#1F2937</color>
     <color name="colorPrimaryDark">#000000</color>
+    <color name="navigationBarColor">#000000</color>
+    <color name="navigationBarColorDark">#000000</color>
     <color name="navigationColor">#000000</color>
     <color name="navigationColorDark">#000000</color>
     <color name="navigationDividerColor">#000000</color>
