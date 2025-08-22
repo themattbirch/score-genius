@@ -10475,11 +10475,22 @@
         <item name="android:windowBackground">@drawable/splash_background</item>
 
         
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
-        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+
+        
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+
+        
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+
+        
         <item name="splashScreenIconSize">48dp</item>
+
+        
         <item name="postSplashScreenTheme">@style/Theme.ScoreGenius</item>
+
+        
+        
     </style></file><file name="web_app_manifest" path="/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/res/raw/web_app_manifest.json" qualifiers="" type="raw"/><file path="/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/res/values-v31/styles.xml" qualifiers="v31"><style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/colorPrimaryDark</item>
         <item name="android:navigationBarColor">@color/navigationBarColor</item>
