@@ -5,25 +5,17 @@
     </style>
 
     <style name="Theme.ScoreGenius.Splash" parent="Theme.ScoreGenius">
-        <!-- Legacy static drawable background -->
-        <item name="android:windowBackground">@drawable/splash_background</item>
+        <!-- Single-stage on API 30: flat background, logo drawn by compat view -->
+        <item name="android:windowBackground">@color/backgroundColor</item>
 
-        <!-- Show splash icon explicitly (prevents flash on API 30) -->
+        <!-- Compat splash shows the real logo immediately (no chip, no fade) -->
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
-
-        <!-- Match background -->
-        <item name="windowSplashScreenBackground">@android:color/white</item>
-
-        <!-- Transparent background color for icon -->
+        <item name="windowSplashScreenBackground">@color/backgroundColor</item>
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="windowSplashScreenAnimationDuration">0</item>
 
-        <!-- Required for compat inflation -->
+        <!-- Required by compat -->
         <item name="splashScreenIconSize">48dp</item>
-
-        <!-- Theme to apply after compat splash exits -->
         <item name="postSplashScreenTheme">@style/Theme.ScoreGenius</item>
-
-        <!-- Optional: eliminate fade-in animation if flash persists -->
-        <!-- <item name="windowSplashScreenAnimationDuration">0</item> -->
     </style>
 </resources>

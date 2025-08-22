@@ -150,11 +150,11 @@
                 {
                     "source": "/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/res/values/integers.xml",
                     "from": {
-                        "startLines": "6,3,9,2,12,15",
+                        "startLines": "3,2,4,1,5,7",
                         "startColumns": "4,4,4,4,4,4",
-                        "startOffsets": "352,175,478,78,588,702",
+                        "startOffsets": "117,63,177,16,233,328",
                         "endColumns": "59,53,55,46,54,58",
-                        "endOffsets": "407,224,529,120,638,756"
+                        "endOffsets": "172,112,228,58,283,382"
                     },
                     "to": {
                         "startLines": "1897,1898,1899,1900,1901,1902",
