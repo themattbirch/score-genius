@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="android:navigationBarColor">@color/navigationBarColor</item>
+    </style>
+    <style name="Theme.ScoreGenius.Splash" parent="Theme.ScoreGenius">
+        
+        <item name="android:windowBackground">@drawable/splash_background</item>
+
+        
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="splashScreenIconSize">48dp</item>
+        <item name="postSplashScreenTheme">@style/Theme.ScoreGenius</item>
+    </style>
+</resources>

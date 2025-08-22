@@ -1,4 +1,4 @@
-#Fri Aug 22 02:27:58 EDT 2025
+#Fri Aug 22 03:26:19 EDT 2025
 base.1=/Users/mattb/Desktop/Projects/score-genius/frontend/app/build/intermediates/dex/release/mergeDexRelease/classes2.dex
 path.1=classes2.dex
 base.0=/Users/mattb/Desktop/Projects/score-genius/frontend/app/build/intermediates/dex/release/mergeDexRelease/classes.dex

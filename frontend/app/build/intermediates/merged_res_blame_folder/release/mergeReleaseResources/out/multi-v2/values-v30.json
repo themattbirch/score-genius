@@ -1,0 +1,28 @@
+{
+    "logs": [
+        {
+            "outputFile": "io.scoregenius.app-mergeReleaseResources-32:/values-v30/values-v30.xml",
+            "map": [
+                {
+                    "source": "/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/res/values-v30/styles.xml",
+                    "from": {
+                        "startLines": "3,9",
+                        "startColumns": "4,4",
+                        "startOffsets": "111,445",
+                        "endLines": "6,19",
+                        "endColumns": "12,12",
+                        "endOffsets": "367,1142"
+                    },
+                    "to": {
+                        "startLines": "2,6",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,316",
+                        "endLines": "5,16",
+                        "endColumns": "12,12",
+                        "endOffsets": "311,869"
+                    }
+                }
+            ]
+        }
+    ]
+}
