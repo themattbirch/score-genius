@@ -1,0 +1,16 @@
+<!-- res/values-v31/styles.xml -->
+<resources>
+    <style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="android:navigationBarColor">@color/navigationBarColor</item>
+    </style>
+
+    <!-- Android 12+ splash: white bg, no icon chip -->
+    <style name="Theme.ScoreGenius.Splash" parent="Theme.SplashScreen">
+        <!-- Use a transparent 1x1 so the platform doesn't show a circular chip -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="postSplashScreenTheme">@style/Theme.ScoreGenius</item>
+    </style>
+</resources>
