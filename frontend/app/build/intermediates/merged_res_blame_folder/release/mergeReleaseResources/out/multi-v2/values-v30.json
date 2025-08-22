@@ -6,20 +6,20 @@
                 {
                     "source": "/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/res/values-v30/styles.xml",
                     "from": {
-                        "startLines": "3,9",
+                        "startLines": "1,6",
                         "startColumns": "4,4",
-                        "startOffsets": "111,445",
-                        "endLines": "6,19",
+                        "startOffsets": "16,278",
+                        "endLines": "4,27",
                         "endColumns": "12,12",
-                        "endOffsets": "367,1142"
+                        "endOffsets": "272,1285"
                     },
                     "to": {
                         "startLines": "2,6",
                         "startColumns": "4,4",
                         "startOffsets": "55,316",
-                        "endLines": "5,16",
+                        "endLines": "5,27",
                         "endColumns": "12,12",
-                        "endOffsets": "311,869"
+                        "endOffsets": "311,930"
                     }
                 }
             ]

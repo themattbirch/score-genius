@@ -1,21 +1,29 @@
-<!-- res/values-v30/styles.xml -->
 <resources>
-    <!-- Keep base theme consistent on API 30 and below -->
     <style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/colorPrimaryDark</item>
         <item name="android:navigationBarColor">@color/navigationBarColor</item>
     </style>
 
-    <!-- Legacy splash for API 30 and below (no Theme.SplashScreen) -->
     <style name="Theme.ScoreGenius.Splash" parent="Theme.ScoreGenius">
-        <!-- Branded static background (layer-list with white + centered splash) -->
+        <!-- Legacy static drawable background -->
         <item name="android:windowBackground">@drawable/splash_background</item>
 
-        <!-- Compat splashscreen expectations (prevent InflateException) -->
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
-        <item name="windowSplashScreenBackground">@color/white</item>
+        <!-- Show splash icon explicitly (prevents flash on API 30) -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+
+        <!-- Match background -->
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+
+        <!-- Transparent background color for icon -->
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+
+        <!-- Required for compat inflation -->
         <item name="splashScreenIconSize">48dp</item>
+
+        <!-- Theme to apply after compat splash exits -->
         <item name="postSplashScreenTheme">@style/Theme.ScoreGenius</item>
+
+        <!-- Optional: eliminate fade-in animation if flash persists -->
+        <!-- <item name="windowSplashScreenAnimationDuration">0</item> -->
     </style>
 </resources>

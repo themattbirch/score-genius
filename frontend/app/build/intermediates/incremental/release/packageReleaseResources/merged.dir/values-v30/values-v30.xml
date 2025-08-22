@@ -9,10 +9,21 @@
         <item name="android:windowBackground">@drawable/splash_background</item>
 
         
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
-        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+
+        
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+
+        
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+
+        
         <item name="splashScreenIconSize">48dp</item>
+
+        
         <item name="postSplashScreenTheme">@style/Theme.ScoreGenius</item>
+
+        
+        
     </style>
 </resources>
