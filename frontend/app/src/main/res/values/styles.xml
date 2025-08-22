@@ -1,30 +1,15 @@
-<?xml version="1.0" encoding="utf-8"?>
+<!-- res/values/styles.xml -->
 <resources>
-
-    <!-- Android 12+ splash -->
-    <style name="Theme.App.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/backgroundColor</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
-        <item name="postSplashScreenTheme">@style/Theme.TwaLauncher</item>
-    </style>
-
-    <!-- Real TWA app theme (used after splash) -->
-    <style name="Theme.TwaLauncher" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowIsTranslucent">false</item>
-        <item name="android:windowTranslucentNavigation">false</item>
-        <item name="android:windowTranslucentStatus">false</item>
-
+    <!-- Base app theme -->
+    <style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/colorPrimaryDark</item>
         <item name="android:navigationBarColor">@color/navigationBarColor</item>
-
-        <!-- Light icons over dark bars -->
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-
-        <item name="android:enforceNavigationBarContrast">false</item>
-        <item name="android:enforceStatusBarContrast">false</item>
-        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowBackground">@color/backgroundColor</item>
     </style>
 
+    <!-- Splash theme used by trampoline activity -->
+    <style name="Theme.ScoreGenius.Splash" parent="Theme.ScoreGenius">
+        <!-- This drawable will have a white background already -->
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
 </resources>

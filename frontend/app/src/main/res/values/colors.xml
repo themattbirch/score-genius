@@ -1,8 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- existing -->
-    <color name="shortcut_background">#F5F5F5</color>
+    <!-- Brand / Theme Colors -->
+    <color name="colorPrimary">#1F2937</color>            <!-- Dark blue-gray -->
+    <color name="colorPrimaryDark">#0B0B0F</color>        <!-- Near-black -->
+    <color name="backgroundColor">#FFFFFF</color>         <!-- White background -->
+    <color name="shortcut_background">#000000</color>     <!-- Shortcut icon bg -->
 
-    <!-- new: force light (white) nav icons on older Android by using a dark bar -->
+    <!-- Navigation Colors -->
     <color name="navigationBarColor">#000000</color>
     <color name="navigationBarColorDark">#000000</color>
+    <color name="navigationColor">#000000</color>
+    <color name="navigationColorDark">#000000</color>
+    <color name="navigationDividerColor">#000000</color>
+    <color name="navigationDividerColorDark">#000000</color>
+
+    <!-- Explicit base colors -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color> <!-- Useful for background hacks -->
 </resources>

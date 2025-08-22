@@ -1,10 +1,10 @@
 {
     "logs": [
         {
-            "outputFile": "io.scoregenius.app-mergeReleaseResources-24:/values-en-rAU/values-en-rAU.xml",
+            "outputFile": "io.scoregenius.app-mergeReleaseResources-32:/values-en-rAU/values-en-rAU.xml",
             "map": [
                 {
-                    "source": "/Users/mattb/.gradle/caches/8.11.1/transforms/be57bd43967b699c12a0f6b8bd2f21c6/transformed/browser-1.9.0-alpha04/res/values-en-rAU/values-en-rAU.xml",
+                    "source": "/Users/mattb/.gradle/caches/8.11.1/transforms/ef4600e062ea7a79d732fdc30d125b40/transformed/browser-1.8.0/res/values-en-rAU/values-en-rAU.xml",
                     "from": {
                         "startLines": "2,3,4,5",
                         "startColumns": "4,4,4,4",

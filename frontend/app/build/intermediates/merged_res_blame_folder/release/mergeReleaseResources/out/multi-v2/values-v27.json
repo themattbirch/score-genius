@@ -1,8 +1,27 @@
 {
     "logs": [
         {
-            "outputFile": "io.scoregenius.app-mergeReleaseResources-24:/values-v27/values-v27.xml",
+            "outputFile": "io.scoregenius.app-mergeReleaseResources-32:/values-v27/values-v27.xml",
             "map": [
+                {
+                    "source": "/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/res/values-v27/styles.xml",
+                    "from": {
+                        "startLines": "3",
+                        "startColumns": "4",
+                        "startOffsets": "128",
+                        "endLines": "15",
+                        "endColumns": "12",
+                        "endOffsets": "891"
+                    },
+                    "to": {
+                        "startLines": "10",
+                        "startColumns": "4",
+                        "startOffsets": "593",
+                        "endLines": "22",
+                        "endColumns": "12",
+                        "endOffsets": "1047"
+                    }
+                },
                 {
                     "source": "/Users/mattb/.gradle/caches/8.11.1/transforms/5d8a0877f4accfc20ad6eac50576f898/transformed/core-splashscreen-1.0.1/res/values-v27/values-v27.xml",
                     "from": {

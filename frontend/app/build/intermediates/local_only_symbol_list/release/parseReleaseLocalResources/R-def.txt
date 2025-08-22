@@ -1,8 +1,10 @@
 R_DEF: Internal format may change without notice
 local
-bool enableNotification
-bool enableSiteSettingsShortcut
+anim sg_fade_in
+anim sg_fade_out
+bool enableNotifications
 color backgroundColor
+color black
 color colorPrimary
 color colorPrimaryDark
 color navigationBarColor
@@ -12,17 +14,29 @@ color navigationColorDark
 color navigationDividerColor
 color navigationDividerColorDark
 color shortcut_background
+color transparent
+color white
 drawable ic_notification_icon
 drawable shortcut_legacy_background
 drawable splash
-integer splashScreenFadeOutDuration
+drawable splash_background
+drawable splash_blank
+drawable splash_logo
+id splash_image
+id splash_root
+integer splash_content_fade_in_ms
+integer splash_exit_fade_ms
+integer splash_layout_min_ms
+integer splash_min_ms
+integer splash_outro_fade_ms
+integer splash_overlap_launch_ms
+layout activity_splash
 mipmap ic_launcher
 mipmap ic_maskable
 raw web_app_manifest
 string appName
 string assetStatements
 string fallbackType
-string fullScopeUrl
 string generatorApp
 string hostName
 string launchUrl
@@ -30,7 +44,7 @@ string launcherName
 string orientation
 string providerAuthority
 string webManifestUrl
-style Theme.App.Splash
-style Theme.TwaLauncher
+style Theme.ScoreGenius
+style Theme.ScoreGenius.Splash
 xml filepaths
 xml shortcuts

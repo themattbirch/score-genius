@@ -1,0 +1,17 @@
+<!-- app/src/main/res/values-v27/values-v27.xml -->
+<resources>
+    <!-- This overrides the base theme only for API 27+ -->
+    <style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Full control of system bars -->
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="android:navigationBarColor">@color/navigationBarColor</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <!-- Optional: match background to splash -->
+        <item name="android:windowBackground">@color/backgroundColor</item>
+
+        <!-- REMOVE this if present -->
+        <!-- <item name="textColorPrimary">?attr/textColorPrimary</item> -->
+        <!-- OR just hardcode to a concrete value if needed -->
+        <!-- <item name="android:textColorPrimary">@android:color/white</item> -->
+    </style>
+</resources>

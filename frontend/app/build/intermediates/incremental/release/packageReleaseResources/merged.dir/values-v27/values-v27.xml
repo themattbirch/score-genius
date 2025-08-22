@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="android:navigationBarColor">@color/navigationBarColor</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        
+        <item name="android:windowBackground">@color/backgroundColor</item>
+
+        
+        
+        
+        
+    </style>
+</resources>

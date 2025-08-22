@@ -1,52 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <bool name="enableNotification">true</bool>
-    <bool name="enableSiteSettingsShortcut">true</bool>
+    <bool name="enableNotifications">true</bool>
     <color name="backgroundColor">#FFFFFF</color>
+    <color name="black">#000000</color>
     <color name="colorPrimary">#1F2937</color>
-    <color name="colorPrimaryDark">#000000</color>
+    <color name="colorPrimaryDark">#0B0B0F</color>
     <color name="navigationBarColor">#000000</color>
     <color name="navigationBarColorDark">#000000</color>
     <color name="navigationColor">#000000</color>
     <color name="navigationColorDark">#000000</color>
     <color name="navigationDividerColor">#000000</color>
     <color name="navigationDividerColorDark">#000000</color>
-    <color name="shortcut_background">#F5F5F5</color>
-    <integer name="splashScreenFadeOutDuration">300</integer>
-    <string name="appName" translatable="false">ScoreGenius</string>
+    <color name="shortcut_background">#000000</color>
+    <color name="transparent">#00000000</color>
+    <color name="white">#FFFFFF</color>
+    <integer name="splash_content_fade_in_ms">700</integer>
+    <integer name="splash_exit_fade_ms">500</integer>
+    <integer name="splash_layout_min_ms">3000</integer>
+    <integer name="splash_min_ms">90</integer>
+    <integer name="splash_outro_fade_ms">800</integer>
+    <integer name="splash_overlap_launch_ms">300</integer>
+    <string name="appName">ScoreGenius</string>
     <string name="assetStatements">[{
-\"relation\": [\"delegate_permission/common.handle_all_urls\"],
-\"target\": {\"namespace\": \"web\", \"site\": \"https://scoregenius.io\"}
-}]</string>
-    <string name="fallbackType" translatable="false">customtabs</string>
-    <string name="fullScopeUrl" translatable="false">https://scoregenius.io/app</string>
-    <string name="generatorApp" translatable="false">bubblewrap-cli</string>
-    <string name="hostName" translatable="false">scoregenius.io</string>
-    <string name="launchUrl" translatable="false">https://scoregenius.io/app/</string>
-    <string name="launcherName" translatable="false">ScoreGenius</string>
-    <string name="orientation" translatable="false">default</string>
-    <string name="providerAuthority" translatable="false">io.scoregenius.app.fileprovider</string>
-    <string name="webManifestUrl" translatable="false">https://scoregenius.io/manifest.webmanifest</string>
-    <style name="Theme.App.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/backgroundColor</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
-        <item name="postSplashScreenTheme">@style/Theme.TwaLauncher</item>
-    </style>
-    <style name="Theme.TwaLauncher" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowIsTranslucent">false</item>
-        <item name="android:windowTranslucentNavigation">false</item>
-        <item name="android:windowTranslucentStatus">false</item>
-
+    \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+    \"target\": {\"namespace\": \"web\", \"site\": \"https://scoregenius.io\"}
+    }]</string>
+    <string name="fallbackType">none</string>
+    <string name="generatorApp">bubblewrap-cli</string>
+    <string name="hostName">scoregenius.io</string>
+    <string name="launchUrl">https://scoregenius.io/app/</string>
+    <string name="launcherName">ScoreGenius</string>
+    <string name="orientation">default</string>
+    <string name="providerAuthority">io.scoregenius.app.fileprovider</string>
+    <string name="webManifestUrl">https://scoregenius.io/manifest.webmanifest</string>
+    <style name="Theme.ScoreGenius" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/colorPrimaryDark</item>
         <item name="android:navigationBarColor">@color/navigationBarColor</item>
-
+        <item name="android:windowBackground">@color/backgroundColor</item>
+    </style>
+    <style name="Theme.ScoreGenius.Splash" parent="Theme.ScoreGenius">
         
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-
-        <item name="android:enforceNavigationBarContrast">false</item>
-        <item name="android:enforceStatusBarContrast">false</item>
-        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowBackground">@drawable/splash_background</item>
     </style>
 </resources>

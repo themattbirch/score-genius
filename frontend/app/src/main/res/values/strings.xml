@@ -1,22 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-<!-- Digital Asset Links -->
-<string name="assetStatements">[{
-\"relation\": [\"delegate_permission/common.handle_all_urls\"],
-\"target\": {\"namespace\": \"web\", \"site\": \"https://scoregenius.io\"}
-}]</string>
+    <!-- Strings -->
+    <string name="assetStatements">[{
+    \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+    \"target\": {\"namespace\": \"web\", \"site\": \"https://scoregenius.io\"}
+    }]</string>
 
-<!-- PWA config -->
-<string name="webManifestUrl">https://scoregenius.io/manifest.webmanifest</string>
-<string name="launchUrl">https://scoregenius.io/app/</string>
-<string name="hostName">scoregenius.io</string>
+    <string name="webManifestUrl">https://scoregenius.io/manifest.webmanifest</string>
+    <string name="launchUrl">https://scoregenius.io/app/</string>
+    <string name="hostName">scoregenius.io</string>
+    <string name="fallbackType">none</string>
+    <string name="appName">ScoreGenius</string>
+    <string name="launcherName">ScoreGenius</string>
+    <string name="providerAuthority">io.scoregenius.app.fileprovider</string>
+    <string name="generatorApp">bubblewrap-cli</string>
+    <string name="orientation">default</string>
 
-<!-- TWA fallback -->
-<string name="fallbackType">webview</string>
-
-<!-- App identity -->
-<string name="appName">ScoreGenius</string>
-<string name="launcherName">ScoreGenius</string>
-<string name="providerAuthority">io.scoregenius.app.fileprovider</string>
-<string name="generatorApp">bubblewrap-cli</string>
+    <!-- Typed resources -->
+    <bool name="enableNotifications">true</bool>
 </resources>
