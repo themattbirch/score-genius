@@ -1,17 +1,9 @@
 <resources>
-    <!-- System splash (Android 12+) visible just briefly -->
-    <integer name="splash_min_ms">90</integer>                 <!-- was ~180–500; now snappy -->
-    <integer name="splash_exit_fade_ms">500</integer>          <!-- fade OUT of system splash -->
-
-    <!-- Fade the content (your layout) IN as the system splash fades out -->
+    <integer name="splash_min_ms">90</integer>
+    <integer name="splash_exit_fade_ms">500</integer>
     <integer name="splash_content_fade_in_ms">700</integer>
-
-    <!-- How long your layout stays up before TWA takes over -->
-    <integer name="splash_layout_min_ms">3000</integer>
-
-    <!-- Longer fade when handing off to the TWA -->
+    <integer name="splash_layout_min_ms">2100</integer>
     <integer name="splash_outro_fade_ms">800</integer>
-
-    <!-- TWA launch overlap so handoff feels seamless -->
+    <!-- keep original overlap feel -->
     <integer name="splash_overlap_launch_ms">300</integer>
 </resources>

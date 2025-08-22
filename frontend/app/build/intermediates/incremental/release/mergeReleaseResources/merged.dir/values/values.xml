@@ -1897,7 +1897,7 @@
     <integer name="show_password_duration">200</integer>
     <integer name="splash_content_fade_in_ms">700</integer>
     <integer name="splash_exit_fade_ms">500</integer>
-    <integer name="splash_layout_min_ms">3000</integer>
+    <integer name="splash_layout_min_ms">2100</integer>
     <integer name="splash_min_ms">90</integer>
     <integer name="splash_outro_fade_ms">800</integer>
     <integer name="splash_overlap_launch_ms">300</integer>

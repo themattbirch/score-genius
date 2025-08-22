@@ -6,24 +6,16 @@
     </style>
     <style name="Theme.ScoreGenius.Splash" parent="Theme.ScoreGenius">
         
-        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowBackground">@color/backgroundColor</item>
 
         
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
-
-        
-        <item name="windowSplashScreenBackground">@android:color/white</item>
-
-        
+        <item name="windowSplashScreenBackground">@color/backgroundColor</item>
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="windowSplashScreenAnimationDuration">0</item>
 
         
         <item name="splashScreenIconSize">48dp</item>
-
-        
         <item name="postSplashScreenTheme">@style/Theme.ScoreGenius</item>
-
-        
-        
     </style>
 </resources>
