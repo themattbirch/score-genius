@@ -1555,6 +1555,30 @@
             ]
         },
         {
+            "outputFile": "io.scoregenius.app-release-34:/values-v30_values-v30.arsc.flat",
+            "map": [
+                {
+                    "source": "/Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/res/values-v30/styles.xml",
+                    "from": {
+                        "startLines": "3,9",
+                        "startColumns": "4,4",
+                        "startOffsets": "111,445",
+                        "endLines": "6,19",
+                        "endColumns": "12,12",
+                        "endOffsets": "367,1142"
+                    },
+                    "to": {
+                        "startLines": "2,6",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,316",
+                        "endLines": "5,16",
+                        "endColumns": "12,12",
+                        "endOffsets": "311,869"
+                    }
+                }
+            ]
+        },
+        {
             "outputFile": "io.scoregenius.app-release-34:/values-sr_values-sr.arsc.flat",
             "map": [
                 {
