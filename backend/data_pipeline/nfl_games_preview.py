@@ -66,7 +66,7 @@ HEADERS = {
 }
 NFL_LEAGUE_ID = 1
 SUPABASE_TABLE = "nfl_game_schedule"
-DAYS_AHEAD = 8
+DAYS_AHEAD = 15
 REQUEST_DELAY_SEC = 5
 ET_ZONE = ZoneInfo("America/New_York")
 UTC = ZoneInfo("UTC")

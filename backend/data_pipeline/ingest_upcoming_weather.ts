@@ -4,7 +4,7 @@
 import path from "path";
 import fs from "fs";
 import { DateTime } from "luxon";
-import axios from "axios";
+import axios, { AxiosRequestConfig } from "axios";
 import { createClient } from "@supabase/supabase-js";
 
 // ────────── LOGGING + CRASH GUARDS ──────────
@@ -61,6 +61,16 @@ const LOOKBACK_DAYS = Number(process.env.WX_LOOKBACK_DAYS ?? 0);
 const START_ISO = process.env.WX_START_ISO || ""; // e.g. 2024-12-01T00:00:00Z
 const END_ISO = process.env.WX_END_ISO || ""; // e.g. 2024-12-31T23:59:59Z
 
+// Tunables
+const OPEN_METEO_TIMEOUT_MS = Number(
+  process.env.OPEN_METEO_TIMEOUT_MS ?? 15000
+);
+const OPEN_METEO_RETRIES = Math.max(
+  1,
+  Number(process.env.OPEN_METEO_RETRIES ?? 3)
+);
+const FORECAST_HORIZON_DAYS = 16; // open-meteo forecast supports ~16 days
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   err("Missing Supabase env. SUPABASE_URL and SUPABASE_SERVICE_KEY required.");
   process.exit(1);
@@ -71,12 +81,20 @@ log("Supabase client created");
 
 // ────────── TYPES + HELPERS ──────────
 type VenueInfo = { lat: number; lon: number; is_indoor: boolean };
+
 type MeteoRow = {
   time: string;
   temp?: number;
   rhum?: number;
   wspd?: number;
   wdir?: number;
+};
+
+type GameRow = {
+  game_id: number;
+  scheduled_time: string; // ISO UTC
+  home_team: string;
+  venue: string | null;
 };
 
 const norm = (s: string | null | undefined) =>
@@ -87,6 +105,28 @@ const norm = (s: string | null | undefined) =>
 const VENUE_ALIASES: Record<string, string> = {
   "huntington bank field": "cleveland browns stadium",
 };
+
+// Simple retry with exp backoff + jitter
+async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 1; attempt <= OPEN_METEO_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      lastErr = e;
+      const delayMs =
+        Math.min(3000, 250 * Math.pow(2, attempt)) +
+        Math.floor(Math.random() * 200);
+      warn(
+        `${label} attempt ${attempt}/${OPEN_METEO_RETRIES} failed: ${
+          e?.message || e
+        }. retry in ${delayMs}ms`
+      );
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
 
 function stadiumJsonPath() {
   return path.resolve(BACKEND_DIR, "data", "stadium_data.json");
@@ -107,7 +147,7 @@ function loadVenueDirectory(): Record<string, VenueInfo> {
     const lon = Number(rec?.longitude ?? rec?.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
 
-    // Retractables treated as outdoor unless you wire real-time roof status
+    // Retractables treated as outdoor unless wired to real-time roof status
     const isIndoor =
       rec?.is_indoor === true ||
       rec?.dome === true ||
@@ -130,13 +170,12 @@ function pickNearestByTime<T extends { time: string }>(
   iso: string
 ): T | null {
   if (!rows.length) return null;
-  const target = new Date(iso).getTime();
+  const target = DateTime.fromISO(iso, { zone: "utc" }).toMillis();
   let best: T | null = null;
   let bestDiff = Infinity;
   for (const r of rows) {
-    const t = new Date(
-      (r.time.includes("T") ? r.time : r.time + "T00:00") + "Z"
-    ).getTime();
+    const tStr = r.time.includes("T") ? r.time : `${r.time}T00:00`;
+    const t = DateTime.fromISO(tStr, { zone: "utc" }).toMillis();
     const d = Math.abs(t - target);
     if (d < bestDiff) {
       best = r;
@@ -146,36 +185,43 @@ function pickNearestByTime<T extends { time: string }>(
   return best;
 }
 
+// ────────── OPEN-METEO CALLS ──────────
 async function fetchOpenMeteoArchiveHourly(
   lat: number,
   lon: number,
-  iso: string
+  kickoffIso: string
 ): Promise<MeteoRow[]> {
-  const start = DateTime.fromISO(iso, { zone: "utc" })
-    .minus({ hours: 1 })
-    .toISODate();
-  const end = DateTime.fromISO(iso, { zone: "utc" })
-    .plus({ hours: 1 })
-    .toISODate();
+  // Archive API does NOT support future dates. Clamp target to yesterday end-of-day.
+  const nowUtc = DateTime.utc();
+  const maxArchive = nowUtc.minus({ days: 1 }).endOf("day");
+  const kickoffUTC = DateTime.fromISO(kickoffIso, { zone: "utc" });
+  const target = kickoffUTC > maxArchive ? maxArchive : kickoffUTC;
 
-  const { data } = await axios.get(
-    "https://archive-api.open-meteo.com/v1/archive",
-    {
-      params: {
-        latitude: lat,
-        longitude: lon,
-        start_date: start,
-        end_date: end,
-        hourly:
-          "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m",
-        temperature_unit: "fahrenheit",
-        windspeed_unit: "mph",
-        timezone: "UTC",
-      },
-      timeout: 15000,
-    }
+  // Small window around kickoff for better nearest selection
+  const start = target.minus({ hours: 2 }).toISODate();
+  const end = target.plus({ hours: 2 }).toISODate();
+
+  const config: AxiosRequestConfig = {
+    url: "https://archive-api.open-meteo.com/v1/archive",
+    method: "GET",
+    params: {
+      latitude: lat,
+      longitude: lon,
+      start_date: start,
+      end_date: end,
+      hourly:
+        "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m",
+      temperature_unit: "fahrenheit",
+      windspeed_unit: "mph",
+      timezone: "UTC",
+    },
+    timeout: OPEN_METEO_TIMEOUT_MS,
+  };
+
+  const { data } = await withRetry(
+    () => axios.request(config),
+    "open-meteo-archive"
   );
-
   const t = data?.hourly?.time ?? [];
   const temp = data?.hourly?.temperature_2m ?? [];
   const rh = data?.hourly?.relative_humidity_2m ?? [];
@@ -191,12 +237,62 @@ async function fetchOpenMeteoArchiveHourly(
   }));
 }
 
+async function fetchOpenMeteoForecastHourly(
+  lat: number,
+  lon: number,
+  kickoffIso: string
+): Promise<MeteoRow[]> {
+  // Forecast API supports ~16 days ahead; request enough to cover kickoff
+  const nowStart = DateTime.utc().startOf("day");
+  const kickoff = DateTime.fromISO(kickoffIso, { zone: "utc" });
+  const daysAhead = Math.max(0, Math.ceil(kickoff.diff(nowStart, "days").days));
+  const forecastDays = Math.min(
+    FORECAST_HORIZON_DAYS,
+    Math.max(1, daysAhead + 1)
+  );
+
+  const config: AxiosRequestConfig = {
+    url: "https://api.open-meteo.com/v1/forecast",
+    method: "GET",
+    params: {
+      latitude: lat,
+      longitude: lon,
+      hourly:
+        "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m",
+      temperature_unit: "fahrenheit",
+      windspeed_unit: "mph",
+      timezone: "UTC",
+      forecast_days: forecastDays,
+    },
+    timeout: OPEN_METEO_TIMEOUT_MS,
+  };
+
+  const { data } = await withRetry(
+    () => axios.request(config),
+    "open-meteo-forecast"
+  );
+  const t = data?.hourly?.time ?? [];
+  const temp = data?.hourly?.temperature_2m ?? [];
+  const rh = data?.hourly?.relative_humidity_2m ?? [];
+  const wspd = data?.hourly?.wind_speed_10m ?? [];
+  const wdir = data?.hourly?.wind_direction_10m ?? [];
+
+  return t.map((time: string, i: number) => ({
+    time,
+    temp: temp[i],
+    rhum: rh[i],
+    wspd: wspd[i],
+    wdir: wdir[i],
+  }));
+}
+
+// ────────── SNAPSHOT BUILDER ──────────
 function buildSnapshot(opts: {
   teamName: string;
   venueNorm: string;
   info: VenueInfo;
   hour: MeteoRow | null;
-  source: "open-meteo" | "indoor";
+  source: "open-meteo-forecast" | "open-meteo-archive" | "indoor";
   kickoffUtcISO: string;
 }) {
   const { teamName, venueNorm, info, hour, source, kickoffUtcISO } = opts;
@@ -232,14 +328,6 @@ async function main() {
   const venues = loadVenueDirectory();
   log("venues loaded:", Object.keys(venues).length);
 
-  // Game selection: priority = fixed range > lookahead > lookback
-  type GameRow = {
-    game_id: number;
-    scheduled_time: string; // ISO UTC
-    home_team: string;
-    venue: string | null;
-  };
-
   const toIso = (dt: DateTime) =>
     dt.toISO({ suppressMilliseconds: true, includeOffset: false }) ??
     new Date().toISOString();
@@ -255,10 +343,10 @@ async function main() {
       .lte("scheduled_time", endIso)
       .order("scheduled_time", { ascending: true });
 
-    // Coerce: Supabase returns GameRow[] | null; normalize to [] for typing
     return { games: (data ?? []) as GameRow[], error };
   }
 
+  // Determine window: fixed > lookahead > lookback
   let games: GameRow[] = [];
   let lastError: unknown = null;
 
@@ -304,9 +392,16 @@ async function main() {
     log("distinct venue samples:", venuesDistinct);
   }
 
+  // Counters
   let inserted = 0;
   let skippedNoVenue = 0;
   let indoorCount = 0;
+  let skippedBeyondForecast = 0;
+  let usedForecast = 0;
+  let usedArchive = 0;
+  let nullNearest = 0;
+
+  const now = DateTime.utc();
 
   for (const g of games ?? []) {
     const venueNorm = norm(g.venue);
@@ -318,6 +413,8 @@ async function main() {
       );
       continue;
     }
+
+    const kickoff = DateTime.fromISO(g.scheduled_time, { zone: "utc" });
 
     let snapshot: any;
 
@@ -332,18 +429,75 @@ async function main() {
         kickoffUtcISO: g.scheduled_time,
       });
     } else {
-      const rows = await fetchOpenMeteoArchiveHourly(
-        info.lat,
-        info.lon,
-        g.scheduled_time
-      );
+      // Decide forecast vs archive:
+      // - Past (kickoff strictly before now) → archive
+      // - Future or later today (kickoff >= now) → forecast (if within horizon)
+      let rows: MeteoRow[] = [];
+      let source: "open-meteo-forecast" | "open-meteo-archive" =
+        "open-meteo-forecast";
+
+      if (kickoff < now) {
+        // ARCHIVE path
+        source = "open-meteo-archive";
+        try {
+          rows = await fetchOpenMeteoArchiveHourly(
+            info.lat,
+            info.lon,
+            g.scheduled_time
+          );
+          usedArchive++;
+        } catch (e: any) {
+          warn(
+            `archive fetch failed game_id=${g.game_id} venue="${venueNorm}": ${
+              e?.message || e
+            }`
+          );
+          rows = [];
+        }
+      } else {
+        // FORECAST path (enforce horizon)
+        const daysAhead = Math.ceil(
+          kickoff.diff(now.startOf("day"), "days").days
+        );
+        if (daysAhead > FORECAST_HORIZON_DAYS) {
+          skippedBeyondForecast++;
+          warn(
+            `skip game_id=${g.game_id}: kickoff ${g.scheduled_time} beyond ${FORECAST_HORIZON_DAYS}-day forecast horizon`
+          );
+          continue;
+        }
+
+        try {
+          rows = await fetchOpenMeteoForecastHourly(
+            info.lat,
+            info.lon,
+            g.scheduled_time
+          );
+          usedForecast++;
+        } catch (e: any) {
+          warn(
+            `forecast fetch failed game_id=${g.game_id} venue="${venueNorm}": ${
+              e?.message || e
+            }`
+          );
+          rows = [];
+        }
+      }
+
       const nearest = pickNearestByTime(rows, g.scheduled_time);
+      if (!nearest) {
+        nullNearest++;
+        warn(
+          `no nearest hour found game_id=${g.game_id} kickoff=${g.scheduled_time} rows=${rows.length}`
+        );
+      }
+
       snapshot = buildSnapshot({
         teamName: g.home_team,
         venueNorm,
         info,
         hour: nearest,
-        source: "open-meteo",
+        source,
         kickoffUtcISO: g.scheduled_time,
       });
     }
@@ -360,26 +514,35 @@ async function main() {
   }
 
   log("refresh MVs…");
-  await sb.rpc("refresh_mv_nfl_latest_forecast_per_game");
-  await sb.rpc("refresh_nfl_weather_climatology");
+  try {
+    await sb.rpc("refresh_mv_nfl_latest_forecast_per_game");
+  } catch (e: any) {
+    warn(`refresh_mv_nfl_latest_forecast_per_game failed: ${e?.message || e}`);
+  }
 
-  console.log(
-    JSON.stringify(
-      {
-        found: games?.length ?? 0,
-        inserted,
-        skipped_no_venue: skippedNoVenue,
-        indoor_snapshots: indoorCount,
-        lookahead_days: LOOKAHEAD_DAYS,
-        start_iso: START_ISO || null,
-        end_iso: END_ISO || null,
-        lookback_days: LOOKBACK_DAYS || null,
-      },
-      null,
-      2
-    )
-  );
+  try {
+    await sb.rpc("refresh_nfl_weather_climatology");
+  } catch (e: any) {
+    warn(`refresh_nfl_weather_climatology failed: ${e?.message || e}`);
+  }
 
+  const summary = {
+    found: games?.length ?? 0,
+    inserted,
+    skipped_no_venue: skippedNoVenue,
+    indoor_snapshots: indoorCount,
+    forecast_used: usedForecast,
+    archive_used: usedArchive,
+    skipped_beyond_forecast_horizon: skippedBeyondForecast,
+    null_nearest_rows: nullNearest,
+    lookahead_days: LOOKAHEAD_DAYS,
+    start_iso: START_ISO || null,
+    end_iso: END_ISO || null,
+    lookback_days: LOOKBACK_DAYS || null,
+    horizon_days: FORECAST_HORIZON_DAYS,
+  };
+
+  console.log(JSON.stringify(summary, null, 2));
   log("DONE");
 }
 

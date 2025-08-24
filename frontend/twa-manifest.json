@@ -27,6 +27,7 @@
   "webManifestUrl": "https://scoregenius.io/manifest.webmanifest",
   "fallbackType": "none",
   "features": {},
+  "customTabs": "trusted",
   "alphaDependencies": {
     "enabled": false
   },

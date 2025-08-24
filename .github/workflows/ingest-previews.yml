@@ -80,6 +80,6 @@ jobs:
           python -u -m backend.data_pipeline.nba_games_preview \
             --days 1 --lookback 30 --no_calibrate
 
-      - name: Run NFL Preseason preview ingest
+      - name: Run NFL preview ingest
         run: |
-          python -u -m backend.data_pipeline.nfl_preseason_games_preview
+          python -u -m backend.data_pipeline.nfl_games_preview

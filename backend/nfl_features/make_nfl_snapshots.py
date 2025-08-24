@@ -73,6 +73,88 @@ def fetch_data_from_table(table_name: str, select_cols: str = "*") -> pd.DataFra
     except Exception as e:
         logger.error(f"Error fetching from '{table_name}': {e}", exc_info=True)
         return pd.DataFrame()
+    
+def _safe_int(x, default=None):
+    if x is None:
+        return default
+    try:
+        # handles numeric strings like "17", also ints
+        return int(x)
+    except (ValueError, TypeError):
+        # handles "None", "", "NA", etc.
+        try:
+            # attempt to strip and re-int if x is a stringy number with spaces
+            s = str(x).strip()
+            return int(s) if s.isdigit() or (s.startswith('-') and s[1:].isdigit()) else default
+        except Exception:
+            return default
+        
+def _norm(s: str | None) -> str:
+    """Lowercase alnum-only for robust name/abbr matching."""
+    if not s:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+def _build_local_team_index(df_games_all: pd.DataFrame, df_season_team: pd.DataFrame) -> dict[str, int]:
+    """
+    Build {normalized_name_or_abbr -> team_id} using historical game logs
+    and season team records. Prefers most frequent mapping if conflicts exist.
+    """
+    counter: dict[tuple[str, int], int] = {}
+
+    # From historical games: home & away name -> id
+    if not df_games_all.empty:
+        for _, r in df_games_all[["home_team_name","home_team_id"]].dropna().iterrows():
+            key = (_norm(r["home_team_name"]), int(r["home_team_id"]))
+            counter[key] = counter.get(key, 0) + 1
+        for _, r in df_games_all[["away_team_name","away_team_id"]].dropna().iterrows():
+            key = (_norm(r["away_team_name"]), int(r["away_team_id"]))
+            counter[key] = counter.get(key, 0) + 1
+
+    # From season team table: names and abbrs if present
+    name_cols = [c for c in ["team_name","name","full_name","display_name"] if c in df_season_team.columns]
+    abbr_cols = [c for c in ["abbr","team_abbr","code","short_name"] if c in df_season_team.columns]
+    if not df_season_team.empty:
+        for _, r in df_season_team[["team_id"] + name_cols + abbr_cols].fillna("").iterrows():
+            tid = _safe_int(r["team_id"], None)
+            if tid is None: 
+                continue
+            for c in name_cols + abbr_cols:
+                val = _norm(r[c])
+                if val:
+                    key = (val, int(tid))
+                    counter[key] = counter.get(key, 0) + 1
+
+    # Choose most frequent team_id for each normalized token
+    best: dict[str, tuple[int, int]] = {}  # token -> (team_id, count)
+    for (token, tid), cnt in counter.items():
+        cur = best.get(token)
+        if cur is None or cnt > cur[1]:
+            best[token] = (tid, cnt)
+
+    return {token: tid for token, (tid, _) in best.items()}
+
+def _resolve_team_id_local(game: dict, side: str, team_index: dict[str, int]) -> int | None:
+    """
+    Try to recover team_id from schedule row using local index.
+    side: "home" or "away".
+    """
+    # candidate text fields commonly seen in schedule rows
+    candidates = [
+        game.get(f"{side}_team_name"),
+        game.get(f"{side}_name"),
+        game.get(f"{side}_team"),
+        game.get(f"{side}_full_name"),
+        game.get(f"{side}_abbr"),
+        game.get(f"{side}_code"),
+        game.get(side),  # sometimes just "home": "Dallas Cowboys"
+    ]
+    for cand in candidates:
+        token = _norm(cand)
+        if token and token in team_index:
+            return team_index[token]
+    return None
+
   
 def sanitize_float(value, default=None):
   """Converts NaN, inf, and -inf to a default value (JSON-compliant)."""
@@ -131,6 +213,44 @@ def _calculate_win_pct_from_record(record_str: str) -> float:
   except (ValueError, IndexError):
       return 0.0
 
+def _pick_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+def _compute_league_ranges_local(season_year: int, df_srs: pd.DataFrame, df_sos: pd.DataFrame, df_team_games_season: pd.DataFrame) -> dict[str, dict]:
+    ranges: dict[str, dict] = {}
+
+    srs_col = _pick_col(df_srs, ["srs_lite","srs","rating"])
+    if srs_col:
+        s = df_srs.loc[df_srs["season"] == season_year, srs_col].astype(float)
+        if not s.empty:
+            ranges["SRS"] = {"min": float(s.min()), "max": float(s.max()), "invert": False}
+
+    sos_col = _pick_col(df_sos, ["sos_pct","sos","sos_rating","sos_index"])
+    if sos_col:
+        s = df_sos.loc[df_sos["season"] == season_year, sos_col].astype(float)
+        if not s.empty:
+            ranges["SoS"] = {"min": float(s.min()), "max": float(s.max()), "invert": False}
+
+    if {"team_id","yards_per_play"}.issubset(df_team_games_season.columns):
+        off_means = df_team_games_season.groupby("team_id")["yards_per_play"].mean().astype(float)
+        if not off_means.empty:
+            ranges["Off. YPP"] = {"min": float(off_means.min()), "max": float(off_means.max()), "invert": False}
+
+        g = df_team_games_season[["game_id","team_id","yards_per_play"]].copy()
+        opp = g.merge(g, on="game_id", suffixes=("", "_opp"))
+        opp = opp[opp["team_id"] != opp["team_id_opp"]]
+        if not opp.empty and "yards_per_play_opp" in opp.columns:
+            def_means = opp.groupby("team_id")["yards_per_play_opp"].mean().astype(float)
+            if not def_means.empty:
+                ranges["Def. YPP"] = {"min": float(def_means.min()), "max": float(def_means.max()), "invert": True}
+
+    for metric in ["SRS","SoS","Off. YPP","Def. YPP"]:
+        if metric not in ranges:
+            ranges[metric] = {"min": 0.0, "max": 1.0, "invert": (metric == "Def. YPP")}
+    return ranges
 
 # --- Main Snapshot Generator ---
 
@@ -152,33 +272,67 @@ def make_nfl_snapshot(game_id: str):
     logger.info("↪︎ Generating NFL snapshot for game_id=%s", game_id)
 
     # ────────────────────────── 1) Core game lookup ──────────────────────────
-    game_q = (
+    gid = int(game_id)
+
+    resp_hist = (
         sb_client.table("nfl_historical_game_stats")
         .select("*")
-        .eq("game_id", game_id)
-        .maybe_single()
+        .eq("game_id", gid)
+        .limit(1)
         .execute()
     )
-    if not game_q.data:
-        # Fallback to schedule (future or in‑progress games)
-        game_q = (
+    hist_rows = resp_hist.data or []
+
+    if hist_rows:
+        game = hist_rows[0]
+        is_historical = True
+    else:
+        resp_sched = (
             sb_client.table("nfl_game_schedule")
             .select("*")
-            .eq("game_id", game_id)
-            .maybe_single()
+            .eq("game_id", gid)
+            .limit(1)
             .execute()
         )
-        if not game_q.data:
+        sched_rows = resp_sched.data or []
+        if not sched_rows:
             logger.error("No data in either table for game_id=%s – aborting", game_id)
             return
+        game = sched_rows[0]
         is_historical = False
-    else:
-        is_historical = True
 
-    game = game_q.data
-    season_year: int = int(game["season"])
-    home_id, away_id = map(str, (game["home_team_id"], game["away_team_id"]))
+    # from here on, use `game` directly
+    season_year = _safe_int(game.get("season"), default=0)
+    if not season_year:
+        season_year = pd.to_datetime(game["game_date"]).year
+    home_id_raw, away_id_raw = game.get("home_team_id"), game.get("away_team_id")
+    home_id_i = _safe_int(home_id_raw, default=None)
+    away_id_i = _safe_int(away_id_raw, default=None)
+
+    if home_id_i is None or away_id_i is None:
+        # Build local index from existing tables (no extra HTTP calls)
+        df_games_all   = fetch_data_from_table("nfl_historical_game_stats")
+        df_season_team = fetch_data_from_table("nfl_historical_team_stats")
+        team_index = _build_local_team_index(df_games_all, df_season_team)
+
+        if home_id_i is None:
+            home_id_i = _resolve_team_id_local(game, "home", team_index)
+        if away_id_i is None:
+            away_id_i = _resolve_team_id_local(game, "away", team_index)
+
+        if home_id_i is None or away_id_i is None:
+            logger.error(
+                "Missing team IDs post-resolve (home=%r, away=%r) for game_id=%s — aborting snapshot",
+                home_id_raw, away_id_raw, game_id
+            )
+            return
+
+    # Keep string forms for places you compare as strings
+    home_id, away_id = str(home_id_i), str(away_id_i)
+
+
     game_date = pd.to_datetime(game["game_date"]).date()
+
 
     # ────────────────────────── 2) Bulk dataframe pulls ──────────────────────
     df_games_all   = fetch_data_from_table("nfl_historical_game_stats")
@@ -216,7 +370,14 @@ def make_nfl_snapshot(game_id: str):
         df_team_games_season["yards_per_play"] = 0.0
     if "turnovers_total" not in df_team_games_season.columns:
         df_team_games_season["turnovers_total"] = 0
-        
+    # Boxscore columns used later in YPA section
+    for col, default in [
+        ("rushings_total", 0), ("rushings_attempts", 0),
+        ("passing_total", 0), ("passing_comp_att", "")
+    ]:
+        if col not in df_team_games_season.columns:
+            df_team_games_season[col] = default
+
     # ────────────────────────── 4) Quick utility lambdas ─────────────────────
     pct = lambda num, den: num / den if den else 0.0
 
@@ -342,9 +503,6 @@ def make_nfl_snapshot(game_id: str):
         # Fallback: derive from game log
         return _pct_from_games(team, venue)
 
-
-    home_id_i, away_id_i = map(int, (home_id, away_id))
-
     home_row = df_season_team.query(
         "team_id == @home_id_i and season == @season_year"
     ).head(1)
@@ -354,18 +512,19 @@ def make_nfl_snapshot(game_id: str):
 
     # ── dump the full rows for both teams ─────────────────────────────────────
     if not home_row.empty:
-        logger.info("Home season row: %s", home_row.iloc[0].to_dict())
+        row = home_row.iloc[0].to_dict()
+        logger.info("Home season row: %s", row)
+        logger.info("Home record_home → %s", row.get("record_home"))
     else:
         logger.info("Home season row: <NONE>")
 
     if not away_row.empty:
-        logger.info("Away season row: %s", away_row.iloc[0].to_dict())
+        row = away_row.iloc[0].to_dict()
+        logger.info("Away season row: %s", row)
+        logger.info("Away record_road → %s", row.get("record_road"))
     else:
         logger.info("Away season row: <NONE>")
 
-    # ── now your existing split log ──────────────────────────────────────────
-    logger.info("Home record_home → %s", home_row.iloc[0].get("record_home"))
-    logger.info("Away record_road → %s", away_row.iloc[0].get("record_road"))
 
     # ── compute the pct and diff ─────────────────────────────────────────────
     home_pct = _venue_win_pct(home_row.iloc[0] if not home_row.empty else None, home_id, "home")
@@ -376,11 +535,6 @@ def make_nfl_snapshot(game_id: str):
         "Venue win%% check → home_pct=%.3f  away_pct=%.3f  diff=%.3f",
         home_pct, away_pct, venue_win_pct_diff
     )
-
-
-    venue_win_pct_diff = home_pct - away_pct
-    logger.info("Home record_home → %s", home_row.iloc[0]["record_home"])
-    logger.info("Away record_road → %s", away_row.iloc[0]["record_road"])
 
     # If the split diff is 0, fall back to overall record
     if venue_win_pct_diff == 0:
@@ -483,10 +637,10 @@ def make_nfl_snapshot(game_id: str):
     def _value(df: pd.DataFrame, col: str, default: float = 0.0) -> float:
         return sanitize_float(df.iloc[0][col], default) if not df.empty else default
 
-    home_srs = _value(df_srs[(df_srs["team_id"] == int(home_id)) & (df_srs["season"] == season_year)], "srs_lite")
-    away_srs = _value(df_srs[(df_srs["team_id"] == int(away_id)) & (df_srs["season"] == season_year)], "srs_lite")
-    home_sos = _value(df_sos[(df_sos["team_id"] == int(home_id)) & (df_sos["season"] == season_year)], "sos_pct")
-    away_sos = _value(df_sos[(df_sos["team_id"] == int(away_id)) & (df_sos["season"] == season_year)], "sos_pct")
+    home_srs = _value(df_srs[(df_srs["team_id"] == home_id_i) & (df_srs["season"] == season_year)], "srs_lite")
+    away_srs = _value(df_srs[(df_srs["team_id"] == away_id_i) & (df_srs["season"] == season_year)], "srs_lite")
+    home_sos = _value(df_sos[(df_sos["team_id"] == home_id_i) & (df_sos["season"] == season_year)], "sos")
+    away_sos = _value(df_sos[(df_sos["team_id"] == away_id_i) & (df_sos["season"] == season_year)], "sos")
 
     radar_metrics = {
         "SRS"      : (home_srs, home_srs - away_srs),
@@ -495,12 +649,49 @@ def make_nfl_snapshot(game_id: str):
         "Def. YPP" : (team_metrics[home_id]["def_ypp"], team_metrics[home_id]["def_ypp"] - team_metrics[away_id]["def_ypp"]),
     }
 
-    # Pull league ranges (min/max) – fall back to simple 0‑100 scaling
-    ranges_rpc = sb_client.rpc("get_nfl_metric_ranges", {"p_season": season_year}).execute()
-    league_ranges = {
-        m["metric"]: {"min": float(m["min_value"]), "max": float(m["max_value"]), "invert": (m["metric"] == "Def. YPP")}
-        for m in (ranges_rpc.data or [])
-    }
+    # Pull league ranges (min/max) – prefer RPC, fallback to local compute
+    def _to_float(x, default=None):
+        try:
+            if x is None:
+                return default
+            f = float(x)
+            if math.isnan(f):
+                return default
+            return f
+        except Exception:
+            return default
+
+    league_ranges = {}
+    try:
+        ranges_rpc = sb_client.rpc("get_nfl_metric_ranges", {"p_season": season_year}).execute()
+        rpc_rows = ranges_rpc.data or []
+        wanted = {"SRS", "SoS", "Off. YPP", "Def. YPP"}
+        for r in rpc_rows:
+            m = r.get("metric")
+            if m not in wanted:
+                continue
+            vmin = _to_float(r.get("min"), default=None)
+            vmax = _to_float(r.get("max"), default=None)
+            # Some Supabase clients return keys as 'min'/'max', others 'min_value'/'max_value'. Try both.
+            if vmin is None and "min_value" in r:
+                vmin = _to_float(r.get("min_value"), default=None)
+            if vmax is None and "max_value" in r:
+                vmax = _to_float(r.get("max_value"), default=None)
+            if vmin is None or vmax is None:
+                continue  # skip bad rows; we'll fill via local compute
+            league_ranges[m] = {"min": vmin, "max": vmax, "invert": (m == "Def. YPP")}
+    except Exception as e:
+        logger.warning("Ranges RPC failed, will compute locally: %s", e)
+
+    if not league_ranges or any(k not in league_ranges for k in ("SRS","SoS","Off. YPP","Def. YPP")):
+        # Fill gaps with local computation
+        missing = [k for k in ("SRS","SoS","Off. YPP","Def. YPP") if k not in league_ranges]
+        if missing:
+            logger.info("Computing local ranges for: %s", ", ".join(missing))
+        local_ranges = _compute_league_ranges_local(season_year, df_srs, df_sos, df_team_games_season)
+        for k in missing:
+            league_ranges[k] = local_ranges.get(k, {"min": 0.0, "max": 1.0, "invert": (k == "Def. YPP")})
+
 
     def _scale(val: float, rng: dict[str, float]) -> float:
         if rng["max"] == rng["min"]:
@@ -520,21 +711,32 @@ def make_nfl_snapshot(game_id: str):
             "away_idx" : round(_scale(away_raw, rng), 1),
         })
 
-    # --- ADDED: Pie Chart (Scoring Averages) ---
-    # This logic was missing from your merged file, I've added it back in.
-    home_season_row = df_season_team[(df_season_team['team_id'] == int(home_id)) & (df_season_team['season'] == season_year)].iloc[0]
-    away_season_row = df_season_team[(df_season_team['team_id'] == int(away_id)) & (df_season_team['season'] == season_year)].iloc[0]
-    gp_home = home_season_row['won'] + home_season_row['lost'] + home_season_row['ties']
-    gp_away = away_season_row['won'] + away_season_row['lost'] + away_season_row['ties']
-    
-    home_pf_avg = (home_season_row['points_for'] / gp_home) if gp_home > 0 else 0.0
-    away_pf_avg = (away_season_row['points_for'] / gp_away) if gp_away > 0 else 0.0
-    home_pa_avg = (home_season_row['points_against'] / gp_home) if gp_home > 0 else 0.0
-    away_pa_avg = (away_season_row['points_against'] / gp_away) if gp_away > 0 else 0.0
+    # --- Pie Chart (Scoring Averages) [Safe version] ---
+    def _first_or_none(df: pd.DataFrame):
+        return df.iloc[0] if not df.empty else None
 
-    home_pf_label, away_pf_label = f"Home ({sanitize_float(round(home_pf_avg, 1), 0.0)})", f"Away ({sanitize_float(round(away_pf_avg, 1), 0.0)})"
-    home_pa_label, away_pa_label = f"Home ({sanitize_float(round(home_pa_avg, 1), 0.0)})", f"Away ({sanitize_float(round(away_pa_avg, 1), 0.0)})"
-    
+    def _avg_pf_pa(row):
+        if row is None:
+            return 0.0, 0.0
+        gp = (row.get('won', 0) + row.get('lost', 0) + row.get('ties', 0)) or 0
+        if gp == 0:
+            return 0.0, 0.0
+        pf_avg = row.get('points_for', 0) / gp
+        pa_avg = row.get('points_against', 0) / gp
+        return pf_avg, pa_avg
+
+    home_season_row = _first_or_none(df_season_team[(df_season_team['team_id'] == home_id_i) & (df_season_team['season'] == season_year)])
+    away_season_row = _first_or_none(df_season_team[(df_season_team['team_id'] == away_id_i) & (df_season_team['season'] == season_year)])
+
+
+    home_pf_avg, home_pa_avg = _avg_pf_pa(home_season_row)
+    away_pf_avg, away_pa_avg = _avg_pf_pa(away_season_row)
+
+    home_pf_label = f"Home ({sanitize_float(round(home_pf_avg, 1), 0.0)})"
+    away_pf_label = f"Away ({sanitize_float(round(away_pf_avg, 1), 0.0)})"
+    home_pa_label = f"Home ({sanitize_float(round(home_pa_avg, 1), 0.0)})"
+    away_pa_label = f"Away ({sanitize_float(round(away_pa_avg, 1), 0.0)})"
+        
     pie_chart_data = [
         {"title": "Avg Points For", "data": [{"category": home_pf_label, "value": home_pf_avg, "color": "#4ade80"}, {"category": away_pf_label, "value": away_pf_avg, "color": "#60a5fa"}]},
         {"title": "Avg Points Against", "data": [{"category": home_pa_label, "value": home_pa_avg, "color": "#4ade80"}, {"category": away_pa_label, "value": away_pa_avg, "color": "#60a5fa"}]}
@@ -556,7 +758,7 @@ def make_nfl_snapshot(game_id: str):
         )
 
     # ─── Home calculations ────────────────────────────────────────────────────
-    home_team_games = df_team_games_season[df_team_games_season["team_id"] == int(home_id)]
+    home_team_games = df_team_games_season[df_team_games_season["team_id"] == home_id_i]
 
     h_total_rush_yards    = home_team_games["rushings_total"].sum()
     h_total_rush_attempts = home_team_games["rushings_attempts"].sum()
@@ -567,7 +769,7 @@ def make_nfl_snapshot(game_id: str):
     h_pass_ypa            = (h_total_pass_yards / h_total_pass_attempts) if h_total_pass_attempts else 0.0
 
     # ─── Away calculations ────────────────────────────────────────────────────
-    away_team_games = df_team_games_season[df_team_games_season["team_id"] == int(away_id)]
+    away_team_games = df_team_games_season[df_team_games_season["team_id"] == away_id_i]
 
     a_total_rush_yards    = away_team_games["rushings_total"].sum()
     a_total_rush_attempts = away_team_games["rushings_attempts"].sum()
@@ -598,7 +800,7 @@ def make_nfl_snapshot(game_id: str):
         "is_historical": is_historical,
         "headline_stats": headlines,
         "bar_chart_data": bar_chart_data,
-        "radar_chart_data": radar_chart_data, # This needs to be defined from your radar section
+        "radar_chart_data": radar_chart_data,
         "pie_chart_data": pie_chart_data,
         "key_metrics_data": key_metrics_data,
         "last_updated": pd.Timestamp.utcnow().isoformat(),
