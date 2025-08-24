@@ -3,12 +3,12 @@ name: Ingest Preview Data
 on:
   workflow_dispatch:
   schedule:
-    - cron: "20 4 * * *" # 04:20 UTC daily
-    - cron: "0 15 * * *" # 15:00 UTC daily
+    - cron: "20 4 * * *" # 04:20 UTC daily
+    - cron: "0 15 * * *" # 15:00 UTC daily
 
 concurrency:
-  group: ingest-previews-${{ github.run_id }}
-  cancel-in-progress: false
+  group: ingest-previews-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ingest-previews:
@@ -22,24 +22,58 @@ jobs:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
       RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
-      PYTHONUNBUFFERED: 1 # flush logs immediately
-      LOG_LEVEL_OVERRIDE: ERROR # tells preview script to mute
-      CI: true # same purpose
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL_OVERRIDE: ERROR
+      CI: true
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with: { python-version: "3.11" }
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache undetected_chromedriver
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/undetected_chromedriver
+          key: ${{ runner.os }}-uc-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-uc-
 
       - name: Install deps
         run: pip install -r backend/requirements.txt
 
-      - name: Run MLB preview ingest
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Chrome version
         run: |
-          python -u -m backend.data_pipeline.mlb_games_preview \
-            --days 1 --lookback 90
+          echo "CHROME_PATH=$CHROME_PATH"
+          "$CHROME_PATH" --version || google-chrome --version || true
+
+      - name: Import smoke test
+        run: |
+          python - <<'PY'
+          import httpx, dateutil.parser, undetected_chromedriver, selenium, bs4, requests
+          print("import smoke ok")
+          PY
+
+      - name: Run MLB preview ingest (best-effort)
+        run: |
+          python -u -m backend.data_pipeline.mlb_games_preview || \
+          echo "[WARN] MLB preview ingest failed but continuing"
+        env:
+          MLB_PITCHERS_REQUIRED: "false"
 
       - name: Run NBA preview ingest
         run: |

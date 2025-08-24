@@ -16,7 +16,7 @@ from datetime import date, timedelta, datetime as dt_datetime, datetime as dt
 from zoneinfo import ZoneInfo
 from typing import Dict, Optional, Tuple, List, Any
 from dateutil import parser as dateutil_parser
-import subprocess, sys, shutil
+import subprocess, shutil
 from backend.mlb_score_prediction import prediction
 from backend.mlb_features.make_mlb_snapshots import make_mlb_snapshot
 
@@ -88,6 +88,10 @@ CHROME_HEADLESS = True
 SCROLL_DELAY = 2
 LOAD_WAIT = 15
 FANGRAPHS_URL = "https://www.fangraphs.com/roster-resource/probables-grid"
+
+# Toggle strictness for pitcher scraping (CI should set this to "false")
+PITCHERS_STRICT = str(os.getenv("MLB_PITCHERS_REQUIRED", "false")).lower() in ("1", "true", "yes")
+
 
 # --- Helper Functions ---
 
@@ -206,10 +210,6 @@ def propagate_handedness_to_historical(target_date: date) -> None:
     supa: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     iso = target_date.isoformat()  # "YYYY-MM-DD"
 
-    # 0) First, patch schedule for target_date so that handedness is set (if needed)
-    #    This ensures mlb_game_schedule rows have L/R before we copy to history.
-    update_pitchers_for_date(target_date)
-
     # 1) fetch schedule rows for that date
     resp = (
         supa.table("mlb_game_schedule")
@@ -221,6 +221,29 @@ def propagate_handedness_to_historical(target_date: date) -> None:
     if not resp.data:
         print(f"[WARN] No schedule rows found for {iso}; skipping propagate_handedness_to_historical.")
         return
+    
+    # If any rows are missing L/R, try a best-effort scrape once
+    missing_rows = [
+        r for r in resp.data
+        if r.get("home_probable_pitcher_handedness") not in ("L", "R")
+        or r.get("away_probable_pitcher_handedness") not in ("L", "R")
+    ]
+    if missing_rows:
+        print(f"[INFO] {len(missing_rows)} rows missing handedness on {iso}; attempting a best-effort scrape …")
+        try:
+            # Invalidate memoized Fangraphs lookup for this date so we truly re-fetch
+            _FG_LOOKUP_CACHE.pop(iso, None)
+            update_pitchers_for_date(target_date)
+            # re-read after scrape
+            resp = (
+                supa.table("mlb_game_schedule")
+                    .select("game_id, home_probable_pitcher_handedness, away_probable_pitcher_handedness")
+                    .eq("game_date_et", iso)
+                    .execute()
+            )
+        except Exception as e:
+            print(f"[WARN] best-effort scrape during propagation failed: {e}")
+
 
     for g in resp.data:
         game_id = g.get("game_id")
@@ -343,7 +366,7 @@ def get_betting_odds(target_date_dt: dt_datetime) -> List[Dict[str, Any]]:
     # Define range using ET date boundaries converted to UTC
     et_date = target_date_dt.astimezone(ET_ZONE)
     start_et = et_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_et = et_date.replace(hour=23, minute=59, second=59, microsecond=0)
+    end_et = (et_date + timedelta(days=2)).replace(hour=23, minute=59, second=59, microsecond=0)
     start_utc = start_et.astimezone(utc_zone)
     end_utc = end_et.astimezone(utc_zone)
     commence_time_from = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -492,13 +515,8 @@ def extract_odds_data(odds_event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
                     clean_odds["total_under_price_clean"] = fmt_price
     return {"raw": raw_odds, "clean": clean_odds}
 
-# Supabase constants & normalize_team_name already imported…
-
-FANGRAPHS_URL   = "https://www.fangraphs.com/roster-resource/probables-grid"
-SCROLL_DELAY    = 2
-LOAD_WAIT       = 15
-UTC             = ZoneInfo("UTC")
-CHROME_HEADLESS = True
+# In-process memoization cache for Fangraphs lookups keyed by ISO date string.
+_FG_LOOKUP_CACHE: Dict[str, Dict[Tuple[str, str], List[Dict[str, Optional[str]]]]] = {}
 
 # --- completely rewired navigation --------------------------
 def _fetch_html_via_selenium() -> str | None:
@@ -550,6 +568,24 @@ def _fetch_html_via_httpx() -> str | None:
     except Exception as e:
         print(f"httpx fallback failed: {e}")
         return None
+    
+def _fetch_html_with_retries(max_attempts: int = 3, base_sleep: int = 3) -> Optional[str]:
+    """
+    Combined fetch with small retry/backoff. Attempts Selenium first, then HTTPX.
+    Returns HTML or None. Never raises.
+    """
+    for attempt in range(1, max_attempts + 1):
+        print(f"[fangraphs] fetch attempt {attempt}/{max_attempts}")
+        html = _fetch_html_via_selenium()
+        if not html:
+            html = _fetch_html_via_httpx()
+        if html:
+            return html
+        sleep_s = base_sleep * attempt
+        print(f"[fangraphs] no HTML; backing off {sleep_s}s …")
+        time.sleep(sleep_s)
+    return None
+
 
 # --- Main scraper function ----------------------------------
 def scrape_fangraphs_probables(base_date: date) -> Dict[Tuple[str, str], List[Dict[str, Optional[str]]]]:
@@ -558,61 +594,64 @@ def scrape_fangraphs_probables(base_date: date) -> Dict[Tuple[str, str], List[Di
       { (iso_date, normalized_team_name): [ {name, handedness}, … ] }
     """
     # — fetch HTML exactly as before —
-    html = None
-    for mode in ("new", "legacy"):
-        try:
-            driver = _uc_driver(mode)
-            driver.get(FANGRAPHS_URL)
-            deadline = time.time() + LOAD_WAIT * 8
-            while time.time() < deadline:
-                if driver.execute_script("return !!document.querySelector('th[data-stat=\"Team\"]')"):
-                    html = driver.page_source
-                    break
-                time.sleep(SCROLL_DELAY)
-        finally:
-            try: driver.quit()
-            except: pass
-        if html:
-            break
+    html = _fetch_html_with_retries()
     if not html:
-        html = _fetch_html_via_httpx() or ""
-    soup = BeautifulSoup(html, "html.parser")
+        print("[fangraphs] HTML fetch failed after retries; returning empty lookup")
+        return {}
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        th = soup.select_one('th[data-stat="Team"]')
+        if not th:
+            print("[fangraphs] Team header not found; returning empty lookup")
+            return {}
+        tbl = th.find_parent("table")
+        if not tbl:
+            print("[fangraphs] probables table not found; returning empty lookup")
+            return {}
+        first = next((r for r in tbl.select("tbody tr") if len(r.find_all("td")) > 1), None)
+        if not first:
+            print("[fangraphs] no data rows; returning empty lookup")
+            return {}
+        num_days = len(first.find_all("td")) - 1
+        headers = [(base_date + timedelta(days=i)).isoformat() for i in range(num_days)]
 
-    # — locate table and compute headers —
-    th = soup.select_one('th[data-stat="Team"]')
-    tbl = th.find_parent("table")
-    first = next((r for r in tbl.select("tbody tr") if len(r.find_all("td")) > 1), None)
-    num_days = len(first.find_all("td")) - 1
-    headers = [(base_date + timedelta(days=i)).isoformat() for i in range(num_days)]
+        lookup: Dict[Tuple[str, str], List[Dict[str, Optional[str]]]] = {}
+        for row in tbl.select("tbody tr"):
+            cells = row.find_all("td")
+            if len(cells) <= 1:
+                continue
+            team = normalize_team_name(cells[0].get_text(strip=True))
+            if not team:
+                continue
+            for i, cell in enumerate(cells[1 : num_days + 1]):
+                raw = cell.get_text("\n", strip=True)
+                lines = [ln.strip() for ln in raw.split("\n") if ln.strip()]
+                pitcher_lines = [ln for ln in lines if re.search(r"\([RLS]\)", ln)]
+                parsed: List[Dict[str, Optional[str]]] = []
+                for ln in pitcher_lines:
+                    m = re.search(r"\(([RLS])\)", ln)
+                    hand = m.group(1) if m else None
+                    name_only = re.sub(r"\s*\([RLS]\)", "", ln).strip()
+                    parsed.append({"name": name_only, "handedness": hand})
+                if i < len(headers):
+                    lookup[(headers[i], team)] = parsed
+        return lookup
+    except Exception as e:
+        print(f"[fangraphs] parse error: {e}; returning empty lookup")
+        return {}
 
-    lookup: Dict[Tuple[str, str], List[Dict[str, Optional[str]]]] = {}
-    for row in tbl.select("tbody tr"):
-        cells = row.find_all("td")
-        if len(cells) <= 1:
-            continue
-        team = normalize_team_name(cells[0].get_text(strip=True))
-        if not team:
-            continue
-        for i, cell in enumerate(cells[1 : num_days + 1]):
-            raw = cell.get_text("\n", strip=True)
-            lines = [ln.strip() for ln in raw.split("\n") if ln.strip()]
-            # only keep lines with a handedness marker
-            pitcher_lines = [ln for ln in lines if re.search(r"\([RLS]\)", ln)]
-            parsed: List[Dict[str, Optional[str]]] = []
-            for ln in pitcher_lines:
-                m = re.search(r"\(([RLS])\)", ln)
-                hand = m.group(1) if m else None
-                name_only = re.sub(r"\s*\([RLS]\)", "", ln).strip()
-                parsed.append({"name": name_only, "handedness": hand})
-            lookup[(headers[i], team)] = parsed
+
+
+def get_probables_lookup(base_date: date) -> Dict[Tuple[str, str], List[Dict[str, Optional[str]]]]:
+    """
+    Return memoized lookup for base_date; compute once per process.
+    """
+    key = base_date.isoformat()
+    if key in _FG_LOOKUP_CACHE:
+        return _FG_LOOKUP_CACHE[key]
+    lookup = scrape_fangraphs_probables(base_date)
+    _FG_LOOKUP_CACHE[key] = lookup
     return lookup
-
-
-def get_probables_lookup(base_date: date) -> Dict[Tuple[str,str],Dict[str,Optional[str]]]:
-    """Always use Selenium scraper now."""
-    return scrape_fangraphs_probables(base_date)
-
-from dateutil import parser as dateutil_parser
 
 def update_pitchers_for_date(target_date: date) -> int:
     """
@@ -639,9 +678,9 @@ def update_pitchers_for_date(target_date: date) -> int:
         return 0
 
     fg_lookup = get_probables_lookup(target_date)
+    if not fg_lookup:
+        print(f"[WARN] Fangraphs lookup empty for {iso}; leaving existing pitcher fields unchanged.")
     updated = 0
-
-    from dateutil import parser as dateutil_parser
 
     for g in games:
         game_id = g["game_id"]
@@ -680,8 +719,13 @@ def update_pitchers_for_date(target_date: date) -> int:
             supa.table(SUPABASE_TABLE_NAME).update(payload).eq("game_id", game_id).execute()
             updated += 1
 
+        else:
+            # do not overwrite existing values; just log
+            pass
+
         norm_away = normalize_team_name(g["away_team_name"])
         pitchers_away = fg_lookup.get((iso, norm_away), [])
+
         if pitchers_away:
             p2 = pitchers_away[0]
             payload2 = {
@@ -836,38 +880,62 @@ if __name__ == "__main__":
     today     = dt_datetime.now(ET_ZONE).date()
     yesterday = today - timedelta(days=1)
 
-    # Step 0: Scrape yesterday’s pitchers and patch schedule
-    update_pitchers_for_date(yesterday)
-
-    # Step 1: Copy yesterday’s handedness into historical stats
-    propagate_handedness_to_historical(yesterday)
-
-    # Step 2: Prune any schedule rows before today
+    # Step 0: Prune schedule rows before today
     clear_old_games()
 
-    # Step 3: Upsert today’s + tomorrow’s previews
+    # Step 1: Upsert today’s + tomorrow’s previews (always do this)
     build_and_upsert_mlb_previews()
 
-    # Step 4: Scrape & patch today’s probable pitchers
-    update_pitchers_for_date(today)
+    # Step 2: Yesterday’s pitchers (best-effort unless strict)
+    try:
+        update_pitchers_for_date(yesterday)
+    except Exception as e:
+        msg = f"[WARN] update_pitchers_for_date(yesterday) failed: {e}"
+        if PITCHERS_STRICT:
+            raise
+        print(msg)
 
-    # Step 5: Immediately copy today’s (just-patched) handedness into history
-    propagate_handedness_to_historical(today)
+    # Step 3: Propagate yesterday (best-effort unless strict)
+    try:
+        propagate_handedness_to_historical(yesterday)
+    except Exception as e:
+        msg = f"[WARN] propagate_handedness_to_historical(yesterday) failed: {e}"
+        if PITCHERS_STRICT:
+            raise
+        print(msg)
 
-    # Step 6: Aggregate LHP/RHP splits into team stats
-    season = today.year
-    print(f"Running handedness-split aggregation for season {season}")
-    run_handedness_aggregation_rpc(season)
-        # =======================================================
-    # Step 7: Run the prediction pipeline
-    # =======================================================
+    # Step 4: Today’s pitchers (best-effort unless strict)
+    try:
+        update_pitchers_for_date(today)
+    except Exception as e:
+        msg = f"[WARN] update_pitchers_for_date(today) failed: {e}"
+        if PITCHERS_STRICT:
+            raise
+        print(msg)
+
+    # Step 5: Propagate today (best-effort unless strict)
+    try:
+        propagate_handedness_to_historical(today)
+    except Exception as e:
+        msg = f"[WARN] propagate_handedness_to_historical(today) failed: {e}"
+        if PITCHERS_STRICT:
+            raise
+        print(msg)
+
+    # Step 6: Aggregate handedness splits (non-fatal)
+    try:
+        season = today.year
+        print(f"Running handedness-split aggregation for season {season}")
+        run_handedness_aggregation_rpc(season)
+    except Exception as e:
+        print(f"[WARN] aggregation RPC failed: {e}")
+
+    # Step 7: Prediction pipeline (keep this running even if scrapes flaked)
     print("\n--- Running MLB Score Prediction Pipeline ---")
     try:
         prediction.main()
         print("--- Prediction Pipeline Finished ---\n")
     except Exception as e:
-        # Add error handling in case the prediction script fails
         print(f"!!! An error occurred during the prediction pipeline: {e}")
-
 
     print("MLB Games Preview Script finished.")
