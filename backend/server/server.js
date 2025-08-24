@@ -191,6 +191,11 @@ app.get("/about", (req, res) => {
   res.sendFile(path.join(staticRoot, "public", "about.html"));
 });
 
+app.get("/betting_odds", (req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.sendFile(path.join(staticRoot, "public", "betting_odds.html"));
+});
+
 // 2. PWA-specific assets
 app.get("/app/app-sw.js", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
