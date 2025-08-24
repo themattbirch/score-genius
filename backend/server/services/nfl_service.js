@@ -4,7 +4,7 @@ import supabase from "../utils/supabase_client.js";
 import cache from "../utils/cache.js";
 import { DateTime } from "luxon";
 
-const SCHEDULE_TABLE = "nfl_preseason_schedule";
+const SCHEDULE_TABLE = "nfl_game_schedule";
 const HIST_STATS_TABLE = "nfl_historical_game_stats";
 const SNAPSHOT_TABLE = "nfl_snapshots";
 const FULL_VIEW = "v_nfl_team_season_full";

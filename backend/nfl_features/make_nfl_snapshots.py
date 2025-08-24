@@ -630,7 +630,6 @@ def make_nfl_snapshot(game_id: str):
         {"label": "Season", "value": season_label},
         {"label": "Rest Days (Home)",      "value": rest_home},
         {"label": "Rest Days (Away)",      "value": rest_away},
-        {"label": "Rest Advantage (Home)", "value": rest_advantage},
         {"label": "Turnover Margin Difference",   "value": sanitize_float(round(
                                                     team_metrics[home_id]["turnover_diff_pg"] -
                                                     team_metrics[away_id]["turnover_diff_pg"], 2))},
