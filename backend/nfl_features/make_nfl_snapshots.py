@@ -252,6 +252,27 @@ def _compute_league_ranges_local(season_year: int, df_srs: pd.DataFrame, df_sos:
             ranges[metric] = {"min": 0.0, "max": 1.0, "invert": (metric == "Def. YPP")}
     return ranges
 
+def _season_present(df: pd.DataFrame, season_col: str, season: int) -> bool:
+    return (not df.empty) and (season_col in df.columns) and (df[season_col] == season).any()
+
+def choose_stats_season(season_year: int, *frames_with_season_col: tuple[pd.DataFrame, str]) -> tuple[int, bool]:
+    """
+    Return (stats_season, used_fallback).
+    Chooses `season_year` if any frame has rows for it; otherwise chooses `season_year-1` if present.
+    If neither present, returns (season_year, False).
+    """
+    has_current = any(_season_present(df, col, season_year) for df, col in frames_with_season_col)
+    if has_current:
+        return season_year, False
+
+    prev = season_year - 1
+    has_prev = any(_season_present(df, col, prev) for df, col in frames_with_season_col)
+    if has_prev:
+        return prev, True
+
+    return season_year, False  # nothing available, keep current (will yield zeros)
+
+
 # --- Main Snapshot Generator ---
 
 def make_nfl_snapshot(game_id: str):
@@ -341,29 +362,41 @@ def make_nfl_snapshot(game_id: str):
     df_srs         = fetch_data_from_table("v_nfl_team_srs_lite")
     df_sos         = fetch_data_from_table("v_nfl_team_sos")
 
+    # Decide which season's stats to use (fallback to previous season if current has no rows)
+    stats_season, used_fallback = choose_stats_season(
+        season_year,
+        (df_team_games,  "season"),
+        (df_season_team, "season"),
+        (df_srs,         "season"),
+        (df_sos,         "season"),
+    )
+
+    if used_fallback:
+        logger.warning("No rows found for season %s across key tables; falling back to %s for derived stats.",
+                    season_year, stats_season)
+
+
     # **NEW**: grab only this season’s rows in a single query (no 1 000‑row cap)
     team_games_q = (
         sb_client.table("nfl_historical_game_team_stats")
         .select("*")
-        .eq("season", season_year)
+        .eq("season", stats_season)   # <— use stats_season here
         .execute()
     )
     df_team_games_season = pd.DataFrame(team_games_q.data or [])
     logger.info(
-        "direct Supabase query → %d team‑by‑game rows for %d",
+        "direct Supabase query → %d team-by-game rows for %d",
         len(df_team_games_season),
-        season_year
+        stats_season
     )
 
-    # Fallback if direct query somehow returns empty
     if df_team_games_season.empty:
         logger.warning(
             "Direct query returned 0 rows for season %s – falling back to local filter",
-            season_year,
+            stats_season,
         )
-        df_team_games_season = df_team_games[
-            df_team_games["season"] == season_year
-        ]
+        df_team_games_season = df_team_games[df_team_games["season"] == stats_season]
+
 
     # Downstream safety columns
     if "yards_per_play" not in df_team_games_season.columns:
@@ -468,7 +501,7 @@ def make_nfl_snapshot(game_id: str):
         """
         mask_home = df_games_all["home_team_id"].astype(str) == team
         mask_away = df_games_all["away_team_id"].astype(str) == team
-        season_ok = df_games_all["season"] == season_year
+        season_ok = df_games_all["season"] == stats_season
 
         if venue == "home":
             games = df_games_all[mask_home & season_ok]
@@ -504,10 +537,10 @@ def make_nfl_snapshot(game_id: str):
         return _pct_from_games(team, venue)
 
     home_row = df_season_team.query(
-        "team_id == @home_id_i and season == @season_year"
+        "team_id == @home_id_i and season == @stats_season"
     ).head(1)
     away_row = df_season_team.query(
-        "team_id == @away_id_i and season == @season_year"
+        "team_id == @away_id_i and season == @stats_season"
     ).head(1)
 
     # ── dump the full rows for both teams ─────────────────────────────────────
@@ -589,7 +622,12 @@ def make_nfl_snapshot(game_id: str):
     # ────────────────────────── 10) Assemble headline payload ────────────────
     delta_pct = (home_pct - away_pct) * 100
 
+    season_label = str(season_year)
+    if used_fallback and stats_season != season_year:
+        season_label += f" (using {stats_season} stats)"
+
     headlines = [
+        {"label": "Season", "value": season_label},
         {"label": "Rest Days (Home)",      "value": rest_home},
         {"label": "Rest Days (Away)",      "value": rest_away},
         {"label": "Rest Advantage (Home)", "value": rest_advantage},
@@ -606,41 +644,56 @@ def make_nfl_snapshot(game_id: str):
     },
             ]
 
-    # ────────────────────────── 11) Quarter‑average bar chart ────────────────
-    def q_avg(team: str) -> dict[str, float]:
-        t = int(team)
-        home_cols = ["home_q1","home_q2","home_q3","home_q4","home_ot"]
-        away_cols = ["away_q1","away_q2","away_q3","away_q4","away_ot"]
+    # ────────────────────────── 11) Quarter-average bar chart ────────────────
+    def q_avg(team_id: str, season: int) -> dict[str, float]:
+        t = int(team_id)
+
+        # Only Q1–Q4 (no OT)
+        home_cols = ["home_q1","home_q2","home_q3","home_q4"]
+        away_cols = ["away_q1","away_q2","away_q3","away_q4"]
 
         h = df_games_all.loc[
-            (df_games_all["season"] == season_year) & (df_games_all["home_team_id"] == t),
+            (df_games_all["season"] == season) & (df_games_all["home_team_id"] == t),
             home_cols
-        ].rename(columns=lambda c: c.replace("home_",""))
+        ].rename(columns={
+            "home_q1":"q1","home_q2":"q2","home_q3":"q3","home_q4":"q4"
+        })
+
         a = df_games_all.loc[
-            (df_games_all["season"] == season_year) & (df_games_all["away_team_id"] == t),
+            (df_games_all["season"] == season) & (df_games_all["away_team_id"] == t),
             away_cols
-        ].rename(columns=lambda c: c.replace("away_",""))
+        ].rename(columns={
+            "away_q1":"q1","away_q2":"q2","away_q3":"q3","away_q4":"q4"
+        })
 
-        return pd.concat([h, a]).mean(numeric_only=True).fillna(0).to_dict()
+        df = pd.concat([h, a], axis=0)
+        if df.empty:
+            return {"q1":0.0, "q2":0.0, "q3":0.0, "q4":0.0}
 
-    home_quarters = q_avg(home_id)
-    away_quarters = q_avg(away_id)
+        # Average points scored per quarter across all games for that season
+        m = df.mean(numeric_only=True).fillna(0).to_dict()
+        return {k: float(m.get(k, 0.0)) for k in ("q1","q2","q3","q4")}
+
+    # Use the same season you selected for all other derived stats
+    home_quarters = q_avg(home_id, stats_season)
+    away_quarters = q_avg(away_id, stats_season)
 
     bar_chart_data = [
         {"category": q, "Home": round(home_quarters.get(q, 0), 2), "Away": round(away_quarters.get(q, 0), 2)}
-        for q in ("q1","q2","q3","q4","ot")
+        for q in ("q1","q2","q3","q4")
     ]
-    if bar_chart_data[-1]["Home"] == bar_chart_data[-1]["Away"] == 0:
-        bar_chart_data.pop()  # Drop OT row if irrelevant
+
+
 
     # ────────────────────────── 12) Radar chart (SRS / SoS / YPP) ────────────
     def _value(df: pd.DataFrame, col: str, default: float = 0.0) -> float:
         return sanitize_float(df.iloc[0][col], default) if not df.empty else default
 
-    home_srs = _value(df_srs[(df_srs["team_id"] == home_id_i) & (df_srs["season"] == season_year)], "srs_lite")
-    away_srs = _value(df_srs[(df_srs["team_id"] == away_id_i) & (df_srs["season"] == season_year)], "srs_lite")
-    home_sos = _value(df_sos[(df_sos["team_id"] == home_id_i) & (df_sos["season"] == season_year)], "sos")
-    away_sos = _value(df_sos[(df_sos["team_id"] == away_id_i) & (df_sos["season"] == season_year)], "sos")
+    home_srs = _value(df_srs[(df_srs["team_id"] == home_id_i) & (df_srs["season"] == stats_season)], _pick_col(df_srs, ["srs_lite","srs","rating"]) or "srs_lite")
+    away_srs = _value(df_srs[(df_srs["team_id"] == away_id_i) & (df_srs["season"] == stats_season)], _pick_col(df_srs, ["srs_lite","srs","rating"]) or "srs_lite")
+    home_sos = _value(df_sos[(df_sos["team_id"] == home_id_i) & (df_sos["season"] == stats_season)], _pick_col(df_sos, ["sos_pct","sos","sos_rating","sos_index"]) or "sos")
+    away_sos = _value(df_sos[(df_sos["team_id"] == away_id_i) & (df_sos["season"] == stats_season)], _pick_col(df_sos, ["sos_pct","sos","sos_rating","sos_index"]) or "sos")
+
 
     radar_metrics = {
         "SRS"      : (home_srs, home_srs - away_srs),
@@ -663,7 +716,7 @@ def make_nfl_snapshot(game_id: str):
 
     league_ranges = {}
     try:
-        ranges_rpc = sb_client.rpc("get_nfl_metric_ranges", {"p_season": season_year}).execute()
+        ranges_rpc = sb_client.rpc("get_nfl_metric_ranges", {"p_season": stats_season}).execute()
         rpc_rows = ranges_rpc.data or []
         wanted = {"SRS", "SoS", "Off. YPP", "Def. YPP"}
         for r in rpc_rows:
@@ -725,8 +778,8 @@ def make_nfl_snapshot(game_id: str):
         pa_avg = row.get('points_against', 0) / gp
         return pf_avg, pa_avg
 
-    home_season_row = _first_or_none(df_season_team[(df_season_team['team_id'] == home_id_i) & (df_season_team['season'] == season_year)])
-    away_season_row = _first_or_none(df_season_team[(df_season_team['team_id'] == away_id_i) & (df_season_team['season'] == season_year)])
+    home_season_row = _first_or_none(df_season_team[(df_season_team['team_id'] == home_id_i) & (df_season_team['season'] == stats_season)])
+    away_season_row = _first_or_none(df_season_team[(df_season_team['team_id'] == away_id_i) & (df_season_team['season'] == stats_season)])
 
 
     home_pf_avg, home_pa_avg = _avg_pf_pa(home_season_row)
