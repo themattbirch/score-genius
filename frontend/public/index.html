@@ -261,6 +261,7 @@
          via-[#08111f]
          to-[#111827]">
   <div class="absolute inset-0 pointer-events-none">
+    <!-- subtle radial highlight -->
     <div
       class="absolute left-1/2 top-12 sm:top-20
             -translate-x-1/2
@@ -280,19 +281,45 @@
       Daily pregame score forecasts and advanced head-to-head analytics
       powered by our machine-learning pipeline.
     </p>
+  <div class="flex flex-col sm:flex-row gap-6 justify-center items-center">
+    <!-- Google Play badge -->
+  <a
+    href="https://play.google.com/store/apps/details?id=io.scoregenius.app"
+    target="_blank"
+    rel="noopener"
+    class="block"
+  >
+    <img
+      src="/images/google_play_badge_scoregenius.png"
+      alt="Get it on Google Play"
+      class="h-12 sm:h-14 w-auto"
+      loading="lazy"
+    />
+  </a>
+  <!-- Get Started button -->
+  <a
+    href="/app"
+    class="bg-orange-600 text-white px-8 py-4 rounded-lg text-lg font-medium
+          hover:bg-orange-700 transition-colors">
+    Get Started
+  </a>
+  <!-- Samsung Galaxy Store badge -->
+  <a
+    href="https://apps.samsung.com/appquery/appDetail.as?appId=io.scoregenius.app&source=GBadge_01_8385140_tag&directOpen=true&ads=ddb0e6f9&nonOrgType=fce692ba"
+    target="_blank"
+    rel="noopener"
+    class="block"
+  >
+    <img
+      src="/images/samsung_galaxy_store_badge_scoregenius.png"
+      alt="Download on the Galaxy Store"
+      class="h-12 sm:h-14 w-auto"
+      loading="lazy"
+    />
+  </a> 
+</div>
 
-    <div class="flex flex-col sm:flex-row items-center gap-6 justify-center pt-2">
-      <a
-        href="/app"
-        class="bg-orange-600 text-white px-8 py-4 rounded-lg text-lg font-medium
-               hover:bg-orange-700 transition-colors">
-        Get Started
-      </a>
-      <a href="https://play.google.com/store/apps/details?id=io.scoregenius.app" target="_blank" rel="noopener noreferrer" aria-label="Get ScoreGenius on Google Play">
-        <img src="/images/google_play_badge_scoregenius.png" alt="Get it on Google Play" style="height: 60px; width: auto;">
-      </a>
-    </div>
-    
+
   </div>
   <div class="absolute inset-x-0 bottom-0 h-px bg-[#111827]"></div>
 </header>
@@ -304,6 +331,10 @@
         Key Features
       </h2>
 
+      <!-- NEW: call out MLB weather -->
+      <p class="text-center text-gray-400 mb-8">
+        See local gameday weather (temperature, humidity & wind) for NFL and MLB venues alongside your pregame analytics.
+      </p>
         <div class="flex flex-col space-y-12">
         <!-- Top 3 features -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
@@ -410,31 +441,32 @@
               Easy Access
             </h3>
             <p class="text-gray-300">
-              Launch directly in your browser or add to your home screen. Requires internet for live data.
+              Launch directly in your browser or add to your home screen—no app
+              store required.
             </p>
           </div>
 
-        <!-- Gameday Weather -->
-        <div
-          class="bg-gray-800 p-6 rounded-xl shadow-lg group hover:bg-gray-700 hover:shadow-xl transition-all duration-300"
-        >
+          <!-- Quick Load -->
           <div
-            class="w-12 h-12 bg-sky-900 rounded-lg flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110"
+            class="bg-gray-800 p-6 rounded-xl shadow-lg group hover:bg-gray-700 hover:shadow-xl transition-all duration-300"
           >
-            <i
-              data-lucide="cloud-sun"
-              class="w-6 h-6 text-sky-400 transition-transform duration-300 group-hover:rotate-12"
-            ></i>
+            <div
+              class="w-12 h-12 bg-rose-900 rounded-lg flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110"
+            >
+              <i
+                data-lucide="cloud-off"
+                class="w-6 h-6 text-rose-400 transition-transform duration-300 group-hover:rotate-12"
+              ></i>
+            </div>
+            <h3
+              class="text-xl font-semibold text-white mb-2 transition-colors duration-300 group-hover:text-rose-300"
+            >
+              Quick Load
+            </h3>
+            <p class="text-gray-300">
+              Fast PWA install & load—requires internet for live data.
+            </p>
           </div>
-          <h3
-            class="text-xl font-semibold text-white mb-2 transition-colors duration-300 group-hover:text-sky-300"
-          >
-            Gameday Weather
-          </h3>
-          <p class="text-gray-300">
-        See local gameday weather (temperature, humidity & wind) for NFL and MLB venues alongside your pregame analytics.
-          </p>
-        </div>
 
 
           <!-- Privacy First -->
@@ -579,19 +611,31 @@
         </ul>
       </div>
 
-      <!-- Copyright -->
-      <div class="text-center lg:text-right">
-        <h4
-          class="mb-2 text-sm font-semibold tracking-widest uppercase text-gray-400"
-        >
-          For sports fans…by sports fans.
-        </h4>
-        <p class="text-white text-sm">
-          © 2025 ScoreGenius. All rights reserved.
-        </p>
-      </div>
+    <!-- Copyright + Galaxy Store -->
+    <div class="text-center lg:text-right flex flex-col items-center lg:items-end">
+      <h4 class="mb-2 text-sm font-semibold tracking-widest uppercase text-gray-400">
+        For sports fans…by sports fans.
+      </h4>
+      <p class="text-white text-sm mb-6">
+        © 2025 ScoreGenius. All rights reserved.
+      </p>
+
+      <!-- Samsung Galaxy Store badge -->
+      <a
+        href="https://apps.samsung.com/appquery/appDetail.as?appId=io.scoregenius.app&source=GBadge_01_8385140_tag&directOpen=true&ads=ddb0e6f9&nonOrgType=fce692ba"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <img
+          src="/images/samsung_galaxy_store_badge_scoregenius.png"
+          alt="Download on the Galaxy Store"
+          style="height: 50px; width: auto"
+        />
+      </a>
+    </div>
     </div>
   </footer>
+
     <script>
       lucide.createIcons();
     </script>
