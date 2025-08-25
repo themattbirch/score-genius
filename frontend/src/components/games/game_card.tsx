@@ -490,26 +490,71 @@ const GameCardComponent: React.FC<GameCardProps> = ({
     return `${t}${suffix}`;
   }, [gameTimeUTC, game_date, statusState]);
 
-  // 👇 **MODIFIED LOGIC**
-  // This logic now correctly handles the different prediction fields
-  // for each sport based on your UnifiedGame type.
-  let predAway, predHome;
+  // ---- Predictions (sport-aware, with robust key fallbacks) ----
+  const toFiniteNum = (v: unknown): number | null => {
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const firstDefined = <T,>(...vals: Array<T | null | undefined>) =>
+    vals.find((v) => v !== null && v !== undefined);
+
+  let predAway: number | null = null;
+  let predHome: number | null = null;
+
   switch (sport) {
-    case "NBA":
-      predAway = predictionAway;
-      predHome = predictionHome;
+    case "NBA": {
+      // primary: predictionAway/Home; fallbacks just in case upstream changes
+      const a = firstDefined(
+        (game as any).predictionAway,
+        (game as any).predAway,
+        (game as any).predicted_away_score // very defensive
+      );
+      const h = firstDefined(
+        (game as any).predictionHome,
+        (game as any).predHome,
+        (game as any).predicted_home_score
+      );
+      predAway = toFiniteNum(a);
+      predHome = toFiniteNum(h);
       break;
-    case "MLB":
-      predAway = predicted_away_runs;
-      predHome = predicted_home_runs;
+    }
+    case "MLB": {
+      const a = firstDefined(
+        (game as any).predicted_away_runs,
+        (game as any).predictedAwayRuns,
+        (game as any).predictionAway
+      );
+      const h = firstDefined(
+        (game as any).predicted_home_runs,
+        (game as any).predictedHomeRuns,
+        (game as any).predictionHome
+      );
+      predAway = toFiniteNum(a);
+      predHome = toFiniteNum(h);
       break;
-    case "NFL":
-      predAway = predicted_away_score;
-      predHome = predicted_home_score;
+    }
+    case "NFL": {
+      // ✅ Key fix: accept both snake_case and camelCase (and a very defensive alt)
+      const a = firstDefined(
+        (game as any).predicted_away_score,
+        (game as any).predictedAwayScore,
+        (game as any).predictionAway
+      );
+      const h = firstDefined(
+        (game as any).predicted_home_score,
+        (game as any).predictedHomeScore,
+        (game as any).predictionHome
+      );
+      predAway = toFiniteNum(a);
+      predHome = toFiniteNum(h);
       break;
+    }
   }
-  const hasPrediction =
-    dataType === "schedule" && predAway != null && predHome != null;
+
+  // Show predictions whenever they exist and the game isn't final.
+  // Do NOT rely on dataType; some feeds omit/rename it.
+  const hasPrediction = predAway !== null && predHome !== null && !isFinal;
   const showHeaderActions = !isFinal && !hasPrediction && !expanded;
 
   // Compute Edge (moneyline/spread). Defensive: only if predictions + odds exist.
@@ -523,8 +568,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
   } = useMemo(() => deriveOdds(game), [game]);
 
   // choose sport-specific prediction fields we already compute above (predAway/predHome)
-  const hasPredictions =
-    predAway != null && predHome != null && dataType === "schedule" && !isFinal;
+  const hasPredictions = hasPrediction;
 
   const hasMarket =
     (moneylineHome != null && moneylineAway != null) ||
@@ -636,8 +680,8 @@ const GameCardComponent: React.FC<GameCardProps> = ({
 
         {/* Unified right-side layout for all sports */}
         <div
-          className={`flex flex-col items-end text-right gap-2 ${
-            !isFinal && !hasPrediction && hasPrediction ? "pr-8" : ""
+          className={`ml-auto flex flex-col items-end text-right gap-2 ${
+            showHeaderActions ? "pr-8" : ""
           }`}
         >
           {isFinal ? (
@@ -655,7 +699,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
             </span>
           ) : hasPrediction ? (
             // Prediction present → show PredBadge here
-            <PredBadge away={predAway as number} home={predHome as number} />
+            <PredBadge away={predAway!} home={predHome!} />
           ) : showHeaderActions ? (
             // Collapsed + no prediction → show action chips on the right (no placeholder dash)
             <div className="flex flex-col gap-2 items-end ml-auto">
@@ -692,7 +736,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
             </div>
           ) : null}
 
-          {compactDefault && isTodayGame && (
+          {compactDefault && !isFinal && (
             <div className="mt-2 flex w-full justify-center">
               <div className="relative">
                 <span
@@ -705,7 +749,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                     transition: "transform 0.2s ease",
                   }}
                   onMouseEnter={() => {
-                    // only show hover tooltip if persistent one isn't showing and basic eligibility (today, compact collapsed)
+                    // keep tooltip noise low: only show hover tooltip on today’s compact, not in-progress
                     if (
                       isFirst &&
                       !showTooltip &&
@@ -717,15 +761,13 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                       setHoverTooltip(true);
                     }
                   }}
-                  onMouseLeave={() => {
-                    setHoverTooltip(false);
-                  }}
+                  onMouseLeave={() => setHoverTooltip(false)}
                   onFocus={(e) => {
-                    // keep existing logic for persistent tooltip via focus, not hover
                     if (Date.now() - lastClickRef.current < 200) return;
                     if (
                       isFirst &&
                       !showTooltip &&
+                      isTodayGame && // tooltip still today-only
                       compactDefault &&
                       !expanded &&
                       !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
@@ -738,9 +780,11 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                     showTooltip ? "gamecard-tooltip" : undefined
                   }
                   role="button"
+                  aria-label={expanded ? "Collapse details" : "Expand details"}
                 >
                   ▾
                 </span>
+
                 {isFirst &&
                   (showTooltip || hoverTooltip) &&
                   isTodayGame &&
