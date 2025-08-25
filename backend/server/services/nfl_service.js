@@ -69,6 +69,8 @@ export function mapScheduleRow(raw, isPast) {
       : null,
     predictedHomeScore: raw.predicted_home_score,
     predictedAwayScore: raw.predicted_away_score,
+    // When the model last wrote predictions for this game (UTC)
+    predictionTimeUTC: raw.prediction_utc || null,
   };
 }
 
@@ -234,7 +236,7 @@ export async function fetchNflScheduleData(date) {
   // 👇 Selects the correct columns for each table
   const cols = isPast
     ? "game_id, game_date, game_timestamp, home_team_name, away_team_name, home_team_id, away_team_id, home_score, away_score"
-    : "game_id, game_date, scheduled_time, home_team, away_team, home_team_id, away_team_id, status, moneyline_clean, spread_clean, total_clean, predicted_home_score, predicted_away_score";
+    : "game_id, game_date, scheduled_time, home_team, away_team, home_team_id, away_team_id, status, moneyline_clean, spread_clean, total_clean, predicted_home_score, predicted_away_score, prediction_utc";
 
   const { data, error, status } = await supabase
     .from(table)
@@ -433,11 +435,14 @@ export async function fetchNflGameById(gameId) {
     "scheduled_time",
     "home_team_id",
     "away_team_id",
+    "home_team",
+    "away_team",
     "status",
     "spread_clean",
     "total_clean",
     "predicted_home_score",
     "predicted_away_score",
+    "prediction_utc",
   ].join(", ");
 
   const { data, error, status } = await supabase

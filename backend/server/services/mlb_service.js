@@ -135,7 +135,6 @@ export const WorkspaceMlbScheduleForTodayAndTomorrow = async () => {
   }
   console.log(`CACHE MISS: ${cacheKey}. Fetching from Supabase...`);
   try {
-    const nowEt = DateTime.now().setZone(ET_ZONE_IDENTIFIER);
     const todayStr = nowEt.toISODate();
     const tomorrowStr = nowEt.plus({ days: 1 }).toISODate();
     console.log(`Querying MLB schedule for dates: ${todayStr}, ${tomorrowStr}`);

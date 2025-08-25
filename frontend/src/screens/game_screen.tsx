@@ -173,12 +173,6 @@ const GamesScreen: React.FC = () => {
 
       {/* Content */}
       <section className="flex-1 overflow-y-auto px-6 py-6 space-y-6 contain-layout">
-        {sport === "NFL" && (
-          <p className="text-sm text-text-secondary">
-            Note: No score predictions for preseason games.
-          </p>
-        )}
-
         {isLoading ? (
           /* skeleton list while fetching */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">

@@ -97,13 +97,19 @@ export async function getNflSchedule(req, res, next) {
 
     const rows = await nflService.fetchNflScheduleData(date);
 
-    // Ensure predicted fields (and timestamp) are always present
-    const data = rows.map((g) => ({
-      ...g,
-      predictedHomeScore: g.predictedHomeScore ?? null,
-      predictedAwayScore: g.predictedAwayScore ?? null,
-      predictionUtc: g.predictionUtc ?? g.prediction_utc ?? null, // handle snake/camel just in case
-    }));
+    // Normalize predicted fields and expose both canonical + legacy timestamp keys
+    const data = rows.map((g) => {
+      const predictionTimeUTC = g.predictionTimeUTC ?? null;
+      return {
+        ...g,
+        predictedHomeScore: g.predictedHomeScore ?? null,
+        predictedAwayScore: g.predictedAwayScore ?? null,
+        // Canonical
+        predictionTimeUTC,
+        // Legacy alias (kept for frontend compatibility; remove later)
+        predictionUtc: predictionTimeUTC,
+      };
+    });
 
     res.set(nflService.buildCacheHeader());
     return res.status(200).json({
@@ -254,11 +260,15 @@ export async function getNflGameById(req, res, next) {
 
     if (!game) return res.status(404).json({ message: "Game not found." });
 
+    const predictionTimeUTC = game.predictionTimeUTC ?? null;
     const payload = {
       ...game,
       predictedHomeScore: game.predictedHomeScore ?? null,
       predictedAwayScore: game.predictedAwayScore ?? null,
-      predictionUtc: game.predictionUtc ?? game.prediction_utc ?? null,
+      // Canonical
+      predictionTimeUTC,
+      // Legacy alias (kept for frontend compatibility; remove later)
+      predictionUtc: predictionTimeUTC,
     };
 
     res.set(nflService.buildCacheHeader());
