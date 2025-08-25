@@ -11,7 +11,6 @@ import React, {
   memo,
 } from "react";
 import { UnifiedGame, Sport } from "@/types";
-import { useSport } from "@/contexts/sport_context";
 import { useTour } from "@/contexts/tour_context";
 import OddsDisplay from "./odds_display";
 
@@ -51,7 +50,6 @@ const useIsDesktop = (bp = 1024): boolean => {
   return isDesk;
 };
 
-// robust JSON parser—handles object, single‐encode, or double‐encode
 // robust JSON parser—handles object, single‐encode, or double‐encode
 const robustParse = <T,>(
   src: T | string | null | undefined,
@@ -151,7 +149,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({
   forceCompact,
   isFirst = false,
 }) => {
-  const { sport: contextSport } = useSport();
   const isDesktop = useIsDesktop();
   const compactDefault = forceCompact ?? !isDesktop;
   const lastClickRef = useRef<number>(0);
@@ -367,18 +364,6 @@ const GameCardComponent: React.FC<GameCardProps> = ({
     [dismissTooltip]
   );
 
-  const H2HButton = () => (
-    <SnapshotButton
-      data-action
-      data-tour="snapshot-button"
-      label="H2H Stats"
-      onClick={(e) => {
-        e.stopPropagation();
-        setSnapshotOpen(true);
-      }}
-    />
-  );
-
   // debug: track when tooltip state becomes true
   useEffect(() => {
     if (showTooltip) {
@@ -406,13 +391,12 @@ const GameCardComponent: React.FC<GameCardProps> = ({
     const TOUR_STEPS_REQUIRING_EXPANSION = [1, 2, 3];
     const needsExpansion =
       isTourRunning &&
-      sport !== "NFL" &&
       TOUR_STEPS_REQUIRING_EXPANSION.includes(currentStepIndex);
 
     if (needsExpansion) {
       setExpanded(true);
     }
-  }, [isTourRunning, currentStepIndex, sport]);
+  }, [isTourRunning, currentStepIndex]);
 
   // 1. Differentiate between sports that need a weather API call vs. just UI
   const shouldFetchWeather = sport === "MLB" || sport === "NFL";
@@ -439,7 +423,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
   // This logic now correctly handles the different prediction fields
   // for each sport based on your UnifiedGame type.
   let predAway, predHome;
-  switch (contextSport) {
+  switch (sport) {
     case "NBA":
       predAway = predictionAway;
       predHome = predictionHome;
@@ -489,9 +473,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
     >
       {/* Header */}
       <header
-        className={`flex items-start justify-between gap-4 cursor-pointer ${
-          sport === "NFL" ? "pb-8" : ""
-        }`}
+        className={`flex items-start justify-between gap-4 cursor-pointer`}
         role={compactDefault ? "button" : undefined}
         tabIndex={compactDefault ? 0 : -1}
         onKeyDown={
@@ -515,150 +497,117 @@ const GameCardComponent: React.FC<GameCardProps> = ({
             </p>
             <p className="text-xs text-text-secondary mt-1">{timeLine}</p>
           </div>
-
-          {/* Injuries button logic... */}
-          {(sport === "NFL" ||
-            (sport === "NBA" && compactDefault && !expanded && !isStale)) && (
-            <div className="mt-2">
-              <InjuriesChipButton
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setInjuryModalOpen(true);
-                }}
-              />
-            </div>
-          )}
-
           {/* Odds Display: Show for ANY non-final game in compact view */}
           {!isFinal && <OddsDisplay sport={sport} {...deriveOdds(game)} />}
         </div>
 
-        {/* We conditionally render a different layout for the right side based on the sport */}
-        {sport === "NFL" ? (
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <H2HButton />
-            <WeatherBadge
-              data-action
-              data-tour="weather-badge"
-              isIndoor={isEffectivelyIndoor}
-              isLoading={isWeatherLoading}
-              isError={isWeatherError}
-              data={weatherData}
-              onClick={(e) => {
-                e.stopPropagation();
-                setWeatherOpen(true);
-              }}
-            />
-          </div>
-        ) : (
-          // --- This is the original layout for MLB/NBA cards ---
-          <div
-            className={`flex flex-col items-end text-right gap-1 ${
-              !isFinal && !hasPrediction ? "pr-8" : ""
-            }`}
-          >
-            {" "}
-            {isFinal ? (
-              <div className="flex flex-col items-center w-full">
-                <p className="font-semibold text-lg leading-tight text-center">
-                  {away_final_score} – {home_final_score}
-                </p>
-                <span className="text-[10px] font-normal text-text-secondary mt-0.5 text-center">
-                  final
-                </span>
-              </div>
-            ) : isInProgress ? (
-              <span className="text-xs font-medium text-text-secondary tracking-wide">
-                in&nbsp;progress
+        {/* Unified right-side layout for all sports */}
+        <div
+          className={`flex flex-col items-end text-right gap-1 ${
+            !isFinal && !hasPrediction ? "pr-8" : ""
+          }`}
+        >
+          {" "}
+          {isFinal ? (
+            <div className="flex flex-col items-center w-full">
+              <p className="font-semibold text-lg leading-tight text-center">
+                {away_final_score} – {home_final_score}
+              </p>
+              <span className="text-[10px] font-normal text-text-secondary mt-0.5 text-center">
+                final
               </span>
-            ) : hasPrediction ? (
-              <PredBadge away={predAway as number} home={predHome as number} />
-            ) : (
-              <span className="text-sm text-text-secondary w-full text-center">
-                —
-              </span>
-            )}
-            {compactDefault && isTodayGame && (
-              <div className="mt-2 flex w-full justify-center">
-                <div className="relative">
-                  <span
-                    ref={arrowRef}
-                    className={`card-chevron transition-transform ${
-                      expanded ? "rotate-180" : ""
-                    }`}
-                    style={{
-                      transform: expanded ? "rotate(180deg)" : "none",
-                      transition: "transform 0.2s ease",
-                    }}
-                    onMouseEnter={() => {
-                      // only show hover tooltip if persistent one isn't showing and basic eligibility (today, compact collapsed)
-                      if (
-                        isFirst &&
-                        !showTooltip &&
-                        isTodayGame &&
-                        compactDefault &&
-                        !expanded &&
-                        !isInProgress
-                      ) {
-                        setHoverTooltip(true);
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      setHoverTooltip(false);
-                    }}
-                    onFocus={(e) => {
-                      // keep existing logic for persistent tooltip via focus, not hover
-                      if (Date.now() - lastClickRef.current < 200) return;
-                      if (
-                        isFirst &&
-                        !showTooltip &&
-                        compactDefault &&
-                        !expanded &&
-                        !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
-                      ) {
-                        setShowTooltip(true);
-                      }
-                    }}
-                    onClick={handleArrowInteraction}
-                    aria-describedby={
-                      showTooltip ? "gamecard-tooltip" : undefined
+            </div>
+          ) : isInProgress ? (
+            <span className="text-xs font-medium text-text-secondary tracking-wide">
+              in&nbsp;progress
+            </span>
+          ) : hasPrediction ? (
+            <PredBadge away={predAway as number} home={predHome as number} />
+          ) : (
+            <span className="text-sm text-text-secondary w-full text-center">
+              —
+            </span>
+          )}
+          {compactDefault && isTodayGame && (
+            <div className="mt-2 flex w-full justify-center">
+              <div className="relative">
+                <span
+                  ref={arrowRef}
+                  className={`card-chevron transition-transform ${
+                    expanded ? "rotate-180" : ""
+                  }`}
+                  style={{
+                    transform: expanded ? "rotate(180deg)" : "none",
+                    transition: "transform 0.2s ease",
+                  }}
+                  onMouseEnter={() => {
+                    // only show hover tooltip if persistent one isn't showing and basic eligibility (today, compact collapsed)
+                    if (
+                      isFirst &&
+                      !showTooltip &&
+                      isTodayGame &&
+                      compactDefault &&
+                      !expanded &&
+                      !isInProgress
+                    ) {
+                      setHoverTooltip(true);
                     }
-                    role="button"
-                  >
-                    ▾
-                  </span>
-                  {isFirst &&
-                    (showTooltip || hoverTooltip) &&
-                    isTodayGame &&
-                    !isInProgress && (
-                      <span
-                        ref={tooltipRef}
-                        id="gamecard-tooltip"
-                        role="tooltip"
-                        style={{
-                          left: "50%",
-                          transform: "translateX(-50%)",
-                          maxWidth: "160px",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          pointerEvents: "none",
-                        }}
-                        className="absolute z-50 -top-[2.375rem] whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)] transition-opacity"
-                      >
-                        View&nbsp;details
-                      </span>
-                    )}
-                </div>
+                  }}
+                  onMouseLeave={() => {
+                    setHoverTooltip(false);
+                  }}
+                  onFocus={(e) => {
+                    // keep existing logic for persistent tooltip via focus, not hover
+                    if (Date.now() - lastClickRef.current < 200) return;
+                    if (
+                      isFirst &&
+                      !showTooltip &&
+                      compactDefault &&
+                      !expanded &&
+                      !sessionStorage.getItem(TOOLTIP_SESSION_KEY)
+                    ) {
+                      setShowTooltip(true);
+                    }
+                  }}
+                  onClick={handleArrowInteraction}
+                  aria-describedby={
+                    showTooltip ? "gamecard-tooltip" : undefined
+                  }
+                  role="button"
+                >
+                  ▾
+                </span>
+                {isFirst &&
+                  (showTooltip || hoverTooltip) &&
+                  isTodayGame &&
+                  !isInProgress && (
+                    <span
+                      ref={tooltipRef}
+                      id="gamecard-tooltip"
+                      role="tooltip"
+                      style={{
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        maxWidth: "160px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        pointerEvents: "none",
+                      }}
+                      className="absolute z-50 -top-[2.375rem] whitespace-nowrap rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-panel)] px-2 py-1 text-xs shadow-lg text-[var(--color-text-primary)] transition-opacity"
+                    >
+                      View&nbsp;details
+                    </span>
+                  )}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Expanded Content */}
-      {sport !== "NFL" && expanded && (
-        <div className="mt-4 flex items-center gap-2 justify-between">
+      {expanded && (
+        <div className="mt-4 flex items-center gap-2">
           {/* Pitchers — only if present */}
           {sport === "MLB" && (awayPitcher?.trim() || homePitcher?.trim()) && (
             <div className="flex flex-col justify-center text-xs text-text-secondary leading-tight">
@@ -675,7 +624,7 @@ const GameCardComponent: React.FC<GameCardProps> = ({
             </div>
           )}
           {/* Action Chips always on the right */}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 ml-auto items-end">
             <SnapshotButton
               data-action
               onClick={(e) => {
@@ -697,28 +646,18 @@ const GameCardComponent: React.FC<GameCardProps> = ({
                 }}
               />
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Injuries chip overlay for non-NFL cards (compact, collapsed, non-final, non-MLB) */}
-      {sport !== "NFL" &&
-        compactDefault &&
-        !expanded &&
-        isTodayGame &&
-        !isFinal &&
-        sport !== "MLB" && (
-          <div className="absolute bottom-2 left-0 w-full px-4 flex justify-start pointer-events-none">
-            <div className="pointer-events-auto">
+            {sport !== "MLB" && (
               <InjuriesChipButton
+                data-action
                 onClick={(e) => {
                   e.stopPropagation();
                   setInjuryModalOpen(true);
                 }}
               />
-            </div>
+            )}
           </div>
-        )}
+        </div>
+      )}
 
       <Suspense fallback={null}>
         <SnapshotModal

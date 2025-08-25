@@ -19,7 +19,7 @@ import NBAScheduleDisplay from "@/components/schedule/nba_schedule_display";
 import MLBScheduleDisplay from "@/components/schedule/mlb_schedule_display";
 import NFLScheduleDisplay from "@/components/schedule/nfl_schedule_display";
 import SkeletonBox from "@/components/ui/skeleton_box";
-import { getLocalYYYYMMDD } from "@/utils/date";
+import { getLocalYYYYMMDD, getEasternYYYYMMDD } from "@/utils/date";
 import { isGameStale } from "@/game";
 
 /* ------------------------------------------------------------ */
@@ -59,7 +59,7 @@ const GamesScreen: React.FC = () => {
   const online = useOnline();
   const { sport } = useSport();
   const { date, setDate } = useDate();
-  const apiDate = getLocalYYYYMMDD(date);
+  const apiDate = getEasternYYYYMMDD(date);
 
   // Early return if offline
   if (!online) {
@@ -122,7 +122,15 @@ const GamesScreen: React.FC = () => {
       return 2; // final
     };
 
-    return [...visibleGames].sort((a, b) => rank(a) - rank(b));
+    return [...visibleGames].sort((a, b) => {
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      // tie-break by start time ascending
+      const aStart = new Date(a.gameTimeUTC ?? a.game_date).getTime();
+      const bStart = new Date(b.gameTimeUTC ?? b.game_date).getTime();
+      return aStart - bStart;
+    });
   }, [visibleGames]);
 
   const formattedDate = date.toLocaleDateString("en-US", {
