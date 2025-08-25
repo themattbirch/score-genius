@@ -411,6 +411,45 @@ def build_and_upsert_nfl_previews() -> int:
     try:
         supabase.table(SUPABASE_TABLE).upsert(enriched, on_conflict="game_id").execute()
         print("✔ Supabase upsert complete.")
+        # run predictions (generate and upsert predicted_home_score / predicted_away_score)
+        print("\nStep: Generating NFL predictions (score projections) ...")
+        pred_ok = False
+        try:
+            # Preferred: direct import of function + explicit upsert
+            from backend.nfl_score_prediction.prediction import (
+                generate_predictions as _nfl_generate_predictions,
+                upsert_score_predictions as _nfl_upsert_predictions,
+                get_supabase_client as _nfl_get_sb_client,
+            )
+            preds = _nfl_generate_predictions(days_window=DAYS_AHEAD)
+            if preds:
+                sb_cli = _nfl_get_sb_client()
+                if sb_cli:
+                    _nfl_upsert_predictions(preds, sb_cli, debug=False)
+                    pred_ok = True
+                    print(f"✔ NFL predictions generated and upserted for {len(preds)} games.")
+                else:
+                    print("⚠ Could not init Supabase client for prediction upsert.")
+            else:
+                print("⚠ Prediction function returned no payload.")
+        except Exception as e:
+            print(f"Prediction function path failed: {e}")
+
+        # Final fallback: invoke CLI entrypoint which handles upsert internally
+        if not pred_ok:
+            try:
+                from backend.nfl_score_prediction import prediction as _nfl_pred_mod
+                if hasattr(_nfl_pred_mod, "main"):
+                    _nfl_pred_mod.main()  # this will upsert
+                    pred_ok = True
+                    print("✔ NFL predictions generated via main() (CLI path).")
+            except Exception as e:
+                print(f"Prediction CLI fallback failed: {e}")
+
+        if not pred_ok:
+            print("⚠ NFL predictions did not run; check prediction.py entrypoints.")
+
+
     except Exception as e:
         print(f"Supabase upsert error: {e}")
 
