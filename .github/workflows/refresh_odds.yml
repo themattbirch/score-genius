@@ -2,8 +2,8 @@ name: Refresh Latest Odds
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "5 15 * * *" # 15:05 UTC daily
+  #schedule:
+  #- cron: "5 15 * * *" # 15:05 UTC daily
 
 concurrency:
   group: refresh-odds-${{ github.ref }}
