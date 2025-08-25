@@ -1,0 +1,61 @@
+name: Refresh Latest Odds
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "5 15 * * *" # 15:05 UTC daily
+
+concurrency:
+  group: refresh-odds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh-odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        sport: [mlb, nfl]
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      PYTHONUNBUFFERED: 1
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+      LOG_LEVEL_OVERRIDE: ERROR
+      CI: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Import smoke test
+        run: |
+          python - <<'PY'
+          import requests, dateutil.parser
+          print("import smoke ok")
+          PY
+
+      - name: Refresh odds (${{ matrix.sport }})
+        run: |
+          python -u -m backend.data_pipeline.refresh_odds \
+            --sport "${{ matrix.sport }}" \
+            --skip-existing

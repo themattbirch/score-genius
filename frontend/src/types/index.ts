@@ -230,3 +230,19 @@ export interface NflTeamSummary {
 
   [key: string]: any;
 }
+// ────────────────────────────────────────────────────────────
+// Edge / Value types
+// ────────────────────────────────────────────────────────────
+export type EdgeTier = "HIGH" | "MED" | "LOW";
+export type EdgeMarket = "ML" | "SPREAD";
+export type EdgeSide = "HOME" | "AWAY";
+
+export interface ValueEdge {
+  market: EdgeMarket;
+  side: EdgeSide;
+  edgePct: number; // (modelProb - marketProb) * 100
+  modelProb: number; // 0..1
+  marketProb: number; // 0..1 (vig-free)
+  z: number; // standardized confidence
+  tier: EdgeTier;
+}
