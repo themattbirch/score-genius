@@ -367,27 +367,34 @@ def load_schedule_rows(sport_cfg: Dict[str, Any], start_date_et: datetime, days:
 
     dates = _date_list(start_date_et, days)
 
-    print(f"[db] fetch {table} where {date_col} IN {dates}")
-    # We only need key fields + existing odds to optionally skip
-    cols = ",".join([
+    base_cols = [
         "game_id", home_col, away_col, time_col,
         "moneyline", "spread", "total",
-        # try to select clean fields if they exist; safe to include (Supabase ignores extras)
-        "moneyline_clean", "spread_clean", "total_clean",
-        "moneyline_home_clean","moneyline_away_clean",
-        "spread_home_line_clean","spread_home_price_clean","spread_away_price_clean",
-        "total_line_clean","total_over_price_clean","total_under_price_clean",
-    ])
+    ]
+
+    if sport_cfg["clean_mode"] == "mlb_columns":
+        clean_cols = [
+            "moneyline_home_clean","moneyline_away_clean",
+            "spread_home_line_clean","spread_home_price_clean","spread_away_price_clean",
+            "total_line_clean","total_over_price_clean","total_under_price_clean",
+        ]
+    else:
+        # NFL/NBA schemas
+        clean_cols = ["moneyline_clean", "spread_clean", "total_clean"]
+
+    cols = ",".join(base_cols + clean_cols)
+
+    print(f"[db] fetch {table} where {date_col} IN {dates}")
     resp = supabase.table(table).select(cols).in_(date_col, dates).execute()
     rows = resp.data or []
 
-    # normalize helper keys for matching
     for r in rows:
-        r["_home_raw"] = r.get(home_col)
-        r["_away_raw"] = r.get(away_col)
+        r["_home_raw"]  = r.get(home_col)
+        r["_away_raw"]  = r.get(away_col)
         r["_sched_iso"] = r.get(time_col)
     print(f"[db] rows: {len(rows)}")
     return rows
+
 
 def build_update_payload(sport: str,
                          sport_cfg: Dict[str, Any],
