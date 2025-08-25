@@ -13,6 +13,8 @@ import React, {
 import { UnifiedGame, Sport } from "@/types";
 import { useTour } from "@/contexts/tour_context";
 import OddsDisplay from "./odds_display";
+import ValueBadge from "./value_badge";
+import { computeBestEdge } from "@/utils/edge";
 
 import { useWeather } from "@/hooks/use_weather";
 import WeatherBadge from "./weather_badge";
@@ -106,10 +108,35 @@ const deriveOdds = (game: UnifiedGame) => {
   /* ---------- SPREAD ---------- */
   const rawSpread =
     (game as any).spread_clean ?? (game as any).spreadClean ?? null;
-  const spreadClean = robustParse<{ home?: { line?: number } }>(rawSpread, {
-    home: {},
-  });
+  const spreadClean = robustParse<{
+    home?: {
+      line?: number;
+      price?: number | string;
+      odds?: number | string;
+      american?: number | string;
+    };
+    away?: {
+      line?: number;
+      price?: number | string;
+      odds?: number | string;
+      american?: number | string;
+    };
+  }>(rawSpread, { home: {}, away: {} });
+
   const spreadLine = game.spreadLine ?? spreadClean.home?.line ?? null;
+
+  // price fallbacks: price → odds → american
+  const spreadHomePrice =
+    spreadClean.home?.price ??
+    spreadClean.home?.odds ??
+    spreadClean.home?.american ??
+    null;
+
+  const spreadAwayPrice =
+    spreadClean.away?.price ??
+    spreadClean.away?.odds ??
+    spreadClean.away?.american ??
+    null;
 
   /* ---------- TOTAL ---------- */
   const rawTotal =
@@ -121,7 +148,14 @@ const deriveOdds = (game: UnifiedGame) => {
   const totalLine =
     game.totalLine ?? totalClean.line ?? totalClean.over ?? null;
 
-  return { moneylineHome, moneylineAway, spreadLine, totalLine };
+  return {
+    moneylineHome,
+    moneylineAway,
+    spreadLine,
+    totalLine,
+    spreadHomePrice,
+    spreadAwayPrice,
+  };
 };
 
 // Lazy load injury components
@@ -187,6 +221,43 @@ const GameCardComponent: React.FC<GameCardProps> = ({
     homePitcher,
     homePitcherHand,
   } = game;
+
+  const ActionChips: React.FC<{ compact?: boolean }> = ({ compact }) => (
+    <div
+      className={`flex flex-col gap-2 ${compact ? "" : "ml-auto items-end"}`}
+    >
+      <SnapshotButton
+        data-action
+        onClick={(e) => {
+          e.stopPropagation();
+          setSnapshotOpen(true);
+        }}
+      />
+      {showWeatherUI && (
+        <WeatherBadge
+          data-action
+          data-tour="weather-badge"
+          isIndoor={isEffectivelyIndoor}
+          isLoading={!isNBA && isWeatherLoading}
+          isError={!isNBA && isWeatherError}
+          data={weatherData}
+          onClick={(e) => {
+            e.stopPropagation();
+            setWeatherOpen(true);
+          }}
+        />
+      )}
+      {sport !== "MLB" && (
+        <InjuriesChipButton
+          data-action
+          onClick={(e) => {
+            e.stopPropagation();
+            setInjuryModalOpen(true);
+          }}
+        />
+      )}
+    </div>
+  );
 
   // cutoff after game is over: 3.5 hours after scheduled time
   // cutoff after game is over: 3.5 hours after scheduled time
@@ -439,6 +510,61 @@ const GameCardComponent: React.FC<GameCardProps> = ({
   }
   const hasPrediction =
     dataType === "schedule" && predAway != null && predHome != null;
+  const showHeaderActions = !isFinal && !hasPrediction && !expanded;
+
+  // Compute Edge (moneyline/spread). Defensive: only if predictions + odds exist.
+  const {
+    moneylineHome,
+    moneylineAway,
+    spreadLine,
+    totalLine,
+    spreadHomePrice,
+    spreadAwayPrice,
+  } = useMemo(() => deriveOdds(game), [game]);
+
+  // choose sport-specific prediction fields we already compute above (predAway/predHome)
+  const hasPredictions =
+    predAway != null && predHome != null && dataType === "schedule" && !isFinal;
+
+  const hasMarket =
+    (moneylineHome != null && moneylineAway != null) ||
+    // allow spread-only edges if ML missing
+    spreadLine != null;
+
+  // one compute call – returns null if below tier thresholds
+  const edge = useMemo(
+    () =>
+      hasPredictions && hasMarket
+        ? computeBestEdge({
+            sport,
+            predHome: Number(predHome),
+            predAway: Number(predAway),
+            mlHome: moneylineHome,
+            mlAway: moneylineAway,
+            spreadHomeLine: spreadLine ?? null,
+            // we don’t have explicit spread prices in all feeds; these may be null
+            spreadHomePrice,
+            spreadAwayPrice,
+          })
+        : null,
+    [
+      sport,
+      hasPredictions,
+      hasMarket,
+      predHome,
+      predAway,
+      moneylineHome,
+      moneylineAway,
+      spreadLine,
+      spreadHomePrice,
+      spreadAwayPrice,
+    ]
+  );
+
+  // small pill fallback
+  const NoEdgePill = () => (
+    <span className="text-sm text-[var(--color-text-secondary)]">No Edge</span>
+  );
 
   // Ignore clicks that originate inside elements marked data-action
   const handleCardClick = useCallback(
@@ -499,15 +625,21 @@ const GameCardComponent: React.FC<GameCardProps> = ({
           </div>
           {/* Odds Display: Show for ANY non-final game in compact view */}
           {!isFinal && <OddsDisplay sport={sport} {...deriveOdds(game)} />}
+
+          {/* NEW: Value row right under odds – always visible if predictions+market exist */}
+          {hasPredictions && hasMarket && (
+            <div className="mt-2 flex items-center gap-2">
+              {edge ? <ValueBadge edge={edge} /> : <NoEdgePill />}
+            </div>
+          )}
         </div>
 
         {/* Unified right-side layout for all sports */}
         <div
-          className={`flex flex-col items-end text-right gap-1 ${
-            !isFinal && !hasPrediction ? "pr-8" : ""
+          className={`flex flex-col items-end text-right gap-2 ${
+            !isFinal && !hasPrediction && hasPrediction ? "pr-8" : ""
           }`}
         >
-          {" "}
           {isFinal ? (
             <div className="flex flex-col items-center w-full">
               <p className="font-semibold text-lg leading-tight text-center">
@@ -522,12 +654,44 @@ const GameCardComponent: React.FC<GameCardProps> = ({
               in&nbsp;progress
             </span>
           ) : hasPrediction ? (
+            // Prediction present → show PredBadge here
             <PredBadge away={predAway as number} home={predHome as number} />
-          ) : (
-            <span className="text-sm text-text-secondary w-full text-center">
-              —
-            </span>
-          )}
+          ) : showHeaderActions ? (
+            // Collapsed + no prediction → show action chips on the right (no placeholder dash)
+            <div className="flex flex-col gap-2 items-end ml-auto">
+              <SnapshotButton
+                data-action
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSnapshotOpen(true);
+                }}
+              />
+              {showWeatherUI && (
+                <WeatherBadge
+                  data-action
+                  data-tour="weather-badge"
+                  isIndoor={isEffectivelyIndoor}
+                  isLoading={!isNBA && isWeatherLoading}
+                  isError={!isNBA && isWeatherError}
+                  data={weatherData}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setWeatherOpen(true);
+                  }}
+                />
+              )}
+              {sport !== "MLB" && (
+                <InjuriesChipButton
+                  data-action
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInjuryModalOpen(true);
+                  }}
+                />
+              )}
+            </div>
+          ) : null}
+
           {compactDefault && isTodayGame && (
             <div className="mt-2 flex w-full justify-center">
               <div className="relative">
