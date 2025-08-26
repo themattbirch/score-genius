@@ -16,6 +16,10 @@
         "source": "io.scoregenius.app-main-35:/mipmap-xxhdpi/ic_launcher.png"
     },
     {
+        "merged": "io.scoregenius.app-release-34:/xml_network_security_config.xml.flat",
+        "source": "io.scoregenius.app-main-35:/xml/network_security_config.xml"
+    },
+    {
         "merged": "io.scoregenius.app-release-34:/drawable-anydpi_shortcut_legacy_background.xml.flat",
         "source": "io.scoregenius.app-main-35:/drawable-anydpi/shortcut_legacy_background.xml"
     },

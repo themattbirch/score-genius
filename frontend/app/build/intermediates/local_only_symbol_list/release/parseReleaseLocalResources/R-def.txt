@@ -47,4 +47,5 @@ string webManifestUrl
 style Theme.ScoreGenius
 style Theme.ScoreGenius.Splash
 xml filepaths
+xml network_security_config
 xml shortcuts
