@@ -38,7 +38,14 @@ self.addEventListener("install", (event) => {
     (async () => {
       try {
         const cache = await caches.open(PAGE_CACHE);
-        await cache.add(new Request("/app/", { cache: "reload" }));
+        const requests = [
+          new Request("/app/", { cache: "reload" }),
+          new Request("/app/more", { cache: "reload" }),
+          new Request("/app/how_to_use", { cache: "reload" }),
+          // optional alias if your server serves the shell here:
+          new Request("/app/index.html", { cache: "reload" }),
+        ];
+        await Promise.allSettled(requests.map((req) => cache.add(req)));
       } catch {}
       self.skipWaiting?.();
     })()
