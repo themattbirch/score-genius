@@ -104,6 +104,22 @@ app.use(
     index: false,
     redirect: false,
     setHeaders: (res, filePath) => {
+      const basename = path.basename(filePath);
+      // Long-cache hashed assets (e.g., app.abc123def456.js, chunk-XYZ.9f8e7d.css, font.1234abcd.woff2)
+      const isHashed =
+        /\.[0-9a-f]{8,}\.(js|css|mjs|woff2?|ttf|eot|png|jpg|jpeg|webp|gif|svg)$/i.test(
+          basename
+        );
+
+      if (isHashed) {
+        // 1 year, immutable – safe for fingerprinted files
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      } else {
+        // Short cache for non-hashed files under /app; app.html itself is served above with no-cache
+        res.setHeader("Cache-Control", "public, max-age=3600");
+      }
+
+      // Preserve existing special cases
       if (filePath.endsWith(".appinstaller")) {
         res.setHeader("Content-Type", "application/appinstaller");
       } else if (
