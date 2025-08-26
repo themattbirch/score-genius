@@ -87,6 +87,9 @@ torch/
 /backend/scripts/tmp/
 /evaluation_plots/
 
+# Ignore all backend test files
+backend/tests/
+
 ### Caching
 backend/caching/data/*
 !backend/caching/*.py
