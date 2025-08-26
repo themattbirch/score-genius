@@ -6850,4 +6850,5 @@ int styleable ViewStubCompat_android_layout 1
 int styleable ViewStubCompat_android_inflatedId 2
 int xml filepaths 0x7f130000
 int xml image_share_filepaths 0x7f130001
-int xml shortcuts 0x7f130002
+int xml network_security_config 0x7f130002
+int xml shortcuts 0x7f130003

@@ -2,6 +2,10 @@
 
 import type { Sport, ValueEdge, EdgeTier } from "@/types";
 
+/* ------------------------------------------------------------ */
+/* Odds & Probability Utilities                                  */
+/* ------------------------------------------------------------ */
+
 /**
  * American odds → implied prob (0..1). Returns null on bad input.
  */
@@ -48,6 +52,10 @@ export function stdNormCDF(x: number): number {
   return x < 0.0 ? 1.0 - n : n;
 }
 
+/* ------------------------------------------------------------ */
+/* Model Controls                                                */
+/* ------------------------------------------------------------ */
+
 /**
  * Sport-specific margin standard deviation for a single game.
  * Tunable constants — adjust as you gather data.
@@ -65,15 +73,42 @@ export function marginSigma(sport: Sport): number {
   }
 }
 
-/** Edge tier thresholds */
+/** Clamp a number to a closed interval [lo, hi]. */
+function clamp(x: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, x));
+}
+
+/** Net profit per $1 stake from American odds (e.g., +150 → 1.5, -120 → 0.8333). */
+function payoutFromAmerican(
+  odds: number | string | null | undefined
+): number | null {
+  if (odds === null || odds === undefined) return null;
+  const n = Number(odds);
+  if (!Number.isFinite(n) || n === 0) return null;
+  return n > 0 ? n / 100 : 100 / Math.abs(n);
+}
+
+/* ------------------------------------------------------------ */
+/* Edge Tiering (Moneyline MVP)                                  */
+/* ------------------------------------------------------------ */
+/**
+ * Tighter thresholds to reduce noise:
+ * - HIGH: edge ≥ 5.0% and z ≥ 0.90
+ * - MED : edge ≥ 3.0% and z ≥ 0.60
+ * - LOW : edge ≥ 1.0% and z ≥ 0.30
+ */
 export function tierFrom(edgePct: number, z: number): EdgeTier | null {
   const e = Math.abs(edgePct);
   const zz = Math.abs(z);
-  if (e >= 5 && zz >= 0.75) return "HIGH";
-  if (e >= 3 && zz >= 0.5) return "MED";
-  if (e >= 0.5 && zz >= 0.25) return "LOW";
+  if (e >= 5.0 && zz >= 0.9) return "HIGH";
+  if (e >= 2.0 && zz >= 0.6) return "MED";
+  if (e >= 0.5 && zz >= 0.3) return "LOW";
   return null;
 }
+
+/* ------------------------------------------------------------ */
+/* Moneyline-Only Edge                                           */
+/* ------------------------------------------------------------ */
 
 type EdgeInputs = {
   sport: Sport;
@@ -84,14 +119,19 @@ type EdgeInputs = {
   mlHome?: number | string | null;
   mlAway?: number | string | null;
 
-  // spread: home line (home favored is negative) + prices
+  // spread fields may come through; ignored in ML MVP
   spreadHomeLine?: number | null;
   spreadHomePrice?: number | string | null;
   spreadAwayPrice?: number | string | null;
 };
 
 /**
- * Compute the stronger of ML or Spread edges (if any). Returns null if no value.
+ * Compute Moneyline Edge only. Returns the stronger positive-EV side if it
+ * also meets tier thresholds; otherwise returns null (no badge).
+ *
+ * - Model prob: Φ(margin/σ), clamped to [0.01, 0.99] for stability.
+ * - Market (vig-free) probs: devigTwoWay(americanToProb(H), americanToProb(A)).
+ * - Selection: rank by EV per $1 stake, break ties with edgePct then z.
  */
 export function computeBestEdge({
   sport,
@@ -99,97 +139,106 @@ export function computeBestEdge({
   predAway,
   mlHome,
   mlAway,
-  spreadHomeLine,
-  spreadHomePrice,
-  spreadAwayPrice,
 }: EdgeInputs): ValueEdge | null {
   if (predHome == null || predAway == null) return null;
+
+  // Model margin & volatility
   const margin = Number(predHome) - Number(predAway);
   const sigma = marginSigma(sport);
 
-  // ========= Moneyline =========
-  let edgeML: ValueEdge | null = null;
-  const mlPH = americanToProb(mlHome ?? null);
-  const mlPA = americanToProb(mlAway ?? null);
-  const [mktPH, mktPA] = devigTwoWay(mlPH, mlPA);
+  // Model win probabilities (clamped for stability)
+  const rawModelPH = stdNormCDF(margin / sigma);
+  const modelPH = clamp(rawModelPH, 0.01, 0.99);
+  const modelPA = 1 - modelPH;
 
-  if (mktPH != null && mktPA != null) {
-    const modelPH = stdNormCDF(margin / sigma); // P(home wins)
-    const modelPA = 1 - modelPH; // P(away wins)
+  // Market implied (vig-free) probabilities
+  const mlPH_raw = americanToProb(mlHome ?? null);
+  const mlPA_raw = americanToProb(mlAway ?? null);
+  const [mktPH, mktPA] = devigTwoWay(mlPH_raw, mlPA_raw);
+  if (mktPH == null || mktPA == null) return null;
 
-    const homeEdgePct = (modelPH - mktPH) * 100;
-    const awayEdgePct = (modelPA - mktPA) * 100;
+  // Payouts for EV calculation (use actual book odds, not vig-free)
+  const payH = payoutFromAmerican(mlHome ?? null);
+  const payA = payoutFromAmerican(mlAway ?? null);
+  if (payH == null || payA == null) return null;
 
-    const zML = Math.abs(margin) / sigma; // distance from coin-flip
+  // Edge % (model - market), in percentage points
+  const homeEdgePct = (modelPH - mktPH) * 100;
+  const awayEdgePct = (modelPA - mktPA) * 100;
 
-    // choose the better positive edge
-    const isHome = homeEdgePct > awayEdgePct;
-    const chosenPct = isHome ? homeEdgePct : awayEdgePct;
-    const tier = tierFrom(chosenPct, zML);
-    if (tier) {
-      edgeML = {
-        market: "ML",
-        side: isHome ? "HOME" : "AWAY",
-        edgePct: chosenPct,
-        modelProb: isHome ? modelPH : modelPA,
-        marketProb: isHome ? mktPH : mktPA,
-        z: zML,
-        tier,
-      };
-    }
-  }
+  // Confidence proxy: standardized distance from coin-flip
+  const zML = Math.abs(margin) / sigma;
 
-  // ========= Spread =========
-  let edgeSpread: ValueEdge | null = null;
+  // Expected Value per $1 stake
+  // EV = p * payout - (1 - p), where payout is net profit if the bet wins.
+  const evHome = modelPH * payH - (1 - modelPH);
+  const evAway = modelPA * payA - (1 - modelPA);
 
-  const prH = americanToProb(spreadHomePrice ?? null);
-  const prA = americanToProb(spreadAwayPrice ?? null);
-  const [mktCoverH, mktCoverA] = devigTwoWay(prH, prA);
+  type Candidate = {
+    side: "HOME" | "AWAY";
+    edgePct: number;
+    modelProb: number;
+    marketProb: number;
+    z: number;
+    ev: number;
+  };
 
-  if (
-    spreadHomeLine != null &&
-    mktCoverH != null &&
-    mktCoverA != null &&
-    Number.isFinite(spreadHomeLine)
-  ) {
-    // P(home covers): margin - line > 0  ⇒ Φ((margin - line)/σ)
-    const modelCoverH = stdNormCDF((margin - Number(spreadHomeLine)) / sigma);
-    const modelCoverA = 1 - modelCoverH; // at same line
+  const candidates: Candidate[] = [
+    {
+      side: "HOME",
+      edgePct: homeEdgePct,
+      modelProb: modelPH,
+      marketProb: mktPH,
+      z: zML,
+      ev: evHome,
+    },
+    {
+      side: "AWAY",
+      edgePct: awayEdgePct,
+      modelProb: modelPA,
+      marketProb: mktPA,
+      z: zML,
+      ev: evAway,
+    },
+  ];
 
-    const homeEdgePct = (modelCoverH - mktCoverH) * 100;
-    const awayEdgePct = (modelCoverA - mktCoverA) * 100;
+  // Choose the side with the highest EV; break ties by edgePct then z.
+  candidates.sort((a, b) => {
+    if (b.ev !== a.ev) return b.ev - a.ev;
+    if (Math.abs(b.edgePct) !== Math.abs(a.edgePct))
+      return Math.abs(b.edgePct) - Math.abs(a.edgePct);
+    return Math.abs(b.z) - Math.abs(a.z);
+  });
 
-    const zSpr = Math.abs(margin - Number(spreadHomeLine)) / sigma;
+  const best = candidates[0];
 
-    const isHome = homeEdgePct > awayEdgePct;
-    const chosenPct = isHome ? homeEdgePct : awayEdgePct;
-    const tier = tierFrom(chosenPct, zSpr);
-    if (tier) {
-      edgeSpread = {
-        market: "SPREAD",
-        side: isHome ? "HOME" : "AWAY",
-        edgePct: chosenPct,
-        modelProb: isHome ? modelCoverH : modelCoverA,
-        marketProb: isHome ? mktCoverH : mktCoverA,
-        z: zSpr,
-        tier,
-      };
-    }
-  }
+  // Gate: must be positive EV AND meet tier thresholds to reduce noise
+  if (best.ev <= 0) return null;
 
-  // ========= Choose stronger (if any) =========
-  if (edgeML && edgeSpread) {
-    return Math.abs(edgeML.edgePct) >= Math.abs(edgeSpread.edgePct)
-      ? edgeML
-      : edgeSpread;
-  }
-  return edgeML ?? edgeSpread ?? null;
+  const tier = tierFrom(best.edgePct, best.z);
+  if (!tier) return null;
+
+  const result: ValueEdge = {
+    market: "ML",
+    side: best.side,
+    edgePct: best.edgePct,
+    modelProb: best.modelProb,
+    marketProb: best.marketProb,
+    z: best.z,
+    tier,
+  };
+
+  return result;
 }
 
-/** Format helpers for tooltips */
+/* ------------------------------------------------------------ */
+/* Format helpers for tooltips                                   */
+/* ------------------------------------------------------------ */
+
 export function pct(x: number): string {
   return `${(x * 100).toFixed(0)}%`;
 }
+
 export function edgeFmt(x: number): string {
   const s = x >= 0 ? "+" : "";
   return `${s}${x.toFixed(1)}%`;

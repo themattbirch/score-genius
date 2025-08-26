@@ -1,3 +1,4 @@
+io.scoregenius.app:xml/network_security_config = 0x7f130002
 io.scoregenius.app:xml/image_share_filepaths = 0x7f130001
 io.scoregenius.app:styleable/ViewBackgroundHelper = 0x7f12008f
 io.scoregenius.app:styleable/View = 0x7f12008e
@@ -5417,7 +5418,7 @@ io.scoregenius.app:attr/motionDurationLong2 = 0x7f0302f8
 io.scoregenius.app:color/material_dynamic_tertiary30 = 0x7f050261
 io.scoregenius.app:attr/layout_constraintCircleAngle = 0x7f03025b
 io.scoregenius.app:attr/iconifiedByDefault = 0x7f030212
-io.scoregenius.app:xml/shortcuts = 0x7f130002
+io.scoregenius.app:xml/shortcuts = 0x7f130003
 io.scoregenius.app:color/m3_dynamic_dark_primary_text_disable_only = 0x7f050087
 io.scoregenius.app:attr/colorSurface = 0x7f030109
 io.scoregenius.app:style/TextAppearance.AppCompat.Widget.PopupMenu.Large = 0x7f1101c6

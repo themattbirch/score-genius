@@ -6,7 +6,9 @@
 
     <application
         android:name="io.scoregenius.app.Application"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/appName"
         android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
@@ -34,9 +36,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:alwaysRetainTaskState="true"
-            android:label="@string/launcherName"
-            tools:node="replace">
-
+            android:label="@string/launcherName">
 
             <!-- App launcher -->
             <intent-filter>
@@ -44,7 +44,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Verified links to /app -->
+            <!-- Verified deep links to /app (trusted) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -55,12 +55,12 @@
                     android:pathPrefix="/app" />
             </intent-filter>
 
-            <!-- Default TWA URL -->
+            <!-- Default TWA URL (ensure trailing slash) -->
             <meta-data
                 android:name="android.support.customtabs.trusted.DEFAULT_URL"
                 android:value="@string/launchUrl" />
 
-            <!-- ABH splash -->
+            <!-- Chrome's interim splash -->
             <meta-data
                 android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
                 android:resource="@drawable/splash" />
@@ -74,13 +74,8 @@
             <meta-data
                 android:name="androidx.browser.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
                 android:resource="@color/backgroundColor" />
-            <meta-data
-                android:name="androidx.browser.trusted.STATUS_BAR_COLOR"
-                android:resource="@color/colorPrimary" />
-            <meta-data
-                android:name="androidx.browser.trusted.STATUS_BAR_COLOR_DARK"
-                android:resource="@color/colorPrimaryDark" />
-            <!-- Make Chrome's splash (if shown) fade immediately -->
+
+            <!-- Instant fade-out to avoid toolbar flash -->
             <meta-data
                 android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
                 android:value="0" />
@@ -88,13 +83,13 @@
                 android:name="androidx.browser.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
                 android:value="0" />
 
-            <!-- System bar colors for the TWA host -->
+            <!-- System bar colors for TWA host -->
             <meta-data
                 android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
                 android:resource="@color/colorPrimary" />
             <meta-data
-                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
-                android:resource="@color/colorPrimaryDark" />
+                android:name="androidx.browser.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/colorPrimary" />
 
             <meta-data
                 android:name="androidx.browser.trusted.NAVIGATION_BAR_COLOR"
@@ -105,11 +100,8 @@
             <meta-data
                 android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
                 android:resource="@color/navigationDividerColor" />
-            <meta-data
-                android:name="androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
-                android:resource="@color/navigationDividerColorDark" />
 
-            <!-- FileProvider -->
+            <!-- FileProvider for ABH -->
             <meta-data
                 android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
                 android:value="${applicationId}.fileprovider" />
@@ -127,10 +119,13 @@
         </activity>
 
         <!-- Other ABH components -->
-        <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.FocusActivity"
+            android:exported="false" />
         <activity
             android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
-            android:configChanges="orientation|screenSize" />
+            android:configChanges="orientation|screenSize"
+            android:exported="false" />
 
         <!-- File provider -->
         <provider
@@ -157,6 +152,8 @@
             </intent-filter>
         </service>
 
-        <activity android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity" />
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity"
+            android:exported="false" />
     </application>
 </manifest>

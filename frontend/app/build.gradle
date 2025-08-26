@@ -8,8 +8,8 @@ android {
         applicationId "io.scoregenius.app"
         minSdkVersion 21
         targetSdkVersion 36
-        versionCode 80
-        versionName "80"
+        versionCode 79
+        versionName "79"
     }
 
     buildTypes {

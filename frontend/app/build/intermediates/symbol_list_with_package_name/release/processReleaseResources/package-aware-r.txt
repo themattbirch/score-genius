@@ -5190,4 +5190,5 @@ styleable ViewPager2 android_orientation
 styleable ViewStubCompat android_id android_layout android_inflatedId
 xml filepaths
 xml image_share_filepaths
+xml network_security_config
 xml shortcuts

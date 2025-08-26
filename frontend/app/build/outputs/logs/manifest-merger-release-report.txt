@@ -1,27 +1,27 @@
 -- Merging decision tree log ---
 meta-data#android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY
-INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:113:13-115:65
+INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:105:13-107:65
 	android:value
 		INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:115:17-62
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:107:17-62
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:114:17-90
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:106:17-90
 provider#androidx.core.content.FileProvider
-INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:136:9-144:20
+INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:131:9-139:20
 	android:grantUriPermissions
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:140:13-47
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:135:13-47
 	android:authorities
 		INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:138:13-64
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:133:13-64
 	android:exported
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:139:13-37
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:134:13-37
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:137:13-62
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:132:13-62
 manifest
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-162:12
-INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-162:12
-INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-162:12
-INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-162:12
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-159:12
+INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-159:12
+INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-159:12
+INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:2:1-159:12
 MERGED from [com.google.android.material:material:1.12.0] /Users/mattb/.gradle/caches/8.11.1/transforms/0f99c4435ab0119dc9a8271893148438/transformed/material-1.12.0/AndroidManifest.xml:17:1-24:12
 MERGED from [com.google.androidbrowserhelper:androidbrowserhelper:2.6.2] /Users/mattb/.gradle/caches/8.11.1/transforms/5053e02be90783e54992393be394bb70/transformed/androidbrowserhelper-2.6.2/AndroidManifest.xml:17:1-32:12
 MERGED from [androidx.constraintlayout:constraintlayout:2.0.1] /Users/mattb/.gradle/caches/8.11.1/transforms/ba29756262577ddb0ba083f3bc1906e0/transformed/constraintlayout-2.0.1/AndroidManifest.xml:2:1-11:12
@@ -81,8 +81,8 @@ ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/Andr
 	android:name
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:5:22-74
 application
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:7:5-161:19
-INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:7:5-161:19
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:7:5-158:19
+INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:7:5-158:19
 MERGED from [com.google.android.material:material:1.12.0] /Users/mattb/.gradle/caches/8.11.1/transforms/0f99c4435ab0119dc9a8271893148438/transformed/material-1.12.0/AndroidManifest.xml:22:5-20
 MERGED from [com.google.android.material:material:1.12.0] /Users/mattb/.gradle/caches/8.11.1/transforms/0f99c4435ab0119dc9a8271893148438/transformed/material-1.12.0/AndroidManifest.xml:22:5-20
 MERGED from [androidx.constraintlayout:constraintlayout:2.0.1] /Users/mattb/.gradle/caches/8.11.1/transforms/ba29756262577ddb0ba083f3bc1906e0/transformed/constraintlayout-2.0.1/AndroidManifest.xml:9:5-20
@@ -104,65 +104,67 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/mattb/.gradle/caches
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.13.0] /Users/mattb/.gradle/caches/8.11.1/transforms/a5429f7b20c607b890f08b5283ad4ec0/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:13:9-35
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:15:9-35
 	android:label
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:11:9-40
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:13:9-40
 	android:manageSpaceActivity
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:12:9-105
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:14:9-105
 	android:icon
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:10:9-43
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:12:9-43
 	android:allowBackup
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:9:9-35
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:9:9-36
 	android:theme
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:14:9-49
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:16:9-49
+	android:networkSecurityConfig
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:11:9-69
+	android:usesCleartextTraffic
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:10:9-45
 	android:name
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:8:9-54
 meta-data#asset_statements
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:17:9-97
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:19:9-97
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:17:52-94
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:19:52-94
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:17:20-51
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:19:20-51
 meta-data#web_manifest_url
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:18:9-93
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:20:9-93
 	android:value
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:18:52-90
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:20:52-90
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:18:20-51
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:20:20-51
 meta-data#twa_generator
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:19:9-88
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:21:9-88
 	android:value
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:19:49-85
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:21:49-85
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:19:20-48
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:21:20-48
 activity#com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:22:9-28:20
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:24:9-30:20
 	android:exported
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:24:13-36
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:26:13-36
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:23:13-94
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:25:13-94
 meta-data#android.support.customtabs.trusted.MANAGE_SPACE_URL
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:25:13-27:53
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:27:13-29:53
 	android:value
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:27:17-50
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:29:17-50
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:26:17-83
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:28:17-83
 activity#io.scoregenius.app.LauncherActivity
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:31:9-127:20
-	tools:node
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:38:13-33
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:33:9-119:20
 	android:label
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:37:13-49
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:39:13-49
 	android:launchMode
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:35:13-44
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:37:13-44
 	android:exported
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:34:13-36
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:36:13-36
 	android:alwaysRetainTaskState
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:36:13-49
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:38:13-49
 	android:theme
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:33:13-60
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:35:13-60
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:32:13-63
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:34:13-63
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
 ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:42:13-45:29
 action#android.intent.action.MAIN
@@ -227,124 +229,112 @@ ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/Andr
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:76:17-58
 	android:name
 		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:75:17-87
-meta-data#androidx.browser.trusted.STATUS_BAR_COLOR
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:77:13-79:58
-	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:79:17-55
-	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:78:17-73
-meta-data#androidx.browser.trusted.STATUS_BAR_COLOR_DARK
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:80:13-82:62
-	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:82:17-59
-	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:81:17-78
 meta-data#android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:84:13-86:37
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:79:13-81:37
 	android:value
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:86:17-34
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:81:17-34
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:85:17-98
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:80:17-98
 meta-data#androidx.browser.trusted.SPLASH_SCREEN_FADE_OUT_DURATION
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:87:13-89:37
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:82:13-84:37
 	android:value
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:89:17-34
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:84:17-34
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:88:17-88
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:83:17-88
 meta-data#android.support.customtabs.trusted.STATUS_BAR_COLOR
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:92:13-94:58
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:87:13-89:58
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:94:17-55
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:89:17-55
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:93:17-83
-meta-data#android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:95:13-97:62
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:88:17-83
+meta-data#androidx.browser.trusted.STATUS_BAR_COLOR
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:90:13-92:58
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:97:17-59
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:92:17-55
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:96:17-88
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:91:17-73
 meta-data#androidx.browser.trusted.NAVIGATION_BAR_COLOR
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:99:13-101:64
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:94:13-96:64
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:101:17-61
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:96:17-61
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:100:17-77
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:95:17-77
 meta-data#androidx.browser.trusted.NAVIGATION_BAR_COLOR_DARK
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:102:13-104:68
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:97:13-99:68
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:104:17-65
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:99:17-65
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:103:17-82
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:98:17-82
 meta-data#androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:105:13-107:68
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:100:13-102:68
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:107:17-65
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:102:17-65
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:106:17-85
-meta-data#androidx.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:108:13-110:72
-	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:110:17-69
-	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:109:17-90
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:101:17-85
 meta-data#android.app.shortcuts
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:118:13-120:53
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:110:13-112:53
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:120:17-50
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:112:17-50
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:119:17-53
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:111:17-53
 meta-data#android.support.customtabs.trusted.FALLBACK_STRATEGY
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:121:13-123:40
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:113:13-115:40
 	android:value
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:123:17-37
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:115:17-37
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:122:17-84
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:114:17-84
 meta-data#android.support.customtabs.trusted.SCREEN_ORIENTATION
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:124:13-126:55
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:116:13-118:55
 	android:value
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:17-52
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:118:17-52
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:125:17-85
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:117:17-85
 activity#com.google.androidbrowserhelper.trusted.FocusActivity
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:130:9-90
-	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:130:19-87
-activity#com.google.androidbrowserhelper.trusted.WebViewFallbackActivity
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:131:9-133:62
-	android:configChanges
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:133:13-59
-	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:132:13-91
-service#io.scoregenius.app.DelegationService
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:147:9-158:19
-	android:enabled
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:149:13-56
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:122:9-124:40
 	android:exported
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:150:13-57
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:124:13-37
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:148:13-64
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:123:13-81
+activity#com.google.androidbrowserhelper.trusted.WebViewFallbackActivity
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:125:9-128:40
+	android:exported
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:128:13-37
+	android:configChanges
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:127:13-59
+	android:name
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:126:13-91
+service#io.scoregenius.app.DelegationService
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:142:9-153:19
+	android:enabled
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:144:13-56
+	android:exported
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:145:13-57
+	android:name
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:143:13-64
 meta-data#android.support.customtabs.trusted.SMALL_ICON
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:151:13-153:69
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:146:13-148:69
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:153:17-66
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:148:17-66
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:152:17-77
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:147:17-77
 intent-filter#action:name:android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE+category:name:android.intent.category.DEFAULT
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:154:13-157:29
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:149:13-152:29
 action#android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:155:17-106
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:150:17-106
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:155:25-103
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:150:25-103
 activity#com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:160:9-114
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:155:9-157:40
+	android:exported
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:157:13-37
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:160:19-111
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:156:13-105
 meta-data#android.support.FILE_PROVIDER_PATHS
-ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:141:13-143:53
+ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:136:13-138:53
 	android:resource
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:143:17-50
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:138:17-50
 	android:name
-		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:142:17-67
+		ADDED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml:137:17-67
 uses-sdk
 INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /Users/mattb/Desktop/Projects/score-genius/frontend/app/src/main/AndroidManifest.xml
