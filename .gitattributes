@@ -1,0 +1,11 @@
+# Text normalization
+* text=auto eol=lf
+
+# Binary ML models and artifacts
+*.joblib binary
+*.pt binary
+*.pth binary
+*.h5 binary
+*.hdf5 binary
+*.npy binary
+*.npz binary

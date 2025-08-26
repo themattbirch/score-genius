@@ -1,4 +1,9 @@
-# Python
+#########################################################
+# SCOREGENIUS .gitignore
+# Covers: Python backend, Node frontend, Supabase, models
+#########################################################
+
+### Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,38 +11,43 @@ __pycache__/
 .Python
 .pytest_cache/
 .coverage
+*.coverage.*
+coverage.xml
 htmlcov/
 .tox/
 .nox/
 .hypothesis/
 
-# Virtual Environments
+### Virtual Environments
 .env
 **/.env
-.venv
+**/.env.*
+.venv/
 env/
 venv/
 ENV/
 env.bak/
-.env.development
 venv.bak/
-venv_pytorch/
+backend/venv_pytorch/
+backend/.venv/
 
-# Node/React
+### Node / Frontend
 node_modules/
 dist/
 dist-ssr/
+build/
+frontend/build
+frontend/dist
 *.local
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Editor/IDE
+### Service Worker Build
+/frontend/dist/app-sw.js
+
+### Editor / IDE
 .idea/
 .vscode/
 *.swp
@@ -45,77 +55,74 @@ yarn-error.log*
 .DS_Store
 *.sublime-workspace
 *.sublime-project
+Thumbs.db
 
-# Build outputs
-/build
-/frontend/build
-/frontend/dist
-/reports/
-/backend/possible_future_models/
-/backend/tests/
-/evaluation_plots/
-
-# Cache
-.cache/
-.parcel-cache/
-.npm
-.eslintcache
-cached_*
-.transformers/
-
-# TypeScript
+### TypeScript
 *.tsbuildinfo
 
-# Logs and databases
+### Logs & Temp
 *.log
 *.sqlite
 *.db
+/backend/server/logs/
 
-# ML and Data Files
+### Machine Learning / Data Artifacts
 *.pth
 *.pt
 *.pkl
-.pytorch/
-torch/
+*.joblib
 *.bin
 *.h5
 *.hdf5
 *.npy
 *.npz
+.pytorch/
+torch/
+/frontend/models/saved/*
 
+### Reports & Analytics
+/reports/
+/reports/*
+/backend/analytics/outputs/*
+/backend/scripts/tmp/
+/evaluation_plots/
+
+### Caching
 backend/caching/data/*
 !backend/caching/*.py
 
-backend/analytics/outputs/*
-!backend/analytics/*.py
-
-# Keep source code files
+### Keep source files, drop generated
 !backend/routers/*.py
 !backend/src/scripts/*.py
 !backend/utils/*.py
 !backend/*.py
 
-# Jupyter Notebooks
+### Notebooks
 .ipynb_checkpoints/
 notebooks/
 
-# Misc
-Thumbs.db
+### Certificates / Keys
 *.pem
 *.cert
+*.crt
+*.csr
 *.key
 
-# Remove /models from remote but keep locally
-#models/
-
-# Generated reports
-/reports/
-/reports
-
-# docs
-
-/frontend/docs/
-
-# Database dumps
+### Supabase & Database
+# Keep migrations, ignore dumps
 remote_dump.sql
 remote_full.sql
+*.sql
+!supabase/migrations/*.sql
+supabase/.temp/
+supabase/.cache/
+
+### Docs
+/frontend/docs/
+
+### Misc
+*.tgz
+*.tar
+*.zip
+*.bak
+*.orig
