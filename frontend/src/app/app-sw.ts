@@ -12,10 +12,12 @@ import {
   StaleWhileRevalidate,
   CacheFirst,
   NetworkFirst,
+  NetworkOnly,
 } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { enable as enableNavigationPreload } from "workbox-navigation-preload";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
+import type { HTTPMethod } from "workbox-routing/utils/constants";
 
 const OFFLINE_URL = "/app/offline.html";
 const PAGE_CACHE = "pages-cache-v1";
@@ -34,10 +36,8 @@ cleanupOutdatedCaches();
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
-      // keep your existing skipWaiting if you like
       try {
         const cache = await caches.open(PAGE_CACHE);
-        // ensure canonical entry matches your launch URL (/app/)
         await cache.add(new Request("/app/", { cache: "reload" }));
       } catch {}
       self.skipWaiting?.();
@@ -45,15 +45,12 @@ self.addEventListener("install", (event) => {
   );
 });
 
-// Enable nav preload once SW activates
 self.addEventListener("activate", (event: ExtendableEvent) => {
   event.waitUntil(
     (async () => {
       try {
         enableNavigationPreload();
-      } catch {
-        // no-op if unsupported
-      }
+      } catch {}
       await self.clients.claim();
     })()
   );
@@ -65,16 +62,28 @@ const pageStrategy = new NetworkFirst({
   networkTimeoutSeconds: 3,
   plugins: [
     new CacheableResponsePlugin({ statuses: [200] }),
-    {
-      handlerDidError: async () => await matchPrecache(OFFLINE_URL),
-    },
+    { handlerDidError: async () => await matchPrecache(OFFLINE_URL) },
   ],
 });
 
 // -----------------------------------------------------------------------------
-// Navigation requests → NetworkFirst → cached shell → offline fallback
+// Explicitly bypass/cordon off Supabase (no caching, no fallbacks)
+// Define BEFORE setCatchHandler since we reference it there.
 // -----------------------------------------------------------------------------
-// Prefer nav-preload; otherwise use your NetworkFirst strategy; always return a Response
+const isSupabaseHost = (h: string) =>
+  h.endsWith(".supabase.co") || h.endsWith(".supabase.in");
+
+const matchSupabase = ({ url }: { url: URL }) => isSupabaseHost(url.hostname);
+
+const supabaseMethods: HTTPMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+supabaseMethods.forEach((method) => {
+  registerRoute(matchSupabase, new NetworkOnly(), method);
+});
+
+// -----------------------------------------------------------------------------
+// Navigation → NetworkFirst → cached shell → offline fallback
+// -----------------------------------------------------------------------------
 registerRoute(
   ({ request }) => request.mode === "navigate",
   async (ctx): Promise<Response> => {
@@ -82,7 +91,6 @@ registerRoute(
       preloadResponse?: Promise<Response>;
     };
 
-    // 1) Try navigation preload (when enabled)
     try {
       if (fe.preloadResponse) {
         const preload = await fe.preloadResponse;
@@ -90,12 +98,10 @@ registerRoute(
       }
     } catch {}
 
-    // 2) Your existing strategy
     try {
       return (await pageStrategy.handle(ctx as any)) as Response;
     } catch {}
 
-    // 3) Guaranteed fallback (precached offline), else a hard Response
     const offline = await matchPrecache(OFFLINE_URL);
     return (
       offline ||
@@ -122,7 +128,7 @@ registerRoute(
   assetStrategy
 );
 
-// Images (add guard)
+// Images
 registerRoute(
   ({ request }) => request.destination === "image",
   new CacheFirst({
@@ -134,7 +140,7 @@ registerRoute(
   })
 );
 
-// API (add guard too)
+// Same-origin API guard
 registerRoute(
   ({ url }) => url.pathname.startsWith("/api/"),
   new NetworkFirst({
@@ -161,28 +167,27 @@ self.addEventListener("message", (event) => {
 });
 
 // -----------------------------------------------------------------------------
-// Global catch-all: fall back to cached assets or images when possible
+// Global catch-all with Supabase carve-out
 // -----------------------------------------------------------------------------
 setCatchHandler(async ({ request }) => {
-  // Try cached JS/CSS/workers
+  // Never return HTML for Supabase failures
+  try {
+    const url = new URL(request.url);
+    if (isSupabaseHost(url.hostname)) return Response.error();
+  } catch {}
+
   if (["script", "style", "worker"].includes(request.destination)) {
     const cache = await caches.open(ASSET_CACHE);
     const res = await cache.match(request);
-    if (res) {
-      return res;
-    }
+    if (res) return res;
   }
 
-  // Try cached images
   if (request.destination === "image") {
     const cache = await caches.open(IMG_CACHE);
     const res = await cache.match(request);
-    if (res) {
-      return res;
-    }
+    if (res) return res;
   }
 
-  // Always return a Response here
   const fallback = await matchPrecache(OFFLINE_URL);
   return (
     fallback ||
