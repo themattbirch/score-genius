@@ -6,9 +6,7 @@ import type { Sport, ValueEdge, EdgeTier } from "@/types";
 /* Odds & Probability Utilities                                  */
 /* ------------------------------------------------------------ */
 
-/**
- * American odds → implied prob (0..1). Returns null on bad input.
- */
+/** American odds → implied prob (0..1). Returns null on bad input. */
 export function americanToProb(
   odds: number | string | null | undefined
 ): number | null {
@@ -19,10 +17,7 @@ export function americanToProb(
   return -n / (-n + 100);
 }
 
-/**
- * Two-way de-vig: normalize raw probs so they sum to 1.
- * If either is missing, returns nulls.
- */
+/** Two-way de-vig: normalize raw probs so they sum to 1. */
 export function devigTwoWay(
   pA: number | null,
   pB: number | null
@@ -56,10 +51,6 @@ export function stdNormCDF(x: number): number {
 /* Model Controls                                                */
 /* ------------------------------------------------------------ */
 
-/**
- * Sport-specific margin standard deviation for a single game.
- * Tunable constants — adjust as you gather data.
- */
 export function marginSigma(sport: Sport): number {
   switch (sport) {
     case "NFL":
@@ -73,7 +64,6 @@ export function marginSigma(sport: Sport): number {
   }
 }
 
-/** Clamp a number to a closed interval [lo, hi]. */
 function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
 }
@@ -89,21 +79,39 @@ function payoutFromAmerican(
 }
 
 /* ------------------------------------------------------------ */
-/* Edge Tiering (Moneyline MVP)                                  */
+/* Tiering & Confidence                                          */
 /* ------------------------------------------------------------ */
 /**
- * Tighter thresholds to reduce noise:
- * - HIGH: edge ≥ 5.0% and z ≥ 0.90
- * - MED : edge ≥ 3.0% and z ≥ 0.60
- * - LOW : edge ≥ 1.0% and z ≥ 0.30
+ * Thresholds:
+ * - HIGH: edge ≥ 5.0% and zTier ≥ 0.90
+ * - MED : edge ≥ 2.0% and zTier ≥ 0.60
+ * - LOW : edge ≥ 0.5% and zTier ≥ 0.30
  */
-export function tierFrom(edgePct: number, z: number): EdgeTier | null {
+export function tierFrom(edgePct: number, zTier: number): EdgeTier | null {
   const e = Math.abs(edgePct);
-  const zz = Math.abs(z);
+  const zz = Math.abs(zTier);
   if (e >= 5.0 && zz >= 0.9) return "HIGH";
   if (e >= 2.0 && zz >= 0.6) return "MED";
   if (e >= 0.5 && zz >= 0.3) return "LOW";
   return null;
+}
+
+/** Pick’em-aware confidence used for tiering (balanced). */
+function zForTiering(x: number): number {
+  // x = margin / sigma
+  const zDisplay = Math.abs(x);
+  const pickemBoost = Math.exp(-0.5 * x * x); // ∈ (0,1], peaks at 1 when x≈0
+  // Blended confidence: coin-flip gets a nudge, but doesn't jump tiers easily.
+  return 0.6 * zDisplay + 0.4 * pickemBoost;
+}
+
+/** Light EV guardrails: keep MED/HIGH meaningful, don't over-filter LOW. */
+function applyEvGuard(tier: EdgeTier | null, ev: number): EdgeTier | null {
+  if (!tier) return null;
+  if (tier === "HIGH" && ev < 0.012) tier = "MED"; // < +1.2% EV → MED
+  if (tier === "MED" && ev < 0.005) tier = "LOW"; // < +0.5%  EV → LOW
+  if (tier === "LOW" && ev < 0.001) return null; // < +0.1%  EV → No Edge
+  return tier;
 }
 
 /* ------------------------------------------------------------ */
@@ -119,7 +127,7 @@ type EdgeInputs = {
   mlHome?: number | string | null;
   mlAway?: number | string | null;
 
-  // spread fields may come through; ignored in ML MVP
+  // (ignored for ML MVP)
   spreadHomeLine?: number | null;
   spreadHomePrice?: number | string | null;
   spreadAwayPrice?: number | string | null;
@@ -127,11 +135,7 @@ type EdgeInputs = {
 
 /**
  * Compute Moneyline Edge only. Returns the stronger positive-EV side if it
- * also meets tier thresholds; otherwise returns null (no badge).
- *
- * - Model prob: Φ(margin/σ), clamped to [0.01, 0.99] for stability.
- * - Market (vig-free) probs: devigTwoWay(americanToProb(H), americanToProb(A)).
- * - Selection: rank by EV per $1 stake, break ties with edgePct then z.
+ * meets tier thresholds (with EV guardrails); otherwise null (no badge).
  */
 export function computeBestEdge({
   sport,
@@ -145,9 +149,10 @@ export function computeBestEdge({
   // Model margin & volatility
   const margin = Number(predHome) - Number(predAway);
   const sigma = marginSigma(sport);
+  const x = margin / sigma;
 
   // Model win probabilities (clamped for stability)
-  const rawModelPH = stdNormCDF(margin / sigma);
+  const rawModelPH = stdNormCDF(x);
   const modelPH = clamp(rawModelPH, 0.01, 0.99);
   const modelPA = 1 - modelPH;
 
@@ -157,20 +162,20 @@ export function computeBestEdge({
   const [mktPH, mktPA] = devigTwoWay(mlPH_raw, mlPA_raw);
   if (mktPH == null || mktPA == null) return null;
 
-  // Payouts for EV calculation (use actual book odds, not vig-free)
+  // Payouts for EV calculation (use actual book odds)
   const payH = payoutFromAmerican(mlHome ?? null);
   const payA = payoutFromAmerican(mlAway ?? null);
   if (payH == null || payA == null) return null;
 
-  // Edge % (model - market), in percentage points
+  // Edge % (model − market), in percentage points
   const homeEdgePct = (modelPH - mktPH) * 100;
   const awayEdgePct = (modelPA - mktPA) * 100;
 
-  // Confidence proxy: standardized distance from coin-flip
-  const zML = Math.abs(margin) / sigma;
+  // z values
+  const zDisplay = Math.abs(x); // shown in tooltip
+  const zTier = zForTiering(x); // used for gating/tiers
 
-  // Expected Value per $1 stake
-  // EV = p * payout - (1 - p), where payout is net profit if the bet wins.
+  // Expected Value per $1 stake: EV = p * payout − (1 − p)
   const evHome = modelPH * payH - (1 - modelPH);
   const evAway = modelPA * payA - (1 - modelPA);
 
@@ -179,7 +184,8 @@ export function computeBestEdge({
     edgePct: number;
     modelProb: number;
     marketProb: number;
-    z: number;
+    zDisplay: number;
+    zTier: number;
     ev: number;
   };
 
@@ -189,7 +195,8 @@ export function computeBestEdge({
       edgePct: homeEdgePct,
       modelProb: modelPH,
       marketProb: mktPH,
-      z: zML,
+      zDisplay,
+      zTier,
       ev: evHome,
     },
     {
@@ -197,25 +204,28 @@ export function computeBestEdge({
       edgePct: awayEdgePct,
       modelProb: modelPA,
       marketProb: mktPA,
-      z: zML,
+      zDisplay,
+      zTier,
       ev: evAway,
     },
   ];
 
-  // Choose the side with the highest EV; break ties by edgePct then z.
+  // Choose the side with the highest EV; break ties by edgePct then zDisplay.
   candidates.sort((a, b) => {
     if (b.ev !== a.ev) return b.ev - a.ev;
     if (Math.abs(b.edgePct) !== Math.abs(a.edgePct))
       return Math.abs(b.edgePct) - Math.abs(a.edgePct);
-    return Math.abs(b.z) - Math.abs(a.z);
+    return Math.abs(b.zDisplay) - Math.abs(a.zDisplay);
   });
 
   const best = candidates[0];
 
-  // Gate: must be positive EV AND meet tier thresholds to reduce noise
+  // Must be positive EV to even consider
   if (best.ev <= 0) return null;
 
-  const tier = tierFrom(best.edgePct, best.z);
+  // Base tier by (edgePct, zTier), then apply EV guard
+  let tier = tierFrom(best.edgePct, best.zTier);
+  tier = applyEvGuard(tier, best.ev);
   if (!tier) return null;
 
   const result: ValueEdge = {
@@ -224,7 +234,7 @@ export function computeBestEdge({
     edgePct: best.edgePct,
     modelProb: best.modelProb,
     marketProb: best.marketProb,
-    z: best.z,
+    z: best.zDisplay, // tooltip shows the pure standardized distance
     tier,
   };
 
