@@ -59,7 +59,7 @@ self.addEventListener("activate", (event: ExtendableEvent) => {
 // Reuse existing strategy but prefer the preloaded response
 const pageStrategy = new NetworkFirst({
   cacheName: PAGE_CACHE,
-  networkTimeoutSeconds: 3,
+  networkTimeoutSeconds: 8, // was 3
   plugins: [
     new CacheableResponsePlugin({ statuses: [200] }),
     { handlerDidError: async () => await matchPrecache(OFFLINE_URL) },
@@ -82,7 +82,7 @@ supabaseMethods.forEach((method) => {
 });
 
 // -----------------------------------------------------------------------------
-// Navigation → NetworkFirst → cached shell → offline fallback
+// Navigation → NetworkFirst → cached shell (/app/) → offline fallback
 // -----------------------------------------------------------------------------
 registerRoute(
   ({ request }) => request.mode === "navigate",
@@ -91,6 +91,7 @@ registerRoute(
       preloadResponse?: Promise<Response>;
     };
 
+    // Prefer navigation preload (reduces first-load races)
     try {
       if (fe.preloadResponse) {
         const preload = await fe.preloadResponse;
@@ -98,10 +99,22 @@ registerRoute(
       }
     } catch {}
 
+    // Try normal NetworkFirst
     try {
-      return (await pageStrategy.handle(ctx as any)) as Response;
+      const res = (await pageStrategy.handle(ctx as any)) as
+        | Response
+        | undefined;
+      if (res) return res;
     } catch {}
 
+    // NEW: fallback to cached app shell so SPA can render deep links
+    try {
+      const cache = await caches.open(PAGE_CACHE);
+      const shell = await cache.match("/app/");
+      if (shell) return shell;
+    } catch {}
+
+    // Last resort: offline page
     const offline = await matchPrecache(OFFLINE_URL);
     return (
       offline ||
