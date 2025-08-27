@@ -1381,6 +1381,14 @@ def generate_predictions(
     _log_df(scores_df, "scores_df", debug_mode)
 
     final_df = upcoming_df.set_index("game_id", drop=False)
+    if "game_id" in scores_df.columns:
+        scores_df = scores_df.set_index("game_id", drop=False)
+
+    # 🔧 normalize index dtypes to avoid KeyError
+    final_df.index  = final_df.index.astype(str)
+    scores_df.index = scores_df.index.astype(str)
+
+    # now safe to assign
     final_df.loc[scores_df.index, "predicted_home_score"] = scores_df["predicted_home_score"]
     final_df.loc[scores_df.index, "predicted_away_score"] = scores_df["predicted_away_score"]
 

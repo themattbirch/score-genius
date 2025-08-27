@@ -398,7 +398,7 @@ def transform(
             return pd.DataFrame(columns=["game_id"])
 
         # Pre-game rolling per group (team or team+season)
-        group_keys = ["team_id"]
+        group_keys = ["team_id", "season"] if reset_by_season else ["team_id"]
         team = _rolling_pre_game(
             df_team=team,
             group_keys=group_keys,
@@ -407,23 +407,77 @@ def transform(
             min_prior_games=min_prior_games,
         )
 
-        # Keep rows for games in the current season chunk only
-        season_game_ids = set(spine["game_id"].unique().tolist())
-        team_chunk = team.loc[team["game_id"].isin(season_game_ids)].copy()
-
-        if team_chunk.empty:
-            logger.warning("ENGINE:drive no matching team rows for season chunk; returning empty.")
-            return pd.DataFrame(columns=["game_id"])
-
-        # Aggregate to game level
+        # After _rolling_pre_game(...) has produced rolling columns like <metric>_avg
         metrics_avg = [f"{m}_avg" for m in metrics_available]
-        game_level = _aggregate_to_game_level(
-            df_team=team_chunk,
-            spine=spine,
-            metrics_avg=metrics_avg,
-            make_totals=True,
-            make_diffs=True,
-        )
+
+        # Base frame (one row per game)
+        base = spine[["game_id", "ts_utc", "home_team_id", "away_team_id"]].drop_duplicates("game_id").copy()
+
+        # Normalize IDs to strings for robust joins
+        base["home_team_id"] = base["home_team_id"].astype(str)
+        base["away_team_id"] = base["away_team_id"].astype(str)
+
+        team_asof = team.copy()
+        team_asof["team_id"] = team_asof["team_id"].astype(str)
+        team_asof = team_asof.sort_values(["team_id", "ts_utc"])
+
+        # Columns we’ll pull from the team-time series
+        pull_cols = ["team_id", "ts_utc", "drive_prior_games_capped", "drive_low_sample_any"] + metrics_avg
+        team_asof = team_asof[pull_cols]
+
+        def _asof_side(side: str) -> pd.DataFrame:
+            # Build left keys: game ts + the side’s team_id
+            left = base[["game_id", "ts_utc", f"{side}_team_id"]].rename(columns={f"{side}_team_id": "team_id"}).copy()
+            left = left.sort_values(["team_id", "ts_utc"])
+
+            # As-of join: last known rolling averages at/just before kickoff
+            merged = pd.merge_asof(
+                left,
+                team_asof.sort_values(["team_id", "ts_utc"]),
+                by="team_id",
+                left_on="ts_utc",
+                right_on="ts_utc",
+                direction="backward",           # <= kickoff
+                allow_exact_matches=True,
+            )
+
+            # Suffix columns with side
+            out = merged.drop(columns=["ts_utc"])
+            rename_map = {}
+            # reliability
+            rename_map["drive_prior_games_capped"] = f"drive_{side}_prior_games"
+            rename_map["drive_low_sample_any"]     = f"drive_{side}_low_sample"
+
+            # metrics
+            for m in metrics_avg:
+                base_name = m.replace("_avg", "")       # e.g. drive_points_per_drive
+                suffix    = base_name.split("drive_", 1)[-1]
+                rename_map[m] = f"drive_{side}_{suffix}_avg"
+
+            out = out.rename(columns=rename_map)
+            return out.drop(columns=["team_id"], errors="ignore")
+
+        home_asof = _asof_side("home")
+        away_asof = _asof_side("away")
+
+        # Merge sides back to game-level
+        game_level = base[["game_id"]].merge(home_asof, on="game_id", how="left").merge(away_asof, on="game_id", how="left")
+
+        # Totals & diffs
+        for m in metrics_available:
+            suffix = m.split("drive_", 1)[-1]
+            h = f"drive_home_{suffix}_avg"
+            a = f"drive_away_{suffix}_avg"
+            if h in game_level.columns and a in game_level.columns:
+                game_level[f"drive_total_{suffix}_avg"] = game_level[h].fillna(0) + game_level[a].fillna(0)
+                game_level[f"drive_{suffix}_avg_diff"]  = game_level[h].fillna(0) - game_level[a].fillna(0)
+
+        # Cast reliability flags to ints
+        for c in game_level.columns:
+            if c.endswith("_low_sample"):
+                game_level[c] = game_level[c].fillna(0).astype(int)
+            if c.endswith("_prior_games"):
+                game_level[c] = game_level[c].fillna(0).astype(int)
 
         # Enforce one row per game_id
         if game_level.duplicated("game_id").any():

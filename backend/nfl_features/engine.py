@@ -13,7 +13,6 @@ Key behaviors:
 
 from __future__ import annotations
 
-import logging
 import time
 import re
 from inspect import signature
@@ -21,6 +20,13 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+
+from sqlalchemy import create_engine, text, bindparam
+from sqlalchemy.exc import NoSuchModuleError
+import os
+
+import logging
+log = logging.getLogger(__name__)
 
 # --- Supabase safe client loader ------------------------------------------------
 try:
@@ -203,6 +209,134 @@ def _canon(df: pd.DataFrame) -> pd.DataFrame:
 
     return out
 
+def create_pg_engine_safely(db_url_env: str | None = None):
+    """
+    Create a SQLAlchemy engine for Postgres.
+    - Normalizes 'postgres://' -> 'postgresql://'
+    - Tries bare 'postgresql://' first (auto-uses installed DBAPI)
+    - If the DBAPI isn't found, retries with 'postgresql+psycopg2://'
+    """
+    raw = db_url_env or os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+    if not raw:
+        raise RuntimeError("No DATABASE_URL/SUPABASE_DB_URL provided")
+
+    # Normalize deprecated scheme (common in Supabase strings)
+    url = raw.replace("postgres://", "postgresql://", 1)
+
+    # If user already supplied an explicit driver (e.g., postgresql+psycopg2://), use as-is
+    if "postgresql+" in url:
+        return create_engine(url)
+
+    # Try with whatever DBAPI SQLAlchemy finds (requires an installed driver)
+    try:
+        return create_engine(url)
+    except NoSuchModuleError as e:
+        # Likely no driver installed for 'postgresql://'
+        log.warning("No Postgres DBAPI found for URL '%s' (%s). Retrying with psycopg2...", url, e)
+
+    # Fallback: force psycopg2
+    forced = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return create_engine(forced)
+
+def _build_kickoff_bounds(df: pd.DataFrame) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    """
+    Try to derive a UTC time window [lo, hi] from season_games.
+    """
+    ts = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
+
+    if "scheduled_time" in df.columns:
+        try:
+            ts = pd.to_datetime(df["scheduled_time"], errors="coerce", utc=True).fillna(ts)
+        except Exception:
+            pass
+
+    if "kickoff_ts" in df.columns:
+        try:
+            kt = pd.to_datetime(df["kickoff_ts"], errors="coerce", utc=True)
+            ts = ts.fillna(kt)
+        except Exception:
+            pass
+
+    if ts.isna().all() and ("game_date" in df.columns):
+        date_str = df.get("game_date").astype(str)
+        time_str = df.get("game_time", pd.Series("00:00:00", index=df.index)).astype(str)
+        combo = (date_str + " " + time_str).str.strip()
+        try:
+            et = pd.to_datetime(combo, errors="coerce").dt.tz_localize(
+                "America/New_York", ambiguous="infer", nonexistent="shift_forward"
+            )
+            ts = et.dt.tz_convert("UTC")
+        except Exception:
+            pass
+
+    if ts.notna().any():
+        lo = ts.min() - pd.Timedelta(days=7)
+        hi = ts.max() + pd.Timedelta(days=7)
+        return lo, hi
+    return None, None
+
+def fetch_team_snapshot_weather(engine) -> pd.DataFrame:
+    """
+    Pulls team-level snapshot rows from public.weather_forecast_snapshots for NFL.
+    Expected columns: team_name_norm, temperature_f, humidity_pct, wind_speed_mph, wind_deg
+    """
+    table = "public.weather_forecast_snapshots"
+    cols = """
+        team_name_norm,
+        temperature_f,
+        humidity_pct,
+        wind_speed_mph,
+        wind_deg
+    """
+    q = text(f"""
+        SELECT {cols}
+        FROM {table}
+        WHERE sport = 'NFL'
+        ORDER BY team_name_norm, COALESCE(temperature_f, NULL) NULLS LAST
+    """)
+    try:
+        with engine.begin() as conn:
+            df = pd.read_sql_query(q, conn)
+        # Keep newest / last per team_name_norm (the ORDER BY above is just a hint; drop_dupes is the guardrail)
+        if "team_name_norm" in df.columns:
+            df["team_name_norm"] = df["team_name_norm"].astype(str).str.strip().str.lower()
+            df = df.drop_duplicates("team_name_norm", keep="last")
+        return df
+    except Exception as e:
+        log.warning("ENGINE: snapshot weather fetch failed: %s", e)
+        return pd.DataFrame()
+
+
+# engine.py
+def fetch_latest_weather_for_games(engine, season_games: pd.DataFrame, *, live_window_days: int = 30) -> pd.DataFrame:
+    """
+    Fetch live forecasts ONLY when the target games are near 'now'.
+    Otherwise, return empty so map.py uses climo/snapshot fallbacks.
+    """
+    cols = "*"
+    table = "public.weather_nfl_latest_forecast_per_game"
+    now = pd.Timestamp.now(tz="UTC")
+
+    lo, hi = _build_kickoff_bounds(season_games)
+
+    # If we can’t infer a window, don’t fetch (prevents grabbing the whole MV).
+    if lo is None or hi is None:
+        return pd.DataFrame()
+
+    # If the latest target kickoff is clearly historical, skip live weather.
+    if hi < now - pd.Timedelta(days=live_window_days):
+        return pd.DataFrame()
+
+    with engine.begin() as conn:
+        # Strict time-window query only (no “whole MV” fallback here)
+        q = text(f"""
+            SELECT {cols}
+            FROM {table}
+            WHERE scheduled_time BETWEEN :lo AND :hi
+            ORDER BY scheduled_time
+        """)
+        df = pd.read_sql_query(q, conn, params={"lo": lo, "hi": hi})
+        return df
 
 def _bucket_for(col: str) -> str:
     c = col.lower()
@@ -276,7 +410,7 @@ class NFLFeatureEngine:
         "advanced",  # adjusted efficiency/quality signals
         "drive",     # per-drive rates
         "momentum",  # optional; after core signals
-        #"map",       # final mapping/enrichment stage, if any
+        "map",       # final mapping/enrichment stage, if any
     ]
 
     def __init__(
@@ -319,17 +453,17 @@ class NFLFeatureEngine:
         self.drive_soft_fail = bool(drive_soft_fail)
 
         self.TRANSFORMS = {
-        "situational": compute_situational_features,
-        "rest":        rest_transform,
-        "h2h":         h2h_transform,
-        "form":        form_transform,
-        "rolling":     rolling_transform,
-        "season":      season_transform,
-        "advanced":    advanced_transform,   # may be None; handled below
-        "drive":       drive_transform,      # may be None; handled below
-        "momentum":    momentum_transform,
-        # "map":       compute_map_features,
-    }
+            "situational": compute_situational_features,
+            "rest":        rest_transform,
+            "h2h":         h2h_transform,
+            "form":        form_transform,
+            "rolling":     rolling_transform,
+            "season":      season_transform,
+            "advanced":    advanced_transform,   # may be None; handled below
+            "drive":       drive_transform,      # may be None; handled below
+            "momentum":    momentum_transform,
+            "map":       compute_map_features,
+        }
 
 
         logger.info(
@@ -359,6 +493,17 @@ class NFLFeatureEngine:
 
     def _fetch_advanced_stats_via_rpc(self, season: int) -> pd.DataFrame:
         return self._fetch_data_via_rpc("rpc_get_nfl_all_advanced_stats", {"p_season": season})
+
+    # --- MAP stage helpers (optional tables/views) ----------------------------
+    def _fetch_latest_weather_table(self) -> pd.DataFrame:
+        """Expect one-most-recent forecast row per game_id."""
+        try:
+            # Use a view/materialized view that resolves to latest per game_id.
+            resp = self.supabase.table("weather_nfl_latest_forecast_per_game").select("*").execute()
+            return pd.DataFrame(resp.data or [])
+        except Exception as e:
+            logger.warning("ENGINE: weather latest fetch failed: %s", e)
+            return pd.DataFrame()
 
     # --- Main entrypoint -------------------------------------------------------
     def build_features(
@@ -440,6 +585,10 @@ class NFLFeatureEngine:
         _log_profile(recent_form_df, "recent_form_df", debug)
         _log_profile(advanced_stats_df, "advanced_stats_df", debug)
 
+        # Optional: fetch MAP inputs once (safe if empty)
+        weather_latest_prefetched = self._fetch_latest_weather_table()  # not used for map; kept for visibility only
+        _log_profile(weather_latest_prefetched, "weather_latest_prefetched", debug)
+
         # Build per-season to respect within-season chronology
         chunks: List[pd.DataFrame] = []
         for season_token in all_seasons:
@@ -481,25 +630,6 @@ class NFLFeatureEngine:
                 if fn is None:
                     logger.warning("ENGINE:%s transform not available – skipping", module.upper())
                     continue
-
-                # ---- NEW: per-module kwargs hook (season) ----
-                kw = {}
-
-                # (optional) common flags
-                if _supports_kwarg(fn, "debug"):
-                    kw["debug"] = debug
-                if _supports_kwarg(fn, "flag_imputations"):
-                    kw["flag_imputations"] = flag_imputations
-
-                # Inject season-specific safety flag only if supported
-                if module == "season" and _supports_kwarg(fn, "prefer_league_avg_if_missing"):
-                    kw["prefer_league_avg_if_missing"] = True
-
-                # If the transform wants the season series, provide it from the current working df
-                if _supports_kwarg(fn, "season") and "season" in season_games.columns:
-                    kw["season"] = season_games["season"]
-
-
 
                 # ---- Consolidated kwargs handshake (no reassign) ----
                 kw: Dict[str, Any] = {}
@@ -571,7 +701,49 @@ class NFLFeatureEngine:
                     if _supports_kwarg(fn, "soft_fail"):
                         kw["soft_fail"] = bool(soft_fail)
 
+                elif module == "map":
+                    # --- fresh per-run weather for the current working frame ---
+                    try:
+                        engine = create_pg_engine_safely()
+                    except Exception as e:
+                        logger.warning("ENGINE:MAP could not init DB engine: %s", e)
+                        engine = None
 
+                    try:
+                        if engine is not None:
+                            weather_latest_df = fetch_latest_weather_for_games(engine, season_games, live_window_days=30)
+                            snapshot_df = fetch_team_snapshot_weather(engine)  # <— NEW
+                        else:
+                            weather_latest_df = pd.DataFrame()
+                            snapshot_df = pd.DataFrame()                     # <— NEW
+                    except Exception as e:
+                        logger.warning("ENGINE:MAP weather fetch failed: %s", e)
+                        weather_latest_df = pd.DataFrame()
+                        snapshot_df = pd.DataFrame()     
+                                        # quick, high-signal diagnostics (no-op if empty)
+                    if debug:
+                        try:
+                            kick_lo, kick_hi = _build_kickoff_bounds(season_games)
+                            logger.debug("ENGINE:MAP kickoff window UTC → [%s, %s]", kick_lo, kick_hi)
+                            if not weather_latest_df.empty and "scheduled_time" in weather_latest_df.columns:
+                                st = pd.to_datetime(weather_latest_df["scheduled_time"], errors="coerce", utc=True)
+                                logger.debug("ENGINE:MAP weather rows=%d | sched[min=%s, max=%s]",
+                                             len(weather_latest_df), st.min(), st.max())
+                        except Exception:
+                            pass
+
+                    # keep ids visually consistent in downstream logs
+                    try:
+                        season_games["game_id"] = season_games["game_id"].astype(str).str.strip()
+                    except Exception:
+                        pass
+
+                    # Provide optional exogenous inputs; compute_map_features tolerates empties
+                    if _supports_kwarg(fn, "weather_latest_df") and not weather_latest_df.empty:
+                        kw["weather_latest_df"] = weather_latest_df
+                    if _supports_kwarg(fn, "snapshot_df") and not snapshot_df.empty:     # <— NEW
+                        kw["snapshot_df"] = snapshot_df
+                
                 # Call transform on the current running frame (season_games)
                 try:
                     mod_out = fn(season_games, **kw)

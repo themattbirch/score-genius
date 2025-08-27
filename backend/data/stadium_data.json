@@ -226,7 +226,8 @@
       "latitude": 33.5276,
       "longitude": -112.2626,
       "orientation": 310,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Atlanta Falcons": {
       "stadium": "Mercedes-Benz Stadium",
@@ -234,7 +235,8 @@
       "latitude": 33.7554,
       "longitude": -84.4005,
       "orientation": 90,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Baltimore Ravens": {
       "stadium": "M&T Bank Stadium",
@@ -242,7 +244,8 @@
       "latitude": 39.278,
       "longitude": -76.6227,
       "orientation": 315,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Buffalo Bills": {
       "stadium": "Highmark Stadium",
@@ -250,7 +253,8 @@
       "latitude": 42.7738,
       "longitude": -78.7869,
       "orientation": 325,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Carolina Panthers": {
       "stadium": "Bank of America Stadium",
@@ -258,7 +262,8 @@
       "latitude": 35.2259,
       "longitude": -80.8529,
       "orientation": 315,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Chicago Bears": {
       "stadium": "Soldier Field",
@@ -266,7 +271,8 @@
       "latitude": 41.8623,
       "longitude": -87.6167,
       "orientation": 0,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Cincinnati Bengals": {
       "stadium": "Paycor Stadium",
@@ -274,7 +280,8 @@
       "latitude": 39.0954,
       "longitude": -84.516,
       "orientation": 345,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Cleveland Browns": {
       "stadium": "Cleveland Browns Stadium",
@@ -282,7 +289,8 @@
       "latitude": 41.5061,
       "longitude": -81.6995,
       "orientation": 45,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Dallas Cowboys": {
       "stadium": "AT&T Stadium",
@@ -290,7 +298,8 @@
       "latitude": 32.7478,
       "longitude": -97.0929,
       "orientation": 90,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Denver Broncos": {
       "stadium": "Empower Field at Mile High",
@@ -298,7 +307,8 @@
       "latitude": 39.7439,
       "longitude": -105.0201,
       "orientation": 0,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Detroit Lions": {
       "stadium": "Ford Field",
@@ -306,7 +316,8 @@
       "latitude": 42.34,
       "longitude": -83.0456,
       "orientation": 90,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Green Bay Packers": {
       "stadium": "Lambeau Field",
@@ -314,7 +325,8 @@
       "latitude": 44.5013,
       "longitude": -88.0622,
       "orientation": 0,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Houston Texans": {
       "stadium": "NRG Stadium",
@@ -322,7 +334,8 @@
       "latitude": 29.6847,
       "longitude": -95.4107,
       "orientation": 0,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Indianapolis Colts": {
       "stadium": "Lucas Oil Stadium",
@@ -330,7 +343,8 @@
       "latitude": 39.7601,
       "longitude": -86.1639,
       "orientation": 340,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Jacksonville Jaguars": {
       "stadium": "EverBank Stadium",
@@ -338,7 +352,8 @@
       "latitude": 30.3239,
       "longitude": -81.6373,
       "orientation": 45,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Kansas City Chiefs": {
       "stadium": "Arrowhead Stadium",
@@ -346,7 +361,8 @@
       "latitude": 39.0489,
       "longitude": -94.4839,
       "orientation": 315,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Las Vegas Raiders": {
       "stadium": "Allegiant Stadium",
@@ -354,7 +370,8 @@
       "latitude": 36.0908,
       "longitude": -115.1837,
       "orientation": 0,
-      "is_indoor": false
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Los Angeles Chargers": {
       "stadium": "SoFi Stadium",
@@ -362,7 +379,8 @@
       "latitude": 33.9535,
       "longitude": -118.3392,
       "orientation": 340,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Los Angeles Rams": {
       "stadium": "SoFi Stadium",
@@ -370,7 +388,8 @@
       "latitude": 33.9535,
       "longitude": -118.3392,
       "orientation": 340,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "Miami Dolphins": {
       "stadium": "Hard Rock Stadium",
@@ -378,7 +397,8 @@
       "latitude": 25.958,
       "longitude": -80.2389,
       "orientation": 340,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Minnesota Vikings": {
       "stadium": "U.S. Bank Stadium",
@@ -386,7 +406,8 @@
       "latitude": 44.9736,
       "longitude": -93.2577,
       "orientation": 315,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "New England Patriots": {
       "stadium": "Gillette Stadium",
@@ -394,7 +415,8 @@
       "latitude": 42.0909,
       "longitude": -71.2643,
       "orientation": 345,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "New Orleans Saints": {
       "stadium": "Caesars Superdome",
@@ -402,7 +424,8 @@
       "latitude": 29.9508,
       "longitude": -90.0812,
       "orientation": 90,
-      "is_indoor": true
+      "is_indoor": true,
+      "map_surface": "turf"
     },
     "New York Giants": {
       "stadium": "MetLife Stadium",
@@ -410,7 +433,8 @@
       "latitude": 40.8135,
       "longitude": -74.0745,
       "orientation": 20,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "New York Jets": {
       "stadium": "MetLife Stadium",
@@ -418,7 +442,8 @@
       "latitude": 40.8135,
       "longitude": -74.0745,
       "orientation": 20,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Philadelphia Eagles": {
       "stadium": "Lincoln Financial Field",
@@ -426,7 +451,8 @@
       "latitude": 39.9008,
       "longitude": -75.1675,
       "orientation": 350,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Pittsburgh Steelers": {
       "stadium": "Acrisure Stadium",
@@ -434,7 +460,8 @@
       "latitude": 40.4467,
       "longitude": -80.0158,
       "orientation": 315,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "San Francisco 49ers": {
       "stadium": "Levi's Stadium",
@@ -442,7 +469,8 @@
       "latitude": 37.4033,
       "longitude": -121.9697,
       "orientation": 345,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Seattle Seahawks": {
       "stadium": "Lumen Field",
@@ -450,7 +478,8 @@
       "latitude": 47.5952,
       "longitude": -122.3316,
       "orientation": 0,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Tampa Bay Buccaneers": {
       "stadium": "Raymond James Stadium",
@@ -458,7 +487,8 @@
       "latitude": 27.9759,
       "longitude": -82.5033,
       "orientation": 0,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     },
     "Tennessee Titans": {
       "stadium": "Nissan Stadium",
@@ -466,7 +496,8 @@
       "latitude": 36.1665,
       "longitude": -86.7713,
       "orientation": 315,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "turf"
     },
     "Washington Commanders": {
       "stadium": "FedExField",
@@ -474,7 +505,8 @@
       "latitude": 38.9077,
       "longitude": -76.8645,
       "orientation": 0,
-      "is_indoor": false
+      "is_indoor": false,
+      "map_surface": "grass"
     }
   }
 }
