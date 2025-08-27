@@ -1,4 +1,3 @@
-# backend/nfl_features/drive.py
 """
 Game-level DRIVE features (leakage-safe, idempotent).
 
@@ -84,7 +83,6 @@ def _build_ts_utc(df: pd.DataFrame) -> pd.Series:
             alt_ts = pd.to_datetime(df[alt], errors="coerce", utc=True)
             ts_utc = ts_utc.fillna(alt_ts)
 
-
     # Fallback from date+time in ET
     date_str = df.get("game_date", pd.Series("", index=df.index)).astype(str)
     time_str = df.get("game_time", pd.Series("00:00:00", index=df.index)).astype(str)
@@ -153,9 +151,16 @@ def _rolling_pre_game(
     if df_team.empty:
         return df_team
 
+    # Ensure stable tie-breaker does not error on mixed dtypes
+    if "game_id" in df_team.columns:
+        df_team["game_id"] = df_team["game_id"].astype(str).str.strip()
+
     # Stable ordering by kickoff ts then game_id to break ties
+    if "ts_utc" in df_team.columns:
+        df_team["ts_utc"] = pd.to_datetime(df_team["ts_utc"], errors="coerce", utc=True)
+
     sort_cols = [c for c in ("ts_utc", "game_id") if c in df_team.columns]
-    df_team = df_team.sort_values(sort_cols).copy()
+    df_team = df_team.sort_values(sort_cols, kind="mergesort", na_position="last").copy()
 
     # Include NA keys as their own group to avoid introducing NaN via groupby
     gb = df_team.groupby(group_keys, sort=False, dropna=False)
@@ -195,15 +200,8 @@ def _rolling_pre_game(
             mask = prior_filled < int(min_prior_games)
             df_team.loc[mask, out_col] = np.nan
 
-
-
-        # Optional masking for very low samples
-        if min_prior_games and min_prior_games > 0:
-            mask = prior_filled < int(min_prior_games)
-            df_team.loc[mask, out_col] = np.nan
-
-
     return df_team
+
 
 def _aggregate_to_game_level(
     df_team: pd.DataFrame,
@@ -299,13 +297,10 @@ def _aggregate_to_game_level(
             acol = sides.get("away")
             if hcol not in out.columns or acol not in out.columns:
                 continue
-            # inside the make_totals/make_diffs loop
             if make_totals:
                 out[f"drive_total_{suffix}_avg"] = out[hcol].fillna(0) + out[acol].fillna(0)
             if make_diffs:
                 out[f"drive_{suffix}_avg_diff"] = out[hcol].fillna(0) - out[acol].fillna(0)
-
-
 
     # Cast reliability flags to int
     for c in out.columns:
@@ -315,6 +310,129 @@ def _aggregate_to_game_level(
             out[c] = out[c].fillna(0).astype(int)
 
     return out
+
+
+# -----------------------------------------------------------------------------
+# As-of join sanitation & fallback
+# -----------------------------------------------------------------------------
+
+def _sanitize_asof_inputs(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+    *,
+    debug: bool = False,
+) -> tuple[pd.DataFrame, pd.DataFrame, bool, pd.DataFrame]:
+    """
+    Canonicalize types and perform stable, strictly increasing per-group sort
+    required by pd.merge_asof(by='team_id', on='ts_utc').
+
+    Returns:
+      L_sanitized, R_sanitized, sorted_ok (bool), left_nat_stash (rows with NaT ts_utc)
+    """
+    L = left.copy()
+    R = right.copy()
+
+    # Normalize IDs
+    for df in (L, R):
+        if "team_id" in df.columns:
+            df["team_id"] = df["team_id"].astype(str).str.strip()
+
+    # Normalize timestamps
+    for df in (L, R):
+        if "ts_utc" in df.columns:
+            df["ts_utc"] = pd.to_datetime(df["ts_utc"], errors="coerce", utc=True)
+
+    # Stash LEFT NaT rows (cannot be used in asof)
+    left_nat_stash = pd.DataFrame(columns=L.columns)
+    if "ts_utc" in L.columns:
+        nat_mask = L["ts_utc"].isna()
+        if nat_mask.any():
+            left_nat_stash = L.loc[nat_mask].copy()
+            L = L.loc[~nat_mask].copy()
+
+    # Right side cannot have NaT for the ordering column
+    if "ts_utc" in R.columns:
+        R = R[R["ts_utc"].notna()].copy()
+
+    # Dedup RIGHT by (team_id, ts_utc) keep last observation
+    if {"team_id", "ts_utc"}.issubset(R.columns):
+        R = (
+            R.sort_values(["team_id", "ts_utc"], kind="mergesort")
+             .drop_duplicates(["team_id", "ts_utc"], keep="last")
+        )
+
+    # Stable sort within groups, push NaT already handled
+    if {"team_id", "ts_utc"}.issubset(L.columns):
+        L = L.sort_values(["team_id", "ts_utc"], kind="mergesort")
+
+    # Groupwise monotonic audit → decide if merge_asof is safe
+    def _is_monotonic_by_team(df: pd.DataFrame) -> bool:
+        if not {"team_id", "ts_utc"}.issubset(df.columns):
+            return False
+        for _, s in df.groupby("team_id", dropna=False)["ts_utc"]:
+            if not s.index.empty and not s.is_monotonic_increasing:
+                return False
+        return True
+
+    sorted_ok = _is_monotonic_by_team(L) and _is_monotonic_by_team(R)
+
+    if debug and not sorted_ok:
+        logger.debug("DRIVE asof: per-team monotonicity failed; will use fallback.")
+
+    return L, R, sorted_ok, left_nat_stash
+
+def _asof_fallback_vectorized(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+    cols_from_right: List[str],
+) -> pd.DataFrame:
+    """
+    Per-team vectorized "last observation <= ts_utc" without using merge_asof.
+    Assumes both frames are sanitized & sorted by ['team_id','ts_utc'].
+    """
+    if left.empty:
+        return left.copy()
+
+    # Keep only needed columns on the right side
+    keep = ["team_id", "ts_utc"] + [c for c in cols_from_right if c in right.columns]
+    R = right[keep].copy()
+    L = left[["game_id", "team_id", "ts_utc"]].copy()
+
+    out_parts = []
+    for tid, Lg in L.groupby("team_id", dropna=False, sort=False):
+        Rg = R[R["team_id"] == tid]
+        if Rg.empty:
+            # No history for this team_id → NaNs
+            blank = pd.DataFrame(index=Lg.index, columns=keep[2:], dtype=float)
+            part = pd.concat([Lg.reset_index(drop=True), blank.reset_index(drop=True)], axis=1)
+            out_parts.append(part)
+            continue
+
+        # Remove NaT from right side; left NaT will yield no match
+        Rg = Rg[Rg["ts_utc"].notna()].copy()
+        r_times = Rg["ts_utc"].to_numpy()
+        l_times = Lg["ts_utc"].to_numpy()
+        if r_times.size == 0:
+            blank = pd.DataFrame(index=Lg.index, columns=keep[2:], dtype=float)
+            part = pd.concat([Lg.reset_index(drop=True), blank.reset_index(drop=True)], axis=1)
+            out_parts.append(part)
+            continue
+
+        # Handle NaT on left explicitly: mark as invalid
+        l_is_nat = pd.isna(Lg["ts_utc"]).to_numpy()
+        idx = np.searchsorted(r_times, l_times, side="right") - 1
+        idx[l_is_nat] = -1
+        valid = idx >= 0
+
+        take = pd.DataFrame(index=Lg.index, columns=keep[2:], dtype=float)
+        if valid.any():
+            take_valid = Rg.iloc[idx[valid]][keep[2:]].to_numpy()
+            take.loc[valid, :] = take_valid
+
+        part = pd.concat([Lg.reset_index(drop=True), take.reset_index(drop=True)], axis=1)
+        out_parts.append(part)
+
+    return pd.concat(out_parts, ignore_index=True)
 
 
 # -----------------------------------------------------------------------------
@@ -384,8 +502,6 @@ def transform(
                 return uniq
             return pd.DataFrame(columns=["game_id"])
 
-
-
         # Quick audit
         _audit_rows_per_game(team)
 
@@ -411,51 +527,68 @@ def transform(
         metrics_avg = [f"{m}_avg" for m in metrics_available]
 
         # Base frame (one row per game)
-        base = spine[["game_id", "ts_utc", "home_team_id", "away_team_id"]].drop_duplicates("game_id").copy()
+        base_cols = ["game_id", "ts_utc", "home_team_id", "away_team_id"]
+        base_cols = [c for c in base_cols if c in spine.columns]
+        base = spine[base_cols].drop_duplicates("game_id").copy()
 
-        # Normalize IDs to strings for robust joins
-        base["home_team_id"] = base["home_team_id"].astype(str)
-        base["away_team_id"] = base["away_team_id"].astype(str)
+        # Normalize IDs and timestamps to avoid asof dtype issues
+        for side in ("home_team_id", "away_team_id"):
+            if side in base.columns:
+                base[side] = base[side].astype(str).str.strip()
+        if "ts_utc" in base.columns:
+            base["ts_utc"] = pd.to_datetime(base["ts_utc"], errors="coerce", utc=True)
 
         team_asof = team.copy()
-        team_asof["team_id"] = team_asof["team_id"].astype(str)
-        team_asof = team_asof.sort_values(["team_id", "ts_utc"])
+        team_asof["team_id"] = team_asof["team_id"].astype(str).str.strip()
+        if "ts_utc" in team_asof.columns:
+            team_asof["ts_utc"] = pd.to_datetime(team_asof["ts_utc"], errors="coerce", utc=True)
 
         # Columns we’ll pull from the team-time series
         pull_cols = ["team_id", "ts_utc", "drive_prior_games_capped", "drive_low_sample_any"] + metrics_avg
-        team_asof = team_asof[pull_cols]
+        team_asof = team_asof[[c for c in pull_cols if c in team_asof.columns]]
 
         def _asof_side(side: str) -> pd.DataFrame:
             # Build left keys: game ts + the side’s team_id
-            left = base[["game_id", "ts_utc", f"{side}_team_id"]].rename(columns={f"{side}_team_id": "team_id"}).copy()
-            left = left.sort_values(["team_id", "ts_utc"])
+            left_cols = ["game_id", "ts_utc", f"{side}_team_id"]
+            left_cols = [c for c in left_cols if c in base.columns]
+            if not {"game_id", "ts_utc", f"{side}_team_id"}.issubset(set(left_cols)):
+                return pd.DataFrame(columns=["game_id"])
 
-            # As-of join: last known rolling averages at/just before kickoff
-            merged = pd.merge_asof(
-                left,
-                team_asof.sort_values(["team_id", "ts_utc"]),
-                by="team_id",
-                left_on="ts_utc",
-                right_on="ts_utc",
-                direction="backward",           # <= kickoff
-                allow_exact_matches=True,
-            )
+            left = base[left_cols].rename(columns={f"{side}_team_id": "team_id"}).copy()
+
+            # Sanitize both sides; we ignore sorted_ok because we ALWAYS use the fallback now
+            L, R, _sorted_ok, left_nat_stash = _sanitize_asof_inputs(left, team_asof, debug=debug)
+
+            # Vectorized fallback: last observation <= kickoff per team_id
+            cols_from_right = [c for c in pull_cols if c not in ("team_id", "ts_utc")]
+            merged = _asof_fallback_vectorized(L, R, cols_from_right)
+
+            # Re-attach any left-side NaT rows (no right-side data)
+            if not left_nat_stash.empty:
+                nat_attach = left_nat_stash[["game_id", "team_id", "ts_utc"]].copy()
+                for col in cols_from_right:
+                    nat_attach[col] = np.nan
+                merged = pd.concat([merged, nat_attach], ignore_index=True, sort=False)
 
             # Suffix columns with side
-            out = merged.drop(columns=["ts_utc"])
-            rename_map = {}
-            # reliability
-            rename_map["drive_prior_games_capped"] = f"drive_{side}_prior_games"
-            rename_map["drive_low_sample_any"]     = f"drive_{side}_low_sample"
-
-            # metrics
+            out = merged.drop(columns=["ts_utc"], errors="ignore")
+            rename_map = {
+                "drive_prior_games_capped": f"drive_{side}_prior_games",
+                "drive_low_sample_any":     f"drive_{side}_low_sample",
+            }
             for m in metrics_avg:
-                base_name = m.replace("_avg", "")       # e.g. drive_points_per_drive
-                suffix    = base_name.split("drive_", 1)[-1]
-                rename_map[m] = f"drive_{side}_{suffix}_avg"
-
+                if m in out.columns:
+                    base_name = m.replace("_avg", "")
+                    suffix    = base_name.split("drive_", 1)[-1]
+                    rename_map[m] = f"drive_{side}_{suffix}_avg"
             out = out.rename(columns=rename_map)
+
+            # Per-side marker so you can observe path usage
+            out[f"drive_{side}_asof_fallback_used"] = np.int8(1)
+
             return out.drop(columns=["team_id"], errors="ignore")
+
+
 
         home_asof = _asof_side("home")
         away_asof = _asof_side("away")
@@ -463,7 +596,17 @@ def transform(
         # Merge sides back to game-level
         game_level = base[["game_id"]].merge(home_asof, on="game_id", how="left").merge(away_asof, on="game_id", how="left")
 
-        # Totals & diffs
+        # ✅ NEW: Combined game-level fallback marker (int8)
+        h = game_level["drive_home_asof_fallback_used"] if "drive_home_asof_fallback_used" in game_level.columns \
+            else pd.Series(0, index=game_level.index, dtype="int8")
+        a = game_level["drive_away_asof_fallback_used"] if "drive_away_asof_fallback_used" in game_level.columns \
+            else pd.Series(0, index=game_level.index, dtype="int8")
+
+        game_level["drive_asof_fallback_used_any"] = (
+            h.fillna(0).astype("int8") | a.fillna(0).astype("int8")
+        ).astype("int8")
+
+        # Totals & diffs (unchanged)
         for m in metrics_available:
             suffix = m.split("drive_", 1)[-1]
             h = f"drive_home_{suffix}_avg"
