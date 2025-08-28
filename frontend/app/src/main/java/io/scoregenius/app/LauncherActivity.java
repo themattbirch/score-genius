@@ -7,6 +7,8 @@ import android.animation.AnimatorListenerAdapter;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -39,6 +41,9 @@ public class LauncherActivity extends Activity {
     private boolean launched = false;
     private volatile boolean splashHeld = true;
 
+    // We will only finish() after onStop when this is true
+    private boolean attemptedExternalLaunch = false;
+
     // Timings from resources (with safe defaults)
     private int SPLASH_MIN_MS;
     private int SPLASH_EXIT_FADE_MS;
@@ -56,6 +61,9 @@ public class LauncherActivity extends Activity {
         splash.setKeepOnScreenCondition(() -> splashHeld);
 
         super.onCreate(savedInstanceState);
+
+        // Safety: black window background to avoid launcher flash between activities
+        try { getWindow().setBackgroundDrawable(new ColorDrawable(Color.BLACK)); } catch (Throwable ignored) {}
 
         // --- Load base timings ---
         SPLASH_MIN_MS             = getIntSafe(R.integer.splash_min_ms, 90);
@@ -118,10 +126,10 @@ public class LauncherActivity extends Activity {
         });
 
         if (launched) {
-            // Warm task relaunch: skip the dance
+            // Warm task relaunch: we expect Chrome/TWA to take over immediately.
             splashHeld = false;
-            new Handler(Looper.getMainLooper()).post(this::finish);
-            return;
+            // Do NOT finish immediately here; defer finish to onStop so we don't flash the launcher.
+            // We still trigger the launch path below.
         }
         launched = true;
 
@@ -145,7 +153,7 @@ public class LauncherActivity extends Activity {
                 + "fadeStart=" + fadeStart + "ms, launchAt=" + launchAt
                 + "ms, layoutMin=" + SPLASH_LAYOUT_MIN_MS + "ms");
 
-        // 3) Start overlay OUTRO (visible fade)
+        // 3) Start overlay OUTRO (visible fade) — BUT DO NOT finish here.
         h.postDelayed(() -> {
             if (contentRoot != null) {
                 contentRoot.animate()
@@ -154,34 +162,52 @@ public class LauncherActivity extends Activity {
                         .scaleY(0.98f)
                         .setDuration(outroMs)
                         .setInterpolator(AnimationUtils.loadInterpolator(this, android.R.interpolator.fast_out_linear_in))
-                        .withEndAction(this::finish)
                         .start();
-            } else {
-                finish();
             }
+            // Keep our Activity alive (black background) until Chrome/TWA is actually shown.
         }, fadeStart);
 
         // 4) Launch TWA during the tail of the fade (handoff)
         h.postDelayed(() -> {
             try {
+                attemptedExternalLaunch = true;
                 twaLauncher.launch(startUri);
+                // No transition animation — our black background + Chrome handoff is smoother
+                try { overridePendingTransition(0, 0); } catch (Throwable ignored) {}
             } catch (Throwable twaError) {
                 Log.e(TAG, "TWA launch failed; falling back to Custom Tabs", twaError);
                 try {
+                    attemptedExternalLaunch = true;
                     CustomTabsIntent cti = new CustomTabsIntent.Builder().build();
                     cti.intent.setData(startUri);
                     startActivity(cti.intent);
+                    try { overridePendingTransition(0, 0); } catch (Throwable ignored) {}
                 } catch (Throwable ctiError) {
                     Log.e(TAG, "Custom Tabs failed; falling back to ACTION_VIEW", ctiError);
-                    Intent view = new Intent(Intent.ACTION_VIEW, startUri);
-                    view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(view);
+                    try {
+                        attemptedExternalLaunch = true;
+                        Intent view = new Intent(Intent.ACTION_VIEW, startUri);
+                        view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(view);
+                        try { overridePendingTransition(0, 0); } catch (Throwable ignored) {}
+                    } catch (Throwable finalError) {
+                        // Absolute last resort: we couldn't launch anything. Finish ourselves.
+                        Log.e(TAG, "All browser handoffs failed.", finalError);
+                        finish();
+                    }
                 }
             }
-
-            // Best-effort transition; ignore if resources absent
-            try { overridePendingTransition(R.anim.sg_fade_in, R.anim.sg_fade_out); } catch (Throwable ignored) {}
         }, launchAt);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Only now do we finish the trampoline, after the external activity is visible.
+        if (attemptedExternalLaunch && !isFinishing()) {
+            try { overridePendingTransition(0, 0); } catch (Throwable ignored) {}
+            finish();
+        }
     }
 
     @Override
