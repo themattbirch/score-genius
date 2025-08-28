@@ -1,8 +1,9 @@
+# backend/nfl_features/drive.py
 """
 Game-level DRIVE features (leakage-safe, idempotent).
 
 Pipeline (per season chunk):
-  1) Enrich team-game logs with per-drive/per-play rates via `compute_drive_metrics`.
+  1) Enrich team-game logs with per-drive/per-play rates via compute_drive_metrics.
   2) Attach kickoff timestamps (UTC) and season labels from the season spine.
   3) Build *pre-game* rolling means (shift(1) → exclude current), optionally resetting by season.
   4) Aggregate to game-level:
@@ -10,7 +11,7 @@ Pipeline (per season chunk):
        - drive_<metric>_avg_diff  (home - away)
        - drive_total_<metric>_avg (home + away)
        - drive_home/away_prior_games, drive_home/away_low_sample
-  5) Return exactly one row per `game_id` with all columns prefixed `drive_` (plus the `game_id` key).
+  5) Return exactly one row per game_id with all columns prefixed drive_ (plus the game_id key).
 
 Idempotence contract:
   - No helper columns leak (any __* internal temps are dropped before return).
@@ -457,7 +458,7 @@ def transform(
       - Uses kickoff timestamps from the season spine to order games for rolling.
       - Rolling resets by season when reset_by_season=True.
       - If min_prior_games>0, *_avg values are masked to NaN when prior games are below threshold.
-      - On error and soft_fail=True, returns a sentinel frame with `drive_features_unavailable=1`.
+      - On error and soft_fail=True, returns a sentinel frame with drive_features_unavailable=1.
     """
     try:
         if games_df is None or games_df.empty:
