@@ -50,6 +50,9 @@ const HowToUseScreen: React.FC = () => {
           2xl:max-w-4xl 2xl:mx-auto 
           text-slate-800 dark:text-text-primary
           pb-[env(safe-area-inset-bottom)] space-y-10
+          pt-[calc(env(safe-area-inset-top)+1rem)]
+          sm:pt-[calc(env(safe-area-inset-top)+1.5rem)]
+          md:pt-[calc(env(safe-area-inset-top)+2rem)]
           overflow-x-hidden box-border
         `}
       >

@@ -60,28 +60,55 @@ const dalPath = path.join(
   "assetlinks.json"
 );
 
-// 1) Load once at startup; if it fails, use inline JSON as a fallback
+// 1) Load once at startup; prefer dev path when not PRODUCTION, else fallback to inline JSON.
 let dalBody = null;
-try {
-  dalBody = fs.readFileSync(dalPath, "utf8");
-  console.log("[DAL] Loaded from disk:", dalPath, "bytes:", dalBody.length);
-} catch (e) {
-  console.log("[DAL] Disk load failed, using inline fallback:", e?.message);
-  const fallback = [
-    {
-      relation: ["delegate_permission/common.handle_all_urls"],
-      target: {
-        namespace: "android_app",
-        package_name: "io.scoregenius.app",
-        sha256_cert_fingerprints: [
-          "58:E7:9D:88:2B:A6:5D:DE:F6:3B:7B:4D:09:DC:B4:80:81:E2:4F:38:7F:6D:77:93:8B:91:46:1D:23:D4:94:CA",
-          "5A:A0:9B:BD:E6:F4:04:F2:28:CF:75:6D:8B:64:0A:16:D3:4E:ED:8F:9E:27:7D:7E:8E:7D:35:C5:AE:D7:51:E3",
-        ],
-      },
-    },
-  ];
-  dalBody = JSON.stringify(fallback);
+let dalSource = null;
+const isProd = process.env.NODE_ENV === "production";
+
+// In dev, also try the frontend/public source of truth
+const devAltPath = path.resolve(
+  __dirname,
+  "../../frontend/public/.well-known/assetlinks.json"
+);
+
+const candidates = isProd ? [dalPath] : [devAltPath, dalPath];
+for (const p of candidates) {
+  try {
+    if (fs.existsSync(p)) {
+      dalBody = fs.readFileSync(p, "utf8");
+      dalSource = p;
+      break;
+    }
+  } catch {}
 }
+
+if (dalBody) {
+  console.log(
+    "[DAL] Loaded assetlinks.json",
+    `(source: ${dalSource})`,
+    "bytes:",
+    dalBody.length
+  );
+} else {
+  console.log(
+    "[DAL] Using inline fallback for assetlinks.json (no disk file found)."
+  );
+}
+// Only set the inline fallback if we truly didn't load from disk.
+const fallback = [
+  {
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: "io.scoregenius.app",
+      sha256_cert_fingerprints: [
+        "58:E7:9D:88:2B:A6:5D:DE:F6:3B:7B:4D:09:DC:B4:80:81:E2:4F:38:7F:6D:77:93:8B:91:46:1D:23:D4:94:CA",
+        "5A:A0:9B:BD:E6:F4:04:F2:28:CF:75:6D:8B:64:0A:16:D3:4E:ED:8F:9E:27:7D:7E:8E:7D:35:C5:AE:D7:51:E3",
+      ],
+    },
+  },
+];
+dalBody = JSON.stringify(fallback);
 
 // 2) Respond from memory — no filesystem at request time
 app.get("/.well-known/assetlinks.json", (req, res) => {
