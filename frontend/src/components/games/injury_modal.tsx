@@ -61,27 +61,35 @@ const InjuryModal: React.FC<InjuryModalProps> = ({
     <div
       ref={backdropRef}
       className="fixed inset-0 z-40 flex items-start justify-center
-                 pt-12 px-4 overflow-auto bg-black/60 backdrop-blur-sm"
+                 pt-12 px-4 overflow-auto bg-black/50 dark:bg-black/60 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="injury-modal-title"
       onClick={onClose}
     >
       <div
-        className="z-50 w-full max-w-lg rounded-2xl border border-border bg-panel
-                   shadow-lg ring-1 ring-white/10 flex flex-col
-                   min-h-[50vh] lg:min-h-[60vh] max-h-[90vh] overflow-hidden"
+        className="z-50 w-full max-w-lg rounded-2xl
+           border border-slate-300 dark:border-border
+           bg-white dark:bg-slate-900 text-slate-900 dark:text-text-primary
+           shadow-lg ring-1 ring-black/5 dark:ring-white/10 flex flex-col
+            min-h-[50vh] lg:min-h-[60vh] max-h-[90vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <h2 id="injury-modal-title" className="text-lg font-semibold">
+        <div
+          className="flex items-center justify-between px-6 py-4
+                border-b border-slate-200 dark:border-white/10"
+        >
+          <h2
+            id="injury-modal-title"
+            className="text-lg font-semibold text-slate-900 dark:text-text-primary"
+          >
             {league.toUpperCase()} Injury Report — {displayDate}
           </h2>
           <button
             aria-label="Close modal"
             onClick={onClose}
-            className="p-2 rounded hover:bg-white/10"
+            className="p-2 rounded hover:bg-slate-900/5 dark:hover:bg-white/10 focus-ring"
           >
             ✕
           </button>
@@ -106,10 +114,10 @@ const InjuryModal: React.FC<InjuryModalProps> = ({
         </div>
 
         {/* footer */}
-        <div className="px-6 py-3 border-t border-white/10">
+        <div className="px-6 py-3 border-t border-slate-200 dark:border-white/10">
           <button
             onClick={onClose}
-            className="w-full rounded bg-green-600 py-2 font-medium hover:bg-green-500"
+            className="w-full rounded bg-green-600 py-2 font-medium text-white hover:bg-green-500 focus-ring"
           >
             Done
           </button>

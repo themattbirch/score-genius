@@ -1,6 +1,13 @@
 // src/utils/edge.ts
 
 import type { Sport, ValueEdge, EdgeTier } from "@/types";
+/* ------------------------------------------------------------ */
+/* Strategy toggle                                              */
+/* ------------------------------------------------------------ */
+// "EV"  → Expected-value dominant (more MEDIUM, fewer LOW)
+// "DZ"  → Delta+Z combined (more NO EDGE, tight bands)
+const EDGE_STRATEGY: "EV" | "DZ" =
+  import.meta.env?.VITE_EDGE_STRATEGY === "EV" ? "EV" : "DZ";
 
 /* ------------------------------------------------------------ */
 /* Odds & Probability Utilities                                  */
@@ -78,40 +85,160 @@ function payoutFromAmerican(
   return n > 0 ? n / 100 : 100 / Math.abs(n);
 }
 
-/* ------------------------------------------------------------ */
-/* Tiering & Confidence                                          */
-/* ------------------------------------------------------------ */
-/**
- * Thresholds:
- * - HIGH: edge ≥ 5.0% and zTier ≥ 0.90
- * - MED : edge ≥ 2.0% and zTier ≥ 0.60
- * - LOW : edge ≥ 0.5% and zTier ≥ 0.30
- */
-export function tierFrom(edgePct: number, zTier: number): EdgeTier | null {
+function deadZoneFor(sport: Sport) {
+  // Sport-aware micro-filter. NFL gets a slightly looser EV floor.
+  switch (sport) {
+    case "NFL":
+      return { edge: 0.5, ev: 0.0025 };
+    case "NBA":
+      return { edge: 0.55, ev: 0.0028 };
+    case "MLB":
+      return { edge: 0.6, ev: 0.003 };
+    default:
+      return { edge: 0.55, ev: 0.0028 };
+  }
+}
+
+function isDeadZone(sport: Sport, edgePctAbs: number, ev: number): boolean {
+  const t = deadZoneFor(sport);
+  return edgePctAbs < t.edge || ev < t.ev;
+}
+
+/** Pick’em-aware confidence used for tiering (stricter near 0). */
+function zForTiering(x: number): number {
+  // Make near-pick’em less likely to pass gates by reducing the boost weight.
+  const a = Math.abs(x);
+  const pickemBoost = Math.exp(-0.5 * x * x); // (0,1], peaks at 1 when x≈0
+  return 0.75 * a + 0.25 * pickemBoost; // previously 0.6/0.4
+}
+
+/** Tiering v2 – EV-dominant (promotes MED, trims LOW). */
+function tierFromEV(
+  sport: Sport,
+  edgePct: number,
+  ev: number
+): EdgeTier | null {
   const e = Math.abs(edgePct);
-  const zz = Math.abs(zTier);
-  if (e >= 5.0 && zz >= 0.9) return "HIGH";
-  if (e >= 2.0 && zz >= 0.6) return "MED";
-  if (e >= 0.5 && zz >= 0.3) return "LOW";
+  if (isDeadZone(sport, e, ev)) return null;
+  // EV per $1 stake thresholds (sport-agnostic defaults)
+  if (ev >= 0.04 && e >= 1.8) return "HIGH"; // ≥ +4.0% EV and solid delta
+  if (ev >= 0.018 && e >= 1.0) return "MED"; // ≥ +1.8% EV
+  // Low kept meaningful; many former LOWs fall to "No Edge"
+  if (ev >= 0.006 && e >= 0.7) return "LOW"; // ≥ +0.6% EV
   return null;
 }
 
-/** Pick’em-aware confidence used for tiering (balanced). */
-function zForTiering(x: number): number {
-  // x = margin / sigma
-  const zDisplay = Math.abs(x);
-  const pickemBoost = Math.exp(-0.5 * x * x); // ∈ (0,1], peaks at 1 when x≈0
-  // Blended confidence: coin-flip gets a nudge, but doesn't jump tiers easily.
-  return 0.6 * zDisplay + 0.4 * pickemBoost;
+/** Tiering v3 – Delta + Z (more No Edge, keeps High rare). */
+function dzThresholds(sport: Sport) {
+  // Sport-aware Z gates (z = |margin| / sigma). Deltas/EV are consistent.
+  switch (sport) {
+    case "MLB":
+      return {
+        lowZ: 0.18,
+        medZ: 0.4,
+        highZ: 0.6, // ≈0.7r, 1.5r, 2.3r
+        lowΔ: 0.8,
+        medΔ: 1.8,
+        highΔ: 3.2, // % points vs market
+        lowEV: 0.003,
+        medEV: 0.012,
+        highEV: 0.02,
+      };
+    case "NBA":
+      return {
+        lowZ: 0.3,
+        medZ: 0.7,
+        highZ: 1.2, // ≈3.6, 8.4, 14.4 pts
+        lowΔ: 0.8,
+        medΔ: 1.8,
+        highΔ: 3.2,
+        lowEV: 0.003,
+        medEV: 0.012,
+        highEV: 0.02,
+      };
+    case "NFL":
+      return {
+        lowZ: 0.35,
+        medZ: 0.8,
+        highZ: 1.3, // ≈4.6, 10.4, 16.9 pts
+        lowΔ: 0.8,
+        medΔ: 1.8,
+        highΔ: 3.2,
+        lowEV: 0.003,
+        medEV: 0.012,
+        highEV: 0.02,
+      };
+    default:
+      return {
+        lowZ: 0.3,
+        medZ: 0.7,
+        highZ: 1.1,
+        lowΔ: 0.8,
+        medΔ: 1.8,
+        highΔ: 3.2,
+        lowEV: 0.003,
+        medEV: 0.012,
+        highEV: 0.02,
+      };
+  }
 }
 
-/** Light EV guardrails: keep MED/HIGH meaningful, don't over-filter LOW. */
-function applyEvGuard(tier: EdgeTier | null, ev: number): EdgeTier | null {
+function tierFromDeltaZ(
+  sport: Sport,
+  edgePct: number,
+  zDisplay: number,
+  ev: number
+): EdgeTier | null {
+  const e = Math.abs(edgePct);
+  const z = Math.abs(zDisplay);
+  if (isDeadZone(sport, e, ev)) return null;
+  const t = dzThresholds(sport);
+  // Require real separation from pick’em and sufficient delta/EV
+  if (sport === "MLB") {
+    if (e >= 3.2 && z >= 0.6 && ev >= 0.02) return "HIGH";
+    if (e >= 1.8 && z >= 0.4 && ev >= 0.012) return "MED";
+    if (e >= 0.8 && z >= 0.18 && ev >= 0.003) return "LOW";
+  } else if (sport === "NBA") {
+    if (e >= 3.2 && z >= 1.2 && ev >= 0.02) return "HIGH";
+    if (e >= 1.8 && z >= 0.7 && ev >= 0.012) return "MED";
+    if (e >= 0.8 && z >= 0.3 && ev >= 0.003) return "LOW";
+  } else {
+    // NFL + default
+    if (e >= 3.2 && z >= 1.1 && ev >= 0.02) return "HIGH";
+    if (e >= 1.6 && z >= 0.7 && ev >= 0.01) return "MED";
+    if (e >= 0.7 && z >= 0.25 && ev >= 0.0025) return "LOW";
+  }
+  return null;
+}
+
+/** EV guardrails (sport-aware): keep tiers meaningful across books/sports. */
+function applyEvGuard(
+  tier: EdgeTier | null,
+  ev: number,
+  sport: Sport
+): EdgeTier | null {
   if (!tier) return null;
-  if (tier === "HIGH" && ev < 0.012) tier = "MED"; // < +1.2% EV → MED
-  if (tier === "MED" && ev < 0.005) tier = "LOW"; // < +0.5%  EV → LOW
-  if (tier === "LOW" && ev < 0.001) return null; // < +0.1%  EV → No Edge
+  const g =
+    sport === "NFL"
+      ? { high: 0.018, med: 0.008, low: 0.0025 }
+      : { high: 0.02, med: 0.01, low: 0.003 };
+  if (tier === "HIGH" && ev < g.high) tier = "MED";
+  if (tier === "MED" && ev < g.med) tier = "LOW";
+  if (tier === "LOW" && ev < g.low) return null;
   return tier;
+}
+
+/* Helper: choose the stronger of two tiers */
+const TIER_RANK: Record<Exclude<EdgeTier, never>, number> = {
+  LOW: 1,
+  MED: 2,
+  HIGH: 3,
+} as const;
+
+function strongerTier(a: EdgeTier | null, b: EdgeTier | null): EdgeTier | null {
+  if (!a) return b ?? null;
+  if (!b) return a ?? null;
+  return TIER_RANK[a] >= TIER_RANK[b] ? a : b;
 }
 
 /* ------------------------------------------------------------ */
@@ -173,7 +300,7 @@ export function computeBestEdge({
 
   // z values
   const zDisplay = Math.abs(x); // shown in tooltip
-  const zTier = zForTiering(x); // used for gating/tiers
+  const zTier = zForTiering(x); // blended confidence for gating
 
   // Expected Value per $1 stake: EV = p * payout − (1 − p)
   const evHome = modelPH * payH - (1 - modelPH);
@@ -223,9 +350,13 @@ export function computeBestEdge({
   // Must be positive EV to even consider
   if (best.ev <= 0) return null;
 
-  // Base tier by (edgePct, zTier), then apply EV guard
-  let tier = tierFrom(best.edgePct, best.zTier);
-  tier = applyEvGuard(tier, best.ev);
+  // Tiering: compute both, prefer env strategy, but fall back to the stronger.
+  const tierEV = tierFromEV(sport, best.edgePct, best.ev);
+  const tierDZ = tierFromDeltaZ(sport, best.edgePct, best.zDisplay, best.ev);
+  const base = EDGE_STRATEGY === "EV" ? tierEV : tierDZ;
+  const alt = EDGE_STRATEGY === "EV" ? tierDZ : tierEV;
+  let tier = strongerTier(base, alt);
+  tier = applyEvGuard(tier, best.ev, sport);
   if (!tier) return null;
 
   const result: ValueEdge = {
