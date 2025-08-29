@@ -36,6 +36,11 @@ function normalizeTeamKey(teamName) {
   return teamName;
 }
 
+function getCardinal(deg) {
+  // Reuse your 16-wind rose for short labels
+  return getWindDirection(((deg % 360) + 360) % 360);
+}
+
 function getWindDirection(deg) {
   if (deg == null) return "N/A";
   const dirs = [
@@ -59,23 +64,57 @@ function getWindDirection(deg) {
   return dirs[Math.round(deg / 22.5) % 16];
 }
 
-function getRelativeWindInfo(windDeg, orientation, isIndoor) {
+function getRelativeWindInfo(windDeg, orientation, isIndoor, sport = "mlb") {
   if (isIndoor) return { text: "Indoor/N/A", angle: 0 };
   if (windDeg == null || orientation == null) return { text: "N/A", angle: 0 };
 
+  // OpenWeather 'deg' is wind coming FROM; convert to direction TO
   const windTo = (windDeg + 180) % 360;
+
+  // Delta = wind "to" vs the venue's forward axis
+  // MLB: axis = home plate -> center
+  // NFL: axis = End Zone A -> End Zone B (see note below)
   const delta = (windTo - orientation + 360) % 360;
 
-  let text;
-  if (delta < 22.5 || delta >= 337.5) text = "Blowing Out";
-  else if (delta < 67.5) text = "Out to Right";
-  else if (delta < 112.5) text = "L to R";
-  else if (delta < 157.5) text = "In from Left";
-  else if (delta < 202.5) text = "Blowing In";
-  else if (delta < 247.5) text = "In from Right";
-  else if (delta < 292.5) text = "R to L";
-  else text = "Out to Left";
+  // -----------------------------
+  // Label sets per sport
+  // -----------------------------
+  if (sport.toLowerCase() === "mlb") {
+    let text;
+    if (delta < 22.5 || delta >= 337.5) text = "Blowing Out";
+    else if (delta < 67.5) text = "Out to Right";
+    else if (delta < 112.5) text = "L to R";
+    else if (delta < 157.5) text = "In from Left";
+    else if (delta < 202.5) text = "Blowing In";
+    else if (delta < 247.5) text = "In from Right";
+    else if (delta < 292.5) text = "R to L";
+    else text = "Out to Left";
+    return { text, angle: delta };
+  }
 
+  // NFL: describe relative to end zones / crosswind
+  // Orientation = A -> B axis (e.g., North end zone → South end zone)
+  const primaryEZ = getCardinal(orientation); // e.g., "S"
+  const reverseEZ = getCardinal((orientation + 180) % 360); // e.g., "N"
+
+  let text;
+  if (delta < 22.5 || delta >= 337.5) {
+    text = `Toward ${primaryEZ} end zone`;
+  } else if (delta < 67.5) {
+    text = `Quartering toward ${primaryEZ} (L→R)`;
+  } else if (delta < 112.5) {
+    text = "Crosswind L→R";
+  } else if (delta < 157.5) {
+    text = `Quartering from ${reverseEZ} (L→R)`;
+  } else if (delta < 202.5) {
+    text = `Toward ${reverseEZ} end zone`;
+  } else if (delta < 247.5) {
+    text = `Quartering from ${reverseEZ} (R→L)`;
+  } else if (delta < 292.5) {
+    text = "Crosswind R→L";
+  } else {
+    text = `Quartering toward ${primaryEZ} (R→L)`;
+  }
   return { text, angle: delta };
 }
 
@@ -143,7 +182,8 @@ async function getWeatherDataForTeam(sport, team) {
     const relWind = getRelativeWindInfo(
       data.wind.deg,
       venue.orientation,
-      false
+      false,
+      sport
     );
 
     return {
