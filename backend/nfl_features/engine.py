@@ -522,15 +522,20 @@ class NFLFeatureEngine:
         form_lookback: int = 5,
         momentum_span: int = 5,
         h2h_max_games: int = 10,
-        # ------------ DRIVE stage controls (NEW) ------------
+        # ------------ DRIVE stage controls (accept legacy + drive_* synonyms) ------------
         window: int = 10,
         reset_by_season: bool = True,
         min_prior_games: int = 0,
         soft_fail: bool = True,
         disable_drive_stage: bool = False,
+        # synonyms (so callers like prediction.py can pass drive_* and be respected)
+        drive_window: Optional[int] = None,
+        drive_reset_by_season: Optional[bool] = None,
+        drive_min_prior_games: Optional[int] = None,
+        drive_soft_fail: Optional[bool] = None,
         # ------------ Finalization ------------
         drop_constant_cols: bool = True,
-        ) -> pd.DataFrame:
+    ) -> pd.DataFrame:
 
         if debug:
             logger.setLevel(logging.DEBUG)
@@ -542,10 +547,20 @@ class NFLFeatureEngine:
         t0 = time.time()
         logger.debug("ENGINE: build_features START | rows=%d cols=%d", *games_df.shape)
 
+        # Resolve DRIVE params: drive_* (if provided) overrides legacy names.
+        drv_window = int(drive_window if drive_window is not None else window)
+        drv_reset  = bool(drive_reset_by_season if drive_reset_by_season is not None else reset_by_season)
+        drv_minpg  = int(drive_min_prior_games if drive_min_prior_games is not None else min_prior_games)
+        drv_soft   = bool(drive_soft_fail if drive_soft_fail is not None else soft_fail)
+
         # Canonicalize
         games = _canon(games_df)
         hist_games = _canon(historical_games_df)
         hist_team_stats = historical_team_stats_df.copy()
+
+        if games["season"].isna().any():
+            missing_ct = int(games["season"].isna().sum())
+            logger.warning("ENGINE: %d rows missing 'season' after canonicalization; they will be skipped.", missing_ct)
 
         # Seasons present in this batch
         all_seasons = sorted(games["season"].dropna().unique())
@@ -588,6 +603,13 @@ class NFLFeatureEngine:
         # Optional: fetch MAP inputs once (safe if empty)
         weather_latest_prefetched = self._fetch_latest_weather_table()  # not used for map; kept for visibility only
         _log_profile(weather_latest_prefetched, "weather_latest_prefetched", debug)
+
+        # Initialize a single PG engine (used by MAP stage); tolerate failures
+        pg_engine = None
+        try:
+            pg_engine = create_pg_engine_safely()
+        except Exception as e:
+            logger.warning("ENGINE:MAP could not init DB engine: %s", e)
 
         # Build per-season to respect within-season chronology
         chunks: List[pd.DataFrame] = []
@@ -693,42 +715,36 @@ class NFLFeatureEngine:
                 elif module == "drive":
                     # Respect disable flag was handled above; pass controls if supported
                     if _supports_kwarg(fn, "window"):
-                        kw["window"] = int(window)
+                        kw["window"] = drv_window
                     if _supports_kwarg(fn, "reset_by_season"):
-                        kw["reset_by_season"] = bool(reset_by_season)
+                        kw["reset_by_season"] = drv_reset
                     if _supports_kwarg(fn, "min_prior_games"):
-                        kw["min_prior_games"] = int(min_prior_games)
+                        kw["min_prior_games"] = drv_minpg
                     if _supports_kwarg(fn, "soft_fail"):
-                        kw["soft_fail"] = bool(soft_fail)
+                        kw["soft_fail"] = drv_soft
 
                 elif module == "map":
                     # --- fresh per-run weather for the current working frame ---
                     try:
-                        engine = create_pg_engine_safely()
-                    except Exception as e:
-                        logger.warning("ENGINE:MAP could not init DB engine: %s", e)
-                        engine = None
-
-                    try:
-                        if engine is not None:
-                            weather_latest_df = fetch_latest_weather_for_games(engine, season_games, live_window_days=30)
-                            snapshot_df = fetch_team_snapshot_weather(engine)  # <— NEW
+                        if pg_engine is not None:
+                            weather_latest_df = fetch_latest_weather_for_games(pg_engine, season_games, live_window_days=30)
+                            snapshot_df = fetch_team_snapshot_weather(pg_engine)
                         else:
                             weather_latest_df = pd.DataFrame()
-                            snapshot_df = pd.DataFrame()                     # <— NEW
+                            snapshot_df = pd.DataFrame()
                     except Exception as e:
                         logger.warning("ENGINE:MAP weather fetch failed: %s", e)
                         weather_latest_df = pd.DataFrame()
-                        snapshot_df = pd.DataFrame()     
-                                        # quick, high-signal diagnostics (no-op if empty)
+                        snapshot_df = pd.DataFrame()
+
+                    # quick, high-signal diagnostics (no-op if empty)
                     if debug:
                         try:
                             kick_lo, kick_hi = _build_kickoff_bounds(season_games)
                             logger.debug("ENGINE:MAP kickoff window UTC → [%s, %s]", kick_lo, kick_hi)
                             if not weather_latest_df.empty and "scheduled_time" in weather_latest_df.columns:
                                 st = pd.to_datetime(weather_latest_df["scheduled_time"], errors="coerce", utc=True)
-                                logger.debug("ENGINE:MAP weather rows=%d | sched[min=%s, max=%s]",
-                                             len(weather_latest_df), st.min(), st.max())
+                                logger.debug("ENGINE:MAP weather rows=%d | sched[min=%s, max=%s]", len(weather_latest_df), st.min(), st.max())
                         except Exception:
                             pass
 
@@ -741,8 +757,9 @@ class NFLFeatureEngine:
                     # Provide optional exogenous inputs; compute_map_features tolerates empties
                     if _supports_kwarg(fn, "weather_latest_df") and not weather_latest_df.empty:
                         kw["weather_latest_df"] = weather_latest_df
-                    if _supports_kwarg(fn, "snapshot_df") and not snapshot_df.empty:     # <— NEW
+                    if _supports_kwarg(fn, "snapshot_df") and not snapshot_df.empty:
                         kw["snapshot_df"] = snapshot_df
+
                 
                 # Call transform on the current running frame (season_games)
                 try:
@@ -758,8 +775,8 @@ class NFLFeatureEngine:
                     continue
 
                 if mod_out is None or mod_out.empty:
-                    # TINY TWEAK already handled in _merge_and_log, but also guard here
-                    logger.info("ENGINE:%s returned empty – skipped", module.upper())
+                    if debug:
+                        logger.debug("ENGINE:%s returned empty – skipped", module.upper())
                     continue
 
                 # Merge by game_id only
