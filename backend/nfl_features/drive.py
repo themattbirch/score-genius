@@ -79,10 +79,11 @@ def _build_ts_utc(df: pd.DataFrame) -> pd.Series:
         ts_utc = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
 
     # Also accept a single ISO timestamp field that is already UTC
-    for alt in ("game_timestamp", "scheduled_time_utc"):
+    for alt in ("game_timestamp", "scheduled_time_utc", "scheduled_time"):  # ← just extend this list
         if ts_utc.isna().all() and alt in df.columns:
             alt_ts = pd.to_datetime(df[alt], errors="coerce", utc=True)
             ts_utc = ts_utc.fillna(alt_ts)
+
 
     # Fallback from date+time in ET
     date_str = df.get("game_date", pd.Series("", index=df.index)).astype(str)
@@ -132,6 +133,27 @@ def _audit_rows_per_game(df_team: pd.DataFrame) -> None:
     if not bad.empty:
         logger.warning("DRIVE_AUDIT: games with >2 team rows=%d | sample=%s", int(bad.size), bad.head(5).to_dict())
 
+def _dedupe_team_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keep one stable row per (team_id, game_id). Tie-break with ts_utc, then game_id.
+    Idempotent: if unique already, this is a no-op.
+    """
+    out = df.copy()
+    for c in ("team_id", "game_id"):
+        if c in out.columns:
+            out[c] = out[c].astype(str).str.strip()
+
+    if "ts_utc" in out.columns:
+        out["ts_utc"] = pd.to_datetime(out["ts_utc"], errors="coerce", utc=True)
+
+    sort_cols = [c for c in ("team_id", "ts_utc", "game_id") if c in out.columns]
+    if sort_cols:
+        out = out.sort_values(sort_cols, kind="mergesort")
+
+    if {"team_id", "game_id"}.issubset(out.columns):
+        out = out.drop_duplicates(["team_id", "game_id"], keep="last")
+    return out
+
 
 def _rolling_pre_game(
     df_team: pd.DataFrame,
@@ -140,63 +162,47 @@ def _rolling_pre_game(
     window: int,
     min_prior_games: int = 0,
 ) -> pd.DataFrame:
-    """
-    Compute *pre-game* rolling means for the given metrics per group (e.g., team or team+season),
-    using a 1-row shift to exclude the current game. Optionally mask low-sample rows.
-
-    Returns the original frame with new columns named f"{m}_avg", plus:
-      - drive_prior_games: count of prior games before current (per group)
-      - drive_prior_games_capped: clipped at window (nullable Int64)
-      - drive_low_sample_any: 1 if prior_games < max(3, window//2), else 0
-    """
     if df_team.empty:
         return df_team
 
-    # Ensure stable tie-breaker does not error on mixed dtypes
+    # Normalize ids and timestamps once
     if "game_id" in df_team.columns:
         df_team["game_id"] = df_team["game_id"].astype(str).str.strip()
-
-    # Stable ordering by kickoff ts then game_id to break ties
+    if "team_id" in df_team.columns:
+        df_team["team_id"] = df_team["team_id"].astype(str).str.strip()
     if "ts_utc" in df_team.columns:
         df_team["ts_utc"] = pd.to_datetime(df_team["ts_utc"], errors="coerce", utc=True)
 
-    sort_cols = [c for c in ("ts_utc", "game_id") if c in df_team.columns]
+    # Canonical, stable order (time then game_id as tiebreaker)
+    sort_cols = [c for c in ("team_id", "ts_utc", "game_id") if c in df_team.columns]
     df_team = df_team.sort_values(sort_cols, kind="mergesort", na_position="last").copy()
 
-    # Include NA keys as their own group to avoid introducing NaN via groupby
+    # Group including NaNs as their own bucket to avoid dropping rows
     gb = df_team.groupby(group_keys, sort=False, dropna=False)
 
-    # Prior games (per group) before current — cumcount is already 0-based
+    # Prior games strictly before current
     prior = gb.cumcount()
-
-    # Ensure numeric, then build capped and low-sample flags safely
     prior = pd.to_numeric(prior, errors="coerce")
     df_team["drive_prior_games"] = prior
 
-    # Treat NaN prior counts as 0 for downstream logic
     prior_filled = prior.fillna(0)
+    df_team["drive_prior_games_capped"] = prior_filled.clip(upper=window).astype("Int64")
+    df_team["drive_low_sample_any"] = (prior_filled < max(3, window // 2)).astype("int8")
 
-    # Use nullable Int64 to allow safe integer representation
-    df_team["drive_prior_games_capped"] = (
-        prior_filled.clip(upper=window).astype("Int64")
-    )
-    df_team["drive_low_sample_any"] = (
-        (prior_filled < max(3, window // 2)).astype("int8")
-    )
+    # Ensure numeric metrics before rolling
+    for m in metrics:
+        if m in df_team.columns:
+            df_team[m] = pd.to_numeric(df_team[m], errors="coerce")
 
-    # Shifted rolling mean for each metric (exclude current game via shift(1)),
-    # strictly within each group (team_id [+ season])
+    # Shift(1) to exclude current, rolling mean over available prior window
     for m in metrics:
         out_col = f"{m}_avg"
         if m not in df_team.columns:
             df_team[out_col] = np.nan
             continue
-
         df_team[out_col] = gb[m].transform(
             lambda s: s.shift(1).rolling(window=window, min_periods=1).mean()
         )
-
-        # Optional masking for very low samples
         if min_prior_games and min_prior_games > 0:
             mask = prior_filled < int(min_prior_games)
             df_team.loc[mask, out_col] = np.nan
@@ -220,7 +226,14 @@ def _aggregate_to_game_level(
     Also includes per-side sample counts/flags:
       - drive_home_prior_games, drive_home_low_sample
       - drive_away_prior_games, drive_away_low_sample
+
+    Patch-4 changes:
+      • Build HOME and AWAY frames explicitly, then merge on game_id
+        (avoids relying on .groupby(...).max() across mixed rows).
+      • If multiple rows per side slip through, keep the last by time (ts_utc) or by appearance.
+      • Ensure only drive_* columns (plus game_id) survive.
     """
+    # ---- minimal side map from schedule spine ----
     need = ["game_id"]
     if "home_team_id" in spine.columns: need.append("home_team_id")
     if "away_team_id" in spine.columns: need.append("away_team_id")
@@ -230,6 +243,9 @@ def _aggregate_to_game_level(
     for c in ("home_team_id", "away_team_id"):
         if c in side_map.columns:
             side_map[c] = _coerce_str(side_map[c])
+
+    # Keep ts_utc if it exists on team rows (helps deterministic "last" selection)
+    keep_time = "ts_utc" if "ts_utc" in df_team.columns else None
 
     df = df_team.merge(side_map, on="game_id", how="inner")
 
@@ -265,53 +281,105 @@ def _aggregate_to_game_level(
         df["is_home"] = (name_col == _coerce_str(df["home_team_norm"])).astype(int)
         df["is_away"] = (name_col == _coerce_str(df["away_team_norm"])).astype(int)
 
-    # Reliability exposures per side
-    keep_cols = ["game_id"]
-    for side in ("home", "away"):
+    # ---------------------------
+    # Build HOME / AWAY frames
+    # ---------------------------
+    # Columns produced earlier in _rolling_pre_game
+    prior_col_base = "drive_prior_games_capped"
+    low_col_base   = "drive_low_sample_any"
+
+    # Helper to build one side frame and collapse to one row per game
+    def _build_side(side: str) -> pd.DataFrame:
         mask_col = "is_home" if side == "home" else "is_away"
-        prior_col = f"drive_{side}_prior_games"
-        low_col = f"drive_{side}_low_sample"
-        df[prior_col] = np.where(df[mask_col] == 1, df["drive_prior_games_capped"], np.nan)
-        df[low_col]   = np.where(df[mask_col] == 1, df["drive_low_sample_any"],   np.nan)
-        keep_cols.extend([prior_col, low_col])
 
-    # Metric averages per side
-    side_cols_map: Dict[str, Dict[str, str]] = {}  # base -> {'home': col, 'away': col}
-    for m_avg in metrics_avg:
-        base = m_avg.replace("_avg", "")  # e.g., drive_points_per_drive
-        suffix = base.split("drive_", 1)[-1]  # e.g., points_per_drive
-        side_cols_map[suffix] = {}
-        for side in ("home", "away"):
-            mask_col = "is_home" if side == "home" else "is_away"
-            col = f"drive_{side}_{suffix}_avg"
-            df[col] = np.where(df[mask_col] == 1, df[m_avg], np.nan)
-            side_cols_map[suffix][side] = col
-            keep_cols.append(col)
+        # Base columns to carry
+        base_cols = ["game_id"]
+        if keep_time and keep_time in df.columns:
+            base_cols.append(keep_time)
 
-    # Reduce to one row per game_id
-    out = df[keep_cols].groupby("game_id", as_index=False).max(numeric_only=True)
+        # Pull prior/low flags for this side
+        take = df.loc[df[mask_col] == 1, base_cols + [prior_col_base, low_col_base] + metrics_avg].copy()
 
-    # Totals/diffs
+        if take.empty:
+            return pd.DataFrame(columns=["game_id"])
+
+        # Rename flags
+        rename_map = {
+            prior_col_base: f"drive_{side}_prior_games",
+            low_col_base:   f"drive_{side}_low_sample",
+        }
+
+        # Rename metric columns from <metric>_avg -> drive_<side>_<suffix>_avg
+        for m_avg in metrics_avg:
+            base = m_avg.replace("_avg", "")                # e.g., drive_points_per_drive
+            suffix = base.split("drive_", 1)[-1]           # e.g., points_per_drive
+            rename_map[m_avg] = f"drive_{side}_{suffix}_avg"
+
+        take.rename(columns=rename_map, inplace=True)
+
+        # If duplicates per game_id (shouldn't, but guard), keep the last by time, else last by index
+        if keep_time and keep_time in take.columns:
+            take = (
+                take.sort_values(["game_id", keep_time], kind="mergesort")
+                    .drop_duplicates("game_id", keep="last")
+            )
+            take = take.drop(columns=[keep_time], errors="ignore")
+        else:
+            take = take.drop_duplicates("game_id", keep="last")
+
+        # Cast flags to ints; leave metrics as floats
+        for c in list(take.columns):
+            if c.endswith("_low_sample"):
+                take[c] = pd.to_numeric(take[c], errors="coerce").fillna(0).astype(int)
+            if c.endswith("_prior_games"):
+                take[c] = pd.to_numeric(take[c], errors="coerce").fillna(0).astype(int)
+
+        return take
+
+    home = _build_side("home")
+    away = _build_side("away")
+
+    # Merge HOME and AWAY on game_id
+    out = pd.merge(
+        home, away, on="game_id", how="outer", validate="one_to_one"
+    ).sort_values("game_id")
+
+    # ---------------------------
+    # Totals / Diffs
+    # ---------------------------
     if make_totals or make_diffs:
-        for suffix, sides in side_cols_map.items():
-            hcol = sides.get("home")
-            acol = sides.get("away")
-            if hcol not in out.columns or acol not in out.columns:
-                continue
-            if make_totals:
-                out[f"drive_total_{suffix}_avg"] = out[hcol].fillna(0) + out[acol].fillna(0)
-            if make_diffs:
-                out[f"drive_{suffix}_avg_diff"] = out[hcol].fillna(0) - out[acol].fillna(0)
+        # infer suffixes from the provided metrics_avg list
+        suffixes = []
+        for m_avg in metrics_avg:
+            base = m_avg.replace("_avg", "")
+            suffix = base.split("drive_", 1)[-1]
+            suffixes.append(suffix)
 
-    # Cast reliability flags to int
+        # Deduplicate suffix list while preserving order
+        seen = set()
+        suffixes = [s for s in suffixes if not (s in seen or seen.add(s))]
+
+        for suffix in suffixes:
+            hcol = f"drive_home_{suffix}_avg"
+            acol = f"drive_away_{suffix}_avg"
+            if hcol in out.columns and acol in out.columns:
+                if make_totals:
+                    out[f"drive_total_{suffix}_avg"] = out[hcol].fillna(0) + out[acol].fillna(0)
+                if make_diffs:
+                    out[f"drive_{suffix}_avg_diff"] = out[hcol].fillna(0) - out[acol].fillna(0)
+
+    # Strict schema: keep only game_id + drive_* columns
+    keep = ["game_id"] + [c for c in out.columns if c != "game_id" and c.startswith("drive_")]
+    out = out[keep]
+
+    # Final flag casting safety (idempotent)
     for c in out.columns:
         if c.endswith("_low_sample"):
-            out[c] = out[c].fillna(0).astype(int)
+            out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
         if c.endswith("_prior_games"):
-            out[c] = out[c].fillna(0).astype(int)
+            out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
 
     return out
-
 
 # -----------------------------------------------------------------------------
 # As-of join sanitation & fallback
@@ -489,6 +557,9 @@ def transform(
             spine[["game_id", "ts_utc", "season"]].drop_duplicates("game_id"),
             on="game_id", how="left"
         )
+
+        # Hard de-dupe per (team_id, game_id)
+        team = _dedupe_team_rows(team)
 
         # Minimal schema checks (ts_utc is helpful but not hard-required here)
         must_have = {"game_id", "team_id"}
