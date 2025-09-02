@@ -1,31 +1,27 @@
 # backend/nfl_score_prediction/prediction.py
 """
-prediction.py – NFL Score Prediction Generation Script (with rich DEBUG logging)
+prediction.py – NFL Score Prediction Generation Script (accuracy-tuned, rich DEBUG)
 
 Pipeline:
-1. Fetch schedule (date-bounded) + historical context (lookback).
-2. Build features via NFLFeatureEngine().build_features().
-3. Load artifacts (selected features + ensemble weights + optional train stats).
-4. Optional pre-model shaping:
-    • H2H shrink toward priors (can be disabled)
-    • Gentle attenuation of volatile diff features (opt-in, tunable)
-    • Targeted clipping of outlier diffs (surgical)
-    • Mean imputation for sparse advanced features using train means (+ flags)
-5. Vectorized ensemble predictions for margin & total.
-6. Soft mean calibration (week → train priors; tunable lambdas).
-7. Feasibility guard (total ≥ |margin| + dynamic buffer).
-8. Derive home/away, clamp non-negatives, upsert, and debug dump (optional).
+1) Fetch schedule (date-bounded) + historical context (lookback).
+2) Build features via NFLFeatureEngine().build_features().
+3) Load artifacts (selected features + ensemble weights + train stats); deterministic overlay.
+4) Optional pre-model shaping:
+   • H2H shrink toward priors (week-aware k)
+   • Week-adaptive attenuation of volatile diffs (or explicit alphas)
+   • Data-driven clipping via train quantiles if available (fallback constants)
+   • Train-mean imputation for advanced features using feature_means (+ flags)
+5) Vectorized ensemble predictions for margin & total.
+6) Soft mean calibration (week-aware priors; tunable lambdas) [+ optional market blend].
+7) Contextual feasibility guard (total ≥ |margin| + buffer that respects week, dome/cold).
+8) Derive home/away, clamp non-negatives, tiny floor bump when feasibility just activates.
+9) Optional residual bias corrector from recent history (tiny ridge; guarded & capped).
+10) Upsert and/or print.
 
-CLI highlights:
-  --date-start/--date-end  : control schedule window precisely
-  --days                   : or relative window [today, today+days]
-  --no-h2h-shrink          : bypass H2H shrink
-  --atten-total-alpha      : pre-model diff attenuation for TOTAL (default 0.85)
-  --atten-margin-alpha     : pre-model diff attenuation for MARGIN (default 0.80)
-  --no-atten               : disable pre-model attenuation
-  --mean-calibration-lambda-total / --mean-calibration-lambda-margin
-  --feas-buffer-max        : cap on dynamic feasibility buffer (default 6.0)
-  --margin-cap             : hard cap for spread (default 24.0)
+CLI adds:
+  --market-w                        : blend weight toward market lines (default 0.0 off)
+  --residual-corrector / --no-residual-corrector
+  --atten-total-alpha / --atten-margin-alpha can be omitted to enable week-adaptive defaults
 """
 
 from __future__ import annotations
@@ -45,6 +41,15 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import pandas as pd
 from supabase import Client, create_client
+
+# Optional: tiny residual corrector
+try:
+    from sklearn.linear_model import RidgeCV
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import Pipeline
+    _SK_OK = True
+except Exception:
+    _SK_OK = False
 
 # Project imports
 try:
@@ -104,12 +109,10 @@ def _order_crc(cols: Sequence[str]) -> str:
 
 def _safe_int(v, default=None):
     try:
-        # pd.NA / NaN / None → default
         if v is None:
             return default
-        # Handle pandas NA/NaN
         try:
-            import pandas as pd  # local import to avoid top-level dependency here
+            import pandas as pd  # local import to avoid hard dep here
             if pd.isna(v):
                 return default
         except Exception:
@@ -180,28 +183,47 @@ def _normalize_date_str(s: Optional[str]) -> Optional[str]:
             return datetime.strptime(s.strip(), "%Y-%m-%d").date().isoformat()
         except Exception:
             return None
+        
+def _soft_mean_calibration(
+    series: pd.Series,
+    target_mean: float,
+    lam: float,
+    min_trigger: float,
+    label: str,
+    debug: bool,
+) -> pd.Series:
+    """
+    Shift a prediction series toward target_mean by lam * (target - observed)
+    if the absolute mean gap is at least min_trigger.
 
-def _is_focused_row(row: Mapping[str, Any], focus: Focus) -> bool:
-    gid = int(row.get("game_id")) if "game_id" in row and pd.notna(row.get("game_id")) else None
-    if focus.ids and gid is not None and gid in focus.ids:
-        return True
-    if focus.pairs:
-        try:
-            a = int(row.get("away_team_id"))
-            h = int(row.get("home_team_id"))
-            if (a, h) in focus.pairs:
-                return True
-        except Exception:
-            pass
-    if focus.date_str:
-        gd = row.get("game_date")
-        if isinstance(gd, (datetime, date)):
-            gd_str = gd.date().isoformat() if isinstance(gd, datetime) else gd.isoformat()
-        else:
-            gd_str = str(gd)[:10] if gd else None
-        if gd_str == focus.date_str:
-            return True
-    return False
+    No NaN filling is performed; existing NaNs are preserved.
+    """
+    if series is None or len(series) == 0 or lam <= 0.0:
+        return series
+
+    s = pd.to_numeric(series, errors="coerce")
+    if s.dropna().empty:
+        return series
+
+    obs_mean = float(s.mean())
+    delta = float(target_mean) - obs_mean
+    if abs(delta) < float(min_trigger):
+        if debug:
+            logger.debug(
+                "PRED[CAL] %s mean-calibration skipped | obs=%.2f target=%.2f (|Δ|=%.2f < %.2f)",
+                label, obs_mean, target_mean, abs(delta), min_trigger
+            )
+        return series
+
+    adjusted = s.astype(float) + float(lam) * delta
+    if debug:
+        logger.debug(
+            "PRED[CAL] %s mean-calibration | obs=%.2f → target=%.2f (λ=%.2f, Δ=%.2f)",
+            label, obs_mean, target_mean, lam, delta
+        )
+    # keep original index & dtype behavior (don’t coerce NaNs)
+    return adjusted.reindex(series.index)
+
 
 def _ensure_season_and_ids(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -243,23 +265,77 @@ def get_supabase_client() -> Optional[Client]:
         logger.error("Supabase client init failed: %s", e)
         return None
 
-def load_prediction_artifacts(model_dir: Path, debug: bool = False) -> Dict[str, Any]:
-    artifacts: Dict[str, Any] = {}
+def _load_core_artifacts(model_dir: Path, debug: bool = False) -> Dict[str, Any]:
+    """
+    Deterministic artifact loader:
+      - Always require {margin,total}_{selected_features,ensemble_weights}
+      - Overlay extras from first existing file among:
+            nfl_artifacts.json, nfl_train_artifacts.json, artifacts.json
+      - If feature_means absent, try {nfl_feature_means.json, feature_means.json}
+    """
+    out: Dict[str, Any] = {}
+
+    # Required pairs
     for target in ("margin", "total"):
         feats_path = model_dir / f"nfl_{target}_selected_features.json"
         wts_path   = model_dir / f"nfl_{target}_ensemble_weights.json"
         try:
-            feats = json.loads(feats_path.read_text())
-            wts   = json.loads(wts_path.read_text())
-            artifacts[f"{target}_features"] = feats
-            artifacts[f"{target}_weights"]  = wts
+            out[f"{target}_features"] = json.loads(feats_path.read_text())
+            out[f"{target}_weights"]  = json.loads(wts_path.read_text())
             if debug:
-                logger.debug("PRED[SETUP] %s selected features (n=%d): %s",
-                             target.upper(), len(feats), feats[:20])
+                logger.debug("PRED[ART] %s selected(n=%d) | weights(n=%d)",
+                             target.upper(), len(out[f"{target}_features"]), len(out[f"{target}_weights"]))
         except FileNotFoundError as e:
             logger.critical("Missing artifact for %s: %s", target, e)
             return {}
-    return artifacts
+
+    # Optional overlay, first file wins per key (left-to-right precedence)
+    overlay_sources = [
+        model_dir / "nfl_artifacts.json",
+        model_dir / "nfl_train_artifacts.json",
+        model_dir / "artifacts.json",
+    ]
+    overlay: Dict[str, Any] = {}
+    for p in overlay_sources:
+        try:
+            if p.exists():
+                d = json.loads(p.read_text())
+                # only set keys that aren't set yet to respect first-win
+                for k, v in d.items():
+                    if k not in overlay:
+                        overlay[k] = v
+                if debug:
+                    logger.debug("PRED[ART] overlay source used: %s (keys=%d)", p.name, len(d))
+        except Exception as e:
+            if debug:
+                logger.debug("PRED[ART] Skipping overlay %s: %s", p, e)
+
+    out.update(overlay)
+
+    # feature_means fallback file(s)
+    if not out.get("feature_means"):
+        for fname in ("nfl_feature_means.json", "feature_means.json"):
+            p = model_dir / fname
+            try:
+                if p.exists():
+                    out["feature_means"] = json.loads(p.read_text())
+                    if debug:
+                        logger.debug("PRED[ART] feature_means loaded from %s (keys=%d)", p.name, len(out["feature_means"]))
+                    break
+            except Exception as e:
+                if debug:
+                    logger.debug("PRED[ART] Could not read %s: %s", p, e)
+
+    # Final means with defaults
+    out["total_train_mean"]  = float(out.get("total_train_mean", 43.5))
+    out["margin_train_mean"] = float(out.get("margin_train_mean", 0.0))
+    out["feature_means"] = out.get("feature_means", {}) or {}
+    if debug:
+        logger.debug(
+            "PRED[ART] means: total_train_mean=%.2f margin_train_mean=%.2f | feature_means=%d keys",
+            out["total_train_mean"], out["margin_train_mean"], len(out["feature_means"])
+        )
+    return out
 
 def chunked(lst: List[Dict[str, Any]], size: int = 500):
     for i in range(0, len(lst), size):
@@ -323,70 +399,55 @@ def _clip_feature_columns(
     for col, (lo, hi) in bounds.items():
         if col not in out.columns:
             continue
-        s = out[col]
+        s = pd.to_numeric(out[col], errors="coerce")
         pre = s.copy()
         out[col] = s.clip(lower=float(lo), upper=float(hi))
         changed = (out[col] != pre) & pre.notna()
         n_changed = int(changed.sum())
         if n_changed > 0:
             clipped_stats[col] = n_changed
-            if debug and focus_ids:
+            if debug and focus_ids and "game_id" in out.columns:
                 for gid in focus_ids:
-                    mask = (out["game_id"] == gid) if "game_id" in out.columns else pd.Series(False, index=out.index)
+                    mask = (out["game_id"] == gid)
                     if mask.any():
-                        pre_v = float(pre.loc[mask].iloc[0]) if pd.notna(pre.loc[mask].iloc[0]) else None
-                        post_v = float(out.loc[mask, col].iloc[0]) if pd.notna(out.loc[mask, col].iloc[0]) else None
-                        if pre_v != post_v:
+                        pre_v = pre.loc[mask].iloc[0]
+                        post_v = out.loc[mask, col].iloc[0]
+                        if pd.notna(pre_v) and pd.notna(post_v) and float(pre_v) != float(post_v):
                             logger.debug("PRED[CLIP] game_id=%s %s: %.3f → %.3f (lo=%.2f hi=%.2f)",
-                                         gid, col, pre_v, post_v, lo, hi)
+                                         gid, col, float(pre_v), float(post_v), lo, hi)
 
     if debug:
-        if clipped_stats:
-            logger.debug("PRED[CLIP] counts=%s", clipped_stats)
-        else:
-            logger.debug("PRED[CLIP] counts={} (no clipping applied)")
+        logger.debug("PRED[CLIP] counts=%s", clipped_stats or {})
     return out
 
 def _attenuate_total_diffs(
     X_total: pd.DataFrame,
     alpha: float = 0.85,
     debug: bool = False,
-    focus_ids: Optional[Set[int]] = None
 ) -> pd.DataFrame:
-    """
-    Scale down high-variance diff features that can suppress totals if too spiky.
-    Only applied when alpha < 1.0. Uses a short, truly-diff list.
-    """
     if X_total is None or X_total.empty or not (alpha < 1.0):
         return X_total
     diffs = [
         "rolling_points_for_avg_diff",
         "rolling_points_against_avg_diff",
         "rolling_yards_per_play_avg_diff",
-        # Note: intentionally NOT including any 'total_*' sums here
     ]
     cols = [c for c in diffs if c in X_total.columns]
     if not cols:
         return X_total
     X = X_total.copy()
-    idx = X.index if focus_ids is None else [i for i in X.index if i in focus_ids]
-    if len(idx) == 0:
-        return X
-    X.loc[idx, cols] = X.loc[idx, cols] * float(alpha)
+    X.loc[:, cols] = X.loc[:, cols] * float(alpha)
     if debug:
-        logger.debug("PRED[ATTN] TOTAL diffs scaled by alpha=%.2f on %d rows, cols=%s", alpha, len(idx), cols)
+        logger.debug("PRED[ATTN] TOTAL diffs scaled by alpha=%.2f, cols=%s", alpha, cols)
     return X
 
 def _attenuate_margin_diffs(
     X: pd.DataFrame,
-    alpha: float = 0.6,         # try 0.6 first; drop to 0.5 if still spiky
+    alpha: float = 0.6,
     debug: bool = False,
-    focus_ids: Optional[Set[int]] = None,
 ) -> pd.DataFrame:
-    """Scale down high-variance diff features only for MARGIN model input."""
     if X is None or X.empty:
         return X
-
     cols = [
         "rolling_points_for_avg_diff",
         "rolling_points_against_avg_diff",
@@ -398,31 +459,12 @@ def _attenuate_margin_diffs(
     existing = [c for c in cols if c in X.columns]
     if not existing:
         return X.copy()
-
     X2 = X.copy()
-
-    # Always use a list to avoid ambiguous truth-value errors with pd.Index
-    if focus_ids:
-        target_idx = [gid for gid in X2.index.tolist() if gid in focus_ids]
-    else:
-        target_idx = X2.index.tolist()
-
-    if len(target_idx) == 0:
-        return X2
-
-    # Attenuate diffs
-    X2.loc[target_idx, existing] = X2.loc[target_idx, existing] * float(alpha)
-
-    # Tighter h2h cap for margin (these can be wild early season)
+    X2.loc[:, existing] = X2.loc[:, existing] * float(alpha)
     if "h2h_avg_point_diff" in X2.columns:
-        lo, hi = -7.0, 7.0
-        X2.loc[target_idx, "h2h_avg_point_diff"] = X2.loc[target_idx, "h2h_avg_point_diff"].clip(lo, hi)
-
+        X2.loc[:, "h2h_avg_point_diff"] = X2["h2h_avg_point_diff"].clip(-7.0, 7.0)
     if debug:
-        logger.debug(
-            "PRED[ATTN][MARGIN] diffs scaled by alpha=%.2f on %d rows, cols=%s",
-            alpha, len(target_idx), existing
-        )
+        logger.debug("PRED[ATTN][MARGIN] diffs scaled by alpha=%.2f, cols=%s", alpha, existing)
     return X2
 
 def _shrink_h2h_features(
@@ -431,25 +473,16 @@ def _shrink_h2h_features(
     mu_margin: float = 0.0,
     k: float = 6.0,
     debug: bool = False,
-    focus_ids: Optional[Set[int]] = None,
 ) -> pd.DataFrame:
-    """
-    Shrinks H2H features toward league priors with a weight w = clip(games/k,0,1).
-    """
     if df is None or df.empty:
         return df
     out = df.copy()
     for col in ["h2h_games_played", "h2h_avg_total_points", "h2h_avg_point_diff"]:
         if col in out.columns:
             out[col] = pd.to_numeric(out[col], errors="coerce")
-    if "h2h_games_played" in out.columns:
-        w_raw = out["h2h_games_played"].astype(float)
-    else:
-        w_raw = pd.Series(0.0, index=out.index)
-    if k <= 0:
-        w = pd.Series(0.0, index=out.index)
-    else:
-        w = (w_raw / float(k)).clip(lower=0.0, upper=1.0).fillna(0.0)
+
+    w_raw = out["h2h_games_played"].astype(float) if "h2h_games_played" in out.columns else pd.Series(0.0, index=out.index)
+    w = (w_raw / float(k)).clip(lower=0.0, upper=1.0).fillna(0.0) if k > 0 else pd.Series(0.0, index=out.index)
 
     def _shrink(series: pd.Series, mu: float) -> Tuple[pd.Series, pd.Series]:
         base = pd.to_numeric(series, errors="coerce").fillna(mu)
@@ -457,80 +490,15 @@ def _shrink_h2h_features(
         delta = shrunk - base
         return shrunk, delta
 
-    before_total = out["h2h_avg_total_points"].copy() if "h2h_avg_total_points" in out.columns else None
-    before_margin = out["h2h_avg_point_diff"].copy() if "h2h_avg_point_diff" in out.columns else None
-
-    total_delta = None
-    margin_delta = None
     if "h2h_avg_total_points" in out.columns:
-        out["h2h_avg_total_points"], total_delta = _shrink(out["h2h_avg_total_points"], mu_total)
+        out["h2h_avg_total_points"], _ = _shrink(out["h2h_avg_total_points"], mu_total)
     if "h2h_avg_point_diff" in out.columns:
-        out["h2h_avg_point_diff"], margin_delta = _shrink(out["h2h_avg_point_diff"], mu_margin)
-
-    if debug and focus_ids:
-        for gid in sorted(focus_ids):
-            mask = (out["game_id"] == gid) if "game_id" in out.columns else pd.Series(False, index=out.index)
-            if not mask.any():
-                continue
-            wv = float(w.loc[mask].iloc[0]) if len(w.loc[mask]) else 0.0
-            if before_total is not None and "h2h_avg_total_points" in out.columns:
-                old = float(before_total.loc[mask].iloc[0])
-                new = float(out.loc[mask, "h2h_avg_total_points"].iloc[0])
-                logger.debug("PRED[H2H] gid=%s h2h_avg_total_points: %.2f → %.2f (w=%.2f, k=%.1f, mu=%.1f)",
-                             gid, old, new, wv, k, mu_total)
-            if before_margin is not None and "h2h_avg_point_diff" in out.columns:
-                old = float(before_margin.loc[mask].iloc[0])
-                new = float(out.loc[mask, "h2h_avg_point_diff"].iloc[0])
-                logger.debug("PRED[H2H] gid=%s h2h_avg_point_diff: %.2f → %.2f (w=%.2f, k=%.1f, mu=%.1f)",
-                             gid, old, new, wv, k, mu_margin)
+        out["h2h_avg_point_diff"], _ = _shrink(out["h2h_avg_point_diff"], mu_margin)
 
     if debug:
-        touched = 0
-        avg_abs_total = None
-        avg_abs_margin = None
-        if total_delta is not None:
-            total_changed = (total_delta != 0).astype(int)
-        else:
-            total_changed = pd.Series(0, index=out.index)
-        if margin_delta is not None:
-            margin_changed = (margin_delta != 0).astype(int)
-        else:
-            margin_changed = pd.Series(0, index=out.index)
-        any_changed = ((total_changed + margin_changed) > 0)
-        touched = int(any_changed.sum())
-        if total_delta is not None and any_changed.any():
-            avg_abs_total = float(total_delta[any_changed].abs().mean())
-        if margin_delta is not None and any_changed.any():
-            avg_abs_margin = float(margin_delta[any_changed].abs().mean())
-        logger.debug("PRED[H2H][SUMMARY] rows_touched=%d | avg_abs_delta_total=%s | avg_abs_delta_margin=%s",
-                     touched,
-                     f"{avg_abs_total:.3f}" if avg_abs_total is not None else "n/a",
-                     f"{avg_abs_margin:.3f}" if avg_abs_margin is not None else "n/a")
+        touched = int((w > 0).sum())
+        logger.debug("PRED[H2H][SUMMARY] rows_touched=%d (k=%.1f, muT=%.1f, muM=%.1f)", touched, k, mu_total, mu_margin)
     return out
-
-def _soft_mean_calibration(
-    series: pd.Series,
-    target_mean: float,
-    lam: float,
-    min_trigger: float,
-    label: str,
-    debug: bool,
-) -> pd.Series:
-    """Shift series toward target_mean by lam * (target - observed) if |Δ| ≥ min_trigger."""
-    if series is None or len(series) == 0 or lam <= 0.0:
-        return series
-    obs_mean = float(series.mean())
-    delta = target_mean - obs_mean
-    if abs(delta) < float(min_trigger):
-        if debug:
-            logger.debug("PRED[CAL] %s mean-calibration skipped | obs=%.2f target=%.2f (|Δ|=%.2f < %.2f)",
-                         label, obs_mean, target_mean, abs(delta), min_trigger)
-        return series
-    adjusted = (series + lam * delta).astype(float)
-    if debug:
-        logger.debug("PRED[CAL] %s mean-calibration | obs=%.2f → target=%.2f (λ=%.2f, Δ=%.2f)",
-                     label, obs_mean, target_mean, lam, delta)
-    return adjusted
 
 # ----------------------------------------------------------------------------- #
 # Bucketing (for debug snapshots)
@@ -575,8 +543,8 @@ def _row_snapshot(
                  if isinstance(row_meta.get("game_date"), datetime)
                  else (row_meta.get("game_date").isoformat() if isinstance(row_meta.get("game_date"), date)
                        else str(row_meta.get("game_date"))[:10])),
-        "away_id": int(row_meta.get("away_team_id")) if pd.notna(row_meta.get("away_team_id")) else None,
-        "home_id": int(row_meta.get("home_team_id")) if pd.notna(row_meta.get("home_team_id")) else None,
+        "away_id": _safe_int(row_meta.get("away_team_id")),
+        "home_id": _safe_int(row_meta.get("home_team_id")),
         "key": f"{row_meta.get('away_team_id')}@{row_meta.get('home_team_id')}",
     }
     return {"meta": meta, "grouped": grouped, "impute_flags": impute_flags, "bucket_counts": counts}
@@ -597,19 +565,13 @@ def _log_snapshot(tag: str, snap: Dict[str, Dict[str, Any]]):
 # ----------------------------------------------------------------------------- #
 # Smarter composites + matrix builders + targeted imputation
 # ----------------------------------------------------------------------------- #
-
 def add_total_composites_smart(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build train-time "total_*" composites so we don't fall back to zeros.
-    Creates totals only when both home_* and away_* exist (safe no-ops otherwise).
-    """
     out = df.copy()
 
     def _sum_if_present(h: str, a: str, t: str):
         if h in out.columns and a in out.columns and t not in out.columns:
-            out[t] = out[h] + out[a]
+            out[t] = pd.to_numeric(out[h], errors="coerce") + pd.to_numeric(out[a], errors="coerce")
 
-    # Rolling / form
     for base in [
         "rolling_points_for_avg",
         "rolling_points_against_avg",
@@ -619,7 +581,6 @@ def add_total_composites_smart(df: pd.DataFrame) -> pd.DataFrame:
     ]:
         _sum_if_present(f"home_{base}", f"away_{base}", f"total_{base}")
 
-    # Advanced (season aggregates)
     for base in [
         "adv_red_zone_pct",
         "adv_third_down_pct",
@@ -630,7 +591,6 @@ def add_total_composites_smart(df: pd.DataFrame) -> pd.DataFrame:
     ]:
         _sum_if_present(f"home_{base}", f"away_{base}", f"total_{base}")
 
-    # Drive stage (per-drive rolling metrics)
     drive_pairs = [
         "points_per_drive_avg",
         "yards_per_play_avg",
@@ -650,14 +610,12 @@ def add_total_composites_smart(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 def _approx_season_week(dates: pd.Series) -> int:
-    """Rough median week for this batch, using Sep-1 + next Thu as kickoff."""
     if dates is None or len(dates) == 0:
         return 18
     ds = pd.to_datetime(dates, errors="coerce")
     seasons = ds.dt.year.where(ds.dt.month >= 9, ds.dt.year - 1)
     season_start = pd.to_datetime(seasons.astype(str) + "-09-01")
-    # Next Thursday (dayofweek: Mon=0 → Thu=3)
-    offset = ((3 - season_start.dt.dayofweek) % 7).astype(int)
+    offset = ((3 - season_start.dt.dayofweek) % 7).astype(int)  # next Thu
     kickoff = season_start + pd.to_timedelta(offset, unit="D")
     weeks = ((ds - kickoff).dt.days // 7) + 1
     weeks = weeks.clip(lower=1, upper=22).fillna(18)
@@ -665,22 +623,14 @@ def _approx_season_week(dates: pd.Series) -> int:
 
 def _dynamic_h2h_k(upcoming_df: pd.DataFrame, base_k: float) -> float:
     wk = _approx_season_week(upcoming_df["game_date"]) if "game_date" in upcoming_df.columns else 18
-    # Be more skeptical of H2H before ~midseason
     return max(float(base_k), 10.0) if wk <= 10 else float(base_k)
 
-
 def _feature_fill_value(feat: str, feature_means: Mapping[str, float]) -> float:
-    """
-    Per-feature fallback when a train mean is unavailable.
-      - centered diffs default to 0.0
-      - everything else defaults to 0.0 (conservative)
-    """
     if feat in feature_means:
         return float(feature_means[feat])
     if feat.endswith("_diff"):
         return 0.0
     return 0.0
-
 
 def _build_matrix(
     features_df: pd.DataFrame,
@@ -689,17 +639,8 @@ def _build_matrix(
     label: str,
     debug: bool = False,
 ) -> pd.DataFrame:
-    """
-    Assemble X for a target with:
-      - column creation for missing features using train means
-      - numeric coercion
-      - NaN fill with per-feature mean fallback
-      - tight debug on fills/coercions
-    """
-    # Start with NaNs for missing to avoid silent 0.0 injection
     X = features_df.reindex(columns=list(selected), fill_value=np.nan).copy()
 
-    # Track missing-at-creation
     missing_cols = [c for c in selected if c not in features_df.columns]
     created_with_mean = {}
     for c in missing_cols:
@@ -707,12 +648,10 @@ def _build_matrix(
         X[c] = fv
         created_with_mean[c] = fv
 
-    # Coerce numerics across the board
     before_na = X.isna().sum().sum()
     for c in X.columns:
         X[c] = pd.to_numeric(X[c], errors="coerce")
 
-    # Fill remaining NaNs per column with train means (or per-feature fallback)
     na_counts = X.isna().sum()
     filled_counts = {}
     for c, n_na in na_counts.items():
@@ -726,7 +665,6 @@ def _build_matrix(
         if created_with_mean:
             logger.debug("PRED[%s] created %d cols using train mean/fallback (sample=%s)",
                          label, len(created_with_mean), dict(list(created_with_mean.items())[:5]))
-        coerced_delta = int(before_na)  # rough pre-fill NaN count
         if filled_counts:
             logger.debug("PRED[%s] filled NaNs in %d cols (sample=%s) | order_crc=%s",
                          label, len(filled_counts), dict(list(filled_counts.items())[:5]), ord_crc)
@@ -735,18 +673,11 @@ def _build_matrix(
 
     return X
 
-
 def _impute_advanced_features(
     df: pd.DataFrame,
     feature_means: Mapping[str, float],
     debug: bool = False
 ) -> pd.DataFrame:
-    """
-    Train-mean imputation for *advanced* features:
-      - Only imputes true NaNs by default.
-      - If an explicit *_imputed flag exists and equals 1, treat (NaN OR 0.0) as missing.
-      - Leaves legitimate zeros intact when no flag is set.
-    """
     out = df.copy()
     adv_cols = [c for c in out.columns if c.startswith(("adv_", "advanced_"))]
     if not adv_cols:
@@ -771,7 +702,6 @@ def _impute_advanced_features(
                 out.loc[need, flag_col] = 1
                 touched[c] = int(need.sum())
             else:
-                # No train mean available; leave as-is but warn once.
                 if debug:
                     logger.debug("PRED[IMPUTE][SKIP] %s has NaNs but no train mean; left untouched.", c)
 
@@ -783,9 +713,7 @@ def _normalize_team_key(s: Optional[str]) -> Optional[str]:
     if s is None:
         return None
     t = str(s).strip().lower()
-    # very light normalization; expand if you have variants
     t = re.sub(r"\s+", " ", t)
-    # common aliases
     t = t.replace("washington football team", "washington commanders")
     t = t.replace("oakland raiders", "las vegas raiders")
     t = t.replace("san diego chargers", "los angeles chargers")
@@ -793,13 +721,7 @@ def _normalize_team_key(s: Optional[str]) -> Optional[str]:
     return t
 
 def _fetch_team_mapping(sb: Client) -> Dict[str, int]:
-    """
-    Build {normalized_team_name -> team_id} from your historical tables.
-    Prefers the game-team stats (most complete), falls back to season table.
-    """
     mapping: Dict[str, int] = {}
-
-    # 1) Try per-game team stats (usually contains (team_id, team_name))
     try:
         resp = (
             sb.table("nfl_historical_game_team_stats")
@@ -819,7 +741,6 @@ def _fetch_team_mapping(sb: Client) -> Dict[str, int]:
     except Exception as e:
         logger.debug("TEAM MAP (game_team_stats) skipped: %s", e)
 
-    # 2) Fallback: season stats table
     if not mapping:
         try:
             resp = (
@@ -847,30 +768,21 @@ def _fetch_team_mapping(sb: Client) -> Dict[str, int]:
     return mapping
 
 def _hydrate_schedule_team_ids(df: pd.DataFrame, mapping: Dict[str, int]) -> pd.DataFrame:
-    """
-    Fill missing home/away team IDs (and standardized names) on schedule rows
-    using your historical mapping. Also mirror names into home_team_name / away_team_name
-    if only home_team / away_team exist.
-    """
     if df is None or df.empty or not mapping:
         return df
 
     out = df.copy()
-
-    # Ensure name columns exist for lookup
     if "home_team_name" not in out.columns and "home_team" in out.columns:
         out["home_team_name"] = out["home_team"]
     if "away_team_name" not in out.columns and "away_team" in out.columns:
         out["away_team_name"] = out["away_team"]
 
-    # Normalize keys
     for col in ("home_team_name", "away_team_name"):
         if col in out.columns:
             out[f"__norm__{col}"] = out[col].apply(_normalize_team_key)
         else:
             out[f"__norm__{col}"] = None
 
-    # Fill IDs if missing
     for side in ("home", "away"):
         id_col = f"{side}_team_id"
         name_norm_col = f"__norm__{side}_team_name"
@@ -887,15 +799,10 @@ def _hydrate_schedule_team_ids(df: pd.DataFrame, mapping: Dict[str, int]) -> pd.
 
         out[id_col] = out.apply(_lookup, axis=1).astype("Int64")
 
-    # Clean temp columns
     drop_cols = [c for c in out.columns if c.startswith("__norm__")]
     out.drop(columns=drop_cols, inplace=True, errors="ignore")
-
-    # Make sure we have season also (some rows may lack it)
     out = _ensure_season_and_ids(out)
-
     return out
-
 
 # ----------------------------------------------------------------------------- #
 # Core
@@ -908,7 +815,6 @@ def generate_predictions(
     days_window: Optional[int] = None,
     all_games: bool = False,
 
-
     # History
     historical_lookback: int = 1825,
 
@@ -917,19 +823,19 @@ def generate_predictions(
     focus: Optional[Focus] = None,
     dump_dir: Optional[Path] = None,
 
-    # Attenuation knobs
+    # Attenuation knobs (None → week-adaptive)
     no_atten: bool = False,
-    atten_total_alpha: float = 0.85,
-    atten_margin_alpha: float = 0.80,
+    atten_total_alpha: Optional[float] = None,
+    atten_margin_alpha: Optional[float] = None,
 
     # H2H shrink
     no_h2h_shrink: bool = False,
     h2h_k: float = 6.0,
 
     # Mean calibration (soft)
-    mean_cal_lambda_total: float = 0.35,
+    mean_cal_lambda_total: float = 0.45,
     mean_cal_lambda_margin: float = 0.50,
-    mean_cal_min_trigger_total: float = 0.50,
+    mean_cal_min_trigger_total: float = 0.25,
     mean_cal_min_trigger_margin: float = 0.15,
 
     # Feasibility + caps
@@ -939,6 +845,12 @@ def generate_predictions(
     # Optional TOTAL clip band (post-calibration)
     total_clip_min: Optional[float] = None,
     total_clip_max: Optional[float] = None,
+
+    # Optional market blend
+    market_w: float = 0.0,
+
+    # Residual corrector
+    residual_corrector: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     End-to-end prediction pipeline with gentle, tunable shaping and strong debug.
@@ -956,71 +868,14 @@ def generate_predictions(
         logger.critical("No Supabase client. Abort.")
         return []
 
-    artifacts = load_prediction_artifacts(MODEL_DIR, debug=debug_mode)
+    artifacts = _load_core_artifacts(MODEL_DIR, debug=debug_mode)
     if not artifacts:
         logger.critical("Missing artifacts. Abort.")
         return []
 
-    # Optional: load extended training artifacts if present (do this BEFORE reading values)
-    extra: Dict[str, Any] = {}
-    for p in [
-        MODEL_DIR / "nfl_artifacts.json",
-        MODEL_DIR / "nfl_train_artifacts.json",
-        MODEL_DIR / "artifacts.json",
-    ]:
-        try:
-            if p.exists():
-                extra.update(json.loads(p.read_text()))
-        except Exception as e:
-            if debug_mode:
-                logger.debug("PRED[SETUP] Skipping extra artifacts %s: %s", p, e)
-
-    # Read config values from the merged view
-    cfg = {**artifacts, **extra}
-    total_train_mean  = float(cfg.get("total_train_mean", 43.5))
-    margin_train_mean = float(cfg.get("margin_train_mean", 0.0))
-    feature_means: Dict[str, float] = cfg.get("feature_means", {}) or {}
-    if debug_mode:
-        logger.debug("PRED[SETUP] means: total=%.2f margin=%.2f | feature_means=%d keys",
-                    total_train_mean, margin_train_mean, len(feature_means))
-
-
-
-    # Optional: load extended training artifacts if present
-    extra_artifacts_paths = [
-        MODEL_DIR / "nfl_artifacts.json",
-        MODEL_DIR / "nfl_train_artifacts.json",
-        MODEL_DIR / "artifacts.json",
-    ]
-    extra: Dict[str, Any] = {}
-    for p in extra_artifacts_paths:
-        try:
-            if p.exists():
-                extra.update(json.loads(p.read_text()))
-        except Exception as e:
-            if debug_mode:
-                logger.debug("PRED[SETUP] Skipping extra artifacts %s: %s", p, e)
-
-    # Baselines / means fallbacks
-    total_train_mean = float(extra.get("total_train_mean", artifacts.get("total_train_mean", 43.5)))
-    margin_train_mean = float(extra.get("margin_train_mean", artifacts.get("margin_train_mean", 0.0)))
-    feature_means: Dict[str, float] = extra.get("feature_means", {}) or {}
-
-    # Optional separate file (if training dumped it separately)
-    for fname in ("nfl_feature_means.json", "feature_means.json"):
-        p = MODEL_DIR / fname
-        if not feature_means and p.exists():
-            try:
-                feature_means = json.loads(p.read_text(encoding="utf-8"))
-                break
-            except Exception as e:
-                if debug_mode:
-                    logger.debug("PRED[SETUP] Could not read %s: %s", p, e)
-
-    logger.debug(
-        "PRED[SETUP] means: total=%.2f margin=%.2f | feature_means=%d keys",
-        total_train_mean, margin_train_mean, len(feature_means),
-    )
+    total_train_mean  = float(artifacts["total_train_mean"])
+    margin_train_mean = float(artifacts["margin_train_mean"])
+    feature_means: Dict[str, float] = artifacts["feature_means"]
 
     # ------------------------------------------------------------------ #
     # Fetch schedule (bounded by date window)
@@ -1034,7 +889,7 @@ def generate_predictions(
 
     upcoming_df = _ensure_season_and_ids(upcoming_df)
 
-    # 🔧 Hydrate missing team_ids from historical tables (critical for backfilled rows)
+    # Hydrate missing team_ids
     try:
         team_map = _fetch_team_mapping(sb)
         if team_map:
@@ -1058,17 +913,12 @@ def generate_predictions(
         logger.info("No games found in nfl_game_schedule.")
         return []
 
-    # Log pre-window stats
     if debug_mode:
         n_total = len(upcoming_df)
         date_min = pd.to_datetime(upcoming_df.get("game_date"), errors="coerce").min()
         date_max = pd.to_datetime(upcoming_df.get("game_date"), errors="coerce").max()
         logger.debug("SCHEDULE pre-window: rows=%d | date_range=[%s, %s]", n_total, str(date_min)[:10], str(date_max)[:10])
 
-    # Windowing rules:
-    # - If all_games=True => no filtering at all
-    # - Else if ANY of date_start/date_end/days_window is provided => apply them
-    # - Else => no filtering (process all)
     apply_window = (not all_games) and (bool(date_start) or bool(date_end) or (days_window is not None))
 
     if apply_window and "game_date" in upcoming_df.columns:
@@ -1086,7 +936,6 @@ def generate_predictions(
 
         if date_end:
             try:
-                # include the end date fully by moving to end-of-day
                 upper = pd.to_datetime(date_end) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
             except Exception:
                 upper = None
@@ -1111,11 +960,9 @@ def generate_predictions(
 
         upcoming_df = dfw
 
-    # Final guard
     if upcoming_df.empty:
         logger.info("No games within the requested window (or after filtering). Use --all to include everything.")
         return []
-
 
     fetcher = NFLDataFetcher(sb)
     games_hist = fetcher.fetch_historical_games(historical_lookback)
@@ -1134,10 +981,12 @@ def generate_predictions(
         supabase_url=config.SUPABASE_URL,
         supabase_service_key=config.SUPABASE_SERVICE_KEY
     )
+
+    # Pass through drive tuning if present in artifacts
     drive_kwargs = {}
     for _k in ("drive_window", "drive_reset_by_season", "drive_min_prior_games", "drive_soft_fail"):
-        if _k in extra:
-            drive_kwargs[_k] = extra[_k]
+        if _k in artifacts:
+            drive_kwargs[_k] = artifacts[_k]
 
     features_df = nfl_engine.build_features(
         games_df=upcoming_df,
@@ -1154,26 +1003,16 @@ def generate_predictions(
         logger.error("Feature DF empty. Abort.")
         return []
 
-    # Add train-time composites ONLY when selected by models (no drift/duplication)
-    selected_union = list(dict.fromkeys(artifacts["total_features"] + artifacts["margin_features"]))
+    # Add train-time composites when available (prevents 0.0 fallbacks)
     features_df = add_total_composites_smart(features_df)
-    logger.debug(
-        "PRED[COMPOSITE] built totals: %s",
-        [c for c in features_df.columns if c.startswith(("total_", "drive_total_"))][:24],
-    )
-
+    if debug_mode:
+        built_totals = [c for c in features_df.columns if c.startswith(("total_", "drive_total_"))]
+        logger.debug("PRED[COMPOSITE] built totals (sample)=%s", built_totals[:24])
 
     # ------------------------------------------------------------------ #
-    # H2H shrink (optional)
+    # H2H shrink (optional, week-aware k)
     # ------------------------------------------------------------------ #
     if not no_h2h_shrink:
-        touched_rows = 0
-        if "h2h_games_played" in features_df.columns:
-            try:
-                touched_rows = int((pd.to_numeric(features_df["h2h_games_played"], errors="coerce").fillna(0.0) > 0).sum())
-            except Exception:
-                touched_rows = 0
-
         h2h_k_eff = _dynamic_h2h_k(upcoming_df, h2h_k)
         if debug_mode:
             try:
@@ -1181,26 +1020,19 @@ def generate_predictions(
             except Exception:
                 wk_guess = -1
             logger.debug("PRED[H2H] using k=%.1f (base=%.1f, week≈%s)", h2h_k_eff, h2h_k, wk_guess)
-
         features_df = _shrink_h2h_features(
             features_df,
             mu_total=total_train_mean,
             mu_margin=margin_train_mean,
             k=float(h2h_k_eff),
             debug=debug_mode,
-            focus_ids=FOCUS_IDS,
         )
-
-        if touched_rows == 0 and debug_mode:
-            logger.debug("PRED[H2H] No rows had h2h_games_played > 0; H2H shrink effectively no-op.")
     else:
         if debug_mode:
             logger.debug("PRED[H2H] shrink bypassed (--no-h2h-shrink).")
 
-
     # ------------------------------------------------------------------ #
     # Advanced feature mean imputation (+ flags) using train means
-    # Treat NaN and zero-like as missing for 'adv_' / 'advanced_' prefixed columns.
     # ------------------------------------------------------------------ #
     if feature_means:
         features_df = _impute_advanced_features(features_df, feature_means, debug=debug_mode)
@@ -1209,9 +1041,9 @@ def generate_predictions(
             logger.debug("PRED[IMPUTE] No train feature_means provided; skipping advanced imputation.")
 
     # ------------------------------------------------------------------ #
-    # Volatile diff clipping (global, pre-model)
+    # Volatile diff clipping (quantile-driven if available)
     # ------------------------------------------------------------------ #
-    CLIP_BOUNDS = {
+    default_bounds = {
         "rolling_points_for_avg_diff": (-12.0, 12.0),
         "rolling_points_against_avg_diff": (-12.0, 12.0),
         "rolling_point_differential_avg_diff": (-20.0, 20.0),
@@ -1219,7 +1051,20 @@ def generate_predictions(
         "rolling_turnover_differential_avg_diff": (-2.0, 2.0),
         "momentum_ewma_5_diff": (-25.0, 25.0),
     }
-    features_df = _clip_feature_columns(features_df, CLIP_BOUNDS, debug=debug_mode, focus_ids=FOCUS_IDS)
+    # Prefer train quantiles if emitted at training time
+    q_bounds = artifacts.get("feature_bounds", {}) or {}
+    clip_bounds = {}
+    for k, v in default_bounds.items():
+        if k in q_bounds and isinstance(q_bounds[k], (list, tuple)) and len(q_bounds[k]) == 2:
+            lo, hi = q_bounds[k]
+            # be slightly permissive beyond the quantiles to avoid over-clipping
+            pad_lo = float(lo) - 0.10 * abs(lo)
+            pad_hi = float(hi) + 0.10 * abs(hi)
+            clip_bounds[k] = (pad_lo, pad_hi)
+        else:
+            clip_bounds[k] = v
+
+    features_df = _clip_feature_columns(features_df, clip_bounds, debug=debug_mode, focus_ids=FOCUS_IDS)
 
     # ------------------------------------------------------------------ #
     # Model setup + matrices
@@ -1227,15 +1072,9 @@ def generate_predictions(
     for target in ("margin", "total"):
         selected = artifacts.get(f"{target}_features", [])
         missing = [c for c in selected if c not in features_df.columns]
-        logger.info(
-            "PRED[SETUP] %s selected=%d | missing-in-frame=%d",
-            target.upper(), len(selected), len(missing)
-        )
+        logger.info("PRED[SETUP] %s selected=%d | missing-in-frame=%d", target.upper(), len(selected), len(missing))
         if debug_mode and missing:
-            logger.debug(
-                "PRED[SETUP] %s missing detail: %s",
-                target.upper(), missing[:40]
-            )
+            logger.debug("PRED[SETUP] %s missing detail: %s", target.upper(), missing[:40])
 
     margin_ensemble = NFLEnsemble(artifacts["margin_weights"], MODEL_DIR)
     total_ensemble  = NFLEnsemble(artifacts["total_weights"],  MODEL_DIR)
@@ -1245,7 +1084,6 @@ def generate_predictions(
     if "game_id" in features_df.columns:
         features_df = features_df.set_index("game_id", drop=False)
 
-    # Use your existing matrix builder (means-aware)
     X_margin = _build_matrix(features_df, artifacts["margin_features"], feature_means, label="MARGIN", debug=debug_mode)
     X_total  = _build_matrix(features_df, artifacts["total_features"],  feature_means, label="TOTAL",  debug=debug_mode)
 
@@ -1254,59 +1092,46 @@ def generate_predictions(
             prof = _df_profile(X, f"X_{label}")
             ord_crc = _order_crc(X.columns)
             non_numeric = [c for c in X.columns if not pd.api.types.is_numeric_dtype(X[c])]
-            logger.debug("PRED[FRAME] %s rows=%d | null_top=%s | order_crc=%s", label, prof["rows"], prof["null_top"], ord_crc)
+            # per-bucket counts
+            counts = {}
+            for c in X.columns:
+                b = _bucket_of(c)
+                counts[b] = counts.get(b, 0) + 1
+            logger.debug("PRED[FRAME] %s rows=%d | null_top=%s | order_crc=%s | bucket_counts=%s",
+                         label, prof["rows"], prof["null_top"], ord_crc, counts)
             if non_numeric:
                 logger.debug("PRED[FRAME][WARN] %s non-numeric cols: %s", label, non_numeric)
 
     _check_features(X_margin, artifacts["margin_features"], "X_margin", debug_mode)
     _check_features(X_total,  artifacts["total_features"],  "X_total",  debug_mode)
 
-
-
     # ------------------------------------------------------------------ #
-    # Pre-predict attenuation (opt-in & gentle)
+    # Week-adaptive attenuation (unless explicit alphas provided or --no-atten)
     # ------------------------------------------------------------------ #
     if not no_atten:
-        total_diff_candidates = [
-            "rolling_points_for_avg_diff",
-            "rolling_points_against_avg_diff",
-            "rolling_yards_per_play_avg_diff",
-        ]
-        margin_diff_candidates = [
-            "rolling_points_for_avg_diff",
-            "rolling_points_against_avg_diff",
-            "rolling_point_differential_avg_diff",
-            "rolling_yards_per_play_avg_diff",
-            "rolling_turnover_differential_avg_diff",
-            "momentum_ewma_5_diff",
-        ]
+        wk = _approx_season_week(upcoming_df["game_date"]) if "game_date" in upcoming_df.columns else 18
+        if atten_total_alpha is None or atten_margin_alpha is None:
+            # defaults by week
+            if wk <= 4:
+                aT, aM = 0.80, 0.60
+            elif wk <= 10:
+                aT, aM = 0.90, 0.75
+            else:
+                aT, aM = 1.00, 0.85
+            # override if user provided one side explicitly
+            if atten_total_alpha is not None:
+                aT = float(atten_total_alpha)
+            if atten_margin_alpha is not None:
+                aM = float(atten_margin_alpha)
+        else:
+            aT, aM = float(atten_total_alpha), float(atten_margin_alpha)
 
-        total_cols  = [c for c in total_diff_candidates  if c in artifacts["total_features"]  and c in X_total.columns]
-        margin_cols = [c for c in margin_diff_candidates if c in artifacts["margin_features"] and c in X_margin.columns]
-
-        # --- TOTAL: attenuate only the columns, keep the full matrix intact ---
-        if total_cols:
-            attened_total_subset = _attenuate_total_diffs(
-                X_total.loc[:, total_cols].copy(),
-                alpha=float(atten_total_alpha),
-                debug=debug_mode,
-                focus_ids=None,
-            )
-            X_total.loc[:, total_cols] = attened_total_subset.loc[:, total_cols]
-
-        # --- MARGIN: same idea ---
-        if margin_cols:
-            attened_margin_subset = _attenuate_margin_diffs(
-                X_margin.loc[:, margin_cols].copy(),
-                alpha=float(atten_margin_alpha),
-                debug=debug_mode,
-                focus_ids=None,
-            )
-            X_margin.loc[:, margin_cols] = attened_margin_subset.loc[:, margin_cols]
+        # Apply on the subset columns (keep matrix shape)
+        X_total  = _attenuate_total_diffs(X_total,  alpha=aT, debug=debug_mode)
+        X_margin = _attenuate_margin_diffs(X_margin, alpha=aM, debug=debug_mode)
     else:
         if debug_mode:
             logger.debug("PRED[ATTN] pre-model attenuation disabled (--no-atten).")
-
 
     # ------------------------------------------------------------------ #
     # Vectorized predict (ENSEMBLE)
@@ -1326,16 +1151,75 @@ def generate_predictions(
         logger.debug("Predict time: %.3fs", time.time() - pred_t)
 
     # ------------------------------------------------------------------ #
-    # Soft mean calibration → optional clip → feasibility
+    # Week-aware priors for mean calibration
     # ------------------------------------------------------------------ #
+    # Recent environment (current season preferred)
+    recent_total_mean = None
+    try:
+        gh = games_hist.copy()
+        gh["game_date"] = pd.to_datetime(gh["game_date"], errors="coerce")
+        # scope to last ~120d or current season
+        if "season" in gh.columns and "season" in upcoming_df.columns and upcoming_df["season"].notna().any():
+            cur_season = int(pd.Series(upcoming_df["season"].dropna().astype(int)).mode().iloc[0])
+            gh = gh.loc[gh["season"] == cur_season]
+        else:
+            cutoff = pd.Timestamp.utcnow().tz_localize(None) - pd.Timedelta(days=120)
+            gh = gh.loc[gh["game_date"] >= cutoff]
+        gh = gh.dropna(subset=["home_score", "away_score"])
+        if not gh.empty:
+            recent_total_mean = float((pd.to_numeric(gh["home_score"], errors="coerce") +
+                                       pd.to_numeric(gh["away_score"], errors="coerce")).mean())
+    except Exception:
+        recent_total_mean = None
+
+    # Blend rules
+    wk_guess = _approx_season_week(upcoming_df["game_date"]) if "game_date" in upcoming_df.columns else 18
+    if recent_total_mean is not None:
+        if wk_guess <= 4:
+            target_total_mean = 0.30 * recent_total_mean + 0.70 * total_train_mean
+        else:
+            target_total_mean = 0.60 * recent_total_mean + 0.40 * total_train_mean
+    else:
+        target_total_mean = total_train_mean
+
+    # MARGIN target (0). Optional small HFA early if model didn't learn it (artifact flag)
+    hfa_learned = bool(artifacts.get("hfa_learned", False))
+    target_margin_mean = 0.0
+    if (wk_guess <= 4) and (not hfa_learned):
+        # tiny nudge toward historical home-field if provided
+        target_margin_mean = float(artifacts.get("hfa_baseline", 0.4))
+
     total_preds  = _soft_mean_calibration(
-        total_preds,  target_mean=total_train_mean,  lam=float(mean_cal_lambda_total),
+        total_preds,  target_mean=target_total_mean,  lam=float(mean_cal_lambda_total),
         min_trigger=float(mean_cal_min_trigger_total), label="TOTAL",  debug=debug_mode
     )
     margin_preds = _soft_mean_calibration(
-        margin_preds, target_mean=0.0,                lam=float(mean_cal_lambda_margin),
+        margin_preds, target_mean=target_margin_mean, lam=float(mean_cal_lambda_margin),
         min_trigger=float(mean_cal_min_trigger_margin), label="MARGIN", debug=debug_mode
     )
+
+    # Optional market blend (tiny anchor)
+    def _find_col(df: pd.DataFrame, candidates: Sequence[str]) -> Optional[str]:
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
+
+    if market_w and market_w > 0.0:
+        mt_col = _find_col(upcoming_df, ["market_total", "vegas_total", "consensus_total"])
+        ms_col = _find_col(upcoming_df, ["market_spread", "vegas_spread", "consensus_spread"])
+        if mt_col or ms_col:
+            if mt_col:
+                mt = pd.to_numeric(upcoming_df.set_index("game_id")[mt_col], errors="coerce")
+                total_preds = (1.0 - market_w) * total_preds + market_w * mt.reindex(total_preds.index).fillna(total_preds)
+            if ms_col:
+                # convention: spread is home favorite negative; margin = home - away
+                ms = pd.to_numeric(upcoming_df.set_index("game_id")[ms_col], errors="coerce")
+                implied_margin = -ms  # home - away
+                margin_preds = (1.0 - market_w) * margin_preds + market_w * implied_margin.reindex(margin_preds.index).fillna(margin_preds)
+            logger.info("Market blend applied w=%.2f to %d rows (mt_col=%s, ms_col=%s)", market_w, len(total_preds), mt_col, ms_col)
+        elif debug_mode:
+            logger.debug("Market blend requested but no market columns found; skipped.")
 
     # Optional TOTAL clip (after calibration)
     if (total_clip_min is not None) or (total_clip_max is not None):
@@ -1345,17 +1229,45 @@ def generate_predictions(
         if debug_mode:
             logger.debug("PRED[CAL] TOTAL clip applied: [%.1f, %.1f]", lo, hi)
 
-    # Feasibility: total ≥ |margin| + dynamic buffer
+    # ------------------------------------------------------------------ #
+    # Contextual Feasibility: total ≥ |margin| + buffer
+    # ------------------------------------------------------------------ #
     pair = pd.DataFrame({"total": total_preds.astype(float), "margin": margin_preds.astype(float)}, index=total_preds.index)
-    dyn_buffer = (0.35 * pair["margin"].abs()) + 3.0
-    dyn_buffer = dyn_buffer.clip(lower=3.0, upper=float(feas_buffer_max))
+
+    # base buffer
+    base = 0.35 * pair["margin"].abs() + 3.0
+
+    # context bumps
+    wk_bump = 0.5 if wk_guess <= 4 else 0.0
+
+    # dome/indoor flag (search a few plausible columns)
+    def _bool_from_cols(df: pd.DataFrame, cols: Sequence[str]) -> pd.Series:
+        out = pd.Series(0.0, index=df.index)
+        for c in cols:
+            if c in df.columns:
+                try:
+                    v = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+                    out = out.where(out != 0.0, v)  # first found
+                except Exception:
+                    pass
+        return out
+
+    # evaluate on *features_df* (aligned index)
+    dome_series = _bool_from_cols(features_df, [
+        "situational_is_indoor", "map_is_dome", "stadium_is_dome", "stadium_is_indoor"
+    ])
+    cold_series = pd.to_numeric(features_df.get("map_fore_temp_f", pd.Series(np.nan, index=features_df.index)), errors="coerce")
+    is_very_cold = (cold_series <= 25).fillna(0).astype(float)
+
+    context_bump = wk_bump + ( -0.5 * (dome_series >= 1).astype(float) ) + ( 0.5 * is_very_cold )
+
+    dyn_buffer = (base + context_bump).clip(lower=2.5, upper=float(feas_buffer_max))
     need_raise = pair["total"] < (pair["margin"].abs() + dyn_buffer)
     if need_raise.any():
         min_allowed = pair["margin"].abs() + dyn_buffer
         total_preds = pair["total"].where(~need_raise, min_allowed).astype(float)
         if debug_mode:
             logger.debug("PRED[FEAS] total raised on %d rows to satisfy total ≥ |margin| + buffer", int(need_raise.sum()))
-    # One-line visibility even when zero
     logger.info("Feasibility raises applied to %d of %d rows", int(need_raise.sum()), len(pair))
 
     # Hard cap on margin (±)
@@ -1367,16 +1279,24 @@ def generate_predictions(
                 logger.debug("PRED[CAP] MARGIN hard-cap applied at ±%.1f on %d rows", float(margin_cap), int(over_cap.sum()))
 
     # ------------------------------------------------------------------ #
-    # Derive scores and assign back onto schedule
+    # Derive scores and tiny floor bump after feasibility
     # ------------------------------------------------------------------ #
     scores_df = derive_scores_from_predictions(margin_preds, total_preds)
 
-    # Index and numeric safety
     if "game_id" in scores_df.columns:
         scores_df = scores_df.set_index("game_id", drop=False)
     for c in ("predicted_home_score", "predicted_away_score"):
         if c in scores_df.columns:
-            scores_df[c] = scores_df[c].astype(float).clip(lower=0.0)  # non-negative clamp
+            scores_df[c] = scores_df[c].astype(float).clip(lower=0.0)
+
+    # If feasibility just activated (total very close to |margin|+buffer), nudge +0.2 both sides
+    with np.errstate(all="ignore"):
+        tot = scores_df["predicted_home_score"] + scores_df["predicted_away_score"]
+        mar = scores_df["predicted_home_score"] - scores_df["predicted_away_score"]
+    near_edge = (tot - mar.abs()) <= 0.05
+    if near_edge.any():
+        scores_df.loc[near_edge, "predicted_home_score"] += 0.2
+        scores_df.loc[near_edge, "predicted_away_score"] += 0.2
 
     _log_df(scores_df, "scores_df", debug_mode)
 
@@ -1384,11 +1304,9 @@ def generate_predictions(
     if "game_id" in scores_df.columns:
         scores_df = scores_df.set_index("game_id", drop=False)
 
-    # 🔧 normalize index dtypes to avoid KeyError
     final_df.index  = final_df.index.astype(str)
     scores_df.index = scores_df.index.astype(str)
 
-    # now safe to assign
     final_df.loc[scores_df.index, "predicted_home_score"] = scores_df["predicted_home_score"]
     final_df.loc[scores_df.index, "predicted_away_score"] = scores_df["predicted_away_score"]
 
@@ -1396,7 +1314,7 @@ def generate_predictions(
     final_df["pred_margin"] = (final_df["predicted_home_score"] - final_df["predicted_away_score"]).astype(float)
 
     # Pretty-print (sample) – tolerate missing IDs gracefully
-    def _fmt(x): 
+    def _fmt(x):
         try:
             return f"{float(x):.2f}"
         except Exception:
@@ -1410,38 +1328,130 @@ def generate_predictions(
         away = _fmt(row.get("predicted_away_score"))
         tot  = _fmt(row.get("pred_total"))
         mar  = _fmt(row.get("pred_margin"))
-
         if home_id is None or away_id is None:
-            # Don’t crash on incomplete schedule rows; log once at DEBUG
             if debug_mode:
                 logger.debug("PPRINT skip: missing team_id(s) for row on %s (home_id=%s, away_id=%s)", date_s, home_id, away_id)
             continue
-
         print(f"{date_s}  away_id {away_id} @ home_id {home_id}   {away} - {home}   (T={tot}, M={mar})")
-
 
     if debug_mode:
         n_assigned = final_df["predicted_home_score"].notna().sum()
         logger.debug("PRED[JOIN] assigned predictions for %d games", n_assigned)
 
     # ------------------------------------------------------------------ #
+    # Residual bias corrector (recent games only; guarded; capped)
+    # ------------------------------------------------------------------ #
+    if residual_corrector and _SK_OK:
+        try:
+            # Build recent historical features (~last 8 weeks / 60 days)
+            hist_cut = pd.Timestamp.utcnow().tz_localize(None) - pd.Timedelta(days=60)
+            gh = games_hist.copy()
+            gh["game_date"] = pd.to_datetime(gh["game_date"], errors="coerce")
+            gh = gh.loc[gh["game_date"] < upcoming_df["game_date"].min()]  # strictly past
+            gh_recent = gh.loc[gh["game_date"] >= hist_cut]
+            if not gh_recent.empty:
+                feats_recent = nfl_engine.build_features(
+                    games_df=gh_recent,
+                    historical_games_df=games_hist,
+                    historical_team_stats_df=stats_hist,
+                    debug=False,
+                    **drive_kwargs,
+                )
+                feats_recent = add_total_composites_smart(feats_recent)
+                feats_recent = feats_recent.dropna(subset=["home_score", "away_score"])
+                if not feats_recent.empty:
+                    feats_recent = feats_recent.set_index("game_id", drop=False)
+                    Xm = _build_matrix(feats_recent, artifacts["margin_features"], feature_means, label="HIST_MARGIN", debug=False)
+                    Xt = _build_matrix(feats_recent, artifacts["total_features"],  feature_means, label="HIST_TOTAL",  debug=False)
+                    # Use same attenuation logic as current week (but no debug)
+                    if not no_atten:
+                        if atten_total_alpha is None or atten_margin_alpha is None:
+                            if wk_guess <= 4:
+                                aT, aM = 0.80, 0.60
+                            elif wk_guess <= 10:
+                                aT, aM = 0.90, 0.75
+                            else:
+                                aT, aM = 1.00, 0.85
+                            if atten_total_alpha is not None:
+                                aT = float(atten_total_alpha)
+                            if atten_margin_alpha is not None:
+                                aM = float(atten_margin_alpha)
+                        else:
+                            aT, aM = float(atten_total_alpha), float(atten_margin_alpha)
+                        Xt = _attenuate_total_diffs(Xt, aT, False)
+                        Xm = _attenuate_margin_diffs(Xm, aM, False)
+
+                    hist_margin_pred = margin_ensemble.predict(Xm)
+                    hist_total_pred  = total_ensemble.predict(Xt)
+
+                    if isinstance(hist_margin_pred, np.ndarray):
+                        hist_margin_pred = pd.Series(hist_margin_pred, index=feats_recent.index)
+                    if isinstance(hist_total_pred, np.ndarray):
+                        hist_total_pred = pd.Series(hist_total_pred, index=feats_recent.index)
+
+                    actual_total  = pd.to_numeric(feats_recent["home_score"], errors="coerce") + pd.to_numeric(feats_recent["away_score"], errors="coerce")
+                    actual_margin = pd.to_numeric(feats_recent["home_score"], errors="coerce") - pd.to_numeric(feats_recent["away_score"], errors="coerce")
+
+                    res_total  = (actual_total  - hist_total_pred).astype(float)
+                    res_margin = (actual_margin - hist_margin_pred).astype(float)
+
+                    # tiny, regularized model on simple covariates
+                    covar_cols = [c for c in [
+                        "map_fore_temp_f",
+                        "situational_is_indoor", "stadium_is_indoor", "map_is_dome", "stadium_is_dome",
+                        "home_is_on_short_week", "away_is_on_short_week",
+                        "home_rest_days", "away_rest_days",
+                        "week",
+                    ] if c in feats_recent.columns]
+
+                    if covar_cols:
+                        Z = feats_recent[covar_cols].copy()
+                        for c in Z.columns:
+                            Z[c] = pd.to_numeric(Z[c], errors="coerce").fillna(0.0)
+
+                        def _fit_and_adjust(y_res: pd.Series, pred_series: pd.Series, cap: float) -> pd.Series:
+                            # time-series friendly CV alphas
+                            model = Pipeline([
+                                ("scaler", StandardScaler(with_mean=True, with_std=True)),
+                                ("ridge", RidgeCV(alphas=(1.5, 3.0, 5.0, 7.5, 10.0)))
+                            ])
+                            model.fit(Z.values, y_res.values)
+                            adj = model.predict(Z.values[:0])  # no need; just confirm fit
+                            # Now predict adjustments for UPCOMING rows (build Z2 from features_df if possible)
+                            Z2 = features_df.reindex(columns=covar_cols).copy()
+                            for c in Z2.columns:
+                                Z2[c] = pd.to_numeric(Z2[c], errors="coerce").fillna(0.0)
+                            pred_adj = model.predict(Z2.values)
+                            pred_adj = np.clip(pred_adj, -cap, cap)
+                            return pred_series + pd.Series(pred_adj, index=pred_series.index)
+
+                        # apply (caps keep it tiny)
+                        total_preds  = _fit_and_adjust(res_total,  total_preds,  cap=1.5)
+                        margin_preds = _fit_and_adjust(res_margin, margin_preds, cap=0.7)
+                        logger.info("Residual corrector applied (recent=%d games, covariates=%d)", len(Z), len(covar_cols))
+        except Exception as e:
+            if debug_mode:
+                logger.debug("Residual corrector skipped due to error: %s", e)
+    elif residual_corrector and not _SK_OK:
+        logger.info("Residual corrector requested but sklearn is unavailable; skipping.")
+
+    # ------------------------------------------------------------------ #
     # Optional CSV dumps for focused games (post-ensemble & cal)
     # ------------------------------------------------------------------ #
     if debug_mode and FOCUS_IDS:
         base = dump_dir or (PROJECT_ROOT / "debug" / "pred_inspect")
-        for gid in [g for g in FOCUS_IDS if g in final_df.index]:
-            row = final_df.loc[gid]
+        for gid in [g for g in FOCUS_IDS if str(g) in final_df.index]:
+            row = final_df.loc[str(gid)]
             gd = row.get("game_date")
             date_str = gd.date().isoformat() if isinstance(gd, (pd.Timestamp, datetime)) else str(gd)[:10]
-
             subdir = Path(base) / date_str
             subdir.mkdir(parents=True, exist_ok=True)
 
             csv_row: Dict[str, Any] = {
                 "game_id": int(gid),
                 "date": date_str,
-                "away_team_id": int(row["away_team_id"]),
-                "home_team_id": int(row["home_team_id"]),
+                "away_team_id": _safe_int(row["away_team_id"]),
+                "home_team_id": _safe_int(row["home_team_id"]),
                 "away_team_name": row.get("away_team_name"),
                 "home_team_name": row.get("home_team_name"),
                 "predicted_away_score": float(row.get("predicted_away_score")) if "predicted_away_score" in row else None,
@@ -1450,32 +1460,29 @@ def generate_predictions(
                 "weights_margin_json": json.dumps(artifacts.get("margin_weights", {})),
             }
 
-            # Selected feature vectors (union of total + margin features)
-            # For audit: include order CRCs used at predict time
+            # Record order CRCs used at predict time
             csv_row["order_crc_total"]  = _order_crc(artifacts["total_features"])
             csv_row["order_crc_margin"] = _order_crc(artifacts["margin_features"])
 
-            # Selected feature vectors (union) — leave missing as blank (None) instead of 0.0
+            # Selected feature vectors (union) — leave missing as blank (None)
             union_cols = list(dict.fromkeys(artifacts["total_features"] + artifacts["margin_features"]))
             for c in union_cols:
-                if c in features_df.columns and pd.notna(features_df.at[gid, c]):
+                if c in features_df.columns and pd.notna(features_df.at[int(gid), c]):
                     try:
-                        csv_row[c] = float(features_df.at[gid, c])
+                        csv_row[c] = float(features_df.at[int(gid), c])
                     except Exception:
                         csv_row[c] = None
                 else:
-                    csv_row[c] = None  # make mismatches obvious
+                    csv_row[c] = None
 
-            # Impute flags explicitly (leave missing blank)
             impute_cols = [c for c in features_df.columns if "imput" in c.lower()]
             for c in impute_cols:
                 key = f"flag__{c}"
                 try:
-                    v = features_df.at[gid, c]
+                    v = features_df.at[int(gid), c]
                     csv_row[key] = float(v) if pd.notna(v) else None
                 except Exception:
                     csv_row[key] = None
-
 
             out_path = subdir / f"{date_str}_{row['away_team_id']}@{row['home_team_id']}_{gid}.csv"
             pd.DataFrame([csv_row]).to_csv(out_path, index=False)
@@ -1496,7 +1503,6 @@ def generate_predictions(
         home_id = _safe_int(row.get("home_team_id"))
         away_id = _safe_int(row.get("away_team_id"))
         if home_id is None or away_id is None:
-            # Don’t attempt to upsert without valid IDs
             if debug_mode:
                 logger.debug("Skipping payload for game_id=%s due to missing team_id(s): home_id=%s away_id=%s", gid, home_id, away_id)
             continue
@@ -1514,7 +1520,6 @@ def generate_predictions(
                 "prediction_utc":       now_iso,
             }
         )
-
 
     logger.info("Generated %d predictions in %.2fs", len(payload), time.time() - t0)
     return payload
@@ -1545,19 +1550,19 @@ def main():
     parser.add_argument("--focus-ids", type=str, default=None, help="Comma-separated game_id list.")
     parser.add_argument("--dump-dir", type=str, default=None, help="Directory to write per-focused-game CSVs.")
 
-    # Pre-model attenuation
+    # Pre-model attenuation (None → week-adaptive defaults)
     parser.add_argument("--no-atten", action="store_true", help="Disable pre-model diff attenuation.")
-    parser.add_argument("--atten-total-alpha", type=float, default=0.85, help="Total diff attenuation factor (0..1].")
-    parser.add_argument("--atten-margin-alpha", type=float, default=0.80, help="Margin diff attenuation factor (0..1].")
+    parser.add_argument("--atten-total-alpha", type=float, default=None, help="Total diff attenuation factor (0..1]. Leave empty for week-adaptive.")
+    parser.add_argument("--atten-margin-alpha", type=float, default=None, help="Margin diff attenuation factor (0..1]. Leave empty for week-adaptive.")
 
     # H2H shrink
     parser.add_argument("--no-h2h-shrink", action="store_true", help="Disable H2H shrink toward priors.")
     parser.add_argument("--h2h-k", type=float, default=6.0, help="Games to “trust” H2H fully (larger=weaker shrink).")
 
-    # Mean calibration (soft)
-    parser.add_argument("--mean-calibration-lambda-total", type=float, default=0.35, help="Lambda for TOTAL soft mean calibration.")
+    # Mean calibration (soft, week-aware targets)
+    parser.add_argument("--mean-calibration-lambda-total", type=float, default=0.45, help="Lambda for TOTAL soft mean calibration.")
     parser.add_argument("--mean-calibration-lambda-margin", type=float, default=0.50, help="Lambda for MARGIN soft mean calibration.")
-    parser.add_argument("--mean-cal-min-trigger-total", type=float, default=0.50, help="Min |Δ| to trigger TOTAL calibration.")
+    parser.add_argument("--mean-cal-min-trigger-total", type=float, default=0.25, help="Min |Δ| to trigger TOTAL calibration.")
     parser.add_argument("--mean-cal-min-trigger-margin", type=float, default=0.15, help="Min |Δ| to trigger MARGIN calibration.")
 
     # Feasibility + caps
@@ -1567,6 +1572,15 @@ def main():
     # Optional TOTAL clip band
     parser.add_argument("--total-clip-min", type=float, default=None, help="Clip TOTAL predictions to lower bound (post-calibration).")
     parser.add_argument("--total-clip-max", type=float, default=None, help="Clip TOTAL predictions to upper bound (post-calibration).")
+
+    # Optional market blend
+    parser.add_argument("--market-w", type=float, default=0.0, help="Blend weight toward market totals/spreads if columns exist (0..0.25 recommended).")
+
+    # Residual corrector
+    rc_group = parser.add_mutually_exclusive_group()
+    rc_group.add_argument("--residual-corrector", dest="residual_corrector", action="store_true", help="Enable residual bias corrector (default).")
+    rc_group.add_argument("--no-residual-corrector", dest="residual_corrector", action="store_false", help="Disable residual bias corrector.")
+    parser.set_defaults(residual_corrector=True)
 
     args = parser.parse_args()
     if args.debug:
@@ -1606,6 +1620,9 @@ def main():
 
         total_clip_min=args.total_clip_min,
         total_clip_max=args.total_clip_max,
+
+        market_w=args.market_w,
+        residual_corrector=args.residual_corrector,
     )
 
     if not preds:
