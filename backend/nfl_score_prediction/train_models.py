@@ -2,22 +2,25 @@
 """
 NFL Score Prediction – Model Training Pipeline (with rich DEBUG logging)
 
+Key changes vs. prior:
+- Mean imputation (no zeros) for feature selection, VAL, and TEST.
+- Availability gating on TRAIN + VAL to avoid selecting brittle features.
+- Conditional MI top-up freeze for DRIVE bucket on TOTAL.
+- Small robust seeding of pace/points features for TOTAL when reliably present.
+- Slightly widened model search spaces to recover upside tails (totals).
+- Recency weighting sanity logs; missingness reports for VAL/TEST.
+- Persist train feature means per target for inference-time imputation.
+
 Flow:
-1. Load historical data (games + team box scores) via NFLDataFetcher.
-2. Build features with run_nfl_feature_pipeline().
+1. Load historical data via NFLDataFetcher.
+2. Build features with NFLFeatureEngine.
 3. Create targets: margin (home - away) and total (home + away).
-4. Feature selection (LassoCV) per target.
+4. Feature selection (LassoCV/ElasticNetCV) per target with availability gating.
 5. Chronological split → train / val / test.
 6. Train individual models (with optional tuning), get val preds.
 7. Optimize ensemble weights on val.
-8. Retrain models on train+val (no leakage) and save.
-9. Evaluate ensemble on test, save reports & plots.
-
-Extra debug instrumentation:
-- DataFrame profiling (rows/cols/nulls/constants) at key steps.
-- Feature selection summaries (kept/dropped, null counts, variance).
-- Model training timings, best params, weight distributions.
-- Ensemble weight diagnostics, test-set error breakdowns.
+8. Retrain models on train+val and save.
+9. Evaluate ensemble on test, save reports & plots, persist feature means.
 """
 
 from __future__ import annotations
@@ -85,20 +88,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 SEED = 42
 DEFAULT_CV_FOLDS = 4
 
-NFL_SAFE_FEATURE_PREFIXES = (
-    "home_", "away_",
-    "h_", "a_",
-    "rolling_", "season_", "h2h_", "momentum_", "rest_", "form_",
-    "adv_", "drive_", "situational_", "total_", "map_",
-)
-LABEL_BLOCKLIST = {"home_score", "away_score", "margin", "total"}
-NFL_SAFE_EXACT_FEATURE_NAMES = (
-    "day_of_week",
-    "week",
-    "is_division_game",
-    "is_conference_game",
-)
-
 MODEL_CLASS_MAP: Dict[str, Type[BaseNFLPredictor]] = {
     "nfl_ridge_margin_predictor": RidgeMarginPredictor,
     "nfl_svr_margin_predictor": SVRMarginPredictor,
@@ -164,10 +153,7 @@ def add_total_composites(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     return out
 
 def _drop_constant_columns(df: pd.DataFrame, *, exclude: tuple[str, ...] = ("game_id",), debug: bool = False) -> pd.DataFrame:
-    """
-    Drop columns that are all-NaN or have a single unique value.
-    Keeps keys in `exclude`. Mirrors engine’s constant-col dropper as a belt-and-suspenders step.
-    """
+    """Drop columns that are all-NaN or have a single unique value."""
     if df.empty:
         return df
     cols = [c for c in df.columns if c not in exclude]
@@ -232,23 +218,16 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
     # =========================
     # MARGIN candidates
     # =========================
-    # prepend season diffs so they always make it into the pool
     margin_core = [
         c for c in base if (
-            is_diff(c)                               # general diffs
-            or is_rest(c)
-            or is_form(c)
+            is_diff(c) or is_rest(c) or is_form(c)
             or ("turnover_differential" in c)
             or (is_h2h(c) and ("home_win_pct" in c))
         )
     ]
-    # keep raw rolling diffs if present
     margin_core += [c for c in base if "point_differential" in c]
-
     margin_candidates = season_diffs_global + margin_core
-    # drop side-specific raw prior-season columns to avoid redundancy
     margin_candidates = [c for c in margin_candidates if not is_side_specific_season(c)]
-    # de-dup while preserving order
     seen = set()
     margin_candidates = [c for c in margin_candidates if not (c in seen or seen.add(c))]
 
@@ -259,29 +238,20 @@ def build_target_specific_candidates(features: pd.DataFrame) -> dict:
         "yards_per_play", "plays_per_game", "seconds_per_play",
         "neutral_pass_rate", "red_zone", "explosive_play_rate",
         "drive_success_rate", "drive_plays", "drive_yards",
-        # "epa_per_play", "pace"  # uncomment if these exist
     ))
 
     total_core = [
-        c for c in base if (
-            is_points(c)
-            or is_volume(c)
-            or is_rest(c)
-            or (is_h2h(c) and ("avg_total_points" in c))
-        )
+        c for c in base if (is_points(c) or is_volume(c) or is_rest(c) or (is_h2h(c) and ("avg_total_points" in c)))
     ]
-    # allow a couple of form signals for total, too
     total_core += [c for c in base if is_form(c) and ("form_win_pct" in c)]
-
     total_candidates = season_diffs_global + total_core
-    # de-dup while preserving order
     seen = set()
     total_candidates = [c for c in total_candidates if not (c in seen or seen.add(c))]
 
     return {"margin": margin_candidates, "total": total_candidates}
 
 
-# ---------- helpers ----------
+# ---------- helpers for selection & robustness ----------
 
 def _abs_corr_topk(X: pd.DataFrame, y: pd.Series, pool: list[str], k: int) -> list[str]:
     if k <= 0:
@@ -318,7 +288,11 @@ def _stability_select(
     hits = pd.Series(0, index=base_selected, dtype=int)
     for s in seeds:
         scaler = StandardScaler()
-        Xs = scaler.fit_transform(X[base_selected].fillna(0.0))
+        # Mean imputation here as well
+        Xm = X[base_selected].copy()
+        Xm = Xm.replace([np.inf, -np.inf], np.nan)
+        Xm = Xm.fillna(Xm.mean(numeric_only=True))
+        Xs = scaler.fit_transform(Xm)
         model = LassoCV(alphas=np.logspace(-4, -1, 40), cv=TimeSeriesSplit(n_splits=DEFAULT_CV_FOLDS), random_state=s, n_jobs=-1, max_iter=10000).fit(Xs, y)
         keep = [c for c, coef in zip(base_selected, model.coef_) if abs(coef) > 1e-5]
         hits.loc[keep] += 1
@@ -327,12 +301,9 @@ def _stability_select(
 
 def _bucket_for(col: str) -> str:
     c = col.lower()
-
-    # Explicit prev-season routing (do this FIRST so it doesn't get caught by home_/away_)
     if c.startswith("prev_season_") or "_prev_season_" in c \
        or c.startswith("home_prev_season_") or c.startswith("away_prev_season_"):
         return "season"
-
     if c.startswith("h2h_"): return "h2h"
     if c.startswith("rolling_") or "rolling_" in c: return "rolling"
     if c.startswith("rest_") or "rest_days" in c or "short_week" in c or "off_bye" in c: return "rest"
@@ -355,6 +326,54 @@ def _summarize_selected(name: str, cols: list[str]) -> None:
     ct = Counter(_bucket_for(c) for c in cols)
     logger.info("SELECTED[%s] count=%d | by bucket=%s", name, len(cols), dict(ct))
     logger.debug("SELECTED[%s] = %s", name, cols)
+
+def _feature_availability(df: pd.DataFrame, cols: list[str]) -> pd.Series:
+    """Non-null ratio per column."""
+    present = [c for c in cols if c in df.columns]
+    if not present:
+        return pd.Series(dtype=float)
+    return 1.0 - df[present].isna().mean()
+
+def _filter_by_availability(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    candidates: list[str],
+    min_avail: float
+) -> list[str]:
+    """Keep only features that are sufficiently available on both TRAIN and VAL."""
+    if not candidates:
+        return candidates
+    a_train = _feature_availability(train_df, candidates)
+    a_val   = _feature_availability(val_df, candidates)
+    keep = []
+    for c in candidates:
+        at = float(a_train.get(c, 0.0))
+        av = float(a_val.get(c, 0.0))
+        if at >= min_avail and av >= min_avail:
+            keep.append(c)
+    return keep
+
+def _compute_feature_means(X: pd.DataFrame) -> Dict[str, float]:
+    return {c: float(X[c].mean()) for c in X.columns}
+
+def _apply_means_imputation(df: pd.DataFrame, feat_list: list[str], feat_means: Dict[str, float]) -> pd.DataFrame:
+    """Reindex and fill NaNs using train means (no zeros)."""
+    X = df.reindex(columns=feat_list)
+    # pandas fillna accepts a dict mapping column -> value
+    X = X.fillna(value=feat_means)
+    # Any remaining (all-NaN columns not in dict) get filled by per-col mean=0 guard
+    remain_nulls = X.columns[X.isna().any()].tolist()
+    if remain_nulls:
+        for c in remain_nulls:
+            X[c] = X[c].fillna(feat_means.get(c, 0.0))
+    return X
+
+def _missingness_report(name: str, df: pd.DataFrame):
+    if df.empty:
+        return
+    nn = 1.0 - df.isna().mean()
+    worst = nn.sort_values().head(15)
+    logger.info("MISSINGNESS[%s] worst-15 availability:\n%s", name, worst.to_string())
 
 
 def _ensure_bucket_mi(
@@ -384,11 +403,13 @@ def _ensure_bucket_mi(
         if len(have) >= min_per_bucket:
             continue
 
+        # Mean impute here too
         cols = [c for c in cols if c not in sel_set and X[c].nunique(dropna=False) > 1]
         if not cols:
             continue
 
-        Xb = X[cols].fillna(0.0)
+        Xb = X[cols].copy()
+        Xb = Xb.replace([np.inf, -np.inf], np.nan).fillna(Xb.mean(numeric_only=True))
         cols = [c for c in cols if Xb[c].std(ddof=0) > 0]
         if not cols:
             continue
@@ -403,7 +424,7 @@ def _ensure_bucket_mi(
     return out
 
 
-# ---------- main ----------
+# ---------- selection driver ----------
 
 def run_feature_selection(
     X: pd.DataFrame,
@@ -413,7 +434,7 @@ def run_feature_selection(
     save_dir: Path = MODELS_DIR,
     debug: bool = False,
     *,
-    freeze_drive_bucket: bool = False,   # NEW
+    freeze_drive_bucket: bool = False,
 ) -> list[str]:
     logger.info("Lasso/EN feature selection → %s (freeze_drive_bucket=%s)", target_name, freeze_drive_bucket)
 
@@ -429,7 +450,9 @@ def run_feature_selection(
     # ---------- 0) Build working matrix (numeric only) ----------
     cands = [c for c in feature_candidates if c in X.columns]
     X_sel = X[cands].select_dtypes(include=np.number).copy()
-    X_sel = X_sel.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    X_sel = X_sel.replace([np.inf, -np.inf], np.nan)
+    # MEAN IMPUTATION (TRAIN-SIDE)
+    X_sel = X_sel.fillna(X_sel.mean(numeric_only=True))
 
     # drop constants
     nonconst = [c for c in X_sel.columns if X_sel[c].nunique(dropna=False) > 1]
@@ -489,7 +512,7 @@ def run_feature_selection(
         X_sel, y, selected, target_name,
         min_per_bucket=(2 if use_en else 1),
         topk_per_bucket=(3 if use_en else 2),
-        freeze_drive_bucket=freeze_drive_bucket,   # NEW
+        freeze_drive_bucket=freeze_drive_bucket,
     )
 
     # ---------- 5) Enforce per-target floor via |corr| top-up ----------
@@ -507,7 +530,6 @@ def run_feature_selection(
     # ---------- 6) Order by original candidate order for stability ----------
     selected = [c for c in feature_candidates if c in selected]
 
-    # Visibility: per-bucket counts for final selection
     _summarize_selected(target_name, selected)
 
     # Save & log
@@ -620,7 +642,7 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     logger.info("--- NFL Training Pipeline ---")
     logger.info("Args: %s", vars(args))
 
-    # 1. Data Loading (this part is correct)
+    # 1. Data Loading
     sb = get_supabase_client()
     if not sb:
         sys.exit(1)
@@ -635,7 +657,7 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     _log_df(games_df, "games_df_raw", args.debug)
     _log_df(stats_df, "stats_df_raw", args.debug)
 
-    # 2. Instantiate and run the refactored feature engine
+    # 2. Feature engine
     logger.info("Initializing and running the refactored NFLFeatureEngine...")
     feat_t0 = time.time()
 
@@ -644,10 +666,9 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
         supabase_service_key=config.SUPABASE_SERVICE_KEY,
     )
 
-    # Build features: pass drive knobs so engine can forward to drive.transform
     features = nfl_engine.build_features(
         games_df=games_df,
-        historical_games_df=games_df,  # Pass the same df for history context
+        historical_games_df=games_df,
         historical_team_stats_df=stats_df,
         debug=args.debug,
         # DRIVE module controls
@@ -668,13 +689,13 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
         "rest_days",
     ])
 
-    # ---- NEW: train-side constant dropper (belt & suspenders) ----
+    # train-side constant dropper
     features = _drop_constant_columns(features, exclude=("game_id",), debug=args.debug)
 
     logger.info("Feature pipeline complete in %.2fs | shape=%s", time.time() - feat_t0, features.shape)
     _log_df(features, "features_full", args.debug)
 
-    # Targets (safe; composites don’t touch labels)
+    # Targets
     features = features.dropna(subset=["home_score", "away_score"])
     if features.empty:
         logger.critical("After dropping rows without labels, no data remains.")
@@ -683,29 +704,55 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     features["margin"] = features["home_score"] - features["away_score"]
     features["total"]  = features["home_score"] + features["away_score"]
 
-    # Now build target-specific candidates
+    # Label sanity: simple stats
+    label_stats = features[["home_score","away_score","total"]].describe().loc[["mean","50%","max","std"]]
+    logger.info("LABELS stats (TRAIN+VAL+TEST overall snapshot):\n%s", label_stats.to_string())
+
+    # Candidates (pre-filter)
     cands = build_target_specific_candidates(features)
 
-    # --- seed immutable, high-value priors into the candidate lists ---
+    # Required seeds (margin priors always allowed)
     REQUIRED_MARGIN = ["prev_season_win_pct_diff", "prev_season_srs_lite_diff"]
-    REQUIRED_TOTAL  = []  # keep totals clean for now; add priors here if you want them for totals
+    # TOTAL robust seeds: conditionally add if they meet availability threshold later
+    TOTAL_SEED_CANDIDATES = [
+        "rolling_points_for_avg_diff",
+        "rolling_yards_per_play_avg_diff",
+        "total_rolling_points_for_avg",
+    ]
 
     def _seed_required(cands_list, required):
-        # Required first (if present), then the rest (no dupes); preserves stable order
         req = [c for c in required if c in cands_list]
         seen = set(req)
         tail = [c for c in cands_list if c not in seen]
         return req + tail
 
     margin_candidates = _seed_required(cands["margin"], REQUIRED_MARGIN)
-    total_candidates  = _seed_required(cands["total"],  REQUIRED_TOTAL)
+    total_candidates  = cands["total"][:]  # TOTAL seeds are determined after availability check
 
-    logger.info(
-        "Candidate features after seeding: margin=%d | total=%d",
-        len(margin_candidates), len(total_candidates)
+    _summarize_candidates("margin (pre-split)", margin_candidates)
+    _summarize_candidates("total (pre-split)",  total_candidates)
+
+    # 4) Split
+    train_df, val_df, test_df = chronological_split(
+        features,
+        test_size=args.test_size,
+        val_size=args.val_size,
+        date_col="game_date",
     )
+    logger.info("Split sizes → train=%d, val=%d, test=%d", len(train_df), len(val_df), len(test_df))
+    _log_df(train_df, "train_df", args.debug)
+    _log_df(val_df,   "val_df",   args.debug)
+    _log_df(test_df,  "test_df",  args.debug)
 
-    # --- Feature-selection helpers (place near other helpers/utilities) ---
+    # 5) Availability gating on TRAIN + VAL
+    min_avail = float(args.min_availability)
+    margin_after_avail = _filter_by_availability(train_df, val_df, margin_candidates, min_avail=min_avail)
+    total_after_avail  = _filter_by_availability(train_df, val_df, total_candidates,  min_avail=min_avail)
+
+    # Add TOTAL robust seeds if they pass availability
+    robust_total_seeds = [c for c in TOTAL_SEED_CANDIDATES if c in total_after_avail]
+    REQUIRED_TOTAL = robust_total_seeds  # may be empty
+
     def _variance_filter(df, cols, min_var=1e-8, required=()):
         keep = []
         for c in cols:
@@ -729,70 +776,73 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
                 out.append(c)
         return out
 
-    # --- apply filters while preserving required features ---
-    margin_after_var = _variance_filter(features, margin_candidates, required=REQUIRED_MARGIN)
-    margin_after_cor = _corr_filter(features, margin_after_var,  required=REQUIRED_MARGIN)
+    margin_after_var = _variance_filter(train_df, margin_after_avail, required=REQUIRED_MARGIN)
+    margin_after_cor = _corr_filter(train_df, margin_after_var,  required=REQUIRED_MARGIN)
 
-    total_after_var  = _variance_filter(features, total_candidates,  required=REQUIRED_TOTAL)
-    total_after_cor  = _corr_filter(features, total_after_var,       required=REQUIRED_TOTAL)
+    total_after_var  = _variance_filter(train_df, total_after_avail,  required=REQUIRED_TOTAL)
+    total_after_cor  = _corr_filter(train_df, total_after_var,       required=REQUIRED_TOTAL)
 
-    # quick visibility: ensure required features survived
-    for _f in REQUIRED_MARGIN:
-        if _f not in margin_after_cor:
-            logger.warning("Required margin feature missing after filters: %s", _f)
-    for _f in REQUIRED_TOTAL:
-        if _f not in total_after_cor:
-            logger.warning("Required total feature missing after filters: %s", _f)
+    # Bucket makeup (filtered by availability)
+    _summarize_candidates("margin (post-avail, pre-select)", margin_after_cor)
+    _summarize_candidates("total (post-avail, pre-select)",  total_after_cor)
 
-    # visibility on bucket makeup (summarize the FILTERED sets from the full frame)
-    _summarize_candidates("margin (pre-split)", margin_after_cor)
-    _summarize_candidates("total (pre-split)",  total_after_cor)
+    # 6) Final feature selection on TRAIN only
+    # Conditional DRIVE freeze for TOTAL: freeze if we have zero reliable DRIVE cols
+    drive_in_total = [c for c in total_after_cor if _bucket_for(c) == "drive"]
+    freeze_drive_total = (len(drive_in_total) == 0) or bool(args.freeze_drive_mi)
 
-    # 4) Chronological split
-    train_df, val_df, test_df = chronological_split(
-        features,
-        test_size=args.test_size,
-        val_size=args.val_size,
-        date_col="game_date",
+    margin_feat_list = run_feature_selection(
+        X=train_df,
+        y=train_df["margin"],
+        feature_candidates=margin_after_cor,
+        target_name="margin",
+        debug=args.debug,
+        freeze_drive_bucket=False,
     )
-    logger.info("Split sizes → train=%d, val=%d, test=%d", len(train_df), len(val_df), len(test_df))
-    _log_df(train_df, "train_df", args.debug)
-    _log_df(val_df,   "val_df",   args.debug)
-    _log_df(test_df,  "test_df",  args.debug)
-    
-    # 5) Re-run lightweight filters on TRAIN ONLY (leakage-safe) while preserving required
-    margin_after_var_tr = _variance_filter(train_df, margin_candidates, required=REQUIRED_MARGIN)
-    margin_after_cor_tr = _corr_filter(train_df, margin_after_var_tr, required=REQUIRED_MARGIN)
 
-    total_after_var_tr  = _variance_filter(train_df, total_candidates,  required=REQUIRED_TOTAL)
-    total_after_cor_tr  = _corr_filter(train_df, total_after_var_tr,    required=REQUIRED_TOTAL)
+    # Ensure REQUIRED_MARGIN on top
+    if REQUIRED_MARGIN:
+        margin_feat_list = REQUIRED_MARGIN + [f for f in margin_feat_list if f not in REQUIRED_MARGIN]
 
-    # sanity: ensure required survived
-    for _f in REQUIRED_MARGIN:
-        if _f not in margin_after_cor_tr:
-            logger.warning("Required margin feature missing after TRAIN filters: %s", _f)
-    for _f in REQUIRED_TOTAL:
-        if _f not in total_after_cor_tr:
-            logger.warning("Required total feature missing after TRAIN filters: %s", _f)
+    total_feat_list = run_feature_selection(
+        X=train_df,
+        y=train_df["total"],
+        feature_candidates=total_after_cor,
+        target_name="total",
+        debug=args.debug,
+        freeze_drive_bucket=freeze_drive_total,
+    )
 
-    # 6) Final column sets for each target
-    MARGIN_COLS = [c for c in margin_after_cor_tr if c in train_df.columns]
-    TOTAL_COLS  = [c for c in total_after_cor_tr  if c in train_df.columns]
+    # Ensure REQUIRED_TOTAL (robust pace/points) on top, if any
+    if REQUIRED_TOTAL:
+        total_feat_list = REQUIRED_TOTAL + [f for f in total_feat_list if f not in REQUIRED_TOTAL]
 
-    logger.info("Final MARGIN features (n=%d): %s", len(MARGIN_COLS), MARGIN_COLS[:15])
-    logger.info("Final TOTAL  features (n=%d): %s", len(TOTAL_COLS),  TOTAL_COLS[:15])
+    _summarize_selected("margin", margin_feat_list)
+    _summarize_selected("total",  total_feat_list)
 
-    # 7. Recency weights
+    logger.info("Final MARGIN features (n=%d): %s", len(margin_feat_list), margin_feat_list[:15])
+    logger.info("Final TOTAL  features (n=%d): %s", len(total_feat_list),  total_feat_list[:15])
+
+    # 7) Recency weights + sanity logs
     recency_w_train    = compute_recency_weights(train_df["game_date"])
     combined_dates     = pd.concat([train_df, val_df])["game_date"]
     recency_w_combined = compute_recency_weights(combined_dates)
-
     if args.debug:
         logger.debug("Recency weights: train len=%s, combined len=%s",
                      len(recency_w_train) if recency_w_train is not None else None,
                      len(recency_w_combined) if recency_w_combined is not None else None)
 
-    # 8. Model dictionaries & param grids
+    # Weighted vs unweighted TRAIN total mean (sanity)
+    train_total_mean_unw = float(train_df["total"].mean())
+    if recency_w_train is not None:
+        w = np.asarray(recency_w_train, dtype=float)
+        w = w / (w.sum() + 1e-12)
+        train_total_mean_w = float(np.dot(train_df["total"].values, w))
+        logger.info("TRAIN total mean (unweighted)=%.2f | (recency-weighted)=%.2f", train_total_mean_unw, train_total_mean_w)
+    else:
+        logger.info("TRAIN total mean (unweighted)=%.2f | (recency-weighted)=N/A", train_total_mean_unw)
+
+    # 8. Model dictionaries & param grids (slightly widened)
     margin_models: Dict[str, Type[BaseNFLPredictor]] = {
         "ridge": RidgeMarginPredictor,
         "svr": SVRMarginPredictor,
@@ -804,17 +854,17 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
 
     param_dists: Dict[str, Dict[str, Any]] = {
         "xgb": {
-            "model__n_estimators":      randint(200, 600),
-            "model__max_depth":         randint(2, 6),
-            "model__learning_rate":     loguniform(1e-3, 5e-2),
+            "model__n_estimators":      randint(200, 650),
+            "model__max_depth":         randint(2, 8),            # was 2..6
+            "model__learning_rate":     loguniform(1e-3, 8e-2),   # was up to 5e-2
             "model__subsample":         uniform(0.6, 0.4),
             "model__colsample_bytree":  uniform(0.6, 0.4),
         },
         "rf": {
-            "model__n_estimators":      randint(200, 600),
-            "model__max_depth":         randint(4, 12),
-            "model__min_samples_leaf":  randint(3, 20),
-            "model__max_features":      randint(5, 40),
+            "model__n_estimators":      randint(200, 650),
+            "model__max_depth":         randint(4, 13),
+            "model__min_samples_leaf":  randint(2, 17),           # lower floor for more flexibility
+            "model__max_features":      randint(5, 40),           # includes sqrt-ish for many p
         },
     }
 
@@ -822,40 +872,29 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
     results: Dict[str, Dict[str, Any]] = {}
 
     for target, model_map in [("margin", margin_models), ("total", total_models)]:
-        # Pick filtered/seeded candidate list for this target (TRAIN-based)
-        if target == "margin":
-            candidates_for_target = margin_after_cor_tr
-            required_for_target   = REQUIRED_MARGIN
-        else:
-            candidates_for_target = total_after_cor_tr
-            required_for_target   = REQUIRED_TOTAL
+        feat_list = margin_feat_list if target == "margin" else total_feat_list
 
-        feat_list = run_feature_selection(
-            X=train_df,
-            y=train_df[target],
-            feature_candidates=candidates_for_target,
-            target_name=target,
-            debug=args.debug,
-            freeze_drive_bucket=args.freeze_drive_mi,   # NEW
-        )
+        # Build TRAIN, VAL with mean imputation (no zeros)
+        X_train = train_df.reindex(columns=feat_list)
+        # Train-side mean imputation for selection consistency
+        X_train = X_train.replace([np.inf, -np.inf], np.nan).fillna(X_train.mean(numeric_only=True))
+        y_train = train_df[target]
 
-        if required_for_target:
-            req_then_selected = required_for_target + [f for f in feat_list if f not in required_for_target]
-            feat_list = req_then_selected
+        # Persistable means (used for VAL/TEST imputation and for inference)
+        feat_means = _compute_feature_means(X_train)
 
-        _summarize_selected(target, feat_list)
-
-        logger.info("\n=== Target: %s ===", target.upper())
-
-        # Build matrices; reindex val/test to avoid missing-column errors
-        X_train, y_train = train_df[feat_list], train_df[target]
-        X_val,   y_val   = val_df.reindex(columns=feat_list, fill_value=0.0),   val_df[target]
+        # VAL matrix using TRAIN means
+        X_val = _apply_means_imputation(val_df, feat_list, feat_means)
+        y_val = val_df[target]
 
         _log_df(X_train, f"X_train_{target}", args.debug)
         _log_df(X_val,   f"X_val_{target}",   args.debug)
 
-        val_preds_dict: Dict[str, pd.Series] = {}
+        # Missingness reports
+        _missingness_report(f"VAL[{target}]", X_val)
 
+        # Train/val models, gather val preds
+        val_preds_dict: Dict[str, pd.Series] = {}
         for key, cls in model_map.items():
             t_model = time.time()
             _, val_preds, _ = train_and_get_val_preds(
@@ -878,18 +917,26 @@ def run_training_pipeline(args: argparse.Namespace) -> None:
             json.dump(weights, f, indent=4)
         logger.info("Ensemble weights saved → %s", weights_path)
 
-        results[target] = {"weights": weights, "features": feat_list}
+        # Persist feature list & means for inference-time parity
+        with open(MODELS_DIR / f"nfl_{target}_selected_features.json", "w") as f:
+            json.dump(feat_list, f, indent=4)
+        with open(MODELS_DIR / f"nfl_{target}_feature_means.json", "w") as f:
+            json.dump(feat_means, f, indent=4)
 
+        results[target] = {"weights": weights, "features": feat_list, "means": feat_means}
 
-    # 10. Final test evaluation
+    # 10. Final test evaluation (use TRAIN means per target)
     logger.info("\n=== Final Ensemble Evaluation (TEST) ===")
     final_preds: Dict[str, pd.Series] = {}
+
     for target, meta in results.items():
         feat_list = meta["features"]
         weights   = meta["weights"]
+        feat_means = meta["means"]
 
-        X_test = test_df.reindex(columns=feat_list, fill_value=0.0)
+        X_test = _apply_means_imputation(test_df, feat_list, feat_means)
         _log_df(X_test, f"X_test_{target}", args.debug)
+        _missingness_report(f"TEST[{target}]", X_test)
 
         ensemble = pd.Series(0.0, index=test_df.index)
         for model_name, w in weights.items():
@@ -943,27 +990,31 @@ if __name__ == "__main__":
     p.add_argument("--skip-tuning", action="store_true")
     p.add_argument("--tune-iterations", type=int, default=50)
     p.add_argument("--cv-splits", type=int, default=DEFAULT_CV_FOLDS)
-    p.add_argument("--disable-drive-stage", action="store_true",
-                help="Skip the DRIVE feature module entirely for A/B tests.")
-    p.add_argument("--drive-window", type=int, default=5,
-                help="Rolling window (games) for DRIVE pre-game averages.")
-    p.add_argument("--drive-reset-by-season", dest="drive_reset_by_season", action="store_true",
-                help="Reset DRIVE rolling windows at season boundaries (default).")
-    p.add_argument("--no-drive-reset-by-season", dest="drive_reset_by_season", action="store_false",
-                help="Do not reset DRIVE rolling windows at season boundaries.")
-    p.set_defaults(drive_reset_by_season=True)
 
+    # Availability & selection controls
+    p.add_argument("--min-availability", type=float, default=0.80,
+                   help="Minimum non-null ratio required on TRAIN and VAL for a feature to be eligible.")
+    p.add_argument("--freeze-drive-mi", action="store_true",
+                   help="Force MI to skip DRIVE bucket top-ups across targets (TOTAL also conditionally freezes).")
+
+    # DRIVE knobs
+    p.add_argument("--disable-drive-stage", action="store_true",
+                   help="Skip the DRIVE feature module entirely for A/B tests.")
+    p.add_argument("--drive-window", type=int, default=5,
+                   help="Rolling window (games) for DRIVE pre-game averages.")
+    p.add_argument("--drive-reset-by-season", dest="drive_reset_by_season", action="store_true",
+                   help="Reset DRIVE rolling windows at season boundaries (default).")
+    p.add_argument("--no-drive-reset-by-season", dest="drive_reset_by_season", action="store_false",
+                   help="Do not reset DRIVE rolling windows at season boundaries.")
+    p.set_defaults(drive_reset_by_season=True)
     p.add_argument("--drive-min-prior-games", type=int, default=0,
-                help="If >0, mask DRIVE *_avg to NaN when prior games < threshold.")
+                   help="If >0, mask DRIVE *_avg to NaN when prior games < threshold.")
     p.add_argument("--drive-soft-fail", dest="drive_soft_fail", action="store_true",
-                help="Soft-fail DRIVE on error and keep pipeline running (default).")
+                   help="Soft-fail DRIVE on error and keep pipeline running (default).")
     p.add_argument("--no-drive-soft-fail", dest="drive_soft_fail", action="store_false",
-                help="Raise on DRIVE errors instead of soft-failing.")
+                   help="Raise on DRIVE errors instead of soft-failing.")
     p.set_defaults(drive_soft_fail=True)
 
-    # --- Feature selection control for DRIVE bucket ---
-    p.add_argument("--freeze-drive-mi", action="store_true",
-               help="Prevent mutual-information top-ups for the 'drive' bucket during feature selection.")
     p.add_argument("--debug", action="store_true")
     args = p.parse_args()
 
