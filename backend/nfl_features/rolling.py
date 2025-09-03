@@ -11,6 +11,8 @@ Enhancements:
     • via `window` column (e.g., 3/5/10) → pivots to _w3/_w5/_w10
     • via column suffixes (e.g., _3g / _w3) → normalized to _wN
 - Blended recency features (e.g., 0.5*w3 + 0.3*w5 + 0.2*w10).
+- Empirical-Bayes smoothing toward league priors (window-aware).
+- Low-sample flags per side/window to stabilize early-season behavior.
 - Stronger differentials including attack-vs-defense cross-diffs.
 - Light clipping to keep outliers from swamping models.
 - Lean return: only game_id + emitted rolling features (typed).
@@ -62,12 +64,12 @@ _BLEND_WEIGHTS: Mapping[int, float] = {3: 0.5, 5: 0.3, 10: 0.2}
 # Light caps (keep signal strong but bounded)
 _CLIP_RANGES_RAW = {
     # raw rates/levels
-    r"^home_rolling_points_(?:for|against)_avg(?:_w\d+)?$": (8.0, 45.0),
-    r"^away_rolling_points_(?:for|against)_avg(?:_w\d+)?$": (8.0, 45.0),
+    r"^home_rolling_points_(?:for|against)_avg(?:_w\d+)?$": (8.0, 48.0),
+    r"^away_rolling_points_(?:for|against)_avg(?:_w\d+)?$": (8.0, 48.0),
     r"^(home|away)_rolling_yards_per_play_(?:avg|allowed_avg)(?:_w\d+)?$": (3.5, 8.5),
     r"^(home|away)_rolling_turnover_differential_avg(?:_w\d+)?$": (-2.5, 2.5),
     # blends
-    r"^(home|away)_rolling_points_(?:for|against)_avg_blend$": (8.0, 45.0),
+    r"^(home|away)_rolling_points_(?:for|against)_avg_blend$": (8.0, 48.0),
     r"^(home|away)_rolling_yards_per_play_avg_blend$": (3.5, 8.5),
 }
 _CLIP_RANGES_DIFF = {
@@ -156,7 +158,7 @@ def _gather_base_metric_cols(df: pd.DataFrame) -> set[str]:
     """Collect base metric column names present in df (without window suffixes)."""
     present = set()
     for col in df.columns:
-        base, w = _normalize_window_suffix(col)
+        base, _ = _normalize_window_suffix(col)
         if base in _BASE_FEATURE_COLS or base in _DERIVED_LOCAL or base in _DEFENSE_ALIASES.values():
             present.add(base)
     return present
@@ -231,8 +233,8 @@ def _asof_trim_stats(stats: pd.DataFrame, games: pd.DataFrame, time_col: Optiona
 def _pivot_windows_if_needed(stats: pd.DataFrame) -> pd.DataFrame:
     """
     Supports:
-      1) 'window' column → pivot to _wN columns
-      2) column suffixes (…_3g / …_w3) → normalized to _wN columns
+      1) 'window' column → pivot to _wN columns (and pivot sample counts if present)
+      2) column suffixes (…_3g / …_w3) → normalized to _wN columns (metrics + sample counts)
       3) single-window → passthrough
     Always returns one row per team_norm.
     """
@@ -242,7 +244,12 @@ def _pivot_windows_if_needed(stats: pd.DataFrame) -> pd.DataFrame:
     if "window" in s.columns:
         # keep only known metric columns + defense aliases if present
         metric_bases = _gather_base_metric_cols(s)
+        # also carry a generic sample count column if present
+        sample_count_col = next((c for c in ("games_sampled", "games_played", "n", "games") if c in s.columns), None)
         keep_cols = ["team_norm", "window"] + [c for c in s.columns if c in metric_bases]
+        if sample_count_col:
+            keep_cols.append(sample_count_col)
+
         s = s[keep_cols].copy()
 
         # ensure numeric dtypes
@@ -258,6 +265,14 @@ def _pivot_windows_if_needed(stats: pd.DataFrame) -> pd.DataFrame:
                 sub.columns = [c[-1] for c in sub.columns]
             sub = sub.rename(columns={w: f"{base}_w{int(w)}" for w in sub.columns})
             wide_parts.append(sub)
+        # pivot sample counts (if present)
+        if sample_count_col:
+            sub = s.pivot_table(index="team_norm", columns="window", values=sample_count_col, aggfunc="last")
+            if isinstance(sub.columns, pd.MultiIndex):
+                sub.columns = [c[-1] for c in sub.columns]
+            sub = sub.rename(columns={w: f"{sample_count_col}_w{int(w)}" for w in sub.columns})
+            wide_parts.append(sub)
+
         if not wide_parts:
             return s.groupby("team_norm", sort=False).tail(1).drop(columns=["window"], errors="ignore")
         wide = pd.concat(wide_parts, axis=1).reset_index()
@@ -271,6 +286,11 @@ def _pivot_windows_if_needed(stats: pd.DataFrame) -> pd.DataFrame:
         for c in suffix_cols:
             base, w = _normalize_window_suffix(c)
             if w is not None:
+                renames[c] = f"{base}_w{w}"
+        # normalize sample-count suffixes if present (e.g., games_sampled_3g → games_sampled_w3)
+        for c in list(s.columns):
+            base, w = _normalize_window_suffix(c)
+            if w is not None and base in {"games_sampled", "games_played", "n", "games"}:
                 renames[c] = f"{base}_w{w}"
         s = s.rename(columns=renames)
 
@@ -410,6 +430,111 @@ def _clip_by_patterns(df: pd.DataFrame, patterns_to_ranges: Mapping[str, tuple[f
             out[c] = pd.to_numeric(out[c], errors="coerce").astype("float32").clip(lo, hi)
     return out
 
+# --- EB smoothing -------------------------------------------------------------
+
+# Per-base prior strength (k): larger = stronger pull to prior when sample is small
+_EB_K: Mapping[str, float] = {
+    "rolling_points_for_avg": 4.0,
+    "rolling_points_against_avg": 4.0,
+    "rolling_yards_per_play_avg": 6.0,
+    "rolling_turnover_differential_avg": 8.0,
+}
+
+# Candidate names for per-window sample-size columns we might receive
+_SAMPLE_NAME_TEMPLATES = (
+    "games_sampled_w{w}",
+    "games_played_w{w}",
+    "n_w{w}",
+    "games_w{w}",
+)
+
+def _find_sample_series(df: pd.DataFrame, w: int) -> Optional[pd.Series]:
+    """Return a numeric Series with the sample size for window w, if present."""
+    for templ in _SAMPLE_NAME_TEMPLATES:
+        col = templ.format(w=w)
+        if col in df.columns:
+            return pd.to_numeric(df[col], errors="coerce")
+    return None
+
+def _eb_shrink_series(val: pd.Series, n: pd.Series, mu: float, k: float) -> pd.Series:
+    """EB shrink: (val*n + mu*k)/(n+k). Works elementwise with NaN-tolerant inputs."""
+    n_safe = pd.to_numeric(n, errors="coerce").fillna(0.0).astype("float32")
+    v_safe = pd.to_numeric(val, errors="coerce").astype("float32")
+    num = (v_safe * n_safe) + (float(mu) * float(k))
+    den = n_safe + float(k)
+    out = (num / den).astype("float32")
+    return out
+
+def _apply_eb_shrink(stats: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply EB shrink to windowed and blend columns for bases we know priors for.
+    If no explicit sample column exists for a window, assume n≈min(w, 3).
+    Blend effective n := weight-normalized sum of component ns.
+    """
+    s = stats.copy()
+
+    # Which bases do we have priors for?
+    bases_with_priors = {b for b in _gather_base_metric_cols(s) if b in _EB_K}
+
+    for base in bases_with_priors:
+        prior_key = _BASE_FEATURE_COLS.get(base, None)
+        mu = float(DEFAULTS.get(prior_key, 0.0)) if prior_key else 0.0
+        k = float(_EB_K.get(base, 4.0))
+
+        # Windowed columns
+        for w in _BLEND_WINDOWS:
+            col = f"{base}_w{w}"
+            if col in s.columns:
+                n_series = _find_sample_series(s, w)
+                if n_series is None:
+                    n_series = pd.Series(float(min(w, 3)), index=s.index, dtype="float32")
+                s[col] = _eb_shrink_series(s[col], n_series, mu=mu, k=k)
+
+        # Blend column
+        bcol = f"{base}_blend"
+        if bcol in s.columns:
+            # Effective n = weight-normalized sum of window ns
+            eff_n = pd.Series(0.0, index=s.index, dtype="float32")
+            total_w = 0.0
+            for w in _BLEND_WINDOWS:
+                wcol = f"{base}_w{w}"
+                if wcol in s.columns:
+                    weight = float(_BLEND_WEIGHTS.get(w, 0.0))
+                    total_w += weight
+                    n_series = _find_sample_series(s, w)
+                    if n_series is None:
+                        n_series = pd.Series(float(min(w, 3)), index=s.index, dtype="float32")
+                    eff_n = eff_n + (n_series * weight)
+            if total_w > 0:
+                eff_n = (eff_n / total_w).astype("float32")
+            else:
+                eff_n = pd.Series(3.0, index=s.index, dtype="float32")
+            s[bcol] = _eb_shrink_series(s[bcol], eff_n, mu=mu, k=k)
+
+    return s
+
+def _emit_low_sample_flags(df: pd.DataFrame, windows: Sequence[int], frac_thresh: float = 0.6, min_games: int = 2) -> pd.DataFrame:
+    """
+    Create home_/away_rolling_low_sample_wN flags when per-window sample < max(min_games, frac*N).
+    Looks for columns like home_games_sampled_wN / away_games_sampled_wN; if not found,
+    tries games_played_wN / n_wN / games_wN. Silently skips missing windows.
+    """
+    out = df.copy()
+    for w in windows:
+        for side in ("home", "away"):
+            ncol = None
+            for base in ("games_sampled", "games_played", "n", "games"):
+                cand = f"{side}_{base}_w{w}"
+                if cand in out.columns:
+                    ncol = cand
+                    break
+            if not ncol:
+                continue
+            threshold = max(int(min_games), int(np.ceil(frac_thresh * w)))
+            flag = (pd.to_numeric(out[ncol], errors="coerce").fillna(0) < threshold).astype("float32")
+            out[f"{side}_rolling_low_sample_w{w}"] = flag
+    return out
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -464,7 +589,10 @@ def load_rolling_features(
     # --- D) Blended recency features ---
     stats_df = _build_blends(stats_df)
 
-    # --- Derived locals for each suffix (E: emit later after merges) ---
+    # --- D2) EB smoothing toward league priors (window-aware) ---
+    stats_df = _apply_eb_shrink(stats_df)
+
+    # --- D3) Derived locals for each suffix (recompute after EB to stay consistent) ---
     stats_df = _ensure_derived(stats_df)
 
     # All metric columns we intend to carry forward
@@ -487,7 +615,7 @@ def load_rolling_features(
         merged, stats_df, side="away", join_col="team_norm", keep_metric_cols=metric_cols
     )
 
-    # --- H) Fill raw rolling columns with sensible defaults (diffs handled later) ---
+    # --- F) Fill raw rolling columns with sensible defaults (diffs handled later) ---
     # Build map of base->default for non-window & window/blend columns
     def _default_for(base: str) -> float:
         key = _BASE_FEATURE_COLS.get(base, None)
@@ -504,7 +632,7 @@ def load_rolling_features(
     # Determine bases actually present (without prefixes/suffixes)
     all_metric_bases = set()
     for c in metric_cols:
-        base, suf_w = _normalize_window_suffix(c)
+        base, _ = _normalize_window_suffix(c)
         all_metric_bases.add(base)
 
     # Fill per side for raw columns; diffs will be NaN if both missing (policy)
@@ -523,7 +651,7 @@ def load_rolling_features(
             if c_b in merged.columns:
                 merged[c_b] = merged[c_b].fillna(_default_for(base)).astype("float32")
 
-    # --- F) Stronger diffs (symmetric + cross) ---
+    # --- G) Stronger diffs (symmetric + cross) ---
     # Build suffix list present
     suffixes = [""]
     for w in _BLEND_WINDOWS:
@@ -538,14 +666,19 @@ def load_rolling_features(
         suffixes=suffixes,
     )
 
-    # --- G) Light clipping ---
+    # --- H) Low-sample flags (helpful early season) ---
+    present_windows = [w for w in _BLEND_WINDOWS if any(col.endswith(f"_w{w}") for col in merged.columns)]
+    if present_windows:
+        merged = _emit_low_sample_flags(merged, windows=present_windows)
+
+    # --- I) Light clipping ---
     merged = _clip_by_patterns(merged, _CLIP_RANGES_RAW)
     merged = _clip_by_patterns(merged, _CLIP_RANGES_DIFF)
 
-    # --- I) Diagnostics ---
+    # --- J) Diagnostics ---
     if logger.isEnabledFor(logging.DEBUG):
         feat_cols = [c for c in merged.columns if c != "game_id" and (
-            c.startswith("home_") or c.startswith("away_") or c.endswith("_diff")
+            c.startswith("home_") or c.startswith("away_") or c.endswith("_diff") or c.endswith("_blend")
         )]
         null_rate = float(pd.isna(merged[feat_cols]).mean().mean() * 100) if feat_cols else 0.0
         windows_detected = [suf for suf in suffixes if suf]
@@ -554,13 +687,15 @@ def load_rolling_features(
             len(merged), len(all_metric_bases), windows_detected, len(feat_cols), null_rate
         )
 
-    # --- J) Return lean, typed frame ---
+    # --- K) Return lean, typed frame ---
     feature_cols = [
         c for c in merged.columns
         if c != "game_id" and (
             c.startswith("home_rolling_") or
             c.startswith("away_rolling_") or
-            c.endswith("_diff")
+            c.endswith("_diff") or
+            c.endswith("_blend") or
+            "_rolling_low_sample_w" in c
         )
     ]
     # ensure float32 numerics for compactness
