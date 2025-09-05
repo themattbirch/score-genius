@@ -1,6 +1,6 @@
 #########################################################
 # SCOREGENIUS .gitignore
-# Covers: Python backend, Node frontend, Supabase, models
+# Python backend, Node frontend, Supabase, models, data
 #########################################################
 
 ### Python
@@ -17,6 +17,12 @@ htmlcov/
 .tox/
 .nox/
 .hypothesis/
+
+### Python/tool caches
+.mypy_cache/
+.ruff_cache/
+.pyre/
+coverage/
 
 ### Virtual Environments
 .env
@@ -44,8 +50,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-### Service Worker Build
-/frontend/dist/app-sw.js
+### Vite cache
+frontend/.vite/
+.vite/
 
 ### Editor / IDE
 .idea/
@@ -53,6 +60,7 @@ yarn-error.log*
 *.swp
 *.swo
 .DS_Store
+._*
 *.sublime-workspace
 *.sublime-project
 Thumbs.db
@@ -63,10 +71,13 @@ Thumbs.db
 ### Logs & Temp
 *.log
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
 *.db
 /backend/server/logs/
 
 ### Machine Learning / Data Artifacts
+# Model weights/binaries
 *.pth
 *.pt
 *.pkl
@@ -78,27 +89,26 @@ Thumbs.db
 *.npz
 .pytorch/
 torch/
-/frontend/models/saved/*
+# Explicit model directories & metadata
+**/models/saved/**
+**/*selected_features.json
+
+### Data files (prevent ad-hoc dataset commits)
+*.csv
+*.csv.gz
+*.tsv
+*.parquet
+*.feather
 
 ### Reports & Analytics
 /reports/
-/reports/*
-/backend/analytics/outputs/*
-/backend/scripts/tmp/
-/evaluation_plots/
-
-# Ignore all backend test files
-/backend/tests/
+backend/analytics/outputs/*
+backend/scripts/tmp/
+evaluation_plots/
 
 ### Caching
 backend/caching/data/*
 !backend/caching/*.py
-
-### Keep source files, drop generated
-!backend/routers/*.py
-!backend/src/scripts/*.py
-!backend/utils/*.py
-!backend/*.py
 
 ### Notebooks
 .ipynb_checkpoints/
@@ -112,16 +122,25 @@ notebooks/
 *.key
 
 ### Supabase & Database
-# Keep migrations, ignore dumps
+# Keep migrations, ignore dumps and local secrets
 remote_dump.sql
 remote_full.sql
 *.sql
 !supabase/migrations/*.sql
 supabase/.temp/
 supabase/.cache/
+supabase/.env
+supabase/.secrets/
 
 ### Docs
 /frontend/docs/
+
+### Env/dev helpers
+.envrc
+.python-version
+
+### Service Worker Build
+# (covered by frontend/dist ignore)
 
 ### Misc
 *.tgz
@@ -129,3 +148,7 @@ supabase/.cache/
 *.zip
 *.bak
 *.orig
+
+### Optional ignores (uncomment if desired)
+Ignore all backend test files (not recommended for CI)
+/backend/tests/
