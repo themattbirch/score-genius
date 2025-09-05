@@ -1,35 +1,32 @@
 #########################################################
-# SCOREGENIUS .gitignore
-# Python backend, Node frontend, Supabase, models, data
+# SCOREGENIUS .gitignore (PUBLIC)
+# Frontend + safe assets only
+# Blocks: backend, models, certs, data, caches
 #########################################################
 
-### Python
+# --- Python (artifacts & caches)
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 .pytest_cache/
+.hypothesis/
+.tox/
+.nox/
+coverage/
 .coverage
 *.coverage.*
 coverage.xml
-htmlcov/
-.tox/
-.nox/
-.hypothesis/
-
-### Python/tool caches
 .mypy_cache/
 .ruff_cache/
 .pyre/
-coverage/
 
-### Virtual Environments
+# --- Virtual Environments
 .env
 **/.env
 **/.env.*
 .venv/
-env/
 venv/
 ENV/
 env.bak/
@@ -37,7 +34,7 @@ venv.bak/
 backend/venv_pytorch/
 backend/.venv/
 
-### Node / Frontend
+# --- Node / Frontend build output
 node_modules/
 dist/
 dist-ssr/
@@ -49,12 +46,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-### Vite cache
 frontend/.vite/
 .vite/
 
-### Editor / IDE
+# --- Editors / OS junk
 .idea/
 .vscode/
 *.swp
@@ -65,19 +60,21 @@ frontend/.vite/
 *.sublime-project
 Thumbs.db
 
-### TypeScript
+# --- TypeScript
 *.tsbuildinfo
 
-### Logs & Temp
+# --- Logs & temp
 *.log
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
 *.db
-/backend/server/logs/
+tmp/
+temp/
+.backend_tmp/
+backend/server/logs/
 
-### Machine Learning / Data Artifacts
-# Model weights/binaries
+# --- BLOCK: Models & ML artifacts
 *.pth
 *.pt
 *.pkl
@@ -89,40 +86,28 @@ Thumbs.db
 *.npz
 .pytorch/
 torch/
-# Explicit model directories & metadata
 **/models/saved/**
 **/*selected_features.json
 
-### Data files (prevent ad-hoc dataset commits)
+# --- BLOCK: Data files
 *.csv
 *.csv.gz
 *.tsv
 *.parquet
 *.feather
 
-### Reports & Analytics
-/reports/
-backend/analytics/outputs/*
-backend/scripts/tmp/
-evaluation_plots/
-
-### Caching
-backend/caching/data/*
-!backend/caching/*.py
-
-### Notebooks
-.ipynb_checkpoints/
-notebooks/
-
-### Certificates / Keys
+# --- BLOCK: Certs / signing material
+*.pfx
+*.p12
+*.b64
+encoded_pfx.txt
 *.pem
 *.cert
 *.crt
 *.csr
 *.key
 
-### Supabase & Database
-# Keep migrations, ignore dumps and local secrets
+# --- Supabase & DB (keep migrations only)
 remote_dump.sql
 remote_full.sql
 *.sql
@@ -132,23 +117,33 @@ supabase/.cache/
 supabase/.env
 supabase/.secrets/
 
-### Docs
-/frontend/docs/
+# --- Remove internal-only folders from public
+backend/
+models/
+debug/
+debug/pred_inspect/
+docs/
+scripts/
+reports/
+backend/analytics/outputs/
+backend/scripts/tmp/
+evaluation_plots/
+frontend/docs/
 
-### Env/dev helpers
+# --- Notebooks
+.ipynb_checkpoints/
+notebooks/
+
+# --- Env/dev helpers
 .envrc
 .python-version
 
-### Service Worker Build
-# (covered by frontend/dist ignore)
-
-### Misc
+# --- Misc bundles
 *.tgz
 *.tar
 *.zip
 *.bak
 *.orig
 
-### Optional ignores (uncomment if desired)
-Ignore all backend test files (not recommended for CI)
+# --- Optional: ignore tests in public
 /backend/tests/
