@@ -130,6 +130,15 @@ backend/scripts/tmp/
 evaluation_plots/
 frontend/docs/
 
+# Sensitive / build artifacts
+frontend/android.keystore
+frontend/app-release-*.apk
+frontend/app-release-*.aab
+frontend/tmp_apk/
+frontend/windows_package/
+frontend/*crash_log.txt
+frontend/manifest-checksum.txt
+
 # --- Notebooks
 .ipynb_checkpoints/
 notebooks/
