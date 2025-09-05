@@ -95,36 +95,38 @@ The system is designed with modularity and scalability in mind, structured into 
 
 ## 📁 Project Structure
 
-````text
 score-genius/
-├── backend/
-│   ├── caching/                 # Supabase and Redis caching utilities
-│   ├── models/                  # Model definitions, training, ensemble logic, and simulation
-│   │   ├── feature_engineering.py   # Unified feature engineering module
-│   │   ├── models.py                # Model definitions (XGBoost, SVR, Ridge) and pipelines
-│   │   ├── ensemble.py              # Adaptive ensemble weighting and uncertainty estimation
-│   │   ├── simulation.py            # Custom loss functions and simulation utilities
-│   │   └── train_models.py          # End-to-end model tuning, training, and evaluation pipeline
-│   ├── prediction.py            # On-the-fly prediction module with calibration and reporting
-│   ├── routers/                 # FastAPI routes for data, predictions, and recaps
-│   ├── venv/                    # Python virtual environment
-│   └── config.py                # Centralized configuration and environment variables
-└── frontend/
-    ├── src/
-    │   ├── components/          # Reusable UI components
-    │   ├── pages/               # Dashboard, recaps, and live updates
-    │   └── services/            # API service calls and state management
-    └── public/
+├── .gitignore # Protects secrets, models, builds, logs, datasets
+├── backend/ # Python data pipelines, API services, feature logic
+│ ├── caching/ # Shared Supabase client + lightweight caching
+│ ├── data_pipeline/ # Ingestion scripts (runs via GitHub Actions)
+│ ├── features/ # Feature engineering modules
+│ ├── nba_features/ # NBA-specific features
+│ ├── mlb_features/ # MLB-specific features
+│ ├── server/ # Node.js Express API server
+│ └── tests/ # Python tests (CI + local validation)
+│
+├── frontend/ # React PWA (Vite, Tailwind)
+│ ├── public/ # Static assets (icons, manifest)
+│ ├── src/ # React components, contexts, hooks, screens
+│ └── dist/ # Build output (ignored in Git)
+│
+├── supabase/ # Database migrations + config
+├── reports/ # Generated analysis/reports (ignored in Git)
+├── README.md # You are here
+└── package.json # Root package file (optional scripts/workspaces)
 
     ## Getting Started
 
 ### Prerequisites
+
 - `Node.js 18+`
 - `Python 3.13+`
 - `API-Sports` (or equivalent) credentials
 - Required environment variables (see `.env.example`)
 
 ### Installation
+
 1.  **Clone the Repository:**
     ```bash
     git clone git@github.com:themattbirch/score-genius.git
@@ -151,13 +153,20 @@ score-genius/
 ## Running Locally
 
 ### Start the Backend:
+
 ```bash
 cd backend
 uvicorn main:app --reload
 
 # License
-ScoreGenius is open-source and distributed under the MIT License.
+This repository is distributed under the **Business Source License 1.1 (BUSL-1.1)**.
+
+- You may view, clone, and modify the code for **non-production and non-commercial use**.
+- Production/commercial use requires a separate commercial license from the author.
+- After the change date specified in LICENSE, this code will be re-licensed under the GPL v2.0 or later.
+
+See the [LICENSE](./LICENSE) file for details.
 
 # Contact
 For questions or contributions, please contact Matt Birch at matt@optimizewebsolutions.com.
-````
+```

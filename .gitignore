@@ -134,6 +134,7 @@ frontend/docs/
 frontend/android.keystore
 frontend/app-release-*.apk
 frontend/app-release-*.aab
+frontend/app-release-signed.apk.idsig
 frontend/tmp_apk/
 frontend/windows_package/
 frontend/*crash_log.txt
