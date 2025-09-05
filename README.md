@@ -1,247 +1,208 @@
 # ScoreGenius
 
-ScoreGenius is an AI-driven live sports analytics Progressive Web App (PWA) that delivers real-time predictive analysis, natural language game recaps, and actionable betting insights for NBA games, with potential expansion to MLB and NFL. Leveraging machine learning, robust feature engineering via database views, and a modular backend, ScoreGenius provides dynamic predictions and insights.
+ScoreGenius is a cross-platform sports analytics Progressive Web App (PWA) that surfaces game insights and predictive signals for NFL, NBA, and MLB. The system combines robust data ingestion, modular feature engineering, and lightweight model ensembles with a fast, installable UI.
+
+---
 
 ## Table of Contents
 
-1. [Key Features](#key-features)
-2. [Architecture & System Flow](#architecture--system-flow)
-3. [Tech Stack](#tech-stack)
-4. [Project Structure](#project-structure)
-5. [Getting Started](#getting-started)
+1. [Overview](#overview)
+2. [System Capabilities](#system-capabilities)
+3. [Architecture & Flow](#architecture--flow)
+4. [Tech Stack](#tech-stack)
+5. [Project Structure](#project-structure)
+6. [Getting Started](#getting-started)
    - [Prerequisites](#prerequisites)
-   - [Installation](#installation)
-   - [Running Locally](#running-locally)
-   - [Running Scripts](#running-scripts)
-6. [License](#license)
-7. [Contact](#contact)
+   - [Install & Run (Frontend)](#install--run-frontend)
+   - [Optional: Local Backend](#optional-local-backend)
+7. [Security & What’s Omitted](#security--whats-omitted)
+8. [License](#license)
+9. [Contact](#contact)
 
-## Key Features
+---
 
-### Predictive Analytics
+## Overview
 
-- Win probability and score predictions
-- Uncertainty estimation for predictions (planned)
+- Installable PWA with fast navigation and offline shell
+- Predictions + game insights from a modular analytics backend
+- Snapshot generation for low-latency UI rendering
+- Designed to scale across leagues (NFL, NBA, MLB)
 
-### AI-Powered Game Recaps & Analysis
+> This public repository focuses on the **frontend and integration scaffolding**. Proprietary pipelines, model internals, and sensitive infra live in a private core.
 
-- Automated natural language game recaps (planned)
-- Post-game detailed analysis with interactive visualizations (planned)
+---
 
-### Sports Betting & Insights
+## System Capabilities
 
-- Comparison of model predictions with market odds
-- Historical trend analysis (planned)
+- Multi-league support (NFL, NBA, MLB)
+- Modular feature pipelines (rolling form, rest/schedule, matchup context, advanced metrics)
+- Materialized-view backed analytics for efficient querying
+- Ensemble modeling with regression-based predictors
+- Snapshot generation per game (cards, charts, headline stats)
+- Typed PWA (React + Vite + Tailwind), mobile-first
+- CI-/cron-driven data refresh and preview ingest (private)
 
-### Robust Data Pipeline & Backend
+---
 
-- Automated ingestion of historical game data via Python scripts (`backend/data_pipeline/`)
-- Data storage and querying using Supabase (PostgreSQL)
-- Modular feature engineering pipeline (`backend/features/`)
-- Database schema managed via SQL migrations (`supabase/migrations/`)
+## Architecture & Flow
 
-## Architecture & System Flow
+```mermaid
+flowchart LR
+    A[Data Providers] -->|ETL jobs| B[(Supabase/Postgres)]
+    B --> C[Feature Pipeline<br/>(modular)]
+    C --> D[Model Ensembles<br/>(regression-based)]
+    D --> E[Predictions & Snapshots]
+    E --> F[API Layer]
+    F --> G[PWA (React/Vite)]
+```
 
-### Data Ingestion & Storage
+**Data & Storage:** Supabase/Postgres hosts historical and preview data.
 
-1. Historical game and team data ingested via Python scripts in `backend/data_pipeline/`
-2. Data stored in a Supabase (PostgreSQL) database
-3. Shared Supabase client in `backend/caching/supabase_client.py`
+**Features:** Modular Python/SQL pipelines compute rolling stats, form, matchup context, etc.
 
-### Database Schema & Migrations
+**Models:** Lightweight ensembles (e.g., ridge, SVR, tree-based) produce totals/margins and related signals.
 
-- SQL migration files in `supabase/migrations/`, managed with the Supabase CLI
-- Materialized views (e.g., `team_rolling_20`) for complex rolling window features
-- SQL linting with `sqlfluff` (planned)
+**Delivery:** API serves snapshots & summaries consumed by the PWA.
 
-### Feature Engineering
+> Diagram is intentionally high-level. Exact schemas, features, and model internals are private.
 
-- Modular pipeline in `backend/features/` orchestrated by `engine.py`
-- Modules include:
-  - `rolling.py`: rolling statistics from SQL views with Python fallback
-  - `h2h.py`: head-to-head matchup features
-  - `rest.py`: rest days and schedule density
-  - `form.py`: recent form and streaks
-  - `season.py`: seasonal context
-  - `momentum.py`: intra-game momentum (NBA-specific)
-  - `advanced.py`: advanced stats (NBA-specific)
-- Legacy code in `backend/features/legacy/` for reference
-
-### Model Training & Prediction
-
-- Training scripts in `backend/nba_score_prediction/train_models.py`
-- Models: Ridge Regression, Support Vector Regression (SVR)
-- Hyperparameter tuning with `RandomizedSearchCV` and `TimeSeriesSplit`
-- Prediction module in `backend/nba_score_prediction/prediction.py`
-- Ensemble and calibration methods (planned)
-
-### Backend API
-
-- Node.js/Express server in `backend/server/` exposing data and prediction endpoints
-
-### Frontend PWA
-
-- React/TypeScript application with PWA features displaying predictions and insights
+---
 
 ## Tech Stack
 
 ### Frontend
 
-- React 18 with TypeScript
-- Vite build tool
-- Tailwind CSS
-- PWA support
-- Data visualization libraries (Recharts, Chart.js)
+- React 18 + TypeScript, Vite, Tailwind CSS
+- Client state/querying (e.g., React Query)
+- Charts (Recharts, etc.)
+- PWA (installable, offline shell)
 
 ### Backend & Data
 
-- Python 3.11+
-- Libraries: pandas, numpy, scikit-learn
-- Supabase (PostgreSQL)
-- Configuration: python-dotenv
-- SQL migrations: Supabase CLI
-- SQL linting: sqlfluff (planned)
-- API server: Node.js with Express
+- Node.js/Express API layer
+- Supabase/Postgres (historical + preview data)
+- Python 3.11+ for pipelines and training
 
-### Machine Learning Models
+### Modeling
 
-- Ridge Regression
-- Support Vector Regression (SVR)
-- Feature engineering via Python modules and SQL views
-- Hyperparameter tuning with RandomizedSearchCV
+- Regression-based predictors (e.g., Ridge, SVR, XGBoost/forest variants)
+- Time-aware evaluation (e.g., TimeSeriesSplit)
+- Snapshot emitters for UI
 
-### Data Sources
-
-- API-Sports
-- Odds APIs (e.g., The Odds API)
-- RapidAPI
-- Supabase historical tables
+---
 
 ## Project Structure
 
+```
+
 score-genius/
-├── .gitignore # Protects secrets, models, builds, logs, datasets
-├── backend/ # Python data pipelines, API services, feature logic
-│ ├── caching/ # Shared Supabase client + lightweight caching
-│ ├── data_pipeline/ # Ingestion scripts (runs via GitHub Actions)
-│ ├── features/ # Feature engineering modules
-│ ├── nba_features/ # NBA-specific features
-│ ├── mlb_features/ # MLB-specific features
-│ ├── server/ # Node.js Express API server
-│ └── tests/ # Python tests (CI + local validation)
-│
-├── frontend/ # React PWA (Vite, Tailwind)
-│ ├── public/ # Static assets (icons, manifest)
-│ ├── src/ # React components, contexts, hooks, screens
-│ └── dist/ # Build output (ignored in Git)
-│
-├── supabase/ # Database migrations + config
-├── reports/ # Generated analysis/reports (ignored in Git)
-├── README.md # You are here
-└── package.json # Root package file (optional scripts/workspaces)
+├─ .gitignore # Protects secrets, models, datasets, builds
+├─ backend/ # API + pipelines (private-first; ignored in public)
+│ ├─ server/ # Node/Express service (entrypoint)
+│ ├─ data_pipeline/ # Ingest/preview jobs
+│ ├─ features/ # Modular feature engineering
+│ └─ tests/ # Python tests
+├─ frontend/ # React + Vite PWA
+│ ├─ public/ # Icons, manifest, static
+│ └─ src/ # Components, screens, hooks, contexts, api
+├─ reports/ # Generated analysis (ignored)
+├─ README.md # You are here
+└─ package.json # Root scripts/workspaces (if used)
 
-## API Documentation
+```
 
-ScoreGenius exposes a fully interactive, self‑documenting Swagger UI for all NFL endpoints (and future NBA/MLB routes).
+> In this public repo, sensitive subtrees (backend internals, models, migrations) are either private or git-ignored. The structure above reflects how the system is organized without exposing IP.
 
-URL: http://localhost:10000/api-docs
+---
 
-Explore request parameters, response schemas and try out calls directly in your browser.
+## Getting Started
 
-This makes it easy for hiring managers and recruiters to explore and validate your backend API without writing any code.
+### Prerequisites
 
-# Getting Started
+- **Node.js:** v20.14.0 (nvm use reads from .nvmrc)
+- **npm** or **pnpm**
+- **Optional** (backend/local pipelines): Python 3.11+
 
-## Prerequisites
+You can run the frontend against any compatible API base URL via environment config.
 
-- Node.js 18+ and npm (or yarn)
-- Python 3.11+ and pip
-- Supabase CLI (`npm install -g supabase`)
-- Access to a Supabase project
-- API keys for data sources (API-Sports, Odds API, RapidAPI)
-
-## Installation
-
-1.  **Clone the repository:**
-
-    ```bash
-    git clone git@github.com:themattbirch/score-genius.git
-    cd score-genius
-    ```
-
-2.  **Setup backend:**
-    ```bash
-    cd backend
-    python -m venv venv_pytorch
-    # Activate the virtual environment
-    # On macOS/Linux:
-    source venv_pytorch/bin/activate
-    # On Windows:
-    # venv_pytorch\Scripts\activate
-    pip install -r requirements.txt
-    ```
-3.  **Setup frontend:**
-
-    ```bash
-    cd ../frontend
-    npm install
-    ```
-
-4.  **Initialize Supabase:**
-    ```bash
-    supabase login
-    supabase link --project-ref <your-project-ref>
-    supabase db reset
-    ```
-
-## Running Locally
-
-1.  **Start Supabase:**
-
-    ```bash
-    supabase start
-    ```
-
-2.  **Start backend API:**
-
-    ```bash
-    cd backend/server
-    npm install
-    npm start
-    ```
-
-3.  **Start frontend dev server:**
-    ```bash
-    cd frontend
-    npm run dev
-    ```
-
-## Running Scripts
-
-Activate the backend virtual environment first:
+### Install & Run (Frontend)
 
 ```bash
-# On macOS/Linux:
+# from repo root
+cd frontend
+nvm use
+npm ci
+npm run dev
+```
+
+Create a minimal `.env` (or pass at build time) if you need to point to a specific API:
+
+```bash
+# frontend/.env
+VITE_API_BASE_URL=https://your-api.example.com
+```
+
+Build for production:
+
+```bash
+npm run build
+```
+
+### Optional: Local Backend
+
+If you have access to the private core (or a local API):
+
+```bash
+# Node/Express API
+cd backend/server
+nvm use
+npm ci
+npm start   # ensure PORT is respected by the server (defaults often 10000)
+```
+
+For Python pipelines/training (when present locally):
+
+```bash
+python -m venv backend/venv_pytorch
 source backend/venv_pytorch/bin/activate
-# On Windows:
-# backend\venv_pytorch\Scripts\activate
+pip install -r backend/requirements.txt
 
-# Example script execution:
-python -m backend.nba_score_prediction.train_models \
-  --data-source supabase \
-  --lookback-days 90
+# examples
+python -m backend.data_pipeline.nfl_games_preview
+python -m backend.nfl_score_prediction.train_models
+```
 
-# License
+---
+
+## Security & What's Omitted
+
+To protect commercial IP and operational security, the public repo intentionally excludes:
+
+- Production feature sets and transformations, exact model weights, hyperparameters, and ensemble logic
+- Full database schema, migrations, and RPCs
+- CI/CD internals and cron schedules tied to production data
+- Certificates/keystores, environment secrets, dumps, and build artifacts
+
+The public repo is suitable for:
+
+- Inspecting the frontend implementation and integration boundaries
+- Understanding the system architecture and capabilities at a high level
+- Running the PWA against a compatible API base
+
+---
+
+## License
+
 This repository is distributed under the **Business Source License 1.1 (BUSL-1.1)**.
 
-- You may view, clone, and modify the code for **non-production and non-commercial use**.
+- You may view, clone, and modify the code for non-production and non-commercial use.
 - Production/commercial use requires a separate commercial license from the author.
 - After the change date specified in LICENSE, this code will be re-licensed under the GPL v2.0 or later.
 
-See the [LICENSE](./LICENSE) file for details.
+See the LICENSE file for details.
 
+---
 
 ## Contact
 
-Matt Birch – [matt@optimizewebsolutions.com](mailto:matt@optimizewebsolutions.com)
-```
+**Matt Birch** — matt@optimizewebsolutions.com
