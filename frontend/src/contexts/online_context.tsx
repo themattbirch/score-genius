@@ -7,67 +7,133 @@ import React, {
   useState,
 } from "react";
 
-/** Heartbeat cadence (ms) */
-const HEARTBEAT_MS = 5000;
-/** Request timeout (ms) */
-const TIMEOUT_MS = 2500;
-/** Grace period after startup before we allow offline (ms) */
-const INITIAL_GRACE_MS = 2500;
-/** Delay before first verify when we get an 'offline' signal (ms) */
+/** Paths & timings */
+const HEALTH_PATH = "/api/backend/health";
+const TIMEOUT_MS = 2500; // fetch timeout
+const INITIAL_GRACE_MS = 2500; // allow SW activation/boot to settle
 const OFFLINE_VERIFY_DELAY_MS = 350;
-/** How many consecutive failures before declaring offline */
-const FAILS_THRESHOLD = 2;
+const FAILS_THRESHOLD = 2; // consecutive failures before "hard offline"
+const HEARTBEAT_MS = 5000; // fast check when (soft/hard) offline
+const ONLINE_HEARTBEAT_MS = 60000; // slow check to self-heal when online
 
 const OnlineCtx = createContext<boolean>(true);
 export const useOnline = () => useContext(OnlineCtx);
 
 /**
- * OnlineProvider is optimistic: it returns true unless we've CONFIRMED offline.
- * Confirmation = two consecutive failed /health checks after a short grace period.
- * This prevents cold-start false negatives and SW fallback HTML from tripping redirects.
+ * OnlineProvider is optimistic: it returns `true` unless we've CONFIRMED offline.
+ * Confirmation requires BOTH:
+ *   - the browser indicates offline (soft signal), and
+ *   - >= FAILS_THRESHOLD consecutive failed probes to HEALTH_PATH,
+ * after INITIAL_GRACE_MS from startup.
  */
 export const OnlineProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  // Soft signal from the browser; start optimistic (assume true)
-  const [softOnline, setSoftOnline] = useState<boolean>(true);
-  // Hard decision: only true offline when confirmed
-  const [hardOffline, setHardOffline] = useState<boolean>(false);
-  // Consecutive verification failures
-  const failsRef = useRef<number>(0);
-  // Prevent overlapping verifications
-  const inFlightRef = useRef<AbortController | null>(null);
-  // Startup clock (for grace period)
-  const startedAtRef = useRef<number>(Date.now());
+  // Soft signal from browser events
+  const [softOnline, _setSoftOnline] = useState<boolean>(true);
+  const softOnlineRef = useRef<boolean>(true);
+  const setSoftOnline = (v: boolean) => {
+    softOnlineRef.current = v;
+    _setSoftOnline(v);
+  };
 
-  // Browser online/offline events
+  // Hard decision managed by our probe logic
+  const [hardOffline, _setHardOffline] = useState<boolean>(false);
+  const hardOfflineRef = useRef<boolean>(false);
+  const setHardOffline = (v: boolean) => {
+    hardOfflineRef.current = v;
+    _setHardOffline(v);
+  };
+
+  const failsRef = useRef<number>(0);
+  const inFlightRef = useRef<AbortController | null>(null);
+  const startedAtRef = useRef<number>(Date.now());
+  const offlineVerifyTidRef = useRef<number | null>(null);
+
+  /** Decide when to flip to hard offline (reads latest refs) */
+  const evaluateHardOffline = () => {
+    const elapsed = Date.now() - startedAtRef.current;
+    const enoughFails = failsRef.current >= FAILS_THRESHOLD;
+    const softSaysOffline = softOnlineRef.current === false;
+    const allowAfterGrace = elapsed >= INITIAL_GRACE_MS;
+
+    if (
+      (softSaysOffline || hardOfflineRef.current) &&
+      enoughFails &&
+      allowAfterGrace
+    ) {
+      setHardOffline(true);
+    }
+  };
+
+  /** Probe connectivity against the same-origin data plane */
+  const verifyConnectivity = async () => {
+    if (inFlightRef.current) return;
+    const ctrl = new AbortController();
+    inFlightRef.current = ctrl;
+
+    const timeoutId = window.setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(`${HEALTH_PATH}?ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "omit",
+        mode: "same-origin",
+        signal: ctrl.signal,
+      });
+      // Treat any 2xx (including 204) as success; opaque also counts as non-failure.
+      const ok = res.ok || res.type === "opaque";
+      if (ok) {
+        failsRef.current = 0;
+        if (hardOfflineRef.current) setHardOffline(false);
+      } else {
+        failsRef.current += 1;
+      }
+    } catch (err: any) {
+      // Abort is inconclusive; do not increment on AbortError
+      if (err?.name !== "AbortError") {
+        failsRef.current += 1;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+      inFlightRef.current = null;
+      evaluateHardOffline();
+    }
+  };
+
+  /** Browser online/offline events */
   useEffect(() => {
     const onOnline = () => {
       setSoftOnline(true);
       setHardOffline(false);
       failsRef.current = 0;
-      // cancel any in-flight verify
       inFlightRef.current?.abort();
       inFlightRef.current = null;
+      if (offlineVerifyTidRef.current !== null) {
+        clearTimeout(offlineVerifyTidRef.current);
+        offlineVerifyTidRef.current = null;
+      }
     };
 
     const onOffline = () => {
       setSoftOnline(false);
-      // verify shortly after to confirm
-      const t = setTimeout(() => {
+      if (offlineVerifyTidRef.current !== null) {
+        clearTimeout(offlineVerifyTidRef.current);
+      }
+      offlineVerifyTidRef.current = window.setTimeout(() => {
         void verifyConnectivity();
+        offlineVerifyTidRef.current = null;
       }, OFFLINE_VERIFY_DELAY_MS);
-      return () => clearTimeout(t);
     };
 
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
 
-    // If the browser says offline at boot, still start optimistic but verify soon.
+    // If the browser reports offline at boot, verify shortly after startup.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setSoftOnline(false);
-      setTimeout(() => {
+      offlineVerifyTidRef.current = window.setTimeout(() => {
         void verifyConnectivity();
+        offlineVerifyTidRef.current = null;
       }, OFFLINE_VERIFY_DELAY_MS);
     }
 
@@ -77,87 +143,49 @@ export const OnlineProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  // Verify connectivity against /health (expects JSON {status:"OK"})
-  const verifyConnectivity = async () => {
-    if (inFlightRef.current) return;
-    const ctrl = new AbortController();
-    inFlightRef.current = ctrl;
-    try {
-      const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-      const res = await fetch(`/health?ts=${Date.now()}`, {
-        cache: "no-store",
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-
-      let ok = false;
-      if (res.ok) {
-        const ct = (res.headers.get("content-type") || "").toLowerCase();
-        if (ct.includes("application/json")) {
-          try {
-            const body = await res.json();
-            ok = body?.status === "OK";
-          } catch {
-            ok = false;
-          }
-        }
-      }
-
-      if (ok) {
-        failsRef.current = 0;
-        // Once verified, clear any hard offline
-        setHardOffline(false);
-      } else {
-        failsRef.current += 1;
-      }
-    } catch (err: any) {
-      // Abort during SW activation or race: treat as inconclusive (do not increment)
-      if (err?.name !== "AbortError") {
-        failsRef.current += 1;
-      }
-    } finally {
-      inFlightRef.current = null;
-      // Decide hardOffline status after each attempt
-      evaluateHardOffline();
-    }
-  };
-
-  // Decide when to flip to hard offline
-  const evaluateHardOffline = () => {
-    const elapsed = Date.now() - startedAtRef.current;
-    const enoughFails = failsRef.current >= FAILS_THRESHOLD;
-    // Only declare offline if the browser also thinks we're offline OR we already were hard offline
-    const softSaysOffline = softOnline === false;
-    const allowAfterGrace = elapsed >= INITIAL_GRACE_MS;
-
-    if ((softSaysOffline || hardOffline) && enoughFails && allowAfterGrace) {
-      setHardOffline(true);
-    }
-  };
-
-  // Initial scheduled verify + periodic heartbeat
+  /** Initial verify, heartbeats, and self-heal on visibility change */
   useEffect(() => {
-    // Initial verify slightly after startup to avoid SW install/activate races
-    const init = setTimeout(() => {
-      void verifyConnectivity();
-    }, 1000);
+    // Initial verify shortly after mount to avoid SW races
+    const initId = window.setTimeout(() => void verifyConnectivity(), 1000);
 
-    const id = window.setInterval(() => {
-      // Only verify periodically if soft offline OR we’re currently hard offline
-      if (!softOnline || hardOffline) {
+    // Fast heartbeat when soft/hard offline
+    const fastId = window.setInterval(() => {
+      if (!softOnlineRef.current || hardOfflineRef.current) {
         void verifyConnectivity();
       }
     }, HEARTBEAT_MS);
 
-    return () => {
-      clearTimeout(init);
-      clearInterval(id);
-      inFlightRef.current?.abort();
+    // Slow heartbeat even when online (self-heal)
+    const slowId = window.setInterval(() => {
+      if (softOnlineRef.current && !hardOfflineRef.current) {
+        void verifyConnectivity();
+      }
+    }, ONLINE_HEARTBEAT_MS);
+
+    // Self-heal on focus/visibility
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        if (hardOfflineRef.current || !softOnlineRef.current) {
+          void verifyConnectivity();
+        }
+      }
     };
-  }, [softOnline, hardOffline]);
+    document.addEventListener("visibilitychange", onVisible);
 
-  // Exposed value: true unless CONFIRMED offline
+    return () => {
+      clearTimeout(initId);
+      clearInterval(fastId);
+      clearInterval(slowId);
+      document.removeEventListener("visibilitychange", onVisible);
+      inFlightRef.current?.abort();
+      if (offlineVerifyTidRef.current !== null) {
+        clearTimeout(offlineVerifyTidRef.current);
+        offlineVerifyTidRef.current = null;
+      }
+    };
+  }, []);
+
+  // Expose: true unless we've confirmed offline
   const value = hardOffline ? false : true;
-
   return <OnlineCtx.Provider value={value}>{children}</OnlineCtx.Provider>;
 };

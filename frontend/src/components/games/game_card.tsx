@@ -26,13 +26,12 @@ const SnapshotModal = lazy(() => import("./snapshot_modal"));
 /* ------------------------------------------------------------ */
 /* Helpers                                                      */
 /* ------------------------------------------------------------ */
-const formatTime = (iso?: string | null, fallback?: string | null): string =>
-  iso
-    ? new Date(iso).toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      })
-    : fallback ?? "--";
+const formatTime = (iso?: string | null, fallback?: string | null): string => {
+  if (!iso) return fallback ?? "--";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback ?? "--";
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
 
 const needsStatusSuffix = (statusState?: string | null): boolean =>
   statusState != null &&

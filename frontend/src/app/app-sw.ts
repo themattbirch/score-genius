@@ -1,13 +1,12 @@
-// src/app/app-sw.ts
 /// <reference lib="webworker" />
 declare const self: ServiceWorkerGlobalScope;
 
+import { registerRoute, setCatchHandler } from "workbox-routing";
 import {
   precacheAndRoute,
   cleanupOutdatedCaches,
   matchPrecache,
 } from "workbox-precaching";
-import { registerRoute, setCatchHandler } from "workbox-routing";
 import {
   StaleWhileRevalidate,
   CacheFirst,
@@ -15,41 +14,44 @@ import {
   NetworkOnly,
 } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
-import { enable as enableNavigationPreload } from "workbox-navigation-preload";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
-import type { HTTPMethod } from "workbox-routing/utils/constants";
+import { enable as enableNavigationPreload } from "workbox-navigation-preload";
+
+// --- Bypass the SW for third-party data hosts (no cache, no fallback) ---
+const BYPASS_HOSTS = [
+  "score-genius-backend.onrender.com",
+  "supabase.co",
+  "supabase.in",
+];
+
+registerRoute(
+  // ensure we only bypass for *cross-origin* requests to those hosts
+  ({ url }) =>
+    url.origin !== self.location.origin &&
+    BYPASS_HOSTS.some((h) => url.hostname.endsWith(h)),
+  new NetworkOnly()
+);
 
 const OFFLINE_URL = "/app/offline.html";
-const PAGE_CACHE = "pages-cache-v1";
-const ASSET_CACHE = "assets-cache-v1";
-const IMG_CACHE = "img-cache-v1";
+const PAGE_CACHE = "pages-cache-v3";
+const ASSET_CACHE = "assets-cache-v3";
+const IMG_CACHE = "img-cache-v3";
+const API_CACHE = "api-data-cache-v3";
 
-// -----------------------------------------------------------------------------
-// Pre-cache core assets (shell + offline fallback) and clean old caches
-// -----------------------------------------------------------------------------
-precacheAndRoute([...self.__WB_MANIFEST, { url: OFFLINE_URL, revision: null }]);
+// 1) never precache HTML (avoid stale shell)
+const _WB = (self as any).__WB_MANIFEST as Array<{
+  url: string;
+  revision?: string;
+}>;
+const WB_NO_HTML = Array.isArray(_WB)
+  ? _WB.filter((e) => !e.url.endsWith(".html"))
+  : [];
+precacheAndRoute([...WB_NO_HTML, { url: OFFLINE_URL, revision: null }]);
+
 cleanupOutdatedCaches();
 
-// -----------------------------------------------------------------------------
-// Service-worker lifecycle
-// -----------------------------------------------------------------------------
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    (async () => {
-      try {
-        const cache = await caches.open(PAGE_CACHE);
-        const requests = [
-          new Request("/app/", { cache: "reload" }),
-          new Request("/app/more", { cache: "reload" }),
-          new Request("/app/how_to_use", { cache: "reload" }),
-          // optional alias if your server serves the shell here:
-          new Request("/app/index.html", { cache: "reload" }),
-        ];
-        await Promise.allSettled(requests.map((req) => cache.add(req)));
-      } catch {}
-      self.skipWaiting?.();
-    })()
-  );
+self.addEventListener("install", (event: ExtendableEvent) => {
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event: ExtendableEvent) => {
@@ -58,162 +60,71 @@ self.addEventListener("activate", (event: ExtendableEvent) => {
       try {
         enableNavigationPreload();
       } catch {}
+      const keep = new Set([PAGE_CACHE, ASSET_CACHE, IMG_CACHE, API_CACHE]);
+      const names = await caches.keys();
+      await Promise.all(
+        names.map((n) => {
+          if (keep.has(n)) return; // keep our runtime caches
+          if (n.startsWith("workbox-precache")) return; // **keep WB precache** (offline.html lives here)
+          return caches.delete(n);
+        })
+      );
       await self.clients.claim();
     })()
   );
 });
 
-// Reuse existing strategy but prefer the preloaded response
-const pageStrategy = new NetworkFirst({
-  cacheName: PAGE_CACHE,
-  networkTimeoutSeconds: 8, // was 3
-  plugins: [
-    new CacheableResponsePlugin({ statuses: [200] }),
-    { handlerDidError: async () => await matchPrecache(OFFLINE_URL) },
-  ],
-});
-
-// -----------------------------------------------------------------------------
-// Explicitly bypass/cordon off Supabase (no caching, no fallbacks)
-// Define BEFORE setCatchHandler since we reference it there.
-// -----------------------------------------------------------------------------
-const isSupabaseHost = (h: string) =>
-  h.endsWith(".supabase.co") || h.endsWith(".supabase.in");
-
-const matchSupabase = ({ url }: { url: URL }) => isSupabaseHost(url.hostname);
-
-const supabaseMethods: HTTPMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-
-supabaseMethods.forEach((method) => {
-  registerRoute(matchSupabase, new NetworkOnly(), method);
-});
-
-// -----------------------------------------------------------------------------
-// Navigation → NetworkFirst → cached shell (/app/) → offline fallback
-// -----------------------------------------------------------------------------
+/* 1) Navigations: stock NetworkFirst with fresh shell; Workbox handles preload internally */
 registerRoute(
   ({ request }) => request.mode === "navigate",
-  async (ctx): Promise<Response> => {
-    const fe = ctx.event as FetchEvent & {
-      preloadResponse?: Promise<Response>;
-    };
-
-    // Prefer navigation preload (reduces first-load races)
-    try {
-      if (fe.preloadResponse) {
-        const preload = await fe.preloadResponse;
-        if (preload) return preload;
-      }
-    } catch {}
-
-    // Try normal NetworkFirst
-    try {
-      const res = (await pageStrategy.handle(ctx as any)) as
-        | Response
-        | undefined;
-      if (res) return res;
-    } catch {}
-
-    // NEW: fallback to cached app shell so SPA can render deep links
-    try {
-      const cache = await caches.open(PAGE_CACHE);
-      const shell = await cache.match("/app/");
-      if (shell) return shell;
-    } catch {}
-
-    // Last resort: offline page
-    const offline = await matchPrecache(OFFLINE_URL);
-    return (
-      offline ||
-      new Response("offline", {
-        status: 503,
-        headers: { "Content-Type": "text/html" },
-      })
-    );
-  }
-);
-
-// -----------------------------------------------------------------------------
-// Static assets (JS, CSS, Web-workers) → Stale-While-Revalidate
-// -----------------------------------------------------------------------------
-const assetStrategy = new StaleWhileRevalidate({
-  cacheName: ASSET_CACHE,
-  plugins: [
-    new CacheableResponsePlugin({ statuses: [200] }),
-    new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 86_400 }),
-  ],
-});
-registerRoute(
-  ({ request }) => ["style", "script", "worker"].includes(request.destination),
-  assetStrategy
-);
-
-// Images
-registerRoute(
-  ({ request }) => request.destination === "image",
-  new CacheFirst({
-    cacheName: IMG_CACHE,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [200] }),
-      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 86_400 }),
-    ],
-  })
-);
-
-// Same-origin API guard
-registerRoute(
-  ({ url }) => url.pathname.startsWith("/api/"),
   new NetworkFirst({
-    cacheName: "api-data-cache-v1",
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [200] }),
-      new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 5 * 60 }),
-      {
-        handlerDidError: async ({ request }) => {
-          const cache = await caches.open("api-data-cache-v1");
-          const cached = await cache.match(request);
-          return cached || Response.error();
-        },
-      },
-    ],
+    cacheName: PAGE_CACHE,
+    networkTimeoutSeconds: 5,
+    fetchOptions: { cache: "reload" }, // keeps HTML fresh
   })
 );
 
-// -----------------------------------------------------------------------------
-// Handle “skipWaiting” messages from the app
-// -----------------------------------------------------------------------------
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+/* 2) Assets (unchanged) */
+registerRoute(
+  ({ request, url }) =>
+    url.origin === self.location.origin &&
+    ["style", "script", "worker"].includes(request.destination),
+  new StaleWhileRevalidate({ cacheName: ASSET_CACHE })
+);
+
+registerRoute(
+  ({ request, url }) =>
+    url.origin === self.location.origin && request.destination === "image",
+  new CacheFirst({ cacheName: IMG_CACHE })
+);
+
+/* 3) APIs: NEVER cache or fallback — avoids “offline” being triggered by data routes */
+registerRoute(
+  ({ url }) =>
+    url.origin === self.location.origin &&
+    url.pathname.startsWith("/api/backend/"),
+  new NetworkOnly()
+);
+
+registerRoute(
+  ({ url }) =>
+    url.origin === self.location.origin && url.pathname.startsWith("/api/"),
+  new NetworkOnly()
+);
+
+/* 4) Single offline catch for failed navigations only */
+setCatchHandler(async ({ request }) => {
+  if (request.destination === "document") {
+    const offline = await matchPrecache(OFFLINE_URL);
+    if (offline) return offline;
+    return new Response("<h1>Offline</h1>", {
+      status: 503,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+  return Response.error();
 });
 
-// -----------------------------------------------------------------------------
-// Global catch-all with Supabase carve-out
-// -----------------------------------------------------------------------------
-setCatchHandler(async ({ request }) => {
-  // Never return HTML for Supabase failures
-  try {
-    const url = new URL(request.url);
-    if (isSupabaseHost(url.hostname)) return Response.error();
-  } catch {}
-
-  if (["script", "style", "worker"].includes(request.destination)) {
-    const cache = await caches.open(ASSET_CACHE);
-    const res = await cache.match(request);
-    if (res) return res;
-  }
-
-  if (request.destination === "image") {
-    const cache = await caches.open(IMG_CACHE);
-    const res = await cache.match(request);
-    if (res) return res;
-  }
-
-  const fallback = await matchPrecache(OFFLINE_URL);
-  return (
-    fallback ||
-    new Response("offline", {
-      status: 503,
-      headers: { "Content-Type": "text/html" },
-    })
-  );
+self.addEventListener("message", (e: ExtendableMessageEvent) => {
+  if ((e.data as any)?.type === "SKIP_WAITING") self.skipWaiting();
 });
